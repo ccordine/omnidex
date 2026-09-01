@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/model"
 )
 
 func TestApplicationInterpreterResolvesSurfaceBeforeSpecification(t *testing.T) {
@@ -57,6 +58,28 @@ func TestApplicationInterpreterResolvesSurfaceBeforeSpecification(t *testing.T) 
 				Context: context.Background(), MaxAttempts: 1,
 				Execute: surfaceResolutionFixtureExecutor(t, fixture),
 			}
+			proposals, err := resolveDirectCodingApplicationPlan(
+				runtime,
+				directCodingApplicationIntentModels{
+					Requirements: "intent-model", ResultRelation: "result-model",
+				},
+				assemblyline.ApplicationIntentInput{
+					UserRequest: fixture.request, Context: applicationContext,
+				},
+				model.CodingScopeModeNormal,
+				nil,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(proposals) != 1 {
+				t.Fatalf("planning proposals=%+v", proposals)
+			}
+			approved := []assemblyline.ApplicationRequirement{{
+				ID: "requirement_001", Statement: proposals[0].Statement,
+				RequestSHA256:  authority.requestSHA256,
+				ResultRelation: proposals[0].ResultRelation,
+			}}
 			interpretation, err := runDirectCodingApplicationInterpreter(
 				runtime,
 				directCodingApplicationIntentModels{
@@ -64,7 +87,7 @@ func TestApplicationInterpreterResolvesSurfaceBeforeSpecification(t *testing.T) 
 				},
 				func() (string, error) { return "surface-model", nil },
 				func() (string, error) { return "artifact-model", nil },
-				authority, applicationContext, nil,
+				authority, applicationContext, approved, nil,
 			)
 			if fixture.wantError != "" {
 				if err == nil || !strings.Contains(err.Error(), fixture.wantError) {

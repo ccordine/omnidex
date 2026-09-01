@@ -7,18 +7,11 @@ import (
 	"github.com/gryph/omnidex/internal/llm"
 )
 
-const (
-	// These are resource limits, not model response grammars. A provider that
-	// reaches one returns incomplete evidence which is rejected before semantic
-	// decoding. Ordinary responses end earlier with done_reason=stop.
-	maxPortableStationOutputTokens      = 2048
-	maxSourceBodyCorrectionOutputTokens = 512
-	minSingleLineCompletionTokens       = 8
-)
+const minSingleLineCompletionTokens = 8
 
-// ExpectedPortableStationMaxOutputTokens uses Ollama's native unlimited
-// generation for an ordinary source response. Intrinsically bounded station
-// answers retain their complete-answer limit.
+// ExpectedPortableStationMaxOutputTokens leaves every ordinary station response
+// at the provider's native limit. Code validates the one completed response;
+// it never truncates or regenerates a semantic result to manage output tokens.
 func ExpectedPortableStationMaxOutputTokens(
 	job assemblyline.PortableJob,
 	contextTokens int,
@@ -29,29 +22,7 @@ func ExpectedPortableStationMaxOutputTokens(
 	if err := job.Validate(); err != nil {
 		return 0, err
 	}
-	if job.Kind == assemblyline.WorkFragmentGeneration {
-		return -1, nil
-	}
-	responseBytes, err := assemblyline.PortableResponseMaximumBytesForJob(job)
-	if err != nil {
-		return 0, fmt.Errorf("derive portable response resource bound: %w", err)
-	}
-	framing, err := assemblyline.PortableResponseFramingForJob(job)
-	if err != nil {
-		return 0, fmt.Errorf("derive portable response termination reserve: %w", err)
-	}
-	reserve := 0
-	if framing == assemblyline.PortableResponseFramingSingleLine {
-		reserve = 1
-	} else if framing != assemblyline.PortableResponseFramingNaturalMultiline {
-		return 0, fmt.Errorf("portable response framing %q has no generation budget", framing)
-	}
-	budget := responseBytes + reserve
-	if framing == assemblyline.PortableResponseFramingSingleLine &&
-		budget < minSingleLineCompletionTokens {
-		budget = minSingleLineCompletionTokens
-	}
-	return boundedProviderOutputTokens(budget, maxPortableStationOutputTokens, contextTokens)
+	return -1, nil
 }
 
 // ExpectedSourceBodyCorrectionMaxOutputTokens gives an exact opaque choice
@@ -73,11 +44,7 @@ func ExpectedSourceBodyCorrectionMaxOutputTokens(
 		if budget < minSingleLineCompletionTokens {
 			budget = minSingleLineCompletionTokens
 		}
-		return boundedProviderOutputTokens(
-			budget,
-			maxSourceBodyCorrectionOutputTokens,
-			contextTokens,
-		)
+		return boundedProviderOutputTokens(budget, contextTokens)
 	}
 	if opaqueResponseBytes != 0 {
 		return 0, fmt.Errorf("open source correction cannot carry an opaque response bound")
@@ -85,12 +52,9 @@ func ExpectedSourceBodyCorrectionMaxOutputTokens(
 	return -1, nil
 }
 
-func boundedProviderOutputTokens(budget, ceiling, contextTokens int) (int, error) {
-	if budget < 1 || ceiling < 1 {
+func boundedProviderOutputTokens(budget, contextTokens int) (int, error) {
+	if budget < 1 {
 		return 0, fmt.Errorf("provider output budget must be positive")
-	}
-	if budget > ceiling {
-		budget = ceiling
 	}
 	if budget >= contextTokens {
 		budget = contextTokens - 1

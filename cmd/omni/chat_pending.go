@@ -18,8 +18,8 @@ type pendingOperationResolution struct {
 }
 
 func (session *chatSession) resolvePendingOperation() (*pendingOperationResolution, error) {
-	if session.pendingTurn != nil && session.pendingControl != nil {
-		return nil, fmt.Errorf("interactive client has two unresolved operation identities")
+	if pendingOperationCount(session) > 1 {
+		return nil, fmt.Errorf("interactive client has multiple unresolved operation identities")
 	}
 	if pending := session.pendingTurn; pending != nil {
 		receipt, err := awaitAuthoritativeChatRequest(
@@ -55,6 +55,16 @@ func (session *chatSession) resolvePendingOperation() (*pendingOperationResoluti
 			operationID: pending.operationID,
 			exactText:   pending.exactText,
 			action:      pending.action,
+		}, nil
+	}
+	if pending := session.pendingPlan; pending != nil {
+		if err := session.replayPendingPlanMutation(pending, true); err != nil {
+			return nil, err
+		}
+		session.pendingPlan = nil
+		return &pendingOperationResolution{
+			jobID: pending.jobID, operationID: pending.operationID,
+			action: string(pending.kind),
 		}, nil
 	}
 	return nil, nil
@@ -133,7 +143,10 @@ func (session *chatSession) reloadSnapshotAuthoritatively() error {
 	if err != nil {
 		return fmt.Errorf("reconcile authoritative CLI chat session: %w", err)
 	}
-	return session.reconcileSnapshot(snapshot, false)
+	if err := session.reconcileSnapshot(snapshot, false); err != nil {
+		return err
+	}
+	return session.reconcilePlanReview()
 }
 
 func (session *chatSession) acknowledgePendingResolution(
@@ -141,6 +154,12 @@ func (session *chatSession) acknowledgePendingResolution(
 ) error {
 	if resolution == nil {
 		return nil
+	}
+	if resolution.action == string(planMutationDecision) ||
+		resolution.action == string(planMutationFreeze) {
+		return session.renderer.system(
+			"job %d · %s resolved", resolution.jobID, resolution.action,
+		)
 	}
 	if resolution.action == "" {
 		turn, persisted := session.turns[resolution.operationID]
@@ -165,6 +184,20 @@ func (session *chatSession) acknowledgePendingResolution(
 	}
 	session.pendingControl = nil
 	return session.renderer.system("job %d · %s resolved", resolution.jobID, resolution.action)
+}
+
+func pendingOperationCount(session *chatSession) int {
+	count := 0
+	if session.pendingTurn != nil {
+		count++
+	}
+	if session.pendingControl != nil {
+		count++
+	}
+	if session.pendingPlan != nil {
+		count++
+	}
+	return count
 }
 
 func sessionControlKind(action string) queue.ChannelSessionControlKind {

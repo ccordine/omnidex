@@ -270,6 +270,13 @@ func validateLifecycleWorkspaceBinding(root, identity string) error {
 	return nil
 }
 
+func validateRequiredLifecycleWorkspaceBinding(root, identity string) error {
+	if root == "" || identity == "" {
+		return fmt.Errorf("lifecycle workspace root and identity are required")
+	}
+	return validateLifecycleWorkspaceBinding(root, identity)
+}
+
 func validateLifecycleText(name, value string, maximum int, allowEmpty bool) error {
 	if !utf8.ValidString(value) || strings.ContainsRune(value, '\x00') {
 		return fmt.Errorf("%s must be PostgreSQL-compatible UTF-8", name)
@@ -286,7 +293,8 @@ func validateLifecycleText(name, value string, maximum int, allowEmpty bool) err
 func registeredLifecycleOperationKind(kind LifecycleOperationKind) bool {
 	switch kind {
 	case LifecycleCompleteStep, LifecycleFailStep, LifecycleSubmitFeedback, LifecycleInterruptJob,
-		LifecycleReplanJob, LifecycleChannelSession, LifecycleCancelJob:
+		LifecycleReplanJob, LifecycleChannelSession, LifecycleCancelJob,
+		LifecycleCodingPlanDecisions, LifecycleCodingPlanFreeze:
 		return true
 	default:
 		return false

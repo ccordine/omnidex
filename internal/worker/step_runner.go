@@ -84,6 +84,18 @@ func (s *Service) runLoop(
 func (s *Service) runClaim(ctx context.Context, workerID string, claim *model.ClaimedStep) error {
 	s.emitStepEvent(claim.Authority, "step_start", fmt.Sprintf("action=%s worker=%s", claim.Step.Action, workerID))
 	if err := s.processStep(ctx, claim); err != nil {
+		if errors.Is(err, errCodingPlanReviewPending) {
+			s.emitStepEvent(
+				claim.Authority,
+				"step_waiting_input",
+				fmt.Sprintf("action=%s worker=%s", claim.Step.Action, workerID),
+			)
+			s.logf(
+				"worker=%s job=%d step=%d action=%s waiting for coding plan review",
+				workerID, claim.Job.ID, claim.Step.ID, claim.Step.Action,
+			)
+			return nil
+		}
 		if s.skipFailureForLostExecutionAuthority(workerID, claim, err) {
 			return nil
 		}

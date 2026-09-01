@@ -1,10 +1,14 @@
 package api
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/projectroot"
+	"github.com/jackc/pgx/v5"
 )
 
 func requiredWorkspaceIdentityQuery(request *http.Request) (string, error) {
@@ -19,6 +23,29 @@ func requiredWorkspaceIdentityQuery(request *http.Request) (string, error) {
 		return "", fmt.Errorf("workspace_identity: %w", err)
 	}
 	return values[0], nil
+}
+
+func requiredLifecycleWorkspaceQuery(request *http.Request) (string, string, error) {
+	if err := validateExactQuery(request, "workspace_root", "workspace_identity"); err != nil {
+		return "", "", err
+	}
+	if request == nil || request.URL == nil {
+		return "", "", fmt.Errorf("lifecycle workspace query is unavailable")
+	}
+	root, rootPresent := oneQueryValue(request.URL.Query(), "workspace_root")
+	identity, identityPresent := oneQueryValue(request.URL.Query(), "workspace_identity")
+	if !rootPresent || !identityPresent {
+		return "", "", fmt.Errorf(
+			"workspace_root and workspace_identity must each occur exactly once",
+		)
+	}
+	if err := model.ValidateChannelWorkspaceRoot(root); err != nil {
+		return "", "", fmt.Errorf("workspace_root: %w", err)
+	}
+	if err := projectroot.ValidateDirectoryIdentity(identity); err != nil {
+		return "", "", fmt.Errorf("workspace_identity: %w", err)
+	}
+	return root, identity, nil
 }
 
 // requireServerWorkspaceIdentity proves that the server can reach the same
@@ -49,15 +76,34 @@ func (s *Server) requireServerWorkspaceIdentity(
 	return nil
 }
 
-func (s *Server) requireOptionalLifecycleWorkspaceIdentity(
+func (s *Server) requireLifecycleWorkspaceIdentity(
+	ctx context.Context,
+	jobID int64,
 	root string,
 	identity string,
-) error {
+) (int, error) {
 	if root == "" && identity == "" {
-		return nil
+		required, err := s.repo.JobRequiresLifecycleWorkspaceAuthority(ctx, jobID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return http.StatusNotFound, err
+		}
+		if err != nil {
+			return http.StatusInternalServerError, err
+		}
+		if required {
+			return http.StatusBadRequest, fmt.Errorf(
+				"lifecycle workspace_root and workspace_identity are required",
+			)
+		}
+		return 0, nil
 	}
 	if root == "" || identity == "" {
-		return fmt.Errorf("lifecycle workspace_root and workspace_identity must be supplied together")
+		return http.StatusBadRequest, fmt.Errorf(
+			"lifecycle workspace_root and workspace_identity must be supplied together",
+		)
 	}
-	return s.requireServerWorkspaceIdentity(root, identity)
+	if err := s.requireServerWorkspaceIdentity(root, identity); err != nil {
+		return http.StatusConflict, err
+	}
+	return 0, nil
 }

@@ -22,11 +22,13 @@ func (s *Server) replanJob(w http.ResponseWriter, r *http.Request, jobID int64) 
 		writeError(w, lifecycleControlBodyStatus(err), err.Error())
 		return
 	}
-	if err := s.requireOptionalLifecycleWorkspaceIdentity(
+	if status, err := s.requireLifecycleWorkspaceIdentity(
+		r.Context(),
+		jobID,
 		req.WorkspaceRoot.Value,
 		req.WorkspaceIdentity.Value,
 	); err != nil {
-		writeError(w, http.StatusConflict, err.Error())
+		writeError(w, status, err.Error())
 		return
 	}
 
@@ -37,6 +39,10 @@ func (s *Server) replanJob(w http.ResponseWriter, r *http.Request, jobID int64) 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "job not found")
+			return
+		}
+		if errors.Is(err, queue.ErrChannelSessionWorkspace) {
+			writeError(w, http.StatusConflict, err.Error())
 			return
 		}
 		writeError(w, http.StatusBadRequest, err.Error())

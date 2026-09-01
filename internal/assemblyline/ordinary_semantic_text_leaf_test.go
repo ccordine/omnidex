@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/datasource"
+	"github.com/gryph/omnidex/internal/model"
 )
 
 func TestContextMinificationAcceptsMarkdownAsOrdinarySemanticText(t *testing.T) {
@@ -79,6 +80,7 @@ func TestCanonicalAndInventoryLeavesRemainStrict(t *testing.T) {
 	inventoryInput := ApplicationRequirementInventoryInput{
 		UserRequest: request,
 		Context:     context,
+		ScopeMode:   model.CodingScopeModeNormal,
 	}
 	if _, err := DecodeApplicationRequirementInventory(
 		inventoryInput, `{"requirements":["Schedule repairs"]}`,

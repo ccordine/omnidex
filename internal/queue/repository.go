@@ -10,13 +10,15 @@ import (
 	"github.com/gryph/omnidex/internal/evidence"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/modelconfig"
+	"github.com/gryph/omnidex/internal/projectroot"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Repository struct {
-	pool           *pgxpool.Pool
-	modelAuthority modelconfig.Authority
+	pool            *pgxpool.Pool
+	modelAuthority  modelconfig.Authority
+	codingScopeMode model.CodingScopeMode
 }
 
 type stepSeed struct {
@@ -24,8 +26,14 @@ type stepSeed struct {
 	sortIndex int
 }
 
-func New(pool *pgxpool.Pool, modelAuthority modelconfig.Authority) *Repository {
-	return &Repository{pool: pool, modelAuthority: modelAuthority}
+func New(
+	pool *pgxpool.Pool,
+	modelAuthority modelconfig.Authority,
+	codingScopeMode model.CodingScopeMode,
+) *Repository {
+	return &Repository{
+		pool: pool, modelAuthority: modelAuthority, codingScopeMode: codingScopeMode,
+	}
 }
 
 func (r *Repository) Ping(ctx context.Context) error {
@@ -40,11 +48,22 @@ func (r *Repository) EnqueueCodingJob(
 	instruction string,
 	clientCWD string,
 ) (model.Job, error) {
+	if err := r.codingScopeMode.Validate(); err != nil {
+		return model.Job{}, fmt.Errorf("coding job scope authority: %w", err)
+	}
+	workspaceIdentity, err := projectroot.DirectoryIdentity(clientCWD)
+	if err != nil {
+		return model.Job{}, fmt.Errorf("attest coding job workspace identity: %w", err)
+	}
 	metadataJSON, err := json.Marshal(struct {
-		ClientCWD   string             `json:"client_cwd"`
-		ModelConfig modelconfig.Config `json:"model_config"`
+		ClientCWD               string                `json:"client_cwd"`
+		ClientWorkspaceIdentity string                `json:"client_workspace_identity"`
+		ModelConfig             modelconfig.Config    `json:"model_config"`
+		CodingScopeMode         model.CodingScopeMode `json:"coding_scope_mode"`
 	}{
-		ClientCWD: clientCWD, ModelConfig: r.modelAuthority.Config(),
+		ClientCWD: clientCWD, ClientWorkspaceIdentity: workspaceIdentity,
+		ModelConfig:     r.modelAuthority.Config(),
+		CodingScopeMode: r.codingScopeMode,
 	})
 	if err != nil {
 		return model.Job{}, fmt.Errorf("encode coding job authority: %w", err)

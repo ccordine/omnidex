@@ -26,6 +26,7 @@ type exactStationExecution struct {
 	CallEvidenceID           int64
 	WorkID                   string
 	WorkKind                 assemblyline.WorkKind
+	InferenceFree            bool
 	Model                    string
 	Iteration                int
 	ProviderCalls            int
@@ -55,7 +56,8 @@ func (s *Service) executeExactPortableStation(
 	}
 	if resolved {
 		return deterministic, exactStationExecution{
-			WorkID: job.ID, WorkKind: job.Kind, Candidate: deterministic.Candidate,
+			WorkID: job.ID, WorkKind: job.Kind, InferenceFree: true,
+			Candidate: deterministic.Candidate,
 		}, nil
 	}
 	if s == nil || s.repo == nil {

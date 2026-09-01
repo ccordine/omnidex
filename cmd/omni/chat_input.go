@@ -7,10 +7,11 @@ import (
 )
 
 type chatInput struct {
-	Text   string
-	Pasted bool
-	Err    error
-	EOF    bool
+	Text      string
+	Pasted    bool
+	Authority terminalInputAuthority
+	Err       error
+	EOF       bool
 }
 
 func readChatInput(ctx context.Context, console *chatConsole) (<-chan chatInput, <-chan struct{}) {
@@ -20,7 +21,7 @@ func readChatInput(ctx context.Context, console *chatConsole) (<-chan chatInput,
 		defer close(done)
 		defer close(events)
 		for {
-			line, pasted, err := console.ReadLine()
+			line, pasted, authority, err := console.ReadLine()
 			if errors.Is(err, io.EOF) {
 				sendChatInput(ctx, events, chatInput{EOF: true})
 				return
@@ -34,7 +35,7 @@ func readChatInput(ctx context.Context, console *chatConsole) (<-chan chatInput,
 				}
 				return
 			}
-			if !sendChatInput(ctx, events, chatInput{Text: line, Pasted: pasted}) {
+			if !sendChatInput(ctx, events, chatInput{Text: line, Pasted: pasted, Authority: authority}) {
 				return
 			}
 		}

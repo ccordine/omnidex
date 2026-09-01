@@ -24,6 +24,9 @@ func requireCompleteStepReplayTx(
 	if err != nil {
 		return err
 	}
+	if err := requireTerminalObjectiveCodingTailCanceledTx(ctx, tx, record, command); err != nil {
+		return err
+	}
 	return requireTerminalLifecycleAuthorityTx(ctx, tx, record, command.Output, "")
 }
 

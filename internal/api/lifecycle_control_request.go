@@ -154,6 +154,16 @@ func validateLifecycleWorkspaceRequest(
 	return nil
 }
 
+func validateRequiredLifecycleWorkspaceRequest(
+	root lifecycleWorkspaceValue,
+	identity lifecycleWorkspaceValue,
+) error {
+	if !root.Present || !identity.Present {
+		return fmt.Errorf("lifecycle workspace_root and workspace_identity are required")
+	}
+	return validateLifecycleWorkspaceRequest(root, identity)
+}
+
 func lifecycleControlBodyStatus(err error) int {
 	var tooLarge *http.MaxBytesError
 	if errors.As(err, &tooLarge) || strings.Contains(err.Error(), "transport bound") {

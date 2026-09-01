@@ -44,6 +44,30 @@ func (s *Server) handleJobByID(w http.ResponseWriter, r *http.Request) {
 		s.jobHistory(w, r, id)
 		return
 	}
+	if action == jobItemPlanRead {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		s.writeCurrentCodingPlan(w, r, id)
+		return
+	}
+	if action == jobItemPlanDecisions || action == jobItemPlanFreeze {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if err := validateExactQuery(r); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if action == jobItemPlanDecisions {
+			s.applyCodingPlanDecisions(w, r, id)
+		} else {
+			s.freezeCodingPlan(w, r, id)
+		}
+		return
+	}
 	if action != jobItemRead {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -96,11 +120,13 @@ func (s *Server) submitJobFeedback(w http.ResponseWriter, r *http.Request, jobID
 		writeError(w, lifecycleControlBodyStatus(err), err.Error())
 		return
 	}
-	if err := s.requireOptionalLifecycleWorkspaceIdentity(
+	if status, err := s.requireLifecycleWorkspaceIdentity(
+		r.Context(),
+		jobID,
 		req.WorkspaceRoot.Value,
 		req.WorkspaceIdentity.Value,
 	); err != nil {
-		writeError(w, http.StatusConflict, err.Error())
+		writeError(w, status, err.Error())
 		return
 	}
 
@@ -111,6 +137,10 @@ func (s *Server) submitJobFeedback(w http.ResponseWriter, r *http.Request, jobID
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "job has no pending input request")
+			return
+		}
+		if errors.Is(err, queue.ErrChannelSessionWorkspace) {
+			writeError(w, http.StatusConflict, err.Error())
 			return
 		}
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -134,11 +164,13 @@ func (s *Server) interruptJob(w http.ResponseWriter, r *http.Request, jobID int6
 		writeError(w, lifecycleControlBodyStatus(err), err.Error())
 		return
 	}
-	if err := s.requireOptionalLifecycleWorkspaceIdentity(
+	if status, err := s.requireLifecycleWorkspaceIdentity(
+		r.Context(),
+		jobID,
 		req.WorkspaceRoot.Value,
 		req.WorkspaceIdentity.Value,
 	); err != nil {
-		writeError(w, http.StatusConflict, err.Error())
+		writeError(w, status, err.Error())
 		return
 	}
 
@@ -149,6 +181,10 @@ func (s *Server) interruptJob(w http.ResponseWriter, r *http.Request, jobID int6
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "job not found")
+			return
+		}
+		if errors.Is(err, queue.ErrChannelSessionWorkspace) {
+			writeError(w, http.StatusConflict, err.Error())
 			return
 		}
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -172,11 +208,13 @@ func (s *Server) cancelJob(w http.ResponseWriter, r *http.Request, jobID int64) 
 		writeError(w, lifecycleControlBodyStatus(err), err.Error())
 		return
 	}
-	if err := s.requireOptionalLifecycleWorkspaceIdentity(
+	if status, err := s.requireLifecycleWorkspaceIdentity(
+		r.Context(),
+		jobID,
 		req.WorkspaceRoot.Value,
 		req.WorkspaceIdentity.Value,
 	); err != nil {
-		writeError(w, http.StatusConflict, err.Error())
+		writeError(w, status, err.Error())
 		return
 	}
 
@@ -205,7 +243,9 @@ func (s *Server) cancelJob(w http.ResponseWriter, r *http.Request, jobID int64) 
 }
 
 func cancelJobHTTPStatus(err error) int {
-	if errors.Is(err, queue.ErrLifecycleOperationConflict) || errors.Is(err, queue.ErrStepNotWritable) {
+	if errors.Is(err, queue.ErrLifecycleOperationConflict) ||
+		errors.Is(err, queue.ErrStepNotWritable) ||
+		errors.Is(err, queue.ErrChannelSessionWorkspace) {
 		return http.StatusConflict
 	}
 	return http.StatusBadRequest

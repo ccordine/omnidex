@@ -3,8 +3,8 @@ package main
 import "fmt"
 
 func (session *chatSession) reconcilePersistedPendingOperations() error {
-	if session.pendingTurn != nil && session.pendingControl != nil {
-		return fmt.Errorf("interactive client has two unresolved operation identities")
+	if pendingOperationCount(session) > 1 {
+		return fmt.Errorf("interactive client has multiple unresolved operation identities")
 	}
 	if pending := session.pendingTurn; pending != nil {
 		turn, persisted := session.turns[pending.operationID]

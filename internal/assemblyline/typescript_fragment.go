@@ -159,8 +159,9 @@ func ParseTypeScriptFunctionBody(
 
 // ExtractTypeScriptFunctionBodyResponse treats a complete declaration as
 // ordinary redundant source. Code extracts only its body and validates that
-// body under the authoritative contract signature. When several fenced regions
-// exist, code accepts only a unique syntactically valid function declaration.
+// body under the authoritative contract signature. When declaration-shaped
+// source is present, code accepts only one direct block-bodied callable across
+// every fenced region; volunteered names, types, and parameters are irrelevant.
 // A single fenced body is tolerated only when it is already parseable under
 // that signature, preventing prose from becoming an inferred correction span.
 func ExtractTypeScriptFunctionBodyResponse(
@@ -171,36 +172,29 @@ func ExtractTypeScriptFunctionBodyResponse(
 	if err != nil {
 		return "", err
 	}
-	if len(candidates) > 1 {
-		var declarationBodies []string
-		for _, candidate := range candidates {
-			body, declaration, extractErr := extractTypeScriptDeclarationBody(
-				candidate.Source,
-				contract.TSX,
-			)
-			if extractErr != nil {
-				return "", extractErr
-			}
-			if declaration {
-				declarationBodies = append(declarationBodies, body)
-			}
+	declarationBodies := make([]string, 0, len(candidates))
+	requiresCallableExtraction := len(candidates) > 1
+	for _, candidate := range candidates {
+		bodies, structured, extractErr := extractTypeScriptDeclarationBodies(
+			candidate.Source,
+			contract.TSX,
+		)
+		if extractErr != nil {
+			return "", extractErr
 		}
+		requiresCallableExtraction = requiresCallableExtraction || structured
+		declarationBodies = append(declarationBodies, bodies...)
+	}
+	if requiresCallableExtraction {
 		if len(declarationBodies) != 1 {
 			return "", fmt.Errorf(
-				"fenced TypeScript response contains %d syntactically valid function declaration candidates; exactly one is required for deterministic extraction",
+				"fenced TypeScript response contains %d direct block-bodied callable candidates; exactly one is required for deterministic extraction",
 				len(declarationBodies),
 			)
 		}
 		return NormalizeSourceBodyResponse(declarationBodies[0])
 	}
 	candidate := candidates[0]
-	body, declaration, err := extractTypeScriptDeclarationBody(candidate.Source, contract.TSX)
-	if err != nil {
-		return "", err
-	}
-	if declaration {
-		return NormalizeSourceBodyResponse(body)
-	}
 	if candidate.Fenced {
 		assembled, err := ComposeSourceDeclaration(contract.Signature, candidate.Source)
 		if err != nil {
@@ -220,7 +214,7 @@ func ExtractTypeScriptFunctionBodyResponse(
 	return NormalizeSourceBodyResponse(candidate.Source)
 }
 
-func extractTypeScriptDeclarationBody(source string, tsx bool) (string, bool, error) {
+func extractTypeScriptDeclarationBodies(source string, tsx bool) ([]string, bool, error) {
 	parser := treesitter.NewParser()
 	languagePointer := typescript.LanguageTypescript()
 	if tsx {
@@ -228,48 +222,110 @@ func extractTypeScriptDeclarationBody(source string, tsx bool) (string, bool, er
 	}
 	if err := parser.SetLanguage(treesitter.NewLanguage(languagePointer)); err != nil {
 		parser.Close()
-		return "", false, fmt.Errorf("configure TypeScript extraction parser: %w", err)
+		return nil, false, fmt.Errorf("configure TypeScript extraction parser: %w", err)
 	}
 	tree := parser.Parse([]byte(source), nil)
 	if tree == nil {
 		parser.Close()
-		return "", false, fmt.Errorf("TypeScript extraction parser returned no syntax tree")
+		return nil, false, fmt.Errorf("TypeScript extraction parser returned no syntax tree")
 	}
 	defer tree.Close()
 	defer parser.Close()
 	root := tree.RootNode()
-	if root == nil || root.HasError() || root.NamedChildCount() != 1 {
-		return "", false, nil
+	if root == nil || root.HasError() {
+		return nil, false, nil
 	}
-	top := root.NamedChild(0)
-	if top == nil || int(top.StartByte()) != 0 || int(top.EndByte()) != len(source) {
-		return "", false, nil
-	}
-	declaration := top
-	if top.Kind() == "export_statement" {
-		declaration = nil
-		for index := uint(0); index < top.NamedChildCount(); index++ {
-			child := top.NamedChild(index)
-			if child != nil && child.Kind() == "function_declaration" {
-				if declaration != nil {
-					return "", false, nil
-				}
-				declaration = child
+	bodies := make([]string, 0, 1)
+	moduleMarker := false
+	directExecution := false
+	for index := uint(0); index < root.NamedChildCount(); index++ {
+		top := root.NamedChild(index)
+		if top == nil {
+			continue
+		}
+		if top.Kind() == "import_statement" || top.Kind() == "export_statement" {
+			moduleMarker = true
+		}
+		nodes := directTypeScriptCallableDeclarations(top)
+		switch top.Kind() {
+		case "import_statement", "export_statement", "function_declaration",
+			"type_alias_declaration", "interface_declaration", "enum_declaration":
+		case "lexical_declaration", "variable_declaration":
+			if len(nodes) == 0 || len(nodes) != directTypeScriptVariableDeclaratorCount(top) {
+				directExecution = true
 			}
+		default:
+			directExecution = true
+		}
+		for _, declaration := range nodes {
+			body := declaration.ChildByFieldName("body")
+			if declaration.Kind() == "variable_declarator" {
+				value := declaration.ChildByFieldName("value")
+				if value == nil || (value.Kind() != "arrow_function" && value.Kind() != "function_expression") {
+					continue
+				}
+				body = value.ChildByFieldName("body")
+			}
+			if body == nil || body.Kind() != "statement_block" {
+				continue
+			}
+			start, end := int(body.StartByte()), int(body.EndByte())
+			if start < 0 || end <= start+1 || end > len(source) || source[start] != '{' || source[end-1] != '}' {
+				return nil, false, fmt.Errorf("TypeScript declaration body range is invalid")
+			}
+			bodies = append(bodies, source[start+1:end-1])
 		}
 	}
-	if declaration == nil || declaration.Kind() != "function_declaration" {
-		return "", false, nil
+	structured := moduleMarker || len(bodies) > 0 && !directExecution
+	if !structured {
+		return nil, false, nil
 	}
-	body := declaration.ChildByFieldName("body")
-	if body == nil {
-		return "", false, nil
+	return bodies, true, nil
+}
+
+func directTypeScriptVariableDeclaratorCount(declaration *treesitter.Node) int {
+	if declaration == nil || (declaration.Kind() != "lexical_declaration" &&
+		declaration.Kind() != "variable_declaration") {
+		return 0
 	}
-	start, end := int(body.StartByte()), int(body.EndByte())
-	if start < 0 || end <= start+1 || end > len(source) || source[start] != '{' || source[end-1] != '}' {
-		return "", false, fmt.Errorf("TypeScript declaration body range is invalid")
+	count := 0
+	for index := uint(0); index < declaration.NamedChildCount(); index++ {
+		child := declaration.NamedChild(index)
+		if child != nil && child.Kind() == "variable_declarator" {
+			count++
+		}
 	}
-	return source[start+1 : end-1], true, nil
+	return count
+}
+
+func directTypeScriptCallableDeclarations(top *treesitter.Node) []*treesitter.Node {
+	if top == nil {
+		return nil
+	}
+	switch top.Kind() {
+	case "function_declaration":
+		return []*treesitter.Node{top}
+	case "lexical_declaration", "variable_declaration":
+		declarations := make([]*treesitter.Node, 0, top.NamedChildCount())
+		for index := uint(0); index < top.NamedChildCount(); index++ {
+			child := top.NamedChild(index)
+			if child != nil && child.Kind() == "variable_declarator" {
+				value := child.ChildByFieldName("value")
+				if value != nil && (value.Kind() == "arrow_function" || value.Kind() == "function_expression") {
+					declarations = append(declarations, child)
+				}
+			}
+		}
+		return declarations
+	case "export_statement":
+		declarations := make([]*treesitter.Node, 0, top.NamedChildCount())
+		for index := uint(0); index < top.NamedChildCount(); index++ {
+			declarations = append(declarations, directTypeScriptCallableDeclarations(top.NamedChild(index))...)
+		}
+		return declarations
+	default:
+		return nil
+	}
 }
 
 type parsedTypeScriptFunction struct {

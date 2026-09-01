@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/model"
 )
 
 func TestDirectCodingResultRelationUsesSecondQuestionOnlyForDerivedValues(t *testing.T) {
@@ -112,7 +113,7 @@ func TestDirectCodingUnderdeterminedResultIsDiscardedWithoutAnotherModelCall(t *
 		t.Fatal(err)
 	}
 	authority := assemblyline.ApplicationRequirementInventoryInput{
-		UserRequest: request, Context: applicationContext,
+		UserRequest: request, Context: applicationContext, ScopeMode: model.CodingScopeModeNormal,
 	}
 	entry := directCodingApplicationRequirementCandidateQueueEntry{Candidate: candidate}
 	var calls []assemblyline.WorkKind
@@ -238,19 +239,20 @@ func TestApplicationIntentMissingResultRelationDoesNotStopIndependentCandidate(t
 			return assemblyline.PortableResult{JobID: job.ID, Candidate: response}, nil
 		},
 	}
-	resolution, err := resolveDirectCodingApplicationIntent(
+	proposals, err := resolveDirectCodingApplicationPlan(
 		runtime,
 		directCodingApplicationIntentModels{
 			Requirements: "intent-model", ResultRelation: "result-model",
 		},
 		assemblyline.ApplicationIntentInput{UserRequest: request, Context: applicationContext},
+		model.CodingScopeModeNormal,
 		nil,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(resolution.Requirements) != 1 || resolution.Requirements[0].Statement != retained {
-		t.Fatalf("resolution=%+v; want only independent retained candidate", resolution)
+	if len(proposals) != 1 || proposals[0].Statement != retained {
+		t.Fatalf("proposals=%+v; want only independent retained candidate", proposals)
 	}
 	if resultCalls[unresolved] != 2 || resultCalls[retained] != 2 {
 		t.Fatalf("result-relation calls=%v; want exactly two bounded questions per candidate", resultCalls)

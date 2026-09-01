@@ -72,7 +72,7 @@ func main() {
 		}
 		defer pool.Close()
 
-		repo = queue.New(pool)
+		repo = queue.New(pool, cfg.ModelAuthority, cfg.CodingScopeMode)
 		if err := repo.ResetDatabase(ctx, databaseSetup); err != nil {
 			log.Fatalf("database reset error: %v", err)
 		}

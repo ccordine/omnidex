@@ -487,8 +487,11 @@ func exactEvidenceLengthGeneration(
 	if promptTokens == 0 {
 		promptTokens = 11
 	}
-	if outputTokens == 0 {
+	if outputTokens <= 0 {
 		outputTokens = prepared.MaxOutputTokens
+		if outputTokens == -1 {
+			outputTokens = 7
+		}
 	}
 	return exactEvidenceCompletedGeneration(
 		prepared, candidate, "length", promptTokens, outputTokens,
@@ -579,5 +582,5 @@ func freshWorkerEvidenceRepository(
 	if err != nil {
 		t.Fatal(err)
 	}
-	return pool, queue.New(pool, authority)
+	return pool, queue.New(pool, authority, model.CodingScopeModeNormal)
 }

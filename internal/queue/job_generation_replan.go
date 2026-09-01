@@ -11,7 +11,7 @@ const (
 	jobGenerationPurposeInitial   = "initial"
 	jobGenerationPurposeInterrupt = "interrupt"
 	jobGenerationPurposeReplan    = "replan"
-	replanCodingBoundary          = "v3_coding"
+	replanCodingBoundary          = "v3_coding_plan"
 	replanObjectiveBoundary       = "objective_resolve"
 )
 
@@ -55,12 +55,15 @@ func canonicalReplanTail(seeds []stepSeed) (replanBoundary, error) {
 			objectiveIndex = index
 		}
 	}
-	if codingIndex >= 0 && objectiveIndex >= 0 {
-		return replanBoundary{}, fmt.Errorf("%w: canonical job has competing replan boundaries", ErrInvalidJobGeneration)
+	if codingIndex >= 0 && objectiveIndex >= 0 && objectiveIndex > codingIndex {
+		return replanBoundary{}, fmt.Errorf(
+			"%w: objective boundary cannot follow the coding boundary",
+			ErrInvalidJobGeneration,
+		)
 	}
-	boundaryIndex := codingIndex
+	boundaryIndex := objectiveIndex
 	if boundaryIndex < 0 {
-		boundaryIndex = objectiveIndex
+		boundaryIndex = codingIndex
 	}
 	if boundaryIndex < 0 {
 		return replanBoundary{}, fmt.Errorf(

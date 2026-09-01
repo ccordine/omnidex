@@ -86,6 +86,7 @@ func genericBrowserFeatureDocuments(
 		if err != nil {
 			return nil, err
 		}
+		viewSignature := genericBrowserFeatureSignature(viewName, viewPropsName, dependencies)
 		documentIndex, exists := documentByPath[files.ImplementationPath]
 		if !exists {
 			documentIndex = len(documents)
@@ -105,14 +106,10 @@ func genericBrowserFeatureDocuments(
 				TaskID:    taskID, Role: assemblyline.SourceBlockTaskSupport,
 			},
 			assemblyline.SourceBlock{
-				ID: blockID,
-				Signature: fmt.Sprintf(
-					"function %s({ state, capabilities, actions }: %s): ReactElement", viewName, viewPropsName,
-				),
-				Contract: genericBrowserFeatureContract(behavior),
-				API: fmt.Sprintf(
-					"function %s({ state, capabilities, actions }: %s): ReactElement", viewName, viewPropsName,
-				),
+				ID:        blockID,
+				Signature: viewSignature,
+				Contract:  genericBrowserFeatureContract(behavior, len(dependencies) > 0),
+				API:       viewSignature,
 				DependsOn: []string{contextID}, Capabilities: []string{contextID},
 				Globals: []string{
 					"ReactElement", "useCallback", "useEffect", "useMemo", "useRef", "useState",
@@ -134,6 +131,20 @@ func genericBrowserFeatureDocuments(
 	return documents, nil
 }
 
+func genericBrowserFeatureSignature(
+	viewName string,
+	viewPropsName string,
+	dependencies []directCodingCapabilityBinding,
+) string {
+	bindings := "state, actions"
+	if len(dependencies) > 0 {
+		bindings = "state, capabilities, actions"
+	}
+	return fmt.Sprintf(
+		"function %s({ %s }: %s): ReactElement", viewName, bindings, viewPropsName,
+	)
+}
+
 func genericBrowserFeaturePreamble(
 	implementationPath string,
 	runtimeValueImports []string,
@@ -147,10 +158,21 @@ import type { CapabilitySnapshot, FeatureActions, FeatureProps, FeatureState, Fe
 		strings.Join(values, ", "), runtimeModule, runtimeModule)
 }
 
-func genericBrowserFeatureContract(behavior string) string {
+func genericBrowserFeatureContract(behavior string, hasDirectCapabilities bool) string {
+	capabilityFact := "This responsibility has no direct capability dependency or capability prerequisite."
+	if hasDirectCapabilities {
+		capabilityFact = "The listed direct capabilities are the complete capability set for this responsibility."
+	}
 	return strings.Join([]string{
 		behavior,
 		"The requested interaction must be fully functional and accessible; placeholders, unfinished behavior, and external endpoints do not satisfy it.",
+		"A requested user interaction works on its first activation without unstated state, data, service, or setup prerequisites.",
+		"Unless the exact requirement says otherwise, its control remains present and enabled before and after activation so the interaction can be repeated.",
+		"Unless the exact requirement says otherwise, its observable result remains present with a stable accessible name before and after its displayed value changes.",
+		"Requirement-specific shared state initially has no keys. Establish needed state through the supplied actions inside event handlers; read supplied state only to render required behavior.",
+		"Every button explicitly performs a non-submitting action.",
+		capabilityFact,
+		"Use only the directly available declarations and identifiers.",
 	}, "\n")
 }
 
@@ -158,6 +180,9 @@ func genericBrowserFeatureProjectionSource(
 	name string,
 	dependencies []directCodingCapabilityBinding,
 ) string {
+	if len(dependencies) == 0 {
+		return fmt.Sprintf("type %s = Pick<FeatureViewProps, 'state' | 'actions'>;", name)
+	}
 	keys := make([]string, 0, len(dependencies))
 	for _, dependency := range dependencies {
 		keys = append(keys, strconv.Quote(dependency.CapabilityID))
@@ -176,6 +201,17 @@ func genericBrowserFeatureProjectionAPI(
 	name string,
 	dependencies []directCodingCapabilityBinding,
 ) string {
+	if len(dependencies) == 0 {
+		return strings.Join([]string{
+			"type SharedValue = null | boolean | number | string | readonly SharedValue[] | { readonly [key: string]: SharedValue }",
+			"type FeatureState = { readonly [key: string]: SharedValue }",
+			genericBrowserFeatureActionsAPI(),
+			fmt.Sprintf(
+				"interface %s { readonly state: FeatureState; readonly actions: FeatureActions }",
+				name,
+			),
+		}, "\n")
+	}
 	capabilityFields := make([]string, 0, len(dependencies))
 	for _, dependency := range dependencies {
 		capabilityFields = append(capabilityFields, fmt.Sprintf(

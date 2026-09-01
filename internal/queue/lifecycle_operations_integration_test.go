@@ -12,6 +12,7 @@ import (
 	"github.com/gryph/omnidex/internal/db"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/modelconfig"
+	"github.com/gryph/omnidex/internal/projectroot"
 	"github.com/gryph/omnidex/internal/queue"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -57,7 +58,10 @@ func TestFreshRuntimeSchemaCommitsIndependentTerminalLifecycleOperations(t *test
 		if details.Job.Status != model.JobStatusFailed || details.Job.Error != failure {
 			t.Fatalf("failed job authority = status %q error %q", details.Job.Status, details.Job.Error)
 		}
-		if len(details.Steps) != 1 || details.Steps[0].Status != model.StepStatusFailed || details.Steps[0].Error != failure {
+		if len(details.Steps) != 2 ||
+			details.Steps[0].Action != "v3_coding_plan" ||
+			details.Steps[0].Status != model.StepStatusFailed || details.Steps[0].Error != failure ||
+			details.Steps[1].Action != "v3_coding" || details.Steps[1].Status != model.StepStatusPending {
 			t.Fatalf("failed step authority = %#v", details.Steps)
 		}
 	})
@@ -65,9 +69,14 @@ func TestFreshRuntimeSchemaCommitsIndependentTerminalLifecycleOperations(t *test
 	t.Run("pending job cancellation", func(t *testing.T) {
 		pool, repository := freshLifecycleRepository(t, databaseURL)
 		ctx := context.Background()
-		job, err := repository.EnqueueCodingJob(ctx, "exercise terminal cancellation", t.TempDir())
+		workspaceRoot := t.TempDir()
+		job, err := repository.EnqueueCodingJob(ctx, "exercise terminal cancellation", workspaceRoot)
 		if err != nil {
 			t.Fatalf("enqueue cancellation fixture: %v", err)
+		}
+		workspaceIdentity, err := projectroot.DirectoryIdentity(workspaceRoot)
+		if err != nil {
+			t.Fatalf("attest cancellation workspace: %v", err)
 		}
 		operationID, err := queue.NewLifecycleOperationID("integration", "cancel", pool.Config().ConnConfig.Database, lifecycleNonce(t))
 		if err != nil {
@@ -75,9 +84,10 @@ func TestFreshRuntimeSchemaCommitsIndependentTerminalLifecycleOperations(t *test
 		}
 		const reason = "fixture cancellation"
 		result, err := repository.CancelJob(ctx, queue.CancelJobCommand{
-			OperationID: operationID,
-			JobID:       job.ID,
-			Reason:      reason,
+			OperationID:   operationID,
+			JobID:         job.ID,
+			Reason:        reason,
+			WorkspaceRoot: workspaceRoot, WorkspaceIdentity: workspaceIdentity,
 		})
 		if err != nil {
 			t.Fatalf("commit cancel-job lifecycle operation: %v", err)
@@ -89,7 +99,9 @@ func TestFreshRuntimeSchemaCommitsIndependentTerminalLifecycleOperations(t *test
 		if err != nil {
 			t.Fatalf("read canceled job: %v", err)
 		}
-		if len(details.Steps) != 1 || details.Steps[0].Status != model.StepStatusCanceled {
+		if len(details.Steps) != 2 ||
+			details.Steps[0].Action != "v3_coding_plan" || details.Steps[0].Status != model.StepStatusCanceled ||
+			details.Steps[1].Action != "v3_coding" || details.Steps[1].Status != model.StepStatusCanceled {
 			t.Fatalf("canceled step authority = %#v", details.Steps)
 		}
 	})
@@ -116,7 +128,7 @@ func freshLifecycleRepository(t *testing.T, databaseURL string) (*pgxpool.Pool, 
 	if err != nil {
 		t.Fatalf("freeze empty model authority: %v", err)
 	}
-	return pool, queue.New(pool, authority)
+	return pool, queue.New(pool, authority, model.CodingScopeModeNormal)
 }
 
 func lifecycleNonce(t *testing.T) string {

@@ -42,6 +42,24 @@ func TestLanguageWorkerExtractsRedundantDeclarationsWithoutCorrection(t *testing
 			},
 		},
 		{
+			name: "typescript module arrow",
+			input: assemblyline.FragmentGenerationInput{
+				Language: "typescript", Dialect: "TypeScript",
+				Signature: "function Sum(left: number, right: number): number", Behavior: "Return the sum.",
+			},
+			response: "Here is one possible module.\n```typescript\n" +
+				"import type { FC } from \"react\";\n" +
+				"type Unrelated = (unused: string) => string;\n" +
+				"const Suggested: Unrelated = (unused: string): string => { return left + right; };\n" +
+				"export default Suggested;\n```",
+			validate: func(input assemblyline.FragmentGenerationInput, body string) (string, error) {
+				fragment, err := assemblyline.ParseTypeScriptFunctionBody(
+					assemblyline.TypeScriptFunctionContract{Signature: input.Signature}, body,
+				)
+				return strings.TrimSpace(fragment.Source), err
+			},
+		},
+		{
 			name: "javascript",
 			input: assemblyline.FragmentGenerationInput{
 				Language: "javascript", Dialect: "ECMAScript 2022",
@@ -114,6 +132,33 @@ func TestLanguageWorkerExtractsRedundantDeclarationsWithoutCorrection(t *testing
 				t.Fatalf("code-owned %s source=%q", test.name, source)
 			}
 		})
+	}
+}
+
+func TestBrowserModuleExtractionReachesTheRealSurfaceDefect(t *testing.T) {
+	t.Parallel()
+	response := "```tsx\n" +
+		"import type { FC } from \"react\";\n" +
+		"const Suggested: FC<{ readonly unused: string }> = ({ unused }) => {\n" +
+		"  const handleDismiss = () => { actions.set(\"dismissed\", true); };\n" +
+		"  return <div>{state.dismissed ? <p>Dismissed</p> : <button onClick={handleDismiss}>Dismiss</button>}</div>;\n" +
+		"};\nexport default Suggested;\n```"
+	fragment, err := assemblyline.ParseTypeScriptFunctionBody(
+		assemblyline.TypeScriptFunctionContract{
+			Signature: "function RenderNotice({ state, actions }: NoticeProps): ReactElement",
+			TSX:       true,
+		},
+		response,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = validateDirectCodingBrowserPublicInteractionCandidate(strings.TrimSpace(fragment.Source))
+	if err == nil || !strings.Contains(err.Error(), "button requires exact type=\"button\"") {
+		t.Fatalf("real public-surface defect=%v", err)
+	}
+	if strings.Contains(err.Error(), "unconditional top-level return") {
+		t.Fatalf("module wrapper still manufactured a return defect: %v", err)
 	}
 }
 

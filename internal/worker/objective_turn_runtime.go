@@ -49,7 +49,7 @@ func (r *nativeRuntimeV3) runObjectiveResolve() error {
 		return err
 	}
 	if result.Kind == assemblyline.ObjectiveKindWorkspaceMutation {
-		return r.completeAppliedWorkspace(result.Output)
+		return r.complete(result.Output)
 	}
 	if !result.Complete {
 		return fmt.Errorf("conversation objective %q returned without code-owned completion", result.ObjectiveID)
@@ -95,11 +95,10 @@ func (r *nativeRuntimeV3) runObjectiveWorkspaceMutation(
 	if r.claim.Job.ID != authority.JobID || r.claim.Job.Instruction != authority.Instruction {
 		return "", fmt.Errorf("workspace mutation authority does not match the claimed conversation job")
 	}
-	request, err := directCodingRequestFromObjectiveAuthority(authority)
-	if err != nil {
+	if _, err := directCodingRequestFromObjectiveAuthority(authority); err != nil {
 		return "", err
 	}
-	return r.runDirectCodingSession(request)
+	return string(assemblyline.ObjectiveKindWorkspaceMutation), nil
 }
 
 func directCodingRequestFromObjectiveAuthority(

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/model"
 )
 
 func TestApplicationIntentValidNegativeDoesNotStopIndependentCandidate(t *testing.T) {
@@ -25,6 +26,7 @@ func TestApplicationIntentValidNegativeDoesNotStopIndependentCandidate(t *testin
 		Context:     applicationContext,
 	}
 	var authorizationSubjects []string
+	var scopeModes []model.CodingScopeMode
 	runtime := typedWorkerRuntime{
 		Context: context.Background(),
 		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
@@ -42,6 +44,13 @@ func TestApplicationIntentValidNegativeDoesNotStopIndependentCandidate(t *testin
 				if input.Candidate == addedMechanism {
 					candidate = "B"
 				}
+			case assemblyline.WorkApplicationRequirementCandidateScopeRelation:
+				var input assemblyline.ApplicationRequirementCandidateScopeRelationInput
+				if err := json.Unmarshal(job.Payload, &input); err != nil {
+					return assemblyline.PortableResult{}, err
+				}
+				scopeModes = append(scopeModes, input.ScopeMode)
+				candidate = "C"
 			case assemblyline.WorkApplicationRequirementCandidateKind:
 				var input assemblyline.ApplicationRequirementCandidateContentPresenceInput
 				if err := json.Unmarshal(job.Payload, &input); err != nil {
@@ -55,6 +64,8 @@ func TestApplicationIntentValidNegativeDoesNotStopIndependentCandidate(t *testin
 				candidate = "A"
 			case assemblyline.WorkApplicationRequirementCandidateResultRelation:
 				candidate = "A"
+			case assemblyline.WorkApplicationRequirementCandidateOutcomeRelation:
+				candidate = "B"
 			case assemblyline.WorkApplicationProductContext:
 				candidate = "image resizer"
 			default:
@@ -64,12 +75,13 @@ func TestApplicationIntentValidNegativeDoesNotStopIndependentCandidate(t *testin
 		},
 	}
 
-	resolution, err := resolveDirectCodingApplicationIntent(
+	proposals, err := resolveDirectCodingApplicationPlan(
 		runtime,
 		directCodingApplicationIntentModels{
 			Requirements: "requirements-model", ResultRelation: "result-model",
 		},
 		authority,
+		model.CodingScopeModeExpansive,
 		nil,
 	)
 	if err != nil {
@@ -78,9 +90,13 @@ func TestApplicationIntentValidNegativeDoesNotStopIndependentCandidate(t *testin
 	if !reflect.DeepEqual(authorizationSubjects, []string{addedMechanism, coreOutcome}) {
 		t.Fatalf("authorization subjects=%q", authorizationSubjects)
 	}
-	if len(resolution.Requirements) != 1 ||
-		resolution.Requirements[0].Statement != coreOutcome {
-		t.Fatalf("resolution=%+v", resolution)
+	if !reflect.DeepEqual(scopeModes, []model.CodingScopeMode{model.CodingScopeModeExpansive}) {
+		t.Fatalf("scope critic modes=%q", scopeModes)
+	}
+	if len(proposals) != 2 ||
+		proposals[0].Annotation != model.CodingPlanAnnotationConcreteConflict ||
+		proposals[0].Statement != addedMechanism || proposals[1].Statement != coreOutcome {
+		t.Fatalf("proposals=%+v", proposals)
 	}
 }
 
@@ -101,7 +117,7 @@ func TestApplicationIntentMalformedCandidateStationFailsLoudly(t *testing.T) {
 			return assemblyline.PortableResult{JobID: job.ID, Candidate: candidate}, nil
 		},
 	}
-	_, err = resolveDirectCodingApplicationIntent(
+	_, err = resolveDirectCodingApplicationPlan(
 		runtime,
 		directCodingApplicationIntentModels{
 			Requirements: "requirements-model", ResultRelation: "result-model",
@@ -110,6 +126,7 @@ func TestApplicationIntentMalformedCandidateStationFailsLoudly(t *testing.T) {
 			UserRequest: request,
 			Context:     applicationContext,
 		},
+		model.CodingScopeModeNormal,
 		nil,
 	)
 	if err == nil || !strings.Contains(

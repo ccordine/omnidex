@@ -27,6 +27,16 @@ func TestCLIControlsUseExactJobBoundEndpointsAndPayloads(t *testing.T) {
 		invoke    func(*Client, queue.LifecycleOperationID) (model.Job, error)
 	}{
 		{
+			name: "feedback", action: "feedback", textField: "feedback",
+			text: "Use this clarification for the waiting job.", status: model.JobStatusRunning,
+			invoke: func(apiClient *Client, operationID queue.LifecycleOperationID) (model.Job, error) {
+				return apiClient.SubmitFeedback(
+					context.Background(), channel, testWorkspaceIdentity, jobID, operationID,
+					"Use this clarification for the waiting job.",
+				)
+			},
+		},
+		{
 			name: "interrupt", action: "interrupt", textField: "feedback",
 			text: "Pause while I inspect the current result.", status: model.JobStatusWaiting,
 			invoke: func(apiClient *Client, operationID queue.LifecycleOperationID) (model.Job, error) {

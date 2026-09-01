@@ -4,6 +4,7 @@ import (
 	"os"
 
 	"github.com/gryph/omnidex/internal/db"
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/modelconfig"
 )
 
@@ -30,6 +31,7 @@ type Config struct {
 	HuggingFaceBaseURL      string
 	HuggingFaceAPIKey       string
 	ModelAuthority          modelconfig.Authority
+	CodingScopeMode         model.CodingScopeMode
 	EmbeddingModel          string
 	WorkerPollInterval      string
 	RequestTimeout          string
@@ -72,6 +74,7 @@ func Load() Config {
 		HuggingFaceBaseURL:      getenv("HUGGINGFACE_BASE_URL", "https://router.huggingface.co"),
 		HuggingFaceAPIKey:       os.Getenv("HUGGINGFACE_API_KEY"),
 		ModelAuthority:          modelAuthority,
+		CodingScopeMode:         model.CodingScopeMode(getenv("OMNI_CODING_SCOPE_MODE", string(model.CodingScopeModeNormal))),
 		EmbeddingModel:          embeddingModelForProvider(embeddingProvider, providerModels),
 		WorkerPollInterval:      getenv("WORKER_POLL_INTERVAL", "2s"),
 		RequestTimeout:          getenv("REQUEST_TIMEOUT", "30m"),

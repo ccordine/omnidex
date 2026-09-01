@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/gryph/omnidex/internal/exactjson"
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/modelconfig"
 	"github.com/gryph/omnidex/internal/scrum"
 	"github.com/jackc/pgx/v5"
@@ -19,6 +20,7 @@ func scrumPlayAuthorityTx(
 	tx pgx.Tx,
 	card DBScrumCard,
 	modelAuthority modelconfig.Authority,
+	codingScopeMode model.CodingScopeMode,
 ) (scrum.JobMetadata, string, error) {
 	var settings json.RawMessage
 	if err := tx.QueryRow(ctx, `SELECT settings FROM projects WHERE id=$1 FOR UPDATE`, card.ProjectID).Scan(&settings); err != nil {
@@ -49,9 +51,10 @@ func scrumPlayAuthorityTx(
 		return scrum.JobMetadata{}, "", err
 	}
 	metadata := scrum.JobMetadata{
-		CardID: card.ID,
+		CardID:    card.ID,
 		CardTitle: card.Title, CardDescription: card.Description,
 		Checklist: formattedChecklist, TestCriteria: formattedTests, ModelConfig: modelSnapshot,
+		CodingScopeMode: codingScopeMode,
 	}
 	if err := metadata.Validate(); err != nil {
 		return scrum.JobMetadata{}, "", err

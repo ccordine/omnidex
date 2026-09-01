@@ -31,6 +31,7 @@ func PortableResponseFramingForWorkKind(
 	case WorkApplicationRequirementCandidateCardinality,
 		WorkApplicationRequirementCandidateKind,
 		WorkApplicationRequirementCandidateAuthorization,
+		WorkApplicationRequirementCandidateScopeRelation,
 		WorkApplicationRequirementCandidateOutcomeRelation,
 		WorkApplicationRequirementCandidateResultRelation,
 		WorkApplicationProjectStackConstraint,

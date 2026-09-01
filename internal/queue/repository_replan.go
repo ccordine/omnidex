@@ -127,6 +127,11 @@ func applyReplanJobTx(
 	); err != nil {
 		return model.Job{}, 0, err
 	}
+	if err := transitionCodingPlanAuthorityTx(
+		ctx, tx, job, model.CodingPlanStateSuperseded,
+	); err != nil {
+		return model.Job{}, 0, err
+	}
 	newGeneration := currentGeneration + 1
 	if err := createReplanGenerationTx(
 		ctx, tx, command, feedbackSHA, currentGeneration, newGeneration, boundary,

@@ -69,6 +69,28 @@ func portableWorkerRuntimeWithIdentityGuard(
 				job.ID,
 			)
 		}
+		deterministic, resolved, err := assemblyline.ResolvePortableJobWithoutInference(job)
+		if err != nil {
+			return assemblyline.PortableResult{}, err
+		}
+		if resolved {
+			releasePending, err := reservePending(job)
+			if err != nil {
+				return assemblyline.PortableResult{}, err
+			}
+			execution := exactStationExecution{
+				WorkID: job.ID, WorkKind: job.Kind, InferenceFree: true,
+				Candidate: deterministic.Candidate,
+			}
+			if identityGuard != nil {
+				if guardErr := identityGuard(job, execution); guardErr != nil {
+					releasePending()
+					return assemblyline.PortableResult{}, guardErr
+				}
+			}
+			pending.Store(job.ID, execution)
+			return deterministic, nil
+		}
 		recovered, err := runtime.svc.recoverExactPortableStation(
 			executionContext, runtime.claim.Authority, job, model,
 		)
@@ -353,6 +375,11 @@ func portableWorkerRuntimeWithIdentityGuard(
 			if !ok {
 				return fmt.Errorf("portable work %s has an invalid exact station receipt", job.ID)
 			}
+			if handled, deterministicErr := finalizeInferenceFreePortableResult(
+				job, result, execution,
+			); handled {
+				return deterministicErr
+			}
 			providedValidationErr := validationErr
 			if validationErr == nil && (execution.WorkID != job.ID || result.JobID != job.ID ||
 				execution.Candidate != result.Candidate) {
@@ -419,6 +446,27 @@ func portableWorkerRuntimeWithIdentityGuard(
 			)
 		},
 	}
+}
+
+func finalizeInferenceFreePortableResult(
+	job assemblyline.PortableJob,
+	result assemblyline.PortableResult,
+	execution exactStationExecution,
+) (bool, error) {
+	if !execution.InferenceFree {
+		return false, nil
+	}
+	if execution.CallEvidenceID != 0 || execution.Model != "" || execution.Iteration != 0 ||
+		execution.ProviderCalls != 0 ||
+		execution.CandidateResponseSHA256 != "" || execution.SourceState != "" || execution.Replayed ||
+		execution.PersistedOutcome != "" || execution.PersistedValidationError != "" {
+		return true, fmt.Errorf("portable work %s deterministic result carries provider authority", job.ID)
+	}
+	if execution.WorkID != job.ID || execution.WorkKind != job.Kind ||
+		execution.Candidate != result.Candidate || result.Projection != nil {
+		return true, fmt.Errorf("portable work %s deterministic result differs from its code-owned receipt", job.ID)
+	}
+	return true, result.ValidateFor(job)
 }
 
 func portableModelScope(kind assemblyline.WorkKind) (string, error) {

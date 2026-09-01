@@ -39,7 +39,14 @@ func applicationSemanticUncertaintyContract(
 			"Semantic entailment, including direct-imperative grammatical normalization, purpose-name core meaning, and construction-only constraints, cannot be established by syntax or byte comparison.",
 			"The immutable request, established application facts, and one exact unclassified inventory or partition candidate.",
 			"One request-and-candidate-bound entailed-or-not-entailed relation.",
-			"DecodeApplicationRequirementCandidateAuthorizationResult binds the relation to request authority; code alone discards a candidate containing any unstated semantic detail immediately or permits only that candidate to enter downstream classification.")
+			"DecodeApplicationRequirementCandidateAuthorizationResult binds the relation to request authority; code alone records grounded evidence or routes only that candidate to its separate scope-annotation question.")
+	case WorkApplicationRequirementCandidateScopeRelation:
+		contract = semanticUncertaintyContract(kind,
+			"Under the code-owned scope-permissiveness threshold, what scope relationship does this exact request-unentailed candidate have to the immutable request and established facts?",
+			"Whether added natural-language meaning is an ordinary useful consequence, optional aligned work needing user judgment, or a concrete scope conflict cannot be established by syntax or byte comparison.",
+			"The immutable request, established application facts, exact candidate, its code-validated not-entailed authorization receipt, and the code-rendered semantic classification threshold.",
+			"One candidate-bound three-way scope annotation selected through one opaque letter.",
+			"DecodeApplicationRequirementCandidateScopeRelationResult binds the annotation evidence to its exact authority; code attaches it to the proposal while the persisted user decision alone owns inclusion or exclusion.")
 	case WorkApplicationRequirementCandidateOutcomeRelation:
 		contract = semanticUncertaintyContract(kind,
 			"Do the exact current and accepted one-outcome runtime requirements express the same independently testable outcome or distinct outcomes?",

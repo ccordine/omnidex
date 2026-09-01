@@ -30,7 +30,7 @@ func BuildTypeScriptFragmentPrompt(input TypeScriptFragmentPrompt) (string, erro
 		return "", fmt.Errorf("TypeScript fragment prompt requires one bounded source dialect")
 	}
 	parts := []string{
-		"What TypeScript statements implement this behavior?",
+		"What TypeScript statements inside this function implement this behavior?",
 		contract,
 		"This job is only the implementation itself; usage examples and documentation are not part of the task.",
 		"The source dialect is " + dialect + ".",

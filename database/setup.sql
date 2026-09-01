@@ -1806,7 +1806,7 @@ CREATE FUNCTION require_current_job_generation_boundary() RETURNS trigger
     AS $$
 BEGIN
     IF NEW.purpose IN ('interrupt', 'replan') AND
-       NEW.boundary_action NOT IN ('v3_coding', 'objective_resolve') THEN
+       NEW.boundary_action NOT IN ('v3_coding_plan', 'objective_resolve') THEN
         RAISE EXCEPTION 'new job generation boundary % is retired', NEW.boundary_action;
     END IF;
     RETURN NEW;
@@ -1854,11 +1854,11 @@ BEGIN
     SELECT metadata->>'client_cwd', metadata->>'client_workspace_identity'
     INTO bound_root, bound_identity
     FROM jobs
-    WHERE id=NEW.job_id AND pipeline='chat'
+    WHERE id=NEW.job_id AND pipeline IN ('chat','coding')
     FOR SHARE;
     IF NOT FOUND OR bound_root IS DISTINCT FROM NEW.command_payload->>'workspace_root' OR
        bound_identity IS DISTINCT FROM NEW.command_payload->>'workspace_identity' THEN
-        RAISE EXCEPTION 'Lifecycle workspace authority differs from immutable channel job binding';
+        RAISE EXCEPTION 'Lifecycle workspace authority differs from immutable job binding';
     END IF;
     RETURN NEW;
 END;
@@ -4548,7 +4548,7 @@ CREATE TABLE job_generations (
     feedback text,
     feedback_sha256 text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT job_generations_authoritative_shape CHECK ((((generation = 1) AND (purpose = 'initial'::text) AND (predecessor_generation IS NULL) AND (boundary_action IS NULL) AND (feedback IS NULL) AND (feedback_sha256 IS NULL)) OR ((generation > 1) AND (purpose = ANY (ARRAY['interrupt'::text, 'replan'::text])) AND (predecessor_generation = (generation - 1)) AND (boundary_action = ANY (ARRAY['v3_coding'::text, 'objective_resolve'::text])) AND lifecycle_feedback_is_valid(feedback, 4096) AND (feedback_sha256 ~ '^[0-9a-f]{64}$'::text) AND (feedback_sha256 = encode(pg_catalog.sha256(convert_to(feedback, 'UTF8')), 'hex'::text))))),
+    CONSTRAINT job_generations_authoritative_shape CHECK ((((generation = 1) AND (purpose = 'initial'::text) AND (predecessor_generation IS NULL) AND (boundary_action IS NULL) AND (feedback IS NULL) AND (feedback_sha256 IS NULL)) OR ((generation > 1) AND (purpose = ANY (ARRAY['interrupt'::text, 'replan'::text])) AND (predecessor_generation = (generation - 1)) AND (boundary_action = ANY (ARRAY['v3_coding_plan'::text, 'objective_resolve'::text])) AND lifecycle_feedback_is_valid(feedback, 4096) AND (feedback_sha256 ~ '^[0-9a-f]{64}$'::text) AND (feedback_sha256 = encode(pg_catalog.sha256(convert_to(feedback, 'UTF8')), 'hex'::text))))),
     CONSTRAINT job_generations_generation_check CHECK ((generation > 0)),
     CONSTRAINT job_generations_purpose_check CHECK ((purpose = ANY (ARRAY['initial'::text, 'interrupt'::text, 'replan'::text])))
 );
@@ -4573,19 +4573,19 @@ CREATE TABLE job_lifecycle_operations (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT job_lifecycle_operations_check CHECK (((jsonb_typeof(command_payload) = 'object'::text) AND (command_payload ? 'operation_id'::text) AND ((command_payload ->> 'operation_id'::text) = operation_id))),
     CONSTRAINT job_lifecycle_operations_check2 CHECK (((jsonb_typeof(result_job) = 'object'::text) AND (result_job ? 'id'::text) AND (result_job ? 'current_generation'::text) AND (result_job ? 'status'::text) AND (((result_job ->> 'id'::text))::bigint = job_id) AND (((result_job ->> 'current_generation'::text))::bigint = result_generation) AND ((result_job ->> 'status'::text) = result_job_status))),
-    CONSTRAINT job_lifecycle_operations_check3 CHECK ((((kind = 'complete_step'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'completed'::text)) OR ((kind = 'fail_step'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'failed'::text) AND (result_job_status = 'failed'::text)) OR ((kind = 'submit_feedback'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'completed'::text)) OR ((kind = 'interrupt_job'::text) AND (step_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = (observed_generation + 1)) AND (result_job_status = 'waiting_input'::text)) OR ((kind = 'replan_job'::text) AND (step_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = (observed_generation + 1)) AND (result_job_status = 'running'::text)) OR ((kind = 'cancel_job'::text) AND (step_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = observed_generation) AND (result_job_status = 'canceled'::text)))),
+    CONSTRAINT job_lifecycle_operations_check3 CHECK ((((kind = 'complete_step'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'completed'::text)) OR ((kind = 'fail_step'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'failed'::text) AND (result_job_status = 'failed'::text)) OR ((kind = 'submit_feedback'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'completed'::text)) OR ((kind = 'interrupt_job'::text) AND (step_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = (observed_generation + 1)) AND (result_job_status = 'waiting_input'::text)) OR ((kind = 'replan_job'::text) AND (step_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = (observed_generation + 1)) AND (result_job_status = 'running'::text)) OR ((kind = 'cancel_job'::text) AND (step_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = observed_generation) AND (result_job_status = 'canceled'::text)) OR ((kind = 'coding_plan_decisions'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'waiting_input'::text) AND (result_job_status = 'waiting_input'::text)) OR ((kind = 'coding_plan_freeze'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'completed'::text) AND (result_job_status = 'running'::text)))),
     CONSTRAINT job_lifecycle_operations_check4 CHECK (
 CASE
     WHEN (kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text])) THEN ((command_payload ? 'step_id'::text) AND (((command_payload ->> 'step_id'::text))::bigint = step_id))
     ELSE ((command_payload ? 'job_id'::text) AND (((command_payload ->> 'job_id'::text))::bigint = job_id))
 END),
     CONSTRAINT job_lifecycle_operations_command_sha256_check CHECK ((command_sha256 ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT job_lifecycle_operations_kind_check CHECK ((kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text, 'submit_feedback'::text, 'interrupt_job'::text, 'replan_job'::text, 'cancel_job'::text]))),
+    CONSTRAINT job_lifecycle_operations_kind_check CHECK ((kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text, 'submit_feedback'::text, 'interrupt_job'::text, 'replan_job'::text, 'cancel_job'::text, 'coding_plan_decisions'::text, 'coding_plan_freeze'::text]))),
     CONSTRAINT job_lifecycle_operations_observed_generation_check CHECK ((observed_generation > 0)),
     CONSTRAINT job_lifecycle_operations_operation_id_check CHECK ((operation_id ~ '^lifecycle_operation_[0-9a-f]{64}$'::text)),
     CONSTRAINT job_lifecycle_operations_result_generation_check CHECK ((result_generation > 0)),
     CONSTRAINT job_lifecycle_operations_result_job_status_check CHECK ((result_job_status = ANY (ARRAY['pending'::text, 'running'::text, 'completed'::text, 'failed'::text, 'canceled'::text, 'waiting_input'::text]))),
-    CONSTRAINT job_lifecycle_operations_result_step_status_check CHECK (((result_step_status IS NULL) OR (result_step_status = ANY (ARRAY['completed'::text, 'failed'::text]))))
+    CONSTRAINT job_lifecycle_operations_result_step_status_check CHECK (((result_step_status IS NULL) OR (result_step_status = ANY (ARRAY['completed'::text, 'failed'::text, 'waiting_input'::text]))))
 );
 
 
@@ -4715,7 +4715,7 @@ CREATE TABLE lifecycle_operation_registry (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT lifecycle_operation_registry_check CHECK (((jsonb_typeof(command_payload) = 'object'::text) AND (command_payload ? 'operation_id'::text) AND ((command_payload ->> 'operation_id'::text) = operation_id))),
     CONSTRAINT lifecycle_operation_registry_command_sha256_check CHECK ((command_sha256 ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT lifecycle_operation_registry_kind_check CHECK ((kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text, 'submit_feedback'::text, 'interrupt_job'::text, 'replan_job'::text, 'channel_session_turn'::text, 'scrum_channel_message'::text, 'cancel_job'::text]))),
+    CONSTRAINT lifecycle_operation_registry_kind_check CHECK ((kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text, 'submit_feedback'::text, 'interrupt_job'::text, 'replan_job'::text, 'channel_session_turn'::text, 'scrum_channel_message'::text, 'cancel_job'::text, 'coding_plan_decisions'::text, 'coding_plan_freeze'::text]))),
     CONSTRAINT lifecycle_operation_registry_operation_id_check CHECK ((operation_id ~ '^lifecycle_operation_[0-9a-f]{64}$'::text))
 );
 
@@ -6213,8 +6213,8 @@ ALTER TABLE ONLY job_lifecycle_operations
 ALTER TABLE job_lifecycle_operations
     ADD CONSTRAINT job_lifecycle_operations_roleplay_payload_check CHECK (
       ((kind = 'complete_step'::text) AND
-       (command_payload ?& ARRAY['operation_id'::text, 'step_id'::text, 'output'::text, 'context_key'::text, 'context_value'::text]) AND
-       ((command_payload - ARRAY['operation_id'::text, 'step_id'::text, 'output'::text, 'context_key'::text, 'context_value'::text, 'roleplay_responses'::text, 'roleplay_user_canon'::text, 'roleplay_user_ongoing_action'::text]) = '{}'::jsonb) AND
+       (command_payload ?& ARRAY['operation_id'::text, 'step_id'::text, 'output'::text]) AND
+       ((command_payload - ARRAY['operation_id'::text, 'step_id'::text, 'output'::text, 'context_key'::text, 'roleplay_responses'::text, 'roleplay_user_canon'::text, 'roleplay_user_ongoing_action'::text]) = '{}'::jsonb) AND
        roleplay_lifecycle_response_round_valid(COALESCE((command_payload -> 'roleplay_responses'::text), '[]'::jsonb)) AND
        ((NOT (command_payload ? 'roleplay_user_canon'::text)) OR roleplay_user_canon_payload_valid((command_payload -> 'roleplay_user_canon'::text))) AND
        ((NOT (command_payload ? 'roleplay_user_ongoing_action'::text)) OR roleplay_user_ongoing_action_payload_valid((command_payload -> 'roleplay_user_ongoing_action'::text)))) OR
@@ -6228,6 +6228,16 @@ ALTER TABLE job_lifecycle_operations
       ((kind = 'cancel_job'::text) AND
        (command_payload ?& ARRAY['operation_id'::text, 'job_id'::text, 'reason'::text]) AND
        ((command_payload - ARRAY['operation_id'::text, 'job_id'::text, 'reason'::text, 'workspace_root'::text, 'workspace_identity'::text]) = '{}'::jsonb) AND
+       lifecycle_workspace_payload_is_valid(command_payload)) OR
+      ((kind = 'coding_plan_decisions'::text) AND
+       (command_payload ?& ARRAY['operation_id'::text, 'job_id'::text, 'generation'::text, 'revision'::text, 'decisions'::text]) AND
+       ((command_payload - ARRAY['operation_id'::text, 'job_id'::text, 'generation'::text, 'revision'::text, 'decisions'::text, 'workspace_root'::text, 'workspace_identity'::text]) = '{}'::jsonb) AND
+       jsonb_typeof(command_payload->'decisions')='array' AND
+       jsonb_array_length(command_payload->'decisions') BETWEEN 1 AND 30 AND
+       lifecycle_workspace_payload_is_valid(command_payload)) OR
+      ((kind = 'coding_plan_freeze'::text) AND
+       (command_payload ?& ARRAY['operation_id'::text, 'job_id'::text, 'generation'::text, 'revision'::text]) AND
+       ((command_payload - ARRAY['operation_id'::text, 'job_id'::text, 'generation'::text, 'revision'::text, 'workspace_root'::text, 'workspace_identity'::text]) = '{}'::jsonb) AND
        lifecycle_workspace_payload_is_valid(command_payload))) NOT VALID;
 
 
@@ -9764,3 +9774,482 @@ ALTER TABLE ONLY llm_call_evidence
 
 ALTER TABLE ONLY verification_command_evidence
     ADD CONSTRAINT verification_command_evidence_attempt_fkey FOREIGN KEY (job_id,generation,step_id,step_attempt,worker_id) REFERENCES job_step_attempts(job_id,generation,step_id,attempt,worker_id) ON DELETE RESTRICT;
+
+
+--
+-- Code-owned coding-plan review authority.
+--
+
+CREATE TABLE coding_plans (
+    job_id bigint NOT NULL,
+    generation bigint NOT NULL,
+    revision bigint DEFAULT 1 NOT NULL,
+    state text DEFAULT 'review'::text NOT NULL,
+    scope_mode text NOT NULL,
+    request_sha256 text NOT NULL,
+    plan_step_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    frozen_at timestamp with time zone,
+    CONSTRAINT coding_plans_pkey PRIMARY KEY (job_id,generation),
+    CONSTRAINT coding_plans_revision_positive CHECK (revision>0),
+    CONSTRAINT coding_plans_state_check CHECK (state IN ('review','frozen','superseded','canceled')),
+    CONSTRAINT coding_plans_scope_mode_check CHECK (scope_mode IN ('strict','normal','expansive')),
+    CONSTRAINT coding_plans_request_sha256_check CHECK (request_sha256 ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT coding_plans_timestamp_shape CHECK (
+        updated_at>=created_at AND
+        ((state='review' AND frozen_at IS NULL) OR
+         (state='frozen' AND frozen_at IS NOT NULL) OR
+         state IN ('superseded','canceled'))
+    ),
+    CONSTRAINT coding_plans_generation_fkey FOREIGN KEY (job_id,generation)
+        REFERENCES job_generations(job_id,generation) ON DELETE RESTRICT,
+    CONSTRAINT coding_plans_step_fkey FOREIGN KEY (job_id,generation,plan_step_id)
+        REFERENCES job_steps(job_id,generation,id) ON DELETE RESTRICT
+);
+
+CREATE FUNCTION validate_coding_plan_insert() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    authoritative_generation BIGINT;
+    authoritative_scope_mode TEXT;
+    plan_action TEXT;
+    plan_status TEXT;
+    plan_superseded_at_generation BIGINT;
+    job_status TEXT;
+BEGIN
+    IF NEW.revision<>1 OR NEW.state<>'review' OR NEW.frozen_at IS NOT NULL THEN
+        RAISE EXCEPTION 'a coding plan must enter authority as revision 1 review state';
+    END IF;
+    SELECT current_generation,metadata->>'coding_scope_mode',status
+      INTO authoritative_generation,authoritative_scope_mode,job_status
+      FROM jobs WHERE id=NEW.job_id FOR SHARE;
+    IF authoritative_generation IS DISTINCT FROM NEW.generation OR
+       authoritative_scope_mode IS DISTINCT FROM NEW.scope_mode OR
+       job_status IS DISTINCT FROM 'running' THEN
+        RAISE EXCEPTION 'coding plan does not match current running job authority';
+    END IF;
+    SELECT action,status,superseded_at_generation
+      INTO plan_action,plan_status,plan_superseded_at_generation
+      FROM job_steps
+      WHERE id=NEW.plan_step_id AND job_id=NEW.job_id AND generation=NEW.generation
+      FOR SHARE;
+    IF plan_action IS DISTINCT FROM 'v3_coding_plan' OR
+       plan_status IS DISTINCT FROM 'running' OR
+       plan_superseded_at_generation IS NOT NULL THEN
+        RAISE EXCEPTION 'coding plan requires the active v3_coding_plan step';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TABLE coding_plan_leaves (
+    job_id bigint NOT NULL,
+    generation bigint NOT NULL,
+    leaf_id text NOT NULL,
+    sort_index integer NOT NULL,
+    statement text NOT NULL,
+    annotation text NOT NULL,
+    decision text NOT NULL,
+    decision_origin_generation bigint NOT NULL,
+    result_schema text,
+    candidate_sha256 text,
+    kind_receipt_sha256 text,
+    cardinality_receipt_sha256 text,
+    result_relation text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT coding_plan_leaves_pkey PRIMARY KEY (job_id,generation,leaf_id),
+    CONSTRAINT coding_plan_leaves_sort_key UNIQUE (job_id,generation,sort_index),
+    CONSTRAINT coding_plan_leaves_plan_fkey FOREIGN KEY (job_id,generation)
+        REFERENCES coding_plans(job_id,generation) ON DELETE RESTRICT,
+    CONSTRAINT coding_plan_leaves_leaf_id_check CHECK (
+        leaf_id='coding_plan_leaf_' || encode(pg_catalog.sha256(convert_to(statement,'UTF8')),'hex')
+    ),
+    CONSTRAINT coding_plan_leaves_statement_check CHECK (
+        octet_length(statement) BETWEEN 1 AND 1024 AND statement=btrim(statement)
+    ),
+    CONSTRAINT coding_plan_leaves_sort_check CHECK (sort_index BETWEEN 0 AND 29),
+    CONSTRAINT coding_plan_leaves_annotation_check CHECK (
+        annotation IN ('grounded','reasonable_derivation','speculative_review','concrete_scope_conflict')
+    ),
+    CONSTRAINT coding_plan_leaves_decision_check CHECK (decision IN ('pending','approved','rejected')),
+    CONSTRAINT coding_plan_leaves_decision_origin_check CHECK (
+        decision_origin_generation BETWEEN 1 AND generation AND
+        (decision<>'pending' OR decision_origin_generation=generation)
+    ),
+    CONSTRAINT coding_plan_leaves_timestamp_shape CHECK (updated_at>=created_at),
+    CONSTRAINT coding_plan_leaves_receipt_shape CHECK (
+        result_schema='omnidex.application-requirement-candidate-result-relation.v1' AND
+        candidate_sha256=encode(pg_catalog.sha256(convert_to(statement,'UTF8')),'hex') AND
+        kind_receipt_sha256 ~ '^[0-9a-f]{64}$' AND
+        cardinality_receipt_sha256 ~ '^[0-9a-f]{64}$' AND
+        result_relation IN ('NO_DERIVED_RESULT','EXPLICIT_DERIVED_RESULT_RELATION')
+    )
+);
+
+CREATE TABLE coding_plan_operation_results (
+    operation_id text NOT NULL,
+    job_id bigint NOT NULL,
+    generation bigint NOT NULL,
+    kind text NOT NULL,
+    result_revision bigint NOT NULL,
+    result_plan jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT coding_plan_operation_results_pkey PRIMARY KEY (operation_id),
+    CONSTRAINT coding_plan_operation_results_kind_check CHECK (
+        kind IN ('coding_plan_decisions','coding_plan_freeze')
+    ),
+    CONSTRAINT coding_plan_operation_results_revision_check CHECK (result_revision>0),
+    CONSTRAINT coding_plan_operation_results_json_check CHECK (
+        jsonb_typeof(result_plan)='object' AND
+        (result_plan->>'job_id')::bigint=job_id AND
+        (result_plan->>'generation')::bigint=generation AND
+        (result_plan->>'revision')::bigint=result_revision
+    ),
+    CONSTRAINT coding_plan_operation_results_operation_fkey FOREIGN KEY (operation_id)
+        REFERENCES job_lifecycle_operations(operation_id) ON DELETE RESTRICT,
+    CONSTRAINT coding_plan_operation_results_plan_fkey FOREIGN KEY (job_id,generation)
+        REFERENCES coding_plans(job_id,generation) ON DELETE RESTRICT
+);
+
+CREATE INDEX idx_coding_plans_current_review
+    ON coding_plans(job_id,generation) WHERE state='review';
+CREATE INDEX idx_coding_plan_leaves_decision
+    ON coding_plan_leaves(job_id,generation,decision,sort_index);
+
+CREATE FUNCTION coding_plan_result_matches_current_authority(
+    plan_job_id BIGINT,
+    plan_generation BIGINT,
+    operation_kind TEXT
+) RETURNS boolean
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM coding_plans AS plan
+        JOIN coding_plan_operation_results AS result
+          ON result.job_id=plan.job_id AND result.generation=plan.generation
+        WHERE plan.job_id=plan_job_id AND plan.generation=plan_generation
+          AND result.kind=operation_kind
+          AND result.result_revision=plan.revision
+          AND result.result_plan->>'state'=plan.state
+          AND result.result_plan->>'scope_mode'=plan.scope_mode
+          AND result.result_plan->>'request_sha256'=plan.request_sha256
+          AND result.result_plan->'leaves'=(
+              SELECT COALESCE(
+                  jsonb_agg(
+                      jsonb_build_object(
+                          'id',leaf.leaf_id,
+                          'statement',leaf.statement,
+                          'annotation',leaf.annotation,
+                          'decision',leaf.decision
+                      ) ORDER BY leaf.sort_index
+                  ),
+                  '[]'::jsonb
+              )
+              FROM coding_plan_leaves AS leaf
+              WHERE leaf.job_id=plan.job_id AND leaf.generation=plan.generation
+          )
+    );
+$$;
+
+CREATE FUNCTION validate_coding_plan_update() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    approved_leaf_count BIGINT;
+    pending_leaf_count BIGINT;
+BEGIN
+    IF ROW(OLD.job_id,OLD.generation,OLD.scope_mode,OLD.request_sha256,OLD.plan_step_id,OLD.created_at)
+       IS DISTINCT FROM
+       ROW(NEW.job_id,NEW.generation,NEW.scope_mode,NEW.request_sha256,NEW.plan_step_id,NEW.created_at) THEN
+        RAISE EXCEPTION 'coding plan identity and authority are immutable';
+    END IF;
+    IF OLD.state IN ('superseded','canceled') OR
+       (OLD.state='frozen' AND NEW.state NOT IN ('superseded','canceled')) OR
+       (OLD.state='review' AND NEW.state NOT IN ('review','frozen','superseded','canceled')) THEN
+        RAISE EXCEPTION 'coding plan state transition is invalid';
+    END IF;
+    IF NEW.revision<>OLD.revision+1 OR NEW.updated_at<=OLD.updated_at THEN
+        RAISE EXCEPTION 'coding plan update requires one monotonic revision';
+    END IF;
+    IF NEW.state='frozen' AND (OLD.state<>'review' OR NEW.frozen_at IS NULL) THEN
+        RAISE EXCEPTION 'coding plan freeze transition is invalid';
+    END IF;
+    IF NEW.state='frozen' THEN
+        SELECT COUNT(*) FILTER (WHERE decision='approved'),
+               COUNT(*) FILTER (WHERE decision='pending')
+          INTO approved_leaf_count,pending_leaf_count
+          FROM coding_plan_leaves
+          WHERE job_id=NEW.job_id AND generation=NEW.generation;
+        IF approved_leaf_count=0 OR pending_leaf_count<>0 THEN
+            RAISE EXCEPTION 'coding plan freeze requires every leaf decided and at least one approved leaf';
+        END IF;
+    END IF;
+    IF NEW.state='review' AND NEW.frozen_at IS NOT NULL THEN
+        RAISE EXCEPTION 'review coding plan cannot have a frozen timestamp';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE FUNCTION validate_coding_plan_leaf_insert() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    plan_state TEXT;
+    plan_step_status TEXT;
+    job_status TEXT;
+    prior_decision TEXT;
+    prior_origin_generation BIGINT;
+BEGIN
+    SELECT plan.state,step.status,job.status
+      INTO plan_state,plan_step_status,job_status
+      FROM coding_plans AS plan
+      JOIN job_steps AS step
+        ON step.id=plan.plan_step_id AND step.job_id=plan.job_id
+       AND step.generation=plan.generation
+      JOIN jobs AS job ON job.id=plan.job_id
+      WHERE plan.job_id=NEW.job_id AND plan.generation=NEW.generation
+      FOR SHARE OF plan,step,job;
+    IF plan_state IS DISTINCT FROM 'review' OR
+       plan_step_status IS DISTINCT FROM 'running' OR
+       job_status IS DISTINCT FROM 'running' THEN
+        RAISE EXCEPTION 'coding plan leaves may be inserted only during the active initial StoreCodingPlanReview transaction';
+    END IF;
+    SELECT leaf.decision,leaf.decision_origin_generation
+      INTO prior_decision,prior_origin_generation
+      FROM coding_plan_leaves AS leaf
+      JOIN coding_plans AS plan
+        ON plan.job_id=leaf.job_id AND plan.generation=leaf.generation
+      WHERE leaf.job_id=NEW.job_id AND leaf.generation<NEW.generation
+        AND leaf.leaf_id=NEW.leaf_id
+        AND leaf.decision IN ('approved','rejected')
+        AND plan.state='superseded'
+      ORDER BY leaf.generation DESC
+      LIMIT 1;
+    IF FOUND THEN
+        IF NEW.decision IS DISTINCT FROM prior_decision OR
+           NEW.decision_origin_generation IS DISTINCT FROM prior_origin_generation THEN
+            RAISE EXCEPTION 'coding plan leaf decision differs from its exact superseded prior-generation decision';
+        END IF;
+    ELSIF NEW.decision<>'pending' OR NEW.decision_origin_generation<>NEW.generation THEN
+        RAISE EXCEPTION 'coding plan leaf has no exact superseded prior-generation decision to carry';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE FUNCTION validate_coding_plan_leaf_update() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    plan_state TEXT;
+BEGIN
+    IF ROW(OLD.job_id,OLD.generation,OLD.leaf_id,OLD.sort_index,OLD.statement,OLD.annotation,
+           OLD.result_schema,OLD.candidate_sha256,OLD.kind_receipt_sha256,
+           OLD.cardinality_receipt_sha256,OLD.result_relation,OLD.created_at)
+       IS DISTINCT FROM
+       ROW(NEW.job_id,NEW.generation,NEW.leaf_id,NEW.sort_index,NEW.statement,NEW.annotation,
+           NEW.result_schema,NEW.candidate_sha256,NEW.kind_receipt_sha256,
+           NEW.cardinality_receipt_sha256,NEW.result_relation,NEW.created_at) THEN
+        RAISE EXCEPTION 'coding plan leaf semantic identity is immutable';
+    END IF;
+    SELECT state INTO plan_state FROM coding_plans
+      WHERE job_id=OLD.job_id AND generation=OLD.generation FOR SHARE;
+    IF plan_state IS DISTINCT FROM 'review' THEN
+        RAISE EXCEPTION 'only a review coding plan accepts leaf decisions';
+    END IF;
+    IF ROW(OLD.decision,OLD.decision_origin_generation)
+       IS NOT DISTINCT FROM ROW(NEW.decision,NEW.decision_origin_generation) THEN
+        RAISE EXCEPTION 'coding plan leaf update requires one actual decision change';
+    END IF;
+    IF NEW.decision='pending' OR NEW.decision_origin_generation<>NEW.generation THEN
+        RAISE EXCEPTION 'coding plan decisions may only change to an explicit current-generation decision';
+    END IF;
+    IF NEW.updated_at<=OLD.updated_at THEN
+        RAISE EXCEPTION 'coding plan leaf update timestamp must advance';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE FUNCTION require_coding_plan_leaf_decision_operation() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF NOT coding_plan_result_matches_current_authority(
+        NEW.job_id,NEW.generation,'coding_plan_decisions'
+    ) THEN
+        RAISE EXCEPTION 'coding plan leaf decision requires its exact lifecycle operation result';
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+CREATE FUNCTION require_coding_plan_update_operation() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    required_kind TEXT;
+BEGIN
+    IF OLD.state='review' AND NEW.state='review' THEN
+        required_kind := 'coding_plan_decisions';
+    ELSIF OLD.state='review' AND NEW.state='frozen' THEN
+        required_kind := 'coding_plan_freeze';
+    ELSE
+        RETURN NULL;
+    END IF;
+    IF NOT coding_plan_result_matches_current_authority(
+        NEW.job_id,NEW.generation,required_kind
+    ) THEN
+        RAISE EXCEPTION 'coding plan update requires its exact lifecycle operation result';
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+CREATE FUNCTION require_coding_plan_step_state() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    plan_step_status TEXT;
+    plan_step_superseded_at_generation BIGINT;
+    job_status TEXT;
+BEGIN
+    SELECT status,superseded_at_generation
+      INTO plan_step_status,plan_step_superseded_at_generation
+      FROM job_steps
+      WHERE id=NEW.plan_step_id AND job_id=NEW.job_id AND generation=NEW.generation;
+    SELECT status INTO job_status FROM jobs WHERE id=NEW.job_id;
+    IF NEW.state='review' AND
+       (plan_step_status IS DISTINCT FROM 'waiting_input' OR
+        plan_step_superseded_at_generation IS NOT NULL OR
+        job_status IS DISTINCT FROM 'waiting_input') THEN
+        RAISE EXCEPTION 'review coding plan requires its current waiting review step';
+    END IF;
+    IF NEW.state='frozen' AND
+       (plan_step_status IS DISTINCT FROM 'completed' OR
+        plan_step_superseded_at_generation IS NOT NULL) THEN
+        RAISE EXCEPTION 'frozen coding plan requires its current completed review step';
+    END IF;
+    IF NEW.state='superseded' AND plan_step_superseded_at_generation IS NULL THEN
+        RAISE EXCEPTION 'superseded coding plan requires its superseded review step';
+    END IF;
+    IF NEW.state='canceled' AND
+       (job_status IS DISTINCT FROM 'canceled' OR
+        plan_step_superseded_at_generation IS NOT NULL OR
+        plan_step_status NOT IN ('completed','canceled')) THEN
+        RAISE EXCEPTION 'canceled coding plan requires its canceled job and retired review step';
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+CREATE FUNCTION require_coding_plan_state_for_step() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    plan_state TEXT;
+BEGIN
+    IF NEW.action<>'v3_coding_plan' THEN
+        RETURN NULL;
+    END IF;
+    SELECT state INTO plan_state
+      FROM coding_plans
+      WHERE job_id=NEW.job_id AND generation=NEW.generation;
+    IF NOT FOUND THEN
+        IF NEW.status IN ('waiting_input','completed') THEN
+            RAISE EXCEPTION 'coding plan review step cannot wait or complete without a persisted plan';
+        END IF;
+        RETURN NULL;
+    END IF;
+    IF NEW.superseded_at_generation IS NOT NULL THEN
+        IF plan_state IS DISTINCT FROM 'superseded' THEN
+            RAISE EXCEPTION 'superseded coding plan review step requires a superseded plan';
+        END IF;
+        RETURN NULL;
+    END IF;
+    IF NEW.status='waiting_input' AND plan_state IS DISTINCT FROM 'review' THEN
+        RAISE EXCEPTION 'waiting coding plan review step requires a review plan';
+    END IF;
+    IF NEW.status='completed' AND plan_state NOT IN ('frozen','canceled') THEN
+        RAISE EXCEPTION 'completed coding plan review step requires a frozen or canceled plan';
+    END IF;
+    IF NEW.status='canceled' AND plan_state IS DISTINCT FROM 'canceled' THEN
+        RAISE EXCEPTION 'canceled coding plan review step requires a canceled plan';
+    END IF;
+    IF NEW.status NOT IN ('waiting_input','completed','canceled') THEN
+        RAISE EXCEPTION 'persisted coding plan has incompatible review step state %', NEW.status;
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+CREATE TRIGGER coding_plans_validate_insert
+    BEFORE INSERT ON coding_plans FOR EACH ROW EXECUTE FUNCTION validate_coding_plan_insert();
+CREATE TRIGGER coding_plans_validate_update
+    BEFORE UPDATE ON coding_plans FOR EACH ROW EXECUTE FUNCTION validate_coding_plan_update();
+CREATE TRIGGER coding_plans_preserve_history
+    BEFORE DELETE OR TRUNCATE ON coding_plans FOR EACH STATEMENT
+    EXECUTE FUNCTION prevent_job_lifecycle_operation_mutation();
+CREATE CONSTRAINT TRIGGER coding_plans_require_step_state
+    AFTER INSERT OR UPDATE ON coding_plans
+    DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW EXECUTE FUNCTION require_coding_plan_step_state();
+CREATE CONSTRAINT TRIGGER coding_plans_require_update_operation
+    AFTER UPDATE ON coding_plans
+    DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW EXECUTE FUNCTION require_coding_plan_update_operation();
+CREATE CONSTRAINT TRIGGER coding_plan_steps_require_plan_state
+    AFTER UPDATE OF status,superseded_at_generation ON job_steps
+    DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW EXECUTE FUNCTION require_coding_plan_state_for_step();
+CREATE TRIGGER coding_plan_leaves_validate_insert
+    BEFORE INSERT ON coding_plan_leaves FOR EACH ROW EXECUTE FUNCTION validate_coding_plan_leaf_insert();
+CREATE TRIGGER coding_plan_leaves_validate_update
+    BEFORE UPDATE ON coding_plan_leaves FOR EACH ROW EXECUTE FUNCTION validate_coding_plan_leaf_update();
+CREATE CONSTRAINT TRIGGER coding_plan_leaves_require_decision_operation
+    AFTER UPDATE ON coding_plan_leaves
+    DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW EXECUTE FUNCTION require_coding_plan_leaf_decision_operation();
+CREATE TRIGGER coding_plan_leaves_preserve_history
+    BEFORE DELETE OR TRUNCATE ON coding_plan_leaves FOR EACH STATEMENT
+    EXECUTE FUNCTION prevent_job_lifecycle_operation_mutation();
+CREATE TRIGGER coding_plan_operation_results_immutable
+    BEFORE UPDATE OR DELETE OR TRUNCATE ON coding_plan_operation_results FOR EACH STATEMENT
+    EXECUTE FUNCTION prevent_job_lifecycle_operation_mutation();
+
+ALTER TABLE ONLY job_lifecycle_operations
+    ADD CONSTRAINT job_lifecycle_operations_coding_plan_result_identity_key
+    UNIQUE (operation_id,job_id,result_generation,kind);
+
+ALTER TABLE ONLY coding_plan_operation_results
+    ADD CONSTRAINT coding_plan_operation_results_exact_operation_fkey
+    FOREIGN KEY (operation_id,job_id,generation,kind)
+    REFERENCES job_lifecycle_operations(operation_id,job_id,result_generation,kind)
+    ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED;
+
+CREATE FUNCTION require_coding_plan_lifecycle_result() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF NEW.kind IN ('coding_plan_decisions','coding_plan_freeze') AND NOT EXISTS (
+        SELECT 1 FROM coding_plan_operation_results AS result
+        WHERE result.operation_id=NEW.operation_id
+          AND result.job_id=NEW.job_id
+          AND result.generation=NEW.result_generation
+          AND result.kind=NEW.kind
+    ) THEN
+        RAISE EXCEPTION 'coding-plan lifecycle operation requires its exact immutable plan result';
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER job_lifecycle_operations_require_coding_plan_result
+    AFTER INSERT ON job_lifecycle_operations
+    DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW EXECUTE FUNCTION require_coding_plan_lifecycle_result();

@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/gryph/omnidex/internal/model"
 )
 
 func TestApplicationRequirementInventoryPreservesCleanSourceOrderedLines(t *testing.T) {
@@ -118,6 +120,33 @@ func TestApplicationRequirementInventoryPromptHasNoCandidateResponseFrame(t *tes
 	}
 }
 
+func TestApplicationRequirementInventoryPromptPreservesSemanticAntiExplosionGuidance(t *testing.T) {
+	t.Parallel()
+	input := applicationRequirementInventoryTestInput(t)
+	prompt, err := BuildApplicationRequirementInventoryPrompt(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		"not speculative alternative implementation mechanisms",
+		"Different mechanisms for realizing the same outcome are not separate candidates",
+		"Preserve the actor, action, governed object, modality, determining relation, and resulting observation",
+		"Keep the software as the semantic subject of each capability outcome",
+		"preserve that software-provided ability rather than asserting that the actor necessarily performs the action",
+		"An ability, permission, possibility, or enablement must remain that relation",
+		"a topic, title, noun phrase, or feature label is not a runtime outcome",
+		"Preserve every genuinely separate runtime outcome as its own candidate",
+		"Do not duplicate, paraphrase, restate, or split the same core outcome",
+		"safety ceiling, never a generation target",
+		"only one distinct runtime outcome, preserve it as one candidate",
+		"that stated outcome is the candidate rather than a summary, abstraction, or generalized restatement",
+	} {
+		if !strings.Contains(prompt, required) {
+			t.Fatalf("inventory prompt lost semantic anti-explosion guidance %q: %q", required, prompt)
+		}
+	}
+}
+
 func applicationRequirementInventoryTestInput(t testing.TB) ApplicationRequirementInventoryInput {
 	t.Helper()
 	const request = "Build a record transformer."
@@ -125,5 +154,7 @@ func applicationRequirementInventoryTestInput(t testing.TB) ApplicationRequireme
 	if err != nil {
 		t.Fatal(err)
 	}
-	return ApplicationRequirementInventoryInput{UserRequest: request, Context: context}
+	return ApplicationRequirementInventoryInput{
+		UserRequest: request, Context: context, ScopeMode: model.CodingScopeModeNormal,
+	}
 }

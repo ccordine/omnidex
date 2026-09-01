@@ -27,23 +27,30 @@ type chatSessionConfig struct {
 }
 
 type chatSession struct {
-	ctx               context.Context
-	cancel            context.CancelFunc
-	client            *client.Client
-	channel           model.Channel
-	workspaceIdentity string
-	renderer          chatRenderer
-	active            *model.JobDetails
-	messages          map[int64]model.ChannelMessage
-	turns             map[queue.LifecycleOperationID]queue.ChannelSessionTurn
-	controls          map[queue.LifecycleOperationID]queue.ChannelSessionControl
-	pendingControl    *pendingControl
-	pendingTurn       *pendingSessionTurn
-	signals           <-chan os.Signal
-	snapshotRevision  uint64
-	realtimeCursor    uint64
-	stateRevision     string
-	lastPollError     string
+	ctx                context.Context
+	cancel             context.CancelFunc
+	client             *client.Client
+	channel            model.Channel
+	workspaceIdentity  string
+	renderer           chatRenderer
+	active             *model.JobDetails
+	messages           map[int64]model.ChannelMessage
+	turns              map[queue.LifecycleOperationID]queue.ChannelSessionTurn
+	controls           map[queue.LifecycleOperationID]queue.ChannelSessionControl
+	pendingControl     *pendingControl
+	pendingTurn        *pendingSessionTurn
+	pendingPlan        *pendingPlanMutation
+	planReview         *planReviewState
+	planReviewInputs   <-chan planReviewInput
+	planNoteEditing    bool
+	planNoteSubmitting bool
+	planNoteSubject    string
+	planNoteAuthority  terminalInputAuthority
+	signals            <-chan os.Signal
+	snapshotRevision   uint64
+	realtimeCursor     uint64
+	stateRevision      string
+	lastPollError      string
 }
 
 type pendingSessionTurn struct {
@@ -70,6 +77,9 @@ func runChatSession(config chatSessionConfig) (resultErr error) {
 		return err
 	}
 	if err := session.reconcileSnapshot(config.Snapshot, true); err != nil {
+		return err
+	}
+	if err := session.reconcilePlanReview(); err != nil {
 		return err
 	}
 	inputs, inputDone := readChatInput(config.Context, config.Console)
@@ -126,7 +136,7 @@ func runChatSession(config chatSessionConfig) (resultErr error) {
 				}
 				return fmt.Errorf("read interactive input: %w", input.Err)
 			}
-			quit, err := session.acceptInput(input.Text, input.Pasted)
+			quit, err := session.acceptAuthorizedInput(input)
 			if err != nil {
 				stop, handledErr := session.resolveOperationError(err)
 				if handledErr != nil {
@@ -138,6 +148,31 @@ func runChatSession(config chatSessionConfig) (resultErr error) {
 			}
 			if quit {
 				return nil
+			}
+		case input, ok := <-session.planReviewInputs:
+			if !ok {
+				session.planReviewInputs = nil
+				continue
+			}
+			if input.EOF {
+				return nil
+			}
+			if input.Err != nil {
+				if errors.Is(input.Err, errPlanReviewInputInactive) ||
+					errors.Is(input.Err, context.Canceled) && config.Context.Err() != nil {
+					session.planReviewInputs = nil
+					continue
+				}
+				return fmt.Errorf("read plan review input: %w", input.Err)
+			}
+			if err := session.acceptPlanReviewKey(input.Key); err != nil {
+				stop, handledErr := session.resolveOperationError(err)
+				if handledErr != nil {
+					return handledErr
+				}
+				if stop {
+					return nil
+				}
 			}
 		case <-statePollTicker.C:
 			if !statePollActive {
@@ -209,6 +244,9 @@ func runChatSession(config chatSessionConfig) (resultErr error) {
 }
 
 func (session *chatSession) acceptInput(line string, pasted bool) (bool, error) {
+	if session.planNoteEditing {
+		return false, session.acceptPlanReviewNote(line)
+	}
 	if pasted {
 		if strings.TrimSpace(line) == "" {
 			return false, nil
@@ -254,6 +292,22 @@ func (session *chatSession) acceptInput(line string, pasted bool) (bool, error) 
 	default:
 		return false, fmt.Errorf("unknown command /%s; use /help", name)
 	}
+}
+
+func (session *chatSession) acceptAuthorizedInput(input chatInput) (bool, error) {
+	current := session.renderer.console.CurrentInputAuthority()
+	if session.planNoteEditing {
+		if input.Authority != session.planNoteAuthority ||
+			input.Authority.Mode != terminalInputPlanNote {
+			return false, fmt.Errorf("%w: input does not belong to the active plan-note editor", errChatInputRejected)
+		}
+		return session.acceptInput(input.Text, input.Pasted)
+	}
+	if input.Authority.Mode != terminalInputOrdinary || input.Authority != current ||
+		session.planReview != nil || session.planNoteSubmitting {
+		return false, fmt.Errorf("%w: stale or plan-bound input was not submitted as a chat turn", errChatInputRejected)
+	}
+	return session.acceptInput(input.Text, input.Pasted)
 }
 
 func (session *chatSession) acceptText(text string) error {
@@ -315,6 +369,13 @@ func (session *chatSession) sessionTurnOperationID(
 	if session.pendingControl != nil {
 		return "", fmt.Errorf("/%s operation %q remains unresolved", session.pendingControl.action, session.pendingControl.operationID)
 	}
+	if session.pendingPlan != nil {
+		return "", fmt.Errorf(
+			"%s operation %q remains unresolved",
+			session.pendingPlan.kind,
+			session.pendingPlan.operationID,
+		)
+	}
 	operationID, err := newOperationID()
 	if err != nil {
 		return "", err
@@ -357,7 +418,8 @@ func realtimeEventReflectedBySnapshot(event client.RealtimeEvent) bool {
 
 func runtimeEventChangesJobState(kind string) bool {
 	switch kind {
-	case "step_start", "step_complete", "step_failed", "step_authority_lost", "step_canceled":
+	case "step_start", "step_complete", "step_failed", "step_authority_lost", "step_canceled",
+		"step_waiting_input", "coding_plan_review_ready":
 		return true
 	default:
 		return false
@@ -365,6 +427,13 @@ func runtimeEventChangesJobState(kind string) bool {
 }
 
 func (session *chatSession) reloadSnapshot() error {
+	if err := session.reloadSnapshotAuthority(); err != nil {
+		return err
+	}
+	return session.reconcilePlanReview()
+}
+
+func (session *chatSession) reloadSnapshotAuthority() error {
 	snapshot, err := awaitChatRequest(
 		session.ctx,
 		session.signals,
@@ -380,7 +449,10 @@ func (session *chatSession) reloadSnapshot() error {
 	if err != nil {
 		return fmt.Errorf("reload CLI chat session: %w", err)
 	}
-	return session.reconcileSnapshot(snapshot, false)
+	if err := session.reconcileSnapshot(snapshot, false); err != nil {
+		return err
+	}
+	return nil
 }
 
 func terminalJob(status string) bool {

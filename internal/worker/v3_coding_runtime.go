@@ -97,10 +97,14 @@ func (r *nativeRuntimeV3) directCodingRequest() (directCodingRequest, error) {
 		return directCodingRequest{}, fmt.Errorf("direct coding requires a non-empty current instruction")
 	}
 	request := directCodingRequest{Instruction: instruction}
+	continuityBoundary := "v3_coding_plan"
+	if r.claim.Job.Pipeline == model.PipelineChat {
+		continuityBoundary = "objective_resolve"
+	}
 	continuity, err := r.svc.repo.ObjectiveContinuityAuthorities(
 		r.ctx,
 		r.claim.Job,
-		"v3_coding",
+		continuityBoundary,
 	)
 	if err != nil {
 		return directCodingRequest{}, err

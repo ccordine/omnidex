@@ -57,14 +57,16 @@ func ParseLifecycleOperationID(value string) (LifecycleOperationID, error) {
 type LifecycleOperationKind string
 
 const (
-	LifecycleCompleteStep   LifecycleOperationKind = "complete_step"
-	LifecycleFailStep       LifecycleOperationKind = "fail_step"
-	LifecycleSubmitFeedback LifecycleOperationKind = "submit_feedback"
-	LifecycleInterruptJob   LifecycleOperationKind = "interrupt_job"
-	LifecycleReplanJob      LifecycleOperationKind = "replan_job"
-	LifecycleChannelSession LifecycleOperationKind = "channel_session_turn"
-	LifecycleScrumChannel   LifecycleOperationKind = "scrum_channel_message"
-	LifecycleCancelJob      LifecycleOperationKind = "cancel_job"
+	LifecycleCompleteStep        LifecycleOperationKind = "complete_step"
+	LifecycleFailStep            LifecycleOperationKind = "fail_step"
+	LifecycleSubmitFeedback      LifecycleOperationKind = "submit_feedback"
+	LifecycleInterruptJob        LifecycleOperationKind = "interrupt_job"
+	LifecycleReplanJob           LifecycleOperationKind = "replan_job"
+	LifecycleChannelSession      LifecycleOperationKind = "channel_session_turn"
+	LifecycleScrumChannel        LifecycleOperationKind = "scrum_channel_message"
+	LifecycleCancelJob           LifecycleOperationKind = "cancel_job"
+	LifecycleCodingPlanDecisions LifecycleOperationKind = "coding_plan_decisions"
+	LifecycleCodingPlanFreeze    LifecycleOperationKind = "coding_plan_freeze"
 )
 
 type CompleteStepCommand struct {

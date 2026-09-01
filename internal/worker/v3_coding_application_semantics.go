@@ -101,15 +101,17 @@ func runDirectCodingApplicationInterpreter(
 	artifactModel func() (string, error),
 	authority directCodingApplicationRequestAuthority,
 	applicationContext assemblyline.ApplicationContext,
+	approvedRequirements []assemblyline.ApplicationRequirement,
 	identities []assemblyline.ArtifactIdentity,
 ) (directCodingApplicationInterpretation, error) {
 	var zero directCodingApplicationInterpretation
 
-	resolution, err := resolveDirectCodingApplicationIntent(
+	resolution, err := resolveApprovedDirectCodingApplicationIntent(
 		runtime, intentModels,
 		assemblyline.ApplicationIntentInput{
 			UserRequest: authority.modelRequest, Context: applicationContext,
 		},
+		approvedRequirements,
 		identities,
 	)
 	if err != nil {

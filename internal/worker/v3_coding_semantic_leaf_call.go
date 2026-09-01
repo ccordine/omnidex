@@ -36,17 +36,24 @@ func runDirectCodingSemanticLeafCall[T any](
 	if runtime.Context == nil || runtime.Execute == nil || decode == nil {
 		return zero, fmt.Errorf("coding semantic leaf requires an exact portable runtime and decoder")
 	}
-	if modelName == "" {
-		return zero, fmt.Errorf("coding semantic leaf requires one configured model")
-	}
-	basePrompt, err := assemblyline.RenderPortableJob(job)
+	_, inferenceFree, err := assemblyline.ResolvePortableJobWithoutInference(job)
 	if err != nil {
 		return zero, err
 	}
-	if err := validateDirectCodingSemanticPrompt(
-		basePrompt, identities, runtime.PathProvenance,
-	); err != nil {
-		return zero, err
+	basePrompt := ""
+	if !inferenceFree {
+		if modelName == "" {
+			return zero, fmt.Errorf("coding semantic leaf requires one configured model")
+		}
+		basePrompt, err = assemblyline.RenderPortableJob(job)
+		if err != nil {
+			return zero, err
+		}
+		if err := validateDirectCodingSemanticPrompt(
+			basePrompt, identities, runtime.PathProvenance,
+		); err != nil {
+			return zero, err
+		}
 	}
 	emitTypedWorker(runtime, typedWorkerEvent{
 		State: typedWorkerStarted, Kind: typedWorkerSemantic, Subject: subject,

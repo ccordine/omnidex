@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/gryph/omnidex/internal/exactjson"
+	"github.com/gryph/omnidex/internal/model"
 )
 
 const (
@@ -20,8 +21,9 @@ const (
 )
 
 type ApplicationRequirementInventoryInput struct {
-	UserRequest string             `json:"user_request"`
-	Context     ApplicationContext `json:"context"`
+	UserRequest string                `json:"user_request"`
+	Context     ApplicationContext    `json:"context"`
+	ScopeMode   model.CodingScopeMode `json:"scope_mode"`
 }
 
 // ApplicationRequirementInventory is one bounded, untrusted generation of
@@ -50,7 +52,7 @@ func (input ApplicationRequirementInventoryInput) validate() error {
 	}).validate(); err != nil {
 		return err
 	}
-	return nil
+	return input.ScopeMode.Validate()
 }
 
 func BuildApplicationRequirementInventoryPrompt(
@@ -60,17 +62,36 @@ func BuildApplicationRequirementInventoryPrompt(
 		return "", err
 	}
 	projection := renderApplicationContextModelProjection(input.UserRequest, input.Context)
+	scopeGuidance, err := applicationRequirementInventoryScopeGuidance(input.ScopeMode)
+	if err != nil {
+		return "", err
+	}
 	return strings.Join([]string{
-		fmt.Sprintf("What atomic finished-software runtime outcomes are grounded by this request? List one independent outcome per line, up to %d. If there are none, answer %s.", MaxApplicationRequirementInventoryCandidates, ApplicationNoRuntimeRequirementCandidates),
-		"This is minimal semantic extraction, not brainstorming. Each candidate must state exactly one independently testable runtime outcome: one behavior, user-visible element, observable quality, state or persistence behavior, or runtime data or output requirement. Split only independent outcomes; never enumerate modes, variants, cases, algorithms, optional features, or alternative ways to perform the same outcome.",
+		fmt.Sprintf("What atomic finished-software runtime outcomes would constitute useful work toward satisfying this request? List one independent outcome per line, up to %d. If there are none, answer %s.", MaxApplicationRequirementInventoryCandidates, ApplicationNoRuntimeRequirementCandidates),
+		scopeGuidance,
+		"Generate distinct semantic work or runtime outcomes, not speculative alternative implementation mechanisms. Each candidate must state exactly one independently testable runtime outcome: one behavior, user-visible element, observable quality, state or persistence behavior, or runtime data or output requirement. Different mechanisms for realizing the same outcome are not separate candidates. Split only independent outcomes; never enumerate modes, variants, cases, algorithms, or alternative ways to perform the same outcome.",
 		"The ordinary meaning of a purpose-denoting product or category name is request content. For each such named purpose, include one minimal end-to-end candidate containing only the literal core operation or governed result inherent in that name. Express the purpose noun as the simplest corresponding action and governed object. Do not add an input, parameter, criterion, destination, mechanism, interface, trigger, or qualifying phrase unless the request states it.",
 		"When the literal purpose is to transform, read, extract, decode, calculate, or otherwise derive a governed value, state the minimal independently verifiable governed result instead of a bare activity. Express the value produced by the operation at the abstraction inherent in the purpose. Verifiable does not authorize a presentation or delivery channel: never add display, show, render, return, download, store, transmit, notify, an interface, an output format, or any other unstated mechanism. Never invent the result's format, algorithm, defaults, quality rules, or limits.",
 		"A delivery surface or construction technology does not imply a runtime mechanism, interface, input source, or interaction. Do not add one unless the immutable request states it.",
-		"Keep the inputs or trigger, determining relation, and resulting observation together when they jointly define one outcome. Keep every separately stated runtime outcome eligible for its own candidate; a more explicit statement already represents its named core outcome.",
+		"Preserve the actor, action, governed object, modality, determining relation, and resulting observation that jointly define an outcome. Keep the software as the semantic subject of each capability outcome. If the request says the software lets, allows, or enables an actor to act, preserve that software-provided ability rather than asserting that the actor necessarily performs the action. An ability, permission, possibility, or enablement must remain that relation rather than becoming an assertion that the action necessarily occurs. State the runtime outcome itself; a topic, title, noun phrase, or feature label is not a runtime outcome. Preserve every genuinely separate runtime outcome as its own candidate. Do not duplicate, paraphrase, restate, or split the same core outcome into multiple candidates; a more explicit statement already represents its named core outcome.",
+		"The maximum candidate count is a safety ceiling, never a generation target. When the request has only one distinct runtime outcome, preserve it as one candidate rather than inventing multiple ways to implement it. When the request already states that atomic runtime outcome, that stated outcome is the candidate rather than a summary, abstraction, or generalized restatement.",
 		"Do not add a generic trigger frame such as 'when invoked' or 'on request' unless the immutable request states that trigger.",
-		"Exclude bare product identity, build or create directions, delivery surface, language, framework, toolchain, packaging, testing, deployment, and other construction constraints. Do not invent customary controls, history, persistence, process steps, enhancements, prerequisites, or implementation choices.",
+		"Exclude bare product identity, build or create directions, delivery surface, language, framework, toolchain, packaging, testing, deployment, and other construction constraints. Do not turn customary implementation mechanisms or process steps into runtime outcomes.",
 		projection,
 	}, "\n\n"), nil
+}
+
+func applicationRequirementInventoryScopeGuidance(mode model.CodingScopeMode) (string, error) {
+	switch mode {
+	case model.CodingScopeModeStrict:
+		return "Include only outcomes directly grounded in the request and established facts. Do not add optional or derived product scope.", nil
+	case model.CodingScopeModeNormal:
+		return "Include directly stated outcomes and ordinary necessary or useful consequences reasonably justified by the objective or established facts. A useful consequence need not repeat the user's literal wording. Exclude unrelated or merely optional speculative enhancements.", nil
+	case model.CodingScopeModeExpansive:
+		return "Include directly stated outcomes, ordinary justified consequences, and cohesive objective-aligned possibilities that could usefully expand the objective. Do not include work that conflicts with the request or established facts or materially departs into an unrelated objective.", nil
+	default:
+		return "", fmt.Errorf("application requirement inventory scope mode %q is unsupported", mode)
+	}
 }
 
 func DecodeApplicationRequirementInventory(

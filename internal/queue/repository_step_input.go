@@ -127,8 +127,9 @@ func applyJobFeedbackTx(
 	}
 
 	var stepID int64
+	var stepAction string
 	err := tx.QueryRow(ctx, `
-		SELECT job_steps.id
+		SELECT job_steps.id,job_steps.action
 		FROM job_steps, jobs
 		WHERE job_steps.job_id = $1
 		  AND jobs.id = job_steps.job_id
@@ -138,9 +139,15 @@ func applyJobFeedbackTx(
 		ORDER BY job_steps.sort_index ASC, job_steps.id ASC
 		FOR UPDATE OF job_steps
 		LIMIT 1
-	`, command.JobID, model.StepStatusWaiting).Scan(&stepID)
+	`, command.JobID, model.StepStatusWaiting).Scan(&stepID, &stepAction)
 	if err != nil {
 		return model.Job{}, 0, err
+	}
+	if stepAction == "v3_coding_plan" {
+		return model.Job{}, 0, fmt.Errorf(
+			"%w: coding plan review accepts only persisted plan decisions, freeze, or same-job replan",
+			ErrStepNotWritable,
+		)
 	}
 
 	stepUpdate, err := tx.Exec(ctx, `

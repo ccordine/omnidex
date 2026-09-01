@@ -71,7 +71,9 @@ func (r *Repository) ExecuteScrumChannelOperation(
 	}
 	var lockedMetadata scrum.JobMetadata
 	if command.Effect.Kind == ScrumChannelStartJob {
-		lockedMetadata, _, err = scrumPlayAuthorityTx(ctx, tx, current, r.modelAuthority)
+		lockedMetadata, _, err = scrumPlayAuthorityTx(
+			ctx, tx, current, r.modelAuthority, r.codingScopeMode,
+		)
 		if err != nil {
 			return ScrumChannelOperationResult{}, err
 		}

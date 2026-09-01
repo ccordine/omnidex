@@ -26,6 +26,9 @@ func TestTypeScriptFragmentQuestionDoesNotDefineAResponsePacket(t *testing.T) {
 	) {
 		t.Fatalf("semantic job scope is absent: %q", prompt)
 	}
+	if !strings.Contains(prompt, "What TypeScript statements inside this function implement this behavior?") {
+		t.Fatalf("function-local semantic responsibility is absent: %q", prompt)
+	}
 	for _, forbidden := range []string{
 		"Return only", "raw code only", "response grammar", "response schema",
 		"CODE_OWNED", "CURRENT_DECLARATION", "EXACT_SIGNATURE", "JSON",

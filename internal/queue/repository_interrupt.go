@@ -130,6 +130,11 @@ func interruptJobTx(
 	); err != nil {
 		return LifecycleJobResult{}, err
 	}
+	if err := transitionCodingPlanAuthorityTx(
+		ctx, tx, job, model.CodingPlanStateSuperseded,
+	); err != nil {
+		return LifecycleJobResult{}, err
+	}
 	newGeneration := currentGeneration + 1
 	if err := createInterruptGenerationTx(
 		ctx,

@@ -102,6 +102,11 @@ func applyJobCancellationTx(
 	); err != nil {
 		return model.Job{}, err
 	}
+	if err := transitionCodingPlanAuthorityTx(
+		ctx, tx, job, model.CodingPlanStateCanceled,
+	); err != nil {
+		return model.Job{}, err
+	}
 	stepIDs, err := lockCurrentNonterminalStepIDsTx(ctx, tx, command.JobID, job.CurrentGeneration)
 	if err != nil {
 		return model.Job{}, err

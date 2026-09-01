@@ -14,6 +14,8 @@ import (
 	"github.com/gryph/omnidex/internal/db"
 	"github.com/gryph/omnidex/internal/envfile"
 	"github.com/gryph/omnidex/internal/llm"
+	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/modelconfig"
 	"github.com/gryph/omnidex/internal/ollama"
 	"github.com/gryph/omnidex/internal/queue"
 	"github.com/gryph/omnidex/internal/worker"
@@ -72,7 +74,9 @@ func runStationReplay(args []string) {
 		die("bench:replay: open read-only runtime database: " + err.Error())
 	}
 	defer pool.Close()
-	repository := queue.New(pool)
+	repository := queue.New(
+		pool, modelconfig.Authority{}, model.CodingScopeModeNormal,
+	)
 	point, err := loadStationReplayPoint(ctx, repository, options)
 	if err != nil {
 		die("bench:replay: " + err.Error())

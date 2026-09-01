@@ -111,6 +111,11 @@ func (r *Repository) completeStep(
 	if stepUpdate.RowsAffected() == 0 {
 		return staleStepAttemptError(command.Authority, "completion target lost current authority", nil)
 	}
+	if command.ContextKey == "objective_result" {
+		if err := cancelTerminalObjectiveCodingTailTx(ctx, tx, job, command); err != nil {
+			return err
+		}
+	}
 
 	var openSteps int
 	if err := tx.QueryRow(ctx, `

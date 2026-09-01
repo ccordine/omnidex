@@ -5,6 +5,7 @@ import (
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/llm"
+	"github.com/gryph/omnidex/internal/model"
 )
 
 func TestExpectedPortableStationMaxOutputTokensLeavesSourceBodyUnlimited(t *testing.T) {
@@ -25,7 +26,7 @@ func TestExpectedPortableStationMaxOutputTokensLeavesSourceBodyUnlimited(t *test
 	}
 }
 
-func TestExpectedPortableStationMaxOutputTokensBoundsOpaqueChoice(t *testing.T) {
+func TestExpectedPortableStationMaxOutputTokensLeavesOpaqueChoiceUnlimited(t *testing.T) {
 	t.Parallel()
 	job, err := assemblyline.NewArtifactHandlingJob(assemblyline.ArtifactHandlingInput{
 		UserRequest: "Keep ARTIFACT_1 unchanged.", Token: "ARTIFACT_1",
@@ -37,8 +38,32 @@ func TestExpectedPortableStationMaxOutputTokensBoundsOpaqueChoice(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != minSingleLineCompletionTokens {
-		t.Fatalf("opaque output budget = %d, want bounded completion room %d", got, minSingleLineCompletionTokens)
+	if got != -1 {
+		t.Fatalf("opaque num_predict = %d, want provider-native unlimited", got)
+	}
+}
+
+func TestExpectedPortableStationMaxOutputTokensLeavesInventoryUnlimited(t *testing.T) {
+	t.Parallel()
+	request := "Build software that lets a user confirm an item."
+	context, err := assemblyline.BootstrapApplicationContext(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := assemblyline.NewApplicationRequirementInventoryJob(
+		assemblyline.ApplicationRequirementInventoryInput{
+			UserRequest: request, Context: context, ScopeMode: model.CodingScopeModeNormal,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := ExpectedPortableStationMaxOutputTokens(job, llm.MinInferenceContextTokens)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != -1 {
+		t.Fatalf("inventory num_predict = %d, want provider-native unlimited", got)
 	}
 }
 

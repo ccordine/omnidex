@@ -32,14 +32,19 @@ func (stream terminalReadWriter) Write(buffer []byte) (int, error) {
 }
 
 type chatConsole struct {
-	terminal      *term.Terminal
-	pasteReader   *bracketedPasteReader
-	terminalFD    int
-	terminalState *term.State
-	closeOnce     sync.Once
-	inputOverflow atomic.Bool
-	promptMu      sync.Mutex
-	prompt        string
+	terminal       *term.Terminal
+	pasteReader    *bracketedPasteReader
+	reviewInput    *planReviewInputRouter
+	output         io.Writer
+	terminalFD     int
+	terminalState  *term.State
+	closeOnce      sync.Once
+	inputOverflow  atomic.Bool
+	presentationMu sync.Mutex
+	reviewActive   bool
+	reviewView     string
+	promptMu       sync.Mutex
+	prompt         string
 }
 
 func newChatConsole(
@@ -66,10 +71,12 @@ func newChatConsole(
 		_ = term.Restore(fd, state)
 		return nil, err
 	}
-	pasteReader := newBracketedPasteReader(
-		newTerminalContextReader(ctx, inputFile),
-		model.MaxFreeFormTurnBytes,
-	)
+	reviewInput, err := newPlanReviewInputRouter(newTerminalContextReader(ctx, inputFile))
+	if err != nil {
+		_ = term.Restore(fd, state)
+		return nil, fmt.Errorf("construct plan-review terminal input: %w", err)
+	}
+	pasteReader := newBracketedPasteReader(reviewInput, model.MaxFreeFormTurnBytes)
 	interactive := term.NewTerminal(
 		terminalReadWriter{
 			reader: pasteReader,
@@ -84,6 +91,8 @@ func newChatConsole(
 	}
 	console.terminal = interactive
 	console.pasteReader = pasteReader
+	console.reviewInput = reviewInput
+	console.output = output
 	console.terminalFD = fd
 	console.terminalState = state
 	console.prompt = "you> "
@@ -106,11 +115,23 @@ func (console *chatConsole) Close() error {
 	}
 	var closeErr error
 	console.closeOnce.Do(func() {
+		console.presentationMu.Lock()
+		if console.reviewInput != nil {
+			console.reviewInput.DisableReview()
+		}
+		if console.reviewActive {
+			if err := console.leavePlanReviewScreenLocked(); err != nil {
+				closeErr = err
+			}
+		}
+		console.presentationMu.Unlock()
 		if console.terminal != nil {
 			console.terminal.SetBracketedPasteMode(false)
 		}
 		if console.terminalState != nil && console.terminalFD >= 0 {
-			closeErr = term.Restore(console.terminalFD, console.terminalState)
+			if err := term.Restore(console.terminalFD, console.terminalState); err != nil && closeErr == nil {
+				closeErr = err
+			}
 		}
 	})
 	if closeErr != nil {
@@ -119,51 +140,51 @@ func (console *chatConsole) Close() error {
 	return nil
 }
 
-func (console *chatConsole) ReadLine() (string, bool, error) {
+func (console *chatConsole) ReadLine() (string, bool, terminalInputAuthority, error) {
 	if console == nil {
-		return "", false, fmt.Errorf("interactive console is unavailable")
+		return "", false, terminalInputAuthority{}, fmt.Errorf("interactive console is unavailable")
 	}
 	if console.terminal != nil {
 		console.inputOverflow.Store(false)
 		line, err := console.terminal.ReadLine()
-		pasted, pasteOverflow, mixedPaste, invalidUTF8, unsafeText, exactPaste := console.pasteReader.consumeLineState()
+		pasted, pasteOverflow, mixedPaste, invalidUTF8, unsafeText, exactPaste, authority := console.pasteReader.consumeLineState()
 		if console.inputOverflow.Load() || pasteOverflow || len(line) > model.MaxFreeFormTurnBytes {
-			return "", false, fmt.Errorf(
+			return "", false, authority, fmt.Errorf(
 				"%w: input exceeded the %d-byte terminal boundary and was not submitted",
 				errChatInputRejected,
 				model.MaxFreeFormTurnBytes,
 			)
 		}
 		if pasted && mixedPaste {
-			return "", false, fmt.Errorf(
+			return "", false, authority, fmt.Errorf(
 				"%w: pasted input cannot be combined with typed terminal edits; the turn was not submitted",
 				errChatInputRejected,
 			)
 		}
 		if invalidUTF8 {
-			return "", false, fmt.Errorf(
+			return "", false, authority, fmt.Errorf(
 				"%w: terminal input was not valid UTF-8 and was not submitted",
 				errChatInputRejected,
 			)
 		}
 		if unsafeText {
-			return "", false, fmt.Errorf(
+			return "", false, authority, fmt.Errorf(
 				"%w: terminal input contained unsafe formatting controls and was not submitted",
 				errChatInputRejected,
 			)
 		}
 		if err != nil && !errors.Is(err, term.ErrPasteIndicator) {
-			return "", false, err
+			return "", false, authority, err
 		}
 		if pasted {
-			return exactPaste, true, nil
+			return exactPaste, true, authority, nil
 		}
 		if errors.Is(err, term.ErrPasteIndicator) {
-			return "", false, fmt.Errorf("terminal paste provenance was not preserved")
+			return "", false, authority, fmt.Errorf("terminal paste provenance was not preserved")
 		}
-		return line, false, err
+		return line, false, authority, err
 	}
-	return "", false, fmt.Errorf("interactive terminal is unavailable")
+	return "", false, terminalInputAuthority{}, fmt.Errorf("interactive terminal is unavailable")
 }
 
 func (console *chatConsole) boundTerminalInput(
@@ -193,14 +214,20 @@ func (console *chatConsole) SetPrompt(prompt string) error {
 	if console == nil || prompt == "" {
 		return fmt.Errorf("interactive prompt is required")
 	}
+	console.presentationMu.Lock()
+	defer console.presentationMu.Unlock()
 	console.promptMu.Lock()
-	defer console.promptMu.Unlock()
 	if console.prompt == prompt {
+		console.promptMu.Unlock()
 		return nil
 	}
 	console.prompt = prompt
+	console.promptMu.Unlock()
 	if console.terminal == nil {
 		return fmt.Errorf("interactive terminal is unavailable")
+	}
+	if console.reviewActive {
+		return nil
 	}
 	console.terminal.SetPrompt(prompt)
 	_, err := console.terminal.Write(nil)
@@ -215,6 +242,11 @@ func (console *chatConsole) WriteOutput(value string) error {
 	if console.terminal == nil {
 		return fmt.Errorf("interactive terminal is unavailable")
 	}
+	console.presentationMu.Lock()
+	defer console.presentationMu.Unlock()
+	if console.reviewActive {
+		return console.writeAroundPlanReviewLocked(value)
+	}
 	_, err := console.terminal.Write([]byte(value))
 	return err
 }
@@ -226,6 +258,11 @@ func (console *chatConsole) WriteError(value string) error {
 	value = safeConsoleText(value)
 	if console.terminal == nil {
 		return fmt.Errorf("interactive terminal is unavailable")
+	}
+	console.presentationMu.Lock()
+	defer console.presentationMu.Unlock()
+	if console.reviewActive {
+		return console.writeAroundPlanReviewLocked(value)
 	}
 	_, err := console.terminal.Write([]byte(value))
 	return err

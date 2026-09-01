@@ -28,7 +28,7 @@ func canonicalReplanStepsTx(
 			if _, err := scrum.DecodeStoredJobMetadata(job.Metadata); err != nil {
 				return nil, err
 			}
-			return []stepSeed{{action: "v3_coding", sortIndex: 5}}, nil
+			return codingSteps(), nil
 		default:
 			return nil, fmt.Errorf("replan job %d has no executable pipeline %q", job.ID, job.Pipeline)
 		}

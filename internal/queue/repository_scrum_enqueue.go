@@ -29,6 +29,6 @@ func (r *Repository) enqueueScrumJobTx(
 	}
 	return r.enqueueJobWithStepsTx(
 		ctx, tx, instruction, model.PipelineScrum, metadataJSON,
-		[]stepSeed{{action: "v3_coding", sortIndex: 5}}, &projectID,
+		codingSteps(), &projectID,
 	)
 }

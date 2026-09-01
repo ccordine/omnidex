@@ -9,6 +9,7 @@ import (
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/llm"
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/ollama"
 )
 
@@ -35,18 +36,26 @@ func TestLiveRequirementInventoryAuthorizationQualification(t *testing.T) {
 	client := ollama.New(baseURL, requirementsModel, "", llm.MaximumModelRequestDuration)
 
 	for _, fixture := range []struct {
-		name    string
-		request string
+		name             string
+		request          string
+		wantRequirements int
 	}{
+		{
+			name:             "single confirmation outcome",
+			request:          "The finished software lets a user confirm the item.",
+			wantRequirements: 1,
+		},
 		{
 			name: "image transformation and measurement",
 			request: "Build software that rotates supplied images by a supplied angle " +
 				"and reports the dimensions of each rotated image.",
+			wantRequirements: 2,
 		},
 		{
 			name: "appointment creation and cancellation",
 			request: "Build software that schedules appointments at supplied times " +
 				"and cancels selected appointments.",
+			wantRequirements: 2,
 		},
 	} {
 		fixture := fixture
@@ -87,7 +96,7 @@ func TestLiveRequirementInventoryAuthorizationQualification(t *testing.T) {
 					return result, err
 				},
 			}
-			resolution, err := resolveDirectCodingApplicationIntent(
+			proposals, err := resolveDirectCodingApplicationPlan(
 				runtime,
 				directCodingApplicationIntentModels{
 					Requirements: requirementsModel, ResultRelation: resultRelationModel,
@@ -96,12 +105,13 @@ func TestLiveRequirementInventoryAuthorizationQualification(t *testing.T) {
 					UserRequest: fixture.request,
 					Context:     inventoryInput.Context,
 				},
+				model.CodingScopeModeNormal,
 				nil,
 			)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(rawInventory, "\n") {
+			if fixture.wantRequirements > 1 && !strings.Contains(rawInventory, "\n") {
 				t.Fatalf("inventory was not a genuine multiline response: %q", rawInventory)
 			}
 			inventory, err := assemblyline.DecodeApplicationRequirementInventory(
@@ -114,19 +124,29 @@ func TestLiveRequirementInventoryAuthorizationQualification(t *testing.T) {
 			if inventory.RawSHA256 != assemblyline.ExactObjectiveContextSHA(rawInventory) {
 				t.Fatalf("inventory raw hash=%q, want exact response hash", inventory.RawSHA256)
 			}
-			if len(resolution.Requirements) != 2 {
+			if len(inventory.Candidates) != fixture.wantRequirements {
 				t.Fatalf(
-					"retained requirements=%d want 2; raw_inventory=%q resolution=%+v",
-					len(resolution.Requirements),
+					"raw candidates=%d want %d; raw_inventory=%q",
+					len(inventory.Candidates),
+					fixture.wantRequirements,
 					rawInventory,
-					resolution,
+				)
+			}
+			if len(proposals) != fixture.wantRequirements {
+				t.Fatalf(
+					"retained requirements=%d want %d; raw_inventory=%q proposals=%+v",
+					len(proposals),
+					fixture.wantRequirements,
+					rawInventory,
+					proposals,
 				)
 			}
 			t.Logf(
-				"requirements_model=%s result_relation_model=%s raw_candidates=%d retained=2 calls=%v",
+				"requirements_model=%s result_relation_model=%s raw_candidates=%d retained=%d calls=%v",
 				requirementsModel,
 				resultRelationModel,
 				len(inventory.Candidates),
+				len(proposals),
 				calls,
 			)
 		})
@@ -145,5 +165,6 @@ func liveRequirementInventoryInput(
 	return assemblyline.ApplicationRequirementInventoryInput{
 		UserRequest: request,
 		Context:     applicationContext,
+		ScopeMode:   model.CodingScopeModeNormal,
 	}
 }

@@ -34,6 +34,7 @@ type channelTurnMetadata struct {
 	RoleplayResponders              []roleplay.SimulationResponderRoute `json:"roleplay_responders,omitempty"`
 	RoleplayUserTurn                *roleplay.UserTurnAuthority         `json:"roleplay_user_turn,omitempty"`
 	ModelConfig                     modelconfig.Config                  `json:"model_config"`
+	CodingScopeMode                 model.CodingScopeMode               `json:"coding_scope_mode"`
 }
 
 type lockedChannelTurnAuthority struct {
@@ -261,7 +262,7 @@ func (r *Repository) persistChannelTurnTx(
 	metadata, err := marshalChannelTurnMetadata(
 		channelID, message.ID, authority.WorkspaceRoot,
 		modelDataSourceID(authority.DataSourceID), delegatedAuthorityID, authority.Mode,
-		modelSnapshot, simulation, clientWorkspaceIdentity,
+		modelSnapshot, r.codingScopeMode, simulation, clientWorkspaceIdentity,
 	)
 	if err != nil {
 		return model.ChannelMessage{}, model.Job{}, err
@@ -309,9 +310,13 @@ func marshalChannelTurnMetadata(
 	delegatedAuthorityID string,
 	channelMode model.ChannelMode,
 	modelSnapshot modelconfig.Config,
+	codingScopeMode model.CodingScopeMode,
 	simulation *roleplay.SimulationTurnAuthority,
 	clientWorkspaceIdentity string,
 ) ([]byte, error) {
+	if err := codingScopeMode.Validate(); err != nil {
+		return nil, fmt.Errorf("channel job coding scope authority: %w", err)
+	}
 	modelSnapshot = maps.Clone(modelSnapshot)
 	if modelSnapshot == nil {
 		modelSnapshot = modelconfig.Config{}
@@ -324,6 +329,7 @@ func marshalChannelTurnMetadata(
 		DelegatedDataAuthorityID: delegatedAuthorityID,
 		ChannelMode:              channelMode,
 		ModelConfig:              modelSnapshot,
+		CodingScopeMode:          codingScopeMode,
 	}
 	if simulation != nil {
 		if len(simulation.Responders) == 0 || len(simulation.ResponderRoutes) == 0 {
@@ -367,6 +373,9 @@ func validateChannelTurnMetadata(binding channelTurnMetadata) error {
 	}
 	if err := binding.ChannelMode.Validate(); err != nil {
 		return fmt.Errorf("channel job metadata mode: %w", err)
+	}
+	if err := binding.CodingScopeMode.Validate(); err != nil {
+		return fmt.Errorf("channel job metadata coding scope authority: %w", err)
 	}
 	switch binding.ChannelMode {
 	case model.ChannelModeAssistant:

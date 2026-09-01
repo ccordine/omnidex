@@ -8,19 +8,21 @@ import (
 	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/exactjson"
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/modelconfig"
 )
 
 type JobMetadata struct {
-	CardID             string             `json:"scrum_card_id"`
-	CardTitle          string             `json:"scrum_card_title"`
-	CardDescription    string             `json:"scrum_card_description"`
-	Checklist          string             `json:"scrum_checklist"`
-	TestCriteria       string             `json:"scrum_test_criteria"`
-	ReturnColumn       string             `json:"scrum_return_column"`
-	ChannelOrigin      bool               `json:"scrum_channel_origin"`
-	ChannelOperationID string             `json:"scrum_channel_operation_id"`
-	ModelConfig        modelconfig.Config `json:"model_config"`
+	CardID             string                `json:"scrum_card_id"`
+	CardTitle          string                `json:"scrum_card_title"`
+	CardDescription    string                `json:"scrum_card_description"`
+	Checklist          string                `json:"scrum_checklist"`
+	TestCriteria       string                `json:"scrum_test_criteria"`
+	ReturnColumn       string                `json:"scrum_return_column"`
+	ChannelOrigin      bool                  `json:"scrum_channel_origin"`
+	ChannelOperationID string                `json:"scrum_channel_operation_id"`
+	ModelConfig        modelconfig.Config    `json:"model_config"`
+	CodingScopeMode    model.CodingScopeMode `json:"coding_scope_mode"`
 }
 
 func (metadata JobMetadata) Validate() error {
@@ -52,6 +54,9 @@ func (metadata JobMetadata) Validate() error {
 		}
 	} else if metadata.ChannelOperationID != "" {
 		return fmt.Errorf("ordinary Scrum jobs forbid a channel operation ID")
+	}
+	if err := metadata.CodingScopeMode.Validate(); err != nil {
+		return fmt.Errorf("Scrum job metadata coding scope authority: %w", err)
 	}
 	encodedConfig, err := json.Marshal(metadata.ModelConfig)
 	if err != nil {
@@ -85,6 +90,7 @@ func DecodeJobMetadata(raw json.RawMessage) (JobMetadata, error) {
 		"scrum_card_id", "scrum_card_title",
 		"scrum_card_description", "scrum_checklist", "scrum_test_criteria",
 		"scrum_return_column", "scrum_channel_origin", "model_config",
+		"coding_scope_mode",
 		"scrum_channel_operation_id",
 	} {
 		if _, present := fields[key]; !present {

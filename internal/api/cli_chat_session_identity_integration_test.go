@@ -18,6 +18,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/gryph/omnidex/database"
 	"github.com/gryph/omnidex/internal/db"
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/modelconfig"
 	"github.com/gryph/omnidex/internal/projectroot"
 	"github.com/gryph/omnidex/internal/queue"
@@ -30,8 +31,9 @@ func TestCLIChatAPIsRejectReplacedWorkspaceIdentityWithoutHistory(t *testing.T) 
 		t.Skip("OMNI_TEST_DATABASE_URL is required for isolated PostgreSQL CLI API coverage")
 	}
 
-	accessRoot := t.TempDir()
-	workspaceRoot := filepath.Join(accessRoot, "workspace")
+	accessRoot := os.TempDir()
+	workspaceParent := t.TempDir()
+	workspaceRoot := filepath.Join(workspaceParent, "workspace")
 	if err := os.Mkdir(workspaceRoot, 0o755); err != nil {
 		t.Fatalf("create original workspace: %v", err)
 	}
@@ -39,7 +41,7 @@ func TestCLIChatAPIsRejectReplacedWorkspaceIdentityWithoutHistory(t *testing.T) 
 	if err != nil {
 		t.Skipf("filesystem cannot attest directory identity: %v", err)
 	}
-	retiredRoot := filepath.Join(accessRoot, "retired-workspace")
+	retiredRoot := filepath.Join(workspaceParent, "retired-workspace")
 	if err := os.Rename(workspaceRoot, retiredRoot); err != nil {
 		t.Fatalf("retire original workspace: %v", err)
 	}
@@ -218,5 +220,5 @@ func freshCLIChatAPIRepository(t *testing.T, databaseURL string) *queue.Reposito
 	if err != nil {
 		t.Fatalf("freeze empty model authority: %v", err)
 	}
-	return queue.New(pool, authority)
+	return queue.New(pool, authority, model.CodingScopeModeNormal)
 }

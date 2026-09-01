@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/gryph/omnidex/database"
 	"github.com/gryph/omnidex/internal/db"
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/modelconfig"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -83,7 +85,7 @@ func freshEvidenceRepository(
 	if err != nil {
 		t.Fatal(err)
 	}
-	return pool, New(pool, authority)
+	return pool, New(pool, authority, model.CodingScopeModeNormal)
 }
 
 func evidenceNonce(t *testing.T) string {
@@ -93,4 +95,29 @@ func evidenceNonce(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return hex.EncodeToString(value[:])
+}
+
+func TestEnqueueCodingJobSnapshotsCodingScopeMode(t *testing.T) {
+	databaseURL := evidenceDatabaseURL(t)
+	pool, _ := freshEvidenceRepository(t, databaseURL)
+	authority, err := modelconfig.Freeze(modelconfig.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := New(pool, authority, model.CodingScopeModeExpansive)
+	job, err := repository.EnqueueCodingJob(
+		context.Background(), "exercise coding scope metadata", t.TempDir(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var metadata struct {
+		CodingScopeMode model.CodingScopeMode `json:"coding_scope_mode"`
+	}
+	if err := json.Unmarshal(job.Metadata, &metadata); err != nil {
+		t.Fatal(err)
+	}
+	if metadata.CodingScopeMode != model.CodingScopeModeExpansive {
+		t.Fatalf("coding job scope mode=%q", metadata.CodingScopeMode)
+	}
 }

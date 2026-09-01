@@ -33,6 +33,7 @@ func (session *chatSession) resolveOperationError(err error) (quit bool, resultE
 		// current persisted state.
 		session.pendingTurn = nil
 		session.pendingControl = nil
+		session.pendingPlan = nil
 		resolution = nil
 		if renderErr := session.renderer.system("pending operation was rejected: %v", err); renderErr != nil {
 			return false, renderErr

@@ -45,6 +45,13 @@ func (session *chatSession) controlOperationID(
 	if session.pendingTurn != nil {
 		return "", fmt.Errorf("session turn %q remains unresolved", session.pendingTurn.operationID)
 	}
+	if session.pendingPlan != nil {
+		return "", fmt.Errorf(
+			"%s operation %q remains unresolved",
+			session.pendingPlan.kind,
+			session.pendingPlan.operationID,
+		)
+	}
 	if session.pendingControl != nil && session.pendingControl.jobID == jobID &&
 		session.pendingControl.action == action && session.pendingControl.exactText == exactText {
 		return session.pendingControl.operationID, nil

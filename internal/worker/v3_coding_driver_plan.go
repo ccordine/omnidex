@@ -5,56 +5,42 @@ import (
 	"path/filepath"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/queue"
 	"github.com/gryph/omnidex/internal/station"
 )
 
 func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
-	authority := s.directCodingAuthority()
-	provenance, err := objectiveInstructionPathProvenance(
-		s.runtime.ctx, s.root, authority,
+	frozenPlan, err := s.runtime.svc.repo.LoadFrozenCodingPlan(
+		s.runtime.ctx, s.runtime.claim.Authority,
 	)
 	if err != nil {
-		return directCodingAssembly{}, fmt.Errorf("derive current-tree artifact provenance: %w", err)
+		return directCodingAssembly{}, fmt.Errorf("load frozen coding plan: %w", err)
 	}
-	s.pathProvenance = provenance
-	redacted, identities, err := assemblyline.RedactArtifactIdentities(authority, provenance)
+	inputs, err := s.prepareApplicationInputs()
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
-	requestAuthority, err := newDirectCodingApplicationRequestAuthority(authority, redacted)
-	if err != nil {
-		return directCodingAssembly{}, err
-	}
-	requirementModel, err := s.workerModel(station.CodingRequirements)
-	if err != nil {
-		return directCodingAssembly{}, err
-	}
-	resultRelationModel, err := s.workerModel(station.CodingRequirementResultRelation)
-	if err != nil {
-		return directCodingAssembly{}, err
-	}
-	workerRuntime := directCodingWorkerRuntime(s)
-	applicationContext, err := assemblyline.BootstrapApplicationContext(
-		redacted,
+	approvedRequirements, err := approvedApplicationRequirementsFromFrozenPlan(
+		frozenPlan, inputs.RequestAuthority.requestSHA256,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
 	interpretation, err := runDirectCodingApplicationInterpreter(
-		workerRuntime,
+		inputs.Runtime,
 		directCodingApplicationIntentModels{
-			Requirements: requirementModel, ResultRelation: resultRelationModel,
+			Requirements: inputs.RequirementModel, ResultRelation: inputs.ResultRelationModel,
 		},
 		func() (string, error) { return s.workerModel(station.CodingSurface) },
 		func() (string, error) { return s.workerModel(station.CodingArtifactHandling) },
-		requestAuthority, applicationContext, identities,
+		inputs.RequestAuthority, inputs.ApplicationContext, approvedRequirements, inputs.Identities,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
 	specification := interpretation.Specification
 	protected, required, deletions, err := resolveDirectCodingArtifactPaths(
-		specification.Artifacts, identities,
+		specification.Artifacts, inputs.Identities,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err
@@ -67,9 +53,9 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 		}, nil
 	}
 	selection, err := selectDirectCodingProject(
-		workerRuntime, func() (string, error) {
+		inputs.Runtime, func() (string, error) {
 			return s.workerModel(station.CodingProjectStackConstraint)
-		}, redacted, specification, identities,
+		}, inputs.RequestAuthority.modelRequest, specification, inputs.Identities,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err
@@ -80,7 +66,7 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 		return directCodingAssembly{}, err
 	}
 	requirementRelations, err := newDirectCodingApplicationTaskResultRelationPlan(
-		workload, interpretation.AcceptedRequirements, requestAuthority,
+		workload, interpretation.AcceptedRequirements, inputs.RequestAuthority,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err
@@ -102,7 +88,7 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	if err := s.bindDirectCodingTargetTreePathProvenance(targetTree); err != nil {
 		return directCodingAssembly{}, err
 	}
-	workerRuntime.PathProvenance = s.pathProvenance
+	inputs.Runtime.PathProvenance = s.pathProvenance
 	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_workload_frozen", fmt.Sprintf(
 		"tasks=%d sha256=%s", len(workload.Tasks), workload.SHA256,
 	))
@@ -154,4 +140,30 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 		selectedStack.ID, len(assembly.Files), blockCount,
 	))
 	return assembly, nil
+}
+
+func approvedApplicationRequirementsFromFrozenPlan(
+	plan queue.FrozenCodingPlan,
+	requestSHA256 string,
+) ([]assemblyline.ApplicationRequirement, error) {
+	requirements := make([]assemblyline.ApplicationRequirement, len(plan.Leaves))
+	for index, leaf := range plan.Leaves {
+		relation := assemblyline.ApplicationRequirementCandidateResultRelationResult{
+			Schema:                   leaf.ResultRelation.Schema,
+			CandidateSHA256:          leaf.ResultRelation.CandidateSHA256,
+			KindReceiptSHA256:        leaf.ResultRelation.KindReceiptSHA256,
+			CardinalityReceiptSHA256: leaf.ResultRelation.CardinalityReceiptSHA256,
+			Relation:                 leaf.ResultRelation.Relation,
+		}
+		if err := relation.ValidateAcceptedFor(leaf.Leaf.Statement); err != nil {
+			return nil, fmt.Errorf("frozen coding plan leaf %q: %w", leaf.Leaf.ID, err)
+		}
+		requirements[index] = assemblyline.ApplicationRequirement{
+			ID:             fmt.Sprintf("requirement_%03d", index+1),
+			Statement:      leaf.Leaf.Statement,
+			RequestSHA256:  requestSHA256,
+			ResultRelation: relation,
+		}
+	}
+	return requirements, nil
 }

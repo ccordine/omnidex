@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/modelconfig"
 	"github.com/gryph/omnidex/internal/station"
 )
@@ -28,6 +29,22 @@ func modelRoutingFromJobMetadata(metadata json.RawMessage) (ModelRouting, error)
 		return ModelRouting{}, fmt.Errorf("parse job model config: %w", err)
 	}
 	return cfg.Routing(), nil
+}
+
+func codingScopeModeFromJobMetadata(metadata json.RawMessage) (model.CodingScopeMode, error) {
+	if len(metadata) == 0 {
+		return "", fmt.Errorf("job coding scope metadata is required")
+	}
+	var payload struct {
+		CodingScopeMode model.CodingScopeMode `json:"coding_scope_mode"`
+	}
+	if err := json.Unmarshal(metadata, &payload); err != nil {
+		return "", fmt.Errorf("parse job coding scope metadata: %w", err)
+	}
+	if err := payload.CodingScopeMode.Validate(); err != nil {
+		return "", fmt.Errorf("parse job coding scope mode: %w", err)
+	}
+	return payload.CodingScopeMode, nil
 }
 
 func stationModel(routing ModelRouting, id station.ID) (string, error) {

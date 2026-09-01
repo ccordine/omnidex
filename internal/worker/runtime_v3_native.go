@@ -61,6 +61,8 @@ func (r *nativeRuntimeV3) run() error {
 	switch r.action {
 	case "objective_resolve":
 		return r.runObjectiveResolve()
+	case "v3_coding_plan":
+		return r.runDirectCodingPlanAction()
 	case "v3_coding":
 		return r.runDirectCodingAction()
 	default:
