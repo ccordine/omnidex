@@ -257,6 +257,24 @@ func TestSourceBodyDefectRejectsCompletePreviousBody(t *testing.T) {
 	}
 }
 
+func TestSourceBodyCorrectionEvidenceRejectsCompletePreviousBody(t *testing.T) {
+	t.Parallel()
+	const body = "unsafe { 1 }"
+	question := "What safe expression belongs here?"
+	evidence := SourceBodyCorrectionEvidence{
+		BaseCandidate:  body,
+		BaseSHA256:     sourceBodySHA256(body),
+		StartByte:      0,
+		EndByte:        len(body),
+		Question:       question,
+		QuestionSHA256: sourceBodySHA256(question),
+	}
+	if err := evidence.Validate(question + "\n\n" + body); err == nil ||
+		!strings.Contains(err.Error(), "complete previously returned body") {
+		t.Fatalf("complete-body evidence error=%v", err)
+	}
+}
+
 func TestSourceIdentifierCorrectionUsesSoleCodeOwnedReplacementWithoutModelText(t *testing.T) {
 	t.Parallel()
 	choice, err := NewOpaqueModelChoice("JavaScript function parameter named \"value\"", "value")

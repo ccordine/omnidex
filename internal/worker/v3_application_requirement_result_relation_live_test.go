@@ -2,8 +2,6 @@ package worker
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -145,27 +143,6 @@ func executeLivePortablePrompt(
 		return assemblyline.PortableResult{}, err
 	}
 	validationErr := llm.ValidateExactPreparedGenerationForRequest(prepared, generation)
-	var outputLimit *llm.ExactPreparedOutputLimitReachedError
-	if errors.As(validationErr, &outputLimit) {
-		nextMaximum := prepared.ContextTokens - outputLimit.PromptTokens
-		if nextMaximum <= prepared.MaxOutputTokens || nextMaximum >= prepared.ContextTokens {
-			return assemblyline.PortableResult{}, fmt.Errorf(
-				"live exact station reached its hard native-context authority: %w",
-				validationErr,
-			)
-		}
-		continued := prepared
-		continued.MaxOutputTokens = nextMaximum
-		if _, err := llm.ExactPreparedRequestBytes(continued); err != nil {
-			return assemblyline.PortableResult{}, err
-		}
-		generation, err = generatePreparedExactWithinMaximumDuration(ctx, client, continued)
-		if err != nil {
-			return assemblyline.PortableResult{}, err
-		}
-		prepared = continued
-		validationErr = llm.ValidateExactPreparedGenerationForRequest(prepared, generation)
-	}
 	t.Logf("kind=%s response=%q done_reason=%s output_tokens=%d", job.Kind,
 		generation.Content, generation.ProviderDoneReason, generation.Usage.EvalCount)
 	if validationErr != nil {

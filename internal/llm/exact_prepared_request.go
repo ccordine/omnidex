@@ -66,7 +66,6 @@ func validateExactPreparedRequest(prepared PreparedModel) error {
 	}
 	if strings.TrimSpace(prepared.BaseModel) == "" ||
 		prepared.ContextModel != prepared.BaseModel || strings.TrimSpace(prepared.Prompt) == "" ||
-		prepared.MaxOutputTokens <= 0 ||
 		prepared.ContextTokens <= 0 {
 		return fmt.Errorf("prepared request does not satisfy the exact Ollama generation contract")
 	}
@@ -86,7 +85,6 @@ func validateExactPreparedRequest(prepared PreparedModel) error {
 	}
 	return ValidateExactPreparedInputAuthority(
 		prepared.ContextTokens,
-		prepared.ContextTokens-prepared.MaxOutputTokens,
 		prepared.MaxOutputTokens,
 		rawInput,
 	)
@@ -107,16 +105,17 @@ func ExactPreparedRequestSHA256(prepared PreparedModel) (string, error) {
 // immutable receipt supplies the actual prompt/output token counts.
 func ValidateExactPreparedInputAuthority(
 	contextTokens int,
-	maxInputTokens int,
 	maxOutputTokens int,
 	rawInput string,
 ) error {
 	if err := ValidateExactPreparedContextTokens(contextTokens); err != nil {
 		return err
 	}
-	if maxInputTokens <= 0 || maxOutputTokens <= 0 ||
-		maxInputTokens != contextTokens-maxOutputTokens {
-		return fmt.Errorf("exact completion token ceilings must be positive")
+	if maxOutputTokens != -1 &&
+		(maxOutputTokens <= 0 || maxOutputTokens > contextTokens) {
+		return fmt.Errorf(
+			"exact completion num_predict must be provider-unlimited -1 or positive and no greater than native context",
+		)
 	}
 	return validateExactPreparedInputBytes(rawInput)
 }
@@ -136,26 +135,30 @@ func validateExactPreparedInputBytes(rawInput string) error {
 }
 
 // ValidateExactPreparedNativeUsage proves the actual provider-tokenized call
-// stayed inside the declared input, output, and native context authorities.
+// stayed inside the declared output and aggregate native context authorities.
 func ValidateExactPreparedNativeUsage(
 	contextTokens int,
-	maxInputTokens int,
 	maxOutputTokens int,
 	usage ProviderGenerationUsage,
 ) error {
 	if err := ValidateExactPreparedInputAuthority(
-		contextTokens, maxInputTokens, maxOutputTokens, "usage-receipt",
+		contextTokens, maxOutputTokens, "usage-receipt",
 	); err != nil {
 		return err
 	}
 	if usage.PromptEvalCount <= 0 || usage.EvalCount <= 0 {
 		return fmt.Errorf("exact native usage requires positive prompt and output token counts")
 	}
-	if usage.PromptEvalCount > maxInputTokens || usage.EvalCount > maxOutputTokens ||
-		usage.PromptEvalCount+usage.EvalCount > contextTokens {
+	if maxOutputTokens > 0 && usage.EvalCount > maxOutputTokens {
 		return fmt.Errorf(
-			"exact provider context exceeded: prompt_tokens=%d input_ceiling=%d output_tokens=%d output_ceiling=%d native_context=%d",
-			usage.PromptEvalCount, maxInputTokens, usage.EvalCount, maxOutputTokens, contextTokens,
+			"exact provider output exceeded: output_tokens=%d output_ceiling=%d",
+			usage.EvalCount, maxOutputTokens,
+		)
+	}
+	if usage.PromptEvalCount > contextTokens-usage.EvalCount {
+		return fmt.Errorf(
+			"exact provider aggregate native context exceeded: prompt_tokens=%d output_tokens=%d native_context=%d",
+			usage.PromptEvalCount, usage.EvalCount, contextTokens,
 		)
 	}
 	return nil

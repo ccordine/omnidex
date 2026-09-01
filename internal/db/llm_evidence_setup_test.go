@@ -1,10 +1,12 @@
 package db_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/gryph/omnidex/database"
+	"github.com/gryph/omnidex/internal/llm"
 )
 
 func TestAuthoritativeSetupDefinesExactImmutableLLMCallEvidence(t *testing.T) {
@@ -14,13 +16,24 @@ func TestAuthoritativeSetupDefinesExactImmutableLLMCallEvidence(t *testing.T) {
 		"CREATE TABLE llm_call_evidence",
 		"system_envelope text NOT NULL",
 		"model_input_sha256",
+		"dispatch_attempt integer NOT NULL CHECK (dispatch_attempt BETWEEN 1 AND 2)",
+		"replaces_call_evidence_id bigint",
 		"provider_request_sha256",
 		"generation_receipt_sha256",
 		"octet_length(generation_receipt) BETWEEN 2 AND 16384",
 		"raw_response_present boolean NOT NULL",
 		"raw_response_sha256",
+		fmt.Sprintf(
+			"raw_response_bytes BETWEEN 0 AND %d",
+			llm.MaxExactPreparedProviderResponseBytes+1,
+		),
+		fmt.Sprintf(
+			"octet_length(candidate) <= %d",
+			llm.MaxExactPreparedModelContentBytes,
+		),
 		"error_sha256",
 		"provider_duration_nanos",
+		"context_tokens integer NOT NULL CHECK (context_tokens BETWEEN 1 AND 1048576)",
 		"CREATE TABLE llm_call_outcomes",
 		"CREATE TABLE llm_call_receipts",
 		"'accepted','rejected','provider_failed','interrupted'",
@@ -39,6 +52,9 @@ func TestAuthoritativeSetupDefinesExactImmutableLLMCallEvidence(t *testing.T) {
 		if !strings.Contains(setup, required) {
 			t.Fatalf("authoritative setup omits %q", required)
 		}
+	}
+	if strings.Contains(setup, "source_atomic_whole_leaf") {
+		t.Fatal("authoritative setup retains forbidden whole-body correction authority")
 	}
 }
 

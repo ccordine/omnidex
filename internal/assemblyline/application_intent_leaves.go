@@ -45,8 +45,8 @@ func DecodeApplicationProductContextLeaf(
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	leaf, err := decodeRawSemanticLeaf(
-		"application product context", raw, maxApplicationProductBytes, true,
+	leaf, err := decodeOrdinarySemanticText(
+		"application product context", raw, maxApplicationProductBytes,
 	)
 	if err != nil {
 		return "", err

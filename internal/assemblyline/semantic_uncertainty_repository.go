@@ -66,7 +66,7 @@ func repositorySemanticUncertaintyContract(
 			"What bounded source-ordered durable fictional facts does the exact current contribution directly establish?",
 			"Attribution and durable narrative meaning require semantic interpretation beyond structural validation.",
 			"The exact attributed contribution, reference context, and typed antecedent when present.",
-			"Between one and the code-owned maximum ordinary candidate-fact lines.",
+			"One bounded positive raw inventory containing between one and the code-owned maximum ordinary candidate-fact lines.",
 			"DecodeRoleplayCanonFactInventory validates the inventory before code sieves each candidate independently.")
 	case WorkRoleplayCanonFactCandidateAuthorization:
 		contract = semanticUncertaintyContract(kind,

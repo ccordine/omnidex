@@ -228,21 +228,36 @@ func TestLanguageFragmentSpanCorrectionExhaustionReleasesOnlyItsJob(t *testing.T
 		Signature: "function Value()", Behavior: "Return one value.",
 	}
 	corrections, rejections, releases := 0, 0, 0
+	var jobID string
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: assemblyline.MaxSourceBodyAttempts,
-		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
+		Execute: func(job assemblyline.PortableJob, model string) (assemblyline.PortableResult, error) {
+			jobID = job.ID
+			if model != "fixture-model" {
+				return assemblyline.PortableResult{}, fmt.Errorf("initial model=%q", model)
+			}
 			return exactSourceBodyTestResult(t, job, "return wrong;"), nil
 		},
 		Correct: func(
 			job assemblyline.PortableJob,
-			_ string,
+			model string,
 			correction assemblyline.SourceBodyCorrection,
 		) (assemblyline.PortableResult, error) {
 			corrections++
-			if correction.Mutable() != "wrong" {
-				return assemblyline.PortableResult{}, fmt.Errorf("mutable=%q", correction.Mutable())
+			if job.ID != jobID || model != "fixture-model" {
+				return assemblyline.PortableResult{}, fmt.Errorf(
+					"correction route job=%q model=%q", job.ID, model,
+				)
 			}
-			return exactSourceBodyTestResult(t, job, "wrong"), nil
+			wantMutable := []string{"wrong", "stillWrong"}[corrections-1]
+			if correction.Mutable() != wantMutable {
+				return assemblyline.PortableResult{}, fmt.Errorf(
+					"correction %d mutable=%q; want %q",
+					corrections, correction.Mutable(), wantMutable,
+				)
+			}
+			replacement := []string{"stillWrong", "finalWrong"}[corrections-1]
+			return exactSourceBodyTestResult(t, job, replacement), nil
 		},
 		Release: func(assemblyline.PortableJob) error { releases++; return nil },
 		Finalize: func(
@@ -261,12 +276,18 @@ func TestLanguageFragmentSpanCorrectionExhaustionReleasesOnlyItsJob(t *testing.T
 		_ assemblyline.FragmentGenerationInput,
 		body string,
 	) (string, error) {
-		start := strings.Index(body, "wrong")
-		if start < 0 {
+		const prefix = "return "
+		if !strings.HasPrefix(body, prefix) {
 			return "", fmt.Errorf("fixture lost exact defect")
 		}
+		start := len(prefix)
+		end := strings.Index(body[start:], ";")
+		if end < 0 {
+			return "", fmt.Errorf("fixture lost exact defect terminator")
+		}
+		end += start
 		defect, err := assemblyline.NewSourceBodyDefect(
-			body, start, start+len("wrong"),
+			body, start, end,
 			"Fix this identifier so it names the required value.",
 			errors.New("identifier does not name the required value"),
 		)
@@ -285,8 +306,98 @@ func TestLanguageFragmentSpanCorrectionExhaustionReleasesOnlyItsJob(t *testing.T
 	if err == nil {
 		t.Fatal("unchanged defective span unexpectedly passed")
 	}
-	if corrections != 1 || rejections != 2 || releases != 1 {
+	if corrections != assemblyline.MaxSourceBodyAttempts-1 ||
+		rejections != assemblyline.MaxSourceBodyAttempts || releases != 1 {
 		t.Fatalf("corrections=%d rejections=%d releases=%d", corrections, rejections, releases)
+	}
+}
+
+func TestLanguageFragmentSucceedsOnSecondExactSpanCorrection(t *testing.T) {
+	t.Parallel()
+	input := assemblyline.FragmentGenerationInput{
+		Language: "javascript", Dialect: "ECMAScript 2022",
+		Signature: "function Value()", Behavior: "Return one value.",
+	}
+	corrections := 0
+	var jobID string
+	runtime := typedWorkerRuntime{
+		Context: context.Background(), MaxAttempts: assemblyline.MaxSourceBodyAttempts,
+		Execute: func(job assemblyline.PortableJob, model string) (assemblyline.PortableResult, error) {
+			jobID = job.ID
+			if model != "fixture-model" {
+				return assemblyline.PortableResult{}, fmt.Errorf("initial model=%q", model)
+			}
+			return exactSourceBodyTestResult(t, job, "return firstWrong;"), nil
+		},
+		Correct: func(
+			job assemblyline.PortableJob,
+			model string,
+			correction assemblyline.SourceBodyCorrection,
+		) (assemblyline.PortableResult, error) {
+			corrections++
+			if job.ID != jobID || model != "fixture-model" {
+				return assemblyline.PortableResult{}, fmt.Errorf(
+					"correction route job=%q model=%q", job.ID, model,
+				)
+			}
+			wantMutable := []string{"firstWrong", "secondWrong"}[corrections-1]
+			if correction.Mutable() != wantMutable {
+				return assemblyline.PortableResult{}, fmt.Errorf(
+					"correction %d mutable=%q; want %q",
+					corrections, correction.Mutable(), wantMutable,
+				)
+			}
+			replacement := []string{"secondWrong", "1"}[corrections-1]
+			return exactSourceBodyTestResult(t, job, replacement), nil
+		},
+		Release: func(assemblyline.PortableJob) error {
+			return fmt.Errorf("successful correction released its source context")
+		},
+		Finalize: func(
+			_ assemblyline.PortableJob,
+			_ assemblyline.PortableResult,
+			_ error,
+		) error {
+			return nil
+		},
+	}
+	validate := func(
+		_ assemblyline.FragmentGenerationInput,
+		body string,
+	) (string, error) {
+		for _, failed := range []string{"firstWrong", "secondWrong"} {
+			if start := strings.Index(body, failed); start >= 0 {
+				defect, err := assemblyline.NewSourceBodyDefect(
+					body, start, start+len(failed),
+					"Fix this identifier so it names the required value.",
+					errors.New("identifier does not name the required value"),
+				)
+				if err != nil {
+					return "", err
+				}
+				return "", defect
+			}
+		}
+		if body != "return 1;" {
+			return "", fmt.Errorf("unexpected corrected body %q", body)
+		}
+		return "function Value() {\nreturn 1;\n}", nil
+	}
+
+	result, err := runDirectCodingLanguageFragmentWorker(
+		runtime, "fixture-model",
+		directCodingLanguageGenerationJob{
+			Subject: "source.second-correction", Input: input, Validate: validate,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if corrections != assemblyline.MaxSourceBodyAttempts-1 {
+		t.Fatalf("corrections=%d", corrections)
+	}
+	if result != "function Value() {\nreturn 1;\n}" {
+		t.Fatalf("result=%q", result)
 	}
 }
 

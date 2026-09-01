@@ -9,6 +9,7 @@ import (
 
 const (
 	ApplicationProjectStackConstraintSchemaV2 = "omnidex.application-project-stack-constraint.v2"
+	ApplicationProjectStackUnconstrained      = "UNCONSTRAINED"
 	ApplicationProjectStackUnsupported        = "UNSUPPORTED"
 	maxApplicationProjectStackCandidates      = 8
 	maxApplicationProjectStackSummaryBytesV2  = 2048
@@ -116,7 +117,8 @@ func validateApplicationProjectStackDecisionCandidates(
 	candidateID string,
 	candidates []ApplicationProjectStackCandidate,
 ) error {
-	if candidateID == ApplicationProjectStackUnsupported {
+	if candidateID == ApplicationProjectStackUnconstrained ||
+		candidateID == ApplicationProjectStackUnsupported {
 		return nil
 	}
 	for _, candidate := range candidates {
@@ -138,7 +140,7 @@ func BuildApplicationProjectStackConstraintPrompt(
 		return "", err
 	}
 	return RenderOpaqueModelChoiceQuestion(
-		"Which registered technical format and packaging shape can realize the software request? Select the no-suitable-format choice only when every registered format conflicts with an explicit technical constraint in the request.",
+		"Which registered technical format and packaging shape, if any, is explicitly required by the software request? Select the unconstrained choice when the request establishes none. Select the no-suitable-format choice only when an explicit technical constraint conflicts with every registered format.",
 		[]string{"Software request:\n" + input.UserRequest},
 		choices,
 	)
@@ -192,6 +194,13 @@ func applicationProjectStackConstraintOpaqueChoices(
 	if err != nil {
 		return nil, err
 	}
+	unconstrained, err := NewOpaqueModelChoice(
+		"The request does not establish a technical format or packaging shape.",
+		ApplicationProjectStackUnconstrained,
+	)
+	if err != nil {
+		return nil, err
+	}
 	unsupported, err := NewOpaqueModelChoice(
 		"No registered technical format can satisfy an explicit technical constraint in the request.",
 		ApplicationProjectStackUnsupported,
@@ -199,5 +208,5 @@ func applicationProjectStackConstraintOpaqueChoices(
 	if err != nil {
 		return nil, err
 	}
-	return append(choices, unsupported), nil
+	return append(choices, unconstrained, unsupported), nil
 }

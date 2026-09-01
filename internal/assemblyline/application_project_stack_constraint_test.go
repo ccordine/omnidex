@@ -21,8 +21,9 @@ func TestApplicationProjectStackConstraintUsesOnlyOpaqueModelIDs(t *testing.T) {
 	for _, required := range []string{
 		"A. Use this technical format and packaging shape: Go with a module manifest",
 		"B. Use this technical format and packaging shape: Rust with a Cargo manifest",
-		"C. No registered technical format can satisfy an explicit technical constraint",
-		"Answer with A or B or C.",
+		"C. The request does not establish a technical format or packaging shape.",
+		"D. No registered technical format can satisfy an explicit technical constraint",
+		"Answer with A or B or C or D.",
 	} {
 		if !strings.Contains(prompt, required) {
 			t.Fatalf("project-stack prompt omitted %q: %s", required, prompt)
@@ -31,6 +32,7 @@ func TestApplicationProjectStackConstraintUsesOnlyOpaqueModelIDs(t *testing.T) {
 	for _, forbidden := range []string{
 		input.Candidates[0].CandidateID,
 		input.Candidates[1].CandidateID,
+		ApplicationProjectStackUnconstrained,
 		ApplicationProjectStackUnsupported,
 		`"candidate_id"`,
 		`"schema"`,
@@ -51,5 +53,22 @@ func TestApplicationProjectStackConstraintUsesOnlyOpaqueModelIDs(t *testing.T) {
 		input.Candidates[1].CandidateID,
 	); err == nil {
 		t.Fatal("code-owned project-stack candidate ID was accepted as model output")
+	}
+}
+
+func TestApplicationProjectStackConstraintDecodesUnconstrainedAsCodeOwnedState(t *testing.T) {
+	t.Parallel()
+	input := ApplicationProjectStackConstraintInput{
+		UserRequest: "Build a terminal utility.",
+		Candidates: []ApplicationProjectStackCandidate{
+			{CandidateID: "STACK_CANDIDATE_1", TechnicalFormat: "Go with a module manifest"},
+		},
+	}
+	decision, err := DecodeApplicationProjectStackConstraintDecision(input, "B")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decision.CandidateID != ApplicationProjectStackUnconstrained {
+		t.Fatalf("decoded candidate = %q, want unconstrained", decision.CandidateID)
 	}
 }

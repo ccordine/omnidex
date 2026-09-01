@@ -192,6 +192,20 @@ func evaluateLiveTypeScriptExpression(
 		return nil, fmt.Errorf("restricted evaluator received an empty expression")
 	}
 	switch node.Kind() {
+	case "string":
+		literal, err := strconv.Unquote(node.Utf8Text(source))
+		if err != nil {
+			return nil, fmt.Errorf("restricted evaluator received invalid string literal: %w", err)
+		}
+		return literal, nil
+	case "template_string":
+		literal := node.Utf8Text(source)
+		if len(literal) < 2 || literal[0] != '`' || literal[len(literal)-1] != '`' ||
+			strings.Contains(literal[1:len(literal)-1], "${") ||
+			strings.ContainsRune(literal[1:len(literal)-1], '\\') {
+			return nil, fmt.Errorf("restricted evaluator received non-literal template text")
+		}
+		return literal[1 : len(literal)-1], nil
 	case "identifier":
 		value, exists := values[node.Utf8Text(source)]
 		if !exists {
@@ -278,5 +292,35 @@ func TestRestrictedLiveTypeScriptReturnEvaluatorRejectsControlFlow(t *testing.T)
 		source, map[string]any{"name": "deploy"},
 	); err == nil {
 		t.Fatal("control-flow source unexpectedly received an unconditional result")
+	}
+}
+
+func TestRestrictedLiveTypeScriptReturnEvaluatorAcceptsInertTemplateLiteral(t *testing.T) {
+	source := "function PrefixCommand(name: string): string {\n" +
+		"  return `/` + name;\n" +
+		"}"
+	actual, err := evaluateRestrictedLiveTypeScriptReturn(
+		source, map[string]any{"name": "deploy"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if actual != "/deploy" {
+		t.Fatalf("result=%q, want %q", actual, "/deploy")
+	}
+}
+
+func TestRestrictedLiveTypeScriptReturnEvaluatorAcceptsQuotedStringLiteral(t *testing.T) {
+	source := "function PrefixCommand(name: string): string {\n" +
+		"  return \"/\" + name;\n" +
+		"}"
+	actual, err := evaluateRestrictedLiveTypeScriptReturn(
+		source, map[string]any{"name": "deploy"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if actual != "/deploy" {
+		t.Fatalf("result=%q, want %q", actual, "/deploy")
 	}
 }

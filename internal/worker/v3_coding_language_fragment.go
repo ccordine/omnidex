@@ -105,18 +105,14 @@ func runDirectCodingLanguageFragmentWorker(
 		validationErr := result.ValidateFor(portable)
 		body := ""
 		providerBody := ""
-		appliedCorrectionBody := ""
-		replacementStart, replacementEnd := -1, -1
 		if validationErr == nil && attempt == 1 {
 			body, validationErr = normalizeDirectCodingLanguageResponse(
 				job, result.Candidate,
 			)
 			providerBody = body
 		} else if validationErr == nil {
-			body, replacementStart, replacementEnd, validationErr =
-				correction.ApplyWithReplacementRange(result.Candidate)
+			body, validationErr = correction.Apply(result.Candidate)
 			providerBody = body
-			appliedCorrectionBody = body
 		}
 		candidate := ""
 		var nextCorrection *assemblyline.SourceBodyCorrection
@@ -130,24 +126,6 @@ func runDirectCodingLanguageFragmentWorker(
 			validationErr = fmt.Errorf(
 				"language fragment validator returned a correction without a defect",
 			)
-		}
-		if validationErr != nil && attempt > 1 && nextCorrection != nil &&
-			body == appliedCorrectionBody {
-			nextStart, nextEnd, rangeErr := nextCorrection.MutableRange()
-			if rangeErr != nil {
-				validationErr = fmt.Errorf(
-					"validate next source-span correction after replacement: %w", rangeErr,
-				)
-				nextCorrection = nil
-			} else if sourceRangesOverlap(
-				replacementStart, replacementEnd, nextStart, nextEnd,
-			) {
-				validationErr = fmt.Errorf(
-					"source-span replacement did not produce one valid mutable leaf: %w",
-					validationErr,
-				)
-				nextCorrection = nil
-			}
 		}
 		if validationErr == nil {
 			if err := finalizeTypedWorkerResult(runtime, portable, result, nil); err != nil {
@@ -227,11 +205,6 @@ func runDirectCodingLanguageFragmentWorker(
 		}
 	}
 	return "", fmt.Errorf("language fragment worker exhausted an unreachable attempt state")
-}
-
-func sourceRangesOverlap(leftStart, leftEnd, rightStart, rightEnd int) bool {
-	return leftStart >= 0 && leftEnd > leftStart && rightStart >= 0 &&
-		rightEnd > rightStart && leftStart < rightEnd && rightStart < leftEnd
 }
 
 func validateDirectCodingLanguageBody(

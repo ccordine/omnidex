@@ -79,7 +79,7 @@ func DecodeContextMinificationDecision(
 	); err != nil {
 		return ContextMinificationDecision{}, err
 	}
-	leaf, err := decodeRawSemanticLeaf("context minification", raw, MaxContextMinifiedBytes, true)
+	leaf, err := decodeOrdinarySemanticText("context minification", raw, MaxContextMinifiedBytes)
 	if err != nil {
 		return ContextMinificationDecision{}, err
 	}

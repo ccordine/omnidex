@@ -16,7 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func TestFreshSchemaExpiredAttemptResumesPersistedOutputLimitLineage(t *testing.T) {
+func TestFreshSchemaExpiredAttemptReplaysTerminalOutputLimitWithoutDispatch(t *testing.T) {
 	databaseURL := strings.TrimSpace(os.Getenv("OMNI_TEST_DATABASE_URL"))
 	if databaseURL == "" {
 		t.Skip("OMNI_TEST_DATABASE_URL is required for output-limit recovery coverage")
@@ -24,7 +24,7 @@ func TestFreshSchemaExpiredAttemptResumesPersistedOutputLimitLineage(t *testing.
 	pool, repository := freshWorkerEvidenceRepository(t, databaseURL)
 	ctx := context.Background()
 	job, err := repository.EnqueueCodingJob(
-		ctx, "exercise restart-durable output continuation", t.TempDir(),
+		ctx, "exercise restart-durable terminal output limit", t.TempDir(),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -49,7 +49,8 @@ func TestFreshSchemaExpiredAttemptResumesPersistedOutputLimitLineage(t *testing.
 	}
 	call := exactStationCall{
 		WorkID: classification.ID, WorkKind: classification.Kind, Iteration: 1,
-		Prompt: prompt, ContextTokens: 8192, MaxOutputTokens: initialMaximum,
+		DispatchAttempt: 1,
+		Prompt:          prompt, ContextTokens: 8192, MaxOutputTokens: initialMaximum,
 	}
 	prepared, err := prepareExactStationCall(call, "fixture-model", nil)
 	if err != nil {
@@ -89,9 +90,7 @@ func TestFreshSchemaExpiredAttemptResumesPersistedOutputLimitLineage(t *testing.
 	claim2 := reclaimEvidenceAttemptForTest(
 		t, ctx, pool, claim1, "output-recovery-worker-2",
 	)
-	client2 := &exactEvidenceStationClient{fixtures: []exactEvidenceStationFixture{
-		{candidate: "A"},
-	}}
+	client2 := &exactEvidenceStationClient{}
 	service2 := &Service{
 		repo: repository, stationClient: client2, inferenceContextTokens: "8192",
 		runtimeEventChannels: make(map[int64]runtimeEventChannelBinding),
@@ -100,7 +99,7 @@ func TestFreshSchemaExpiredAttemptResumesPersistedOutputLimitLineage(t *testing.
 		svc: service2, ctx: ctx, claim: claim2,
 	}, "output-recovery")
 	decodedCandidates := make([]string, 0, 1)
-	value, err := runDirectCodingSemanticLeafCall(
+	_, err = runDirectCodingSemanticLeafCall(
 		runtime2, "fixture-model", "classification", classification, nil,
 		func(candidate string) (string, error) {
 			decodedCandidates = append(decodedCandidates, candidate)
@@ -116,32 +115,29 @@ func TestFreshSchemaExpiredAttemptResumesPersistedOutputLimitLineage(t *testing.
 			return string(decoded.Surface), nil
 		},
 	)
-	if err != nil || value != string(assemblyline.ApplicationSurfaceBrowser) {
-		t.Fatalf("classification=%q err=%v", value, err)
+	if err == nil {
+		t.Fatal("persisted output-limit failure was accepted")
 	}
-	if client2.calls != 1 || runtime2.ProviderCalls == nil || runtime2.ProviderCalls() != 1 {
+	if !strings.Contains(err.Error(), limit.Error()) {
+		t.Fatalf("persisted output-limit error=%v want=%v", err, limit)
+	}
+	if client2.calls != 0 || runtime2.ProviderCalls == nil || runtime2.ProviderCalls() != 0 {
 		t.Fatalf("recovery provider calls=%d", client2.calls)
 	}
-	if len(decodedCandidates) != 1 || decodedCandidates[0] != "A" {
+	if len(decodedCandidates) != 0 {
 		t.Fatalf("recovery semantic decoder candidates=%q", decodedCandidates)
 	}
-	if len(client2.prepared) != 1 ||
-		client2.prepared[0].MaxOutputTokens != 8192-limit.PromptTokens ||
-		client2.prepared[0].Prompt != prompt ||
-		client2.prepared[0].BaseModel != prepared.BaseModel {
-		t.Fatalf("recovered continuation request=%#v", client2.prepared)
+	if len(client2.prepared) != 0 {
+		t.Fatalf("persisted output failure prepared a new request=%#v", client2.prepared)
 	}
 	calls, err := listAllWorkerLLMCallEvidence(ctx, repository, job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(calls) != 2 || calls[0].ID != parent.ID || calls[1].Outcome == nil ||
-		calls[1].ParentCallEvidenceID != parent.ID ||
-		calls[1].OutputContinuation != 1 || calls[1].Iteration != calls[0].Iteration ||
-		calls[1].WorkID != calls[0].WorkID || calls[1].Model != calls[0].Model ||
-		calls[1].StepAttempt != claim2.Authority.Attempt ||
-		calls[1].Outcome.Status != queue.LLMCallAccepted {
-		t.Fatalf("recovered output lineage=%#v", calls)
+	if len(calls) != 1 || calls[0].ID != parent.ID || calls[0].Outcome == nil ||
+		calls[0].Outcome.Status != queue.LLMCallProviderFailed ||
+		!calls[0].OutputLimitReached {
+		t.Fatalf("terminal recovered output evidence=%#v", calls)
 	}
 }
 
@@ -360,7 +356,7 @@ func TestFreshSchemaRecoveryRecreatesOpaqueMapBeforeReplayingPersistedChild(
 		{candidate: "A"},
 	}}
 	service2 := &Service{
-		repo: repository, stationClient: client2, inferenceContextTokens: "8192",
+		repo: repository, stationClient: client2, inferenceContextTokens: "16384",
 		runtimeEventChannels: make(map[int64]runtimeEventChannelBinding),
 	}
 	runtime2 := portableWorkerRuntime(&nativeRuntimeV3{
@@ -376,7 +372,7 @@ func TestFreshSchemaRecoveryRecreatesOpaqueMapBeforeReplayingPersistedChild(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if client2.calls != 1 || !strings.Contains(firstRecovered, "return left;") {
+	if client2.calls != 1 || !strings.Contains(firstRecovered, "left") {
 		t.Fatalf("first recovery calls=%d source=%q", client2.calls, firstRecovered)
 	}
 
@@ -415,9 +411,12 @@ func TestFreshSchemaRecoveryRecreatesOpaqueMapBeforeReplayingPersistedChild(
 		t.Fatal(err)
 	}
 	if len(calls) != 2 || calls[0].Iteration != 1 || calls[1].Iteration != 2 ||
+		calls[1].OutputContinuation != 0 ||
 		calls[1].ParentCallEvidenceID != calls[0].ID ||
-		calls[1].Candidate != "A" || calls[1].Outcome == nil ||
-		calls[1].Outcome.Status != queue.LLMCallAccepted {
+		calls[1].OutputLimitReached || calls[1].Outcome == nil ||
+		calls[1].Outcome.Status != queue.LLMCallAccepted ||
+		calls[1].ContextTokens != calls[0].ContextTokens ||
+		calls[1].Candidate != "A" || calls[1].MaxOutputTokens != 8 {
 		t.Fatalf("opaque recovery evidence=%#v", calls)
 	}
 }
@@ -436,12 +435,11 @@ func opaqueRecoveryValidator(t *testing.T) directCodingLanguageFragmentValidator
 		input assemblyline.FragmentGenerationInput,
 		body string,
 	) (string, error) {
-		const missing = "missing"
-		if start := strings.Index(body, missing); start >= 0 {
+		if body == "return missing;" {
 			defect, err := assemblyline.NewSourceBodyIdentifierDefect(
 				body,
-				start,
-				start+len(missing),
+				len("return "),
+				len("return missing"),
 				"Which available input should replace this unresolved reference?",
 				fmt.Errorf("unresolved identifier missing"),
 				[]assemblyline.OpaqueModelChoice{left, right},

@@ -27,7 +27,10 @@ CREATE TABLE llm_call_evidence (
     ),
     iteration integer NOT NULL CHECK (iteration BETWEEN 1 AND 3),
     output_continuation integer NOT NULL CHECK (output_continuation BETWEEN 0 AND 1),
+    dispatch_attempt integer NOT NULL CHECK (dispatch_attempt BETWEEN 1 AND 2),
     parent_call_evidence_id bigint
+        REFERENCES llm_call_evidence(id) ON DELETE RESTRICT,
+    replaces_call_evidence_id bigint
         REFERENCES llm_call_evidence(id) ON DELETE RESTRICT,
     source_base_candidate text,
     source_base_sha256 text,
@@ -69,7 +72,7 @@ CREATE TABLE llm_call_evidence (
     ),
     context_tokens integer NOT NULL CHECK (context_tokens BETWEEN 1 AND 1048576),
     max_output_tokens integer NOT NULL CHECK (
-        max_output_tokens BETWEEN 1 AND context_tokens
+        max_output_tokens=-1 OR max_output_tokens BETWEEN 1 AND context_tokens
     ),
     output_limit_mode text NOT NULL CHECK (output_limit_mode IN ('explicit','natural')),
     created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
@@ -84,6 +87,11 @@ CREATE TABLE llm_call_evidence (
         (iteration>1 AND output_continuation=0
          AND parent_call_evidence_id IS NOT NULL AND work_kind='fragment_generation')
         )
+    ),
+    CONSTRAINT llm_call_evidence_dispatch_shape CHECK (
+        (dispatch_attempt=1 AND replaces_call_evidence_id IS NULL)
+        OR
+        (dispatch_attempt=2 AND replaces_call_evidence_id IS NOT NULL)
     ),
     CONSTRAINT llm_call_evidence_source_correction_shape CHECK (
         (iteration=1
@@ -100,7 +108,8 @@ CREATE TABLE llm_call_evidence (
          )
          AND source_start_byte>=0 AND source_end_byte>source_start_byte
          AND source_end_byte<=octet_length(source_base_candidate)
-         AND (source_start_byte>0 OR source_end_byte<octet_length(source_base_candidate))
+         AND (source_start_byte>0 OR
+              source_end_byte<octet_length(source_base_candidate))
          AND source_question IS NOT NULL AND source_question=btrim(source_question)
          AND source_question<>'' AND octet_length(source_question)<=2048
          AND source_question_sha256 ~ '^[0-9a-f]{64}$'
@@ -116,9 +125,14 @@ CREATE TABLE llm_call_evidence (
          ))
     ),
     CONSTRAINT llm_call_evidence_one_child
-        UNIQUE (parent_call_evidence_id),
+        UNIQUE (parent_call_evidence_id,dispatch_attempt),
+    CONSTRAINT llm_call_evidence_one_replacement
+        UNIQUE (replaces_call_evidence_id),
     CONSTRAINT llm_call_evidence_one_invocation
-        UNIQUE (job_id,generation,step_id,step_attempt,work_id,iteration,output_continuation)
+        UNIQUE (
+            job_id,generation,step_id,work_id,iteration,
+            output_continuation,dispatch_attempt
+        )
 );
 
 CREATE INDEX idx_llm_call_evidence_job
@@ -284,6 +298,7 @@ CREATE FUNCTION validate_llm_call_evidence_insert() RETURNS trigger
 DECLARE
 	attempt_status text;
 	prior_call record;
+	replaced_call record;
 BEGIN
 	SELECT status INTO attempt_status FROM job_step_attempts
 	WHERE job_id=NEW.job_id AND generation=NEW.generation
@@ -295,6 +310,60 @@ BEGIN
 	END IF;
 	IF attempt_status<>'active' THEN
 		RAISE EXCEPTION 'inactive step attempt cannot reserve new LLM call evidence';
+	END IF;
+	IF NEW.dispatch_attempt=2 THEN
+		SELECT calls.*,
+		       receipts.call_evidence_id AS prior_receipt_id,
+		       outcomes.status AS prior_outcome_status,
+		       replaced_attempt.status AS prior_attempt_status
+		INTO replaced_call
+		FROM llm_call_evidence AS calls
+		LEFT JOIN llm_call_receipts AS receipts ON receipts.call_evidence_id=calls.id
+		JOIN llm_call_outcomes AS outcomes ON outcomes.call_evidence_id=calls.id
+		JOIN job_step_attempts AS replaced_attempt
+		  ON replaced_attempt.job_id=calls.job_id
+		 AND replaced_attempt.generation=calls.generation
+		 AND replaced_attempt.step_id=calls.step_id
+		 AND replaced_attempt.attempt=calls.step_attempt
+		 AND replaced_attempt.worker_id=calls.worker_id
+		WHERE calls.id=NEW.replaces_call_evidence_id
+		FOR SHARE OF calls,outcomes,replaced_attempt;
+		IF NOT FOUND THEN
+			RAISE EXCEPTION 'replacement dispatch lacks its expired interrupted opening';
+		END IF;
+		IF replaced_call.dispatch_attempt<>1 OR
+		   replaced_call.prior_receipt_id IS NOT NULL OR
+		   replaced_call.prior_outcome_status<>'interrupted' OR
+		   replaced_call.prior_attempt_status<>'expired' OR
+		   replaced_call.step_attempt>=NEW.step_attempt OR
+		   replaced_call.job_id<>NEW.job_id OR
+		   replaced_call.generation<>NEW.generation OR
+		   replaced_call.step_id<>NEW.step_id OR
+		   replaced_call.scope<>NEW.scope OR
+		   replaced_call.work_id<>NEW.work_id OR
+		   replaced_call.work_kind<>NEW.work_kind OR
+		   replaced_call.iteration<>NEW.iteration OR
+		   replaced_call.output_continuation<>NEW.output_continuation OR
+		   replaced_call.parent_call_evidence_id IS DISTINCT FROM NEW.parent_call_evidence_id OR
+		   replaced_call.requested_model<>NEW.requested_model OR
+		   replaced_call.model<>NEW.model OR
+		   replaced_call.protocol<>NEW.protocol OR
+		   replaced_call.system_envelope<>NEW.system_envelope OR
+		   replaced_call.model_input<>NEW.model_input OR
+		   replaced_call.model_input_sha256<>NEW.model_input_sha256 OR
+		   replaced_call.provider_request<>NEW.provider_request OR
+		   replaced_call.provider_request_sha256<>NEW.provider_request_sha256 OR
+		   replaced_call.context_tokens<>NEW.context_tokens OR
+		   replaced_call.max_output_tokens<>NEW.max_output_tokens OR
+		   replaced_call.output_limit_mode<>NEW.output_limit_mode OR
+		   replaced_call.source_base_candidate IS DISTINCT FROM NEW.source_base_candidate OR
+		   replaced_call.source_base_sha256 IS DISTINCT FROM NEW.source_base_sha256 OR
+		   replaced_call.source_start_byte IS DISTINCT FROM NEW.source_start_byte OR
+		   replaced_call.source_end_byte IS DISTINCT FROM NEW.source_end_byte OR
+		   replaced_call.source_question IS DISTINCT FROM NEW.source_question OR
+		   replaced_call.source_question_sha256 IS DISTINCT FROM NEW.source_question_sha256 THEN
+			RAISE EXCEPTION 'replacement dispatch differs from its expired interrupted opening';
+		END IF;
 	END IF;
 	IF NEW.iteration>1 OR NEW.output_continuation>0 THEN
 		SELECT calls.*,
@@ -356,6 +425,7 @@ BEGIN
 				RAISE EXCEPTION 'output continuation differs from its exact incomplete parent';
 			END IF;
 		ELSIF prior_call.iteration<>NEW.iteration-1 OR
+		      prior_call.context_tokens<>NEW.context_tokens OR
 		      prior_call.prior_receipt_status<>'succeeded' OR
 		      prior_call.prior_output_limit_reached OR
 		      prior_call.prior_outcome_status<>'rejected' THEN
@@ -372,8 +442,10 @@ CREATE FUNCTION validate_llm_call_receipt_insert() RETURNS trigger
     AS $$
 DECLARE
 	attempt_status text;
+	attempt_unexpired boolean;
 BEGIN
-	SELECT attempts.status INTO attempt_status
+	SELECT attempts.status,attempts.expires_at>clock_timestamp()
+	INTO attempt_status,attempt_unexpired
 	FROM llm_call_evidence AS calls
 	JOIN job_step_attempts AS attempts
 	  ON attempts.job_id=calls.job_id AND attempts.generation=calls.generation
@@ -384,8 +456,8 @@ BEGIN
 	IF NOT FOUND THEN
 		RAISE EXCEPTION 'LLM call receipt lacks exact reserved attempt authority';
 	END IF;
-	IF attempt_status='completed' THEN
-		RAISE EXCEPTION 'completed step attempt cannot acquire a provider receipt';
+	IF attempt_status<>'active' OR NOT attempt_unexpired THEN
+		RAISE EXCEPTION 'inactive or expired step attempt cannot acquire a provider receipt';
 	END IF;
 	RETURN NEW;
 END;
@@ -415,32 +487,27 @@ BEGIN
 		  AND call.worker_id=NEW.worker_id AND receipt.call_evidence_id IS NULL
 		  AND outcome.call_evidence_id IS NULL;
 
-		INSERT INTO llm_call_outcomes (
-			call_evidence_id,status,candidate_sha256,projection,
-			validation_error,validation_error_sha256
-		)
-		SELECT call.id,'rejected',receipt.candidate_sha256,NULL,
-		       format('step attempt transitioned to %s before semantic result consumption',NEW.status),
-		       encode(pg_catalog.sha256(convert_to(
-			       format('step attempt transitioned to %s before semantic result consumption',NEW.status),
-			       'UTF8'
-		       )),'hex')
+	END IF;
+	IF NEW.status IN ('completed','failed','waiting_input') AND EXISTS (
+		SELECT 1
 		FROM llm_call_evidence AS call
-		JOIN llm_call_receipts AS receipt ON receipt.call_evidence_id=call.id
+		JOIN job_step_attempts AS origin_attempt
+		  ON origin_attempt.job_id=call.job_id
+		 AND origin_attempt.generation=call.generation
+		 AND origin_attempt.step_id=call.step_id
+		 AND origin_attempt.attempt=call.step_attempt
+		 AND origin_attempt.worker_id=call.worker_id
+		LEFT JOIN llm_call_receipts AS receipt ON receipt.call_evidence_id=call.id
 		LEFT JOIN llm_call_outcomes AS outcome ON outcome.call_evidence_id=call.id
 		WHERE call.job_id=NEW.job_id AND call.generation=NEW.generation
-		  AND call.step_id=NEW.step_id AND call.step_attempt=NEW.attempt
-		  AND call.worker_id=NEW.worker_id AND receipt.status='succeeded'
-		  AND outcome.call_evidence_id IS NULL;
-	END IF;
-    IF NEW.status IN ('completed','failed','waiting_input') AND EXISTS (
-        SELECT 1
-        FROM llm_call_evidence AS call
-        LEFT JOIN llm_call_outcomes AS outcome ON outcome.call_evidence_id=call.id
-        WHERE call.job_id=NEW.job_id AND call.generation=NEW.generation
-          AND call.step_id=NEW.step_id AND call.step_attempt=NEW.attempt
-          AND call.worker_id=NEW.worker_id AND outcome.call_evidence_id IS NULL
-    ) THEN
+		  AND call.step_id=NEW.step_id AND outcome.call_evidence_id IS NULL
+		  AND (
+		      (call.step_attempt=NEW.attempt AND call.worker_id=NEW.worker_id)
+		      OR
+		      (call.step_attempt<NEW.attempt AND origin_attempt.status='expired'
+		       AND receipt.status='succeeded')
+		  )
+	) THEN
         RAISE EXCEPTION 'step attempt cannot finish with unterminated LLM call evidence';
     END IF;
 	IF NEW.status='completed' AND EXISTS (

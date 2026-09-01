@@ -125,11 +125,16 @@ func ParseTypeScriptFunctionBody(
 	}
 	var defect *SourceBodyDefect
 	var defectErr error
+	startByte -= bodyStart
+	endByte -= bodyStart
+	if startByte == 0 && endByte == len(body) {
+		return TypeScriptFragment{}, err
+	}
 	if identifierFailure {
 		defect, defectErr = NewSourceBodyIdentifierDefect(
 			body,
-			startByte-bodyStart,
-			endByte-bodyStart,
+			startByte,
+			endByte,
 			question,
 			err,
 			nil,
@@ -137,8 +142,8 @@ func ParseTypeScriptFunctionBody(
 	} else {
 		defect, defectErr = NewSourceBodyDefect(
 			body,
-			startByte-bodyStart,
-			endByte-bodyStart,
+			startByte,
+			endByte,
 			question,
 			err,
 		)
@@ -154,17 +159,41 @@ func ParseTypeScriptFunctionBody(
 
 // ExtractTypeScriptFunctionBodyResponse treats a complete declaration as
 // ordinary redundant source. Code extracts only its body and validates that
-// body under the authoritative contract signature. A single fenced body is
-// tolerated only when it is already parseable under that signature, preventing
-// prose from becoming an inferred correction span.
+// body under the authoritative contract signature. When several fenced regions
+// exist, code accepts only a unique syntactically valid function declaration.
+// A single fenced body is tolerated only when it is already parseable under
+// that signature, preventing prose from becoming an inferred correction span.
 func ExtractTypeScriptFunctionBodyResponse(
 	contract TypeScriptFunctionContract,
 	raw string,
 ) (string, error) {
-	candidate, err := sourcebodyresponse.ExtractCandidate(raw, MaxPortableRawCandidateBytes)
+	candidates, err := sourcebodyresponse.ExtractCandidates(raw, MaxPortableRawCandidateBytes)
 	if err != nil {
 		return "", err
 	}
+	if len(candidates) > 1 {
+		var declarationBodies []string
+		for _, candidate := range candidates {
+			body, declaration, extractErr := extractTypeScriptDeclarationBody(
+				candidate.Source,
+				contract.TSX,
+			)
+			if extractErr != nil {
+				return "", extractErr
+			}
+			if declaration {
+				declarationBodies = append(declarationBodies, body)
+			}
+		}
+		if len(declarationBodies) != 1 {
+			return "", fmt.Errorf(
+				"fenced TypeScript response contains %d syntactically valid function declaration candidates; exactly one is required for deterministic extraction",
+				len(declarationBodies),
+			)
+		}
+		return NormalizeSourceBodyResponse(declarationBodies[0])
+	}
+	candidate := candidates[0]
 	body, declaration, err := extractTypeScriptDeclarationBody(candidate.Source, contract.TSX)
 	if err != nil {
 		return "", err

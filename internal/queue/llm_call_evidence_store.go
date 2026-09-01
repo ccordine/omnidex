@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -43,7 +44,8 @@ func insertLLMCallOpening(
 	err := scanLLMCallOpening(querier.QueryRow(ctx, `
 		INSERT INTO llm_call_evidence (
 			job_id,generation,step_id,step_attempt,worker_id,
-			scope,work_id,work_kind,iteration,output_continuation,parent_call_evidence_id,
+			scope,work_id,work_kind,iteration,output_continuation,dispatch_attempt,
+			parent_call_evidence_id,replaces_call_evidence_id,
 			source_base_candidate,source_base_sha256,source_start_byte,source_end_byte,
 			source_question,source_question_sha256,
 			requested_model,model,protocol,
@@ -52,10 +54,11 @@ func insertLLMCallOpening(
 			context_tokens,max_output_tokens,output_limit_mode
 		) VALUES (
 			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
-			$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30
+			$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32
 		)
 		RETURNING id,job_id,generation,step_id,step_attempt,worker_id,
-		          scope,work_id,work_kind,iteration,output_continuation,parent_call_evidence_id,
+		          scope,work_id,work_kind,iteration,output_continuation,dispatch_attempt,
+		          parent_call_evidence_id,replaces_call_evidence_id,
 		          source_base_candidate,source_base_sha256,source_start_byte,source_end_byte,
 		          source_question,source_question_sha256,
 		          requested_model,model,protocol,
@@ -65,8 +68,9 @@ func insertLLMCallOpening(
 		`, record.Authority.JobID, record.Authority.Generation, record.Authority.StepID,
 		record.Authority.Attempt, record.Authority.WorkerID,
 		record.Scope, record.WorkID, string(record.WorkKind), record.Iteration,
-		record.OutputContinuation,
+		record.OutputContinuation, record.DispatchAttempt,
 		optionalLLMCallParentID(record.ParentCallEvidenceID),
+		optionalLLMCallParentID(record.ReplacesCallEvidenceID),
 		sourceBaseCandidate, sourceBaseSHA256, sourceStartByte, sourceEndByte,
 		sourceQuestion, sourceQuestionSHA256, record.RequestedModel,
 		record.Prepared.ContextModel, string(record.Prepared.Protocol),
@@ -126,50 +130,62 @@ func (r *Repository) RecordLLMCallOutcome(
 		return LLMCallOutcome{}, fmt.Errorf("begin exact LLM outcome write: %w", err)
 	}
 	defer tx.Rollback(ctx)
-	var attemptStatus string
-	if err := tx.QueryRow(ctx, `
-		SELECT status FROM job_step_attempts
-		WHERE job_id=$1 AND generation=$2 AND step_id=$3 AND attempt=$4 AND worker_id=$5
-		FOR UPDATE
-	`, record.Authority.JobID, record.Authority.Generation, record.Authority.StepID,
-		record.Authority.Attempt, record.Authority.WorkerID).Scan(&attemptStatus); err != nil {
-		return LLMCallOutcome{}, fmt.Errorf("lock exact LLM outcome attempt authority: %w", err)
+	locked, err := lockStepAttemptAuthorityTx(ctx, tx, record.Authority)
+	if err != nil {
+		return LLMCallOutcome{}, err
+	}
+	if err := requireLockedStepAttemptActiveTx(ctx, tx, record.Authority, locked); err != nil {
+		return LLMCallOutcome{}, fmt.Errorf(
+			"%w: call %d cannot consume a provider receipt: %v",
+			ErrLLMCallTerminalizedByAttempt, record.CallEvidenceID, err,
+		)
+	}
+	if locked.StepStatus != model.StepStatusRunning || !jobAcceptsStepTerminal(locked.JobStatus) {
+		return LLMCallOutcome{}, staleStepAttemptError(
+			record.Authority,
+			fmt.Sprintf(
+				"LLM outcome writer job status %q step status %q",
+				locked.JobStatus, locked.StepStatus,
+			),
+			nil,
+		)
 	}
 	var candidateSHA256 string
 	if err := tx.QueryRow(ctx, `
 		SELECT receipts.candidate_sha256
 		FROM llm_call_evidence AS calls
 		JOIN llm_call_receipts AS receipts ON receipts.call_evidence_id=calls.id
+		JOIN job_step_attempts AS origin_attempt
+		  ON origin_attempt.job_id=calls.job_id
+		 AND origin_attempt.generation=calls.generation
+		 AND origin_attempt.step_id=calls.step_id
+		 AND origin_attempt.attempt=calls.step_attempt
+		 AND origin_attempt.worker_id=calls.worker_id
 		WHERE calls.id=$1 AND calls.job_id=$2 AND calls.generation=$3
-		  AND calls.step_id=$4 AND calls.step_attempt=$5 AND calls.worker_id=$6
+		  AND calls.step_id=$4
 		  AND receipts.status='succeeded'
-		FOR SHARE OF calls,receipts
+		  AND NOT EXISTS (
+		      SELECT 1 FROM llm_call_evidence AS replacement
+		      WHERE replacement.replaces_call_evidence_id=calls.id
+		  )
+		  AND (
+		      (calls.step_attempt=$5 AND calls.worker_id=$6
+		       AND origin_attempt.status='active')
+		      OR
+		      (calls.step_attempt<$5 AND origin_attempt.status='expired')
+		  )
+		FOR SHARE OF calls,receipts,origin_attempt
 	`, record.CallEvidenceID, record.Authority.JobID, record.Authority.Generation,
 		record.Authority.StepID, record.Authority.Attempt, record.Authority.WorkerID,
 	).Scan(&candidateSHA256); err != nil {
-		return LLMCallOutcome{}, fmt.Errorf("bind LLM outcome to exact successful call: %w", err)
+		return LLMCallOutcome{}, fmt.Errorf(
+			"bind LLM outcome to exact current or expired-predecessor successful call: %w",
+			err,
+		)
 	}
 	if candidateSHA256 != llmEvidenceSHA256([]byte(record.Candidate)) {
 		return LLMCallOutcome{}, fmt.Errorf("LLM call outcome candidate differs from provider evidence")
 	}
-	if attemptStatus != "active" {
-		outcome, found, err := readLLMCallOutcomeTx(ctx, tx, record.CallEvidenceID)
-		if err != nil {
-			return LLMCallOutcome{}, err
-		}
-		if !found {
-			return LLMCallOutcome{}, fmt.Errorf(
-				"terminal step attempt %q left LLM call %d without an outcome",
-				attemptStatus, record.CallEvidenceID,
-			)
-		}
-		return outcome, fmt.Errorf(
-			"%w: call %d attempt status %q",
-			ErrLLMCallTerminalizedByAttempt,
-			record.CallEvidenceID, attemptStatus,
-		)
-	}
-
 	outcome, err := insertLLMCallOutcomeTx(
 		ctx, tx, record.CallEvidenceID, status, candidateSHA256,
 		projectionJSON, record.ValidationError,

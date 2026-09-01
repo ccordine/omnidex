@@ -89,6 +89,21 @@ func normalizeLLMCallOpening(record LLMCallOpeningRecord) (normalizedLLMCallOpen
 			"LLM call evidence output continuation must be zero or one",
 		)
 	}
+	if record.DispatchAttempt < 1 || record.DispatchAttempt > 2 {
+		return normalizedLLMCallOpening{}, fmt.Errorf(
+			"LLM call evidence dispatch attempt must be one or two",
+		)
+	}
+	if record.DispatchAttempt == 1 && record.ReplacesCallEvidenceID != 0 {
+		return normalizedLLMCallOpening{}, fmt.Errorf(
+			"initial LLM dispatch evidence cannot replace another call",
+		)
+	}
+	if record.DispatchAttempt == 2 && record.ReplacesCallEvidenceID < 1 {
+		return normalizedLLMCallOpening{}, fmt.Errorf(
+			"replacement LLM dispatch evidence requires one interrupted call",
+		)
+	}
 	isLineageRoot := record.Iteration == 1 && record.OutputContinuation == 0
 	if isLineageRoot && record.ParentCallEvidenceID != 0 {
 		return normalizedLLMCallOpening{}, fmt.Errorf(

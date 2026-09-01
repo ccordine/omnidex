@@ -10,7 +10,7 @@ import (
 	"github.com/gryph/omnidex/internal/model"
 )
 
-// One row can retain roughly 69 MiB across the generation receipt, raw
+// One row can retain roughly 133 MiB across the generation receipt, raw
 // provider capture, candidate, request, and prompt. Keep server-side reads at
 // one exact call per page even though this journal is not publicly exposed.
 const MaxLLMCallEvidencePageSize = 1
@@ -34,16 +34,18 @@ const (
 )
 
 type LLMCallOpeningRecord struct {
-	Authority            model.StepAttemptAuthority
-	Scope                string
-	WorkID               string
-	WorkKind             assemblyline.WorkKind
-	Iteration            int
-	OutputContinuation   int
-	ParentCallEvidenceID int64
-	SourceCorrection     *assemblyline.SourceBodyCorrectionEvidence
-	RequestedModel       string
-	Prepared             llm.PreparedModel
+	Authority              model.StepAttemptAuthority
+	Scope                  string
+	WorkID                 string
+	WorkKind               assemblyline.WorkKind
+	Iteration              int
+	OutputContinuation     int
+	DispatchAttempt        int
+	ParentCallEvidenceID   int64
+	ReplacesCallEvidenceID int64
+	SourceCorrection       *assemblyline.SourceBodyCorrectionEvidence
+	RequestedModel         string
+	Prepared               llm.PreparedModel
 }
 
 type LLMCallReceiptRecord struct {
@@ -100,7 +102,9 @@ type LLMCallEvidence struct {
 	WorkKind                 string          `json:"work_kind"`
 	Iteration                int             `json:"iteration"`
 	OutputContinuation       int             `json:"output_continuation"`
+	DispatchAttempt          int             `json:"dispatch_attempt"`
 	ParentCallEvidenceID     int64           `json:"parent_call_evidence_id,omitempty"`
+	ReplacesCallEvidenceID   int64           `json:"replaces_call_evidence_id,omitempty"`
 	SourceBaseCandidate      string          `json:"source_base_candidate,omitempty"`
 	SourceBaseSHA256         string          `json:"source_base_sha256,omitempty"`
 	SourceStartByte          int             `json:"source_start_byte,omitempty"`

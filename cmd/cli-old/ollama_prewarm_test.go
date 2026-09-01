@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gryph/omnidex/internal/llm"
 )
 
 func TestProbeOllamaModelUsesNonInferenceLoadRequest(t *testing.T) {
@@ -192,5 +194,43 @@ func TestOllamaPrewarmDefaultContextRejectsInvalidEnvironment(t *testing.T) {
 	_, err := ollamaPrewarmDefaultContext()
 	if err == nil || !strings.Contains(err.Error(), "must be an integer") {
 		t.Fatalf("error=%v, want explicit integer failure", err)
+	}
+}
+
+func TestOllamaPrewarmTimeoutHasThirtyMinuteHardMaximum(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		timeout time.Duration
+		wantErr bool
+	}{
+		{name: "shorter", timeout: 12 * time.Minute},
+		{name: "maximum", timeout: llm.MaximumModelRequestDuration},
+		{name: "zero", timeout: 0, wantErr: true},
+		{name: "negative", timeout: -time.Second, wantErr: true},
+		{name: "over maximum", timeout: llm.MaximumModelRequestDuration + time.Nanosecond, wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateOllamaPrewarmTimeout(test.timeout)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("validate timeout %s error=%v wantErr=%t", test.timeout, err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestOllamaPrewarmPhysicalRequestAddsThirtyMinuteDeadline(t *testing.T) {
+	earliest := time.Now().Add(llm.MaximumModelRequestDuration)
+	ctx, cancel := ollamaPrewarmRequestContext(context.Background())
+	latest := time.Now().Add(llm.MaximumModelRequestDuration)
+	deadline, present := ctx.Deadline()
+	if !present || deadline.Before(earliest) || deadline.After(latest) {
+		cancel()
+		t.Fatalf("prewarm request deadline=%s present=%t want within [%s,%s]", deadline, present, earliest, latest)
+	}
+	cancel()
+	select {
+	case <-ctx.Done():
+	default:
+		t.Fatal("prewarm physical request context was not released")
 	}
 }

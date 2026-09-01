@@ -52,11 +52,13 @@ func (s *Service) reserveExactStationCallEvidence(
 		queue.LLMCallOpeningRecord{
 			Authority: authority, Scope: scope, WorkID: call.WorkID,
 			WorkKind: call.WorkKind, Iteration: call.Iteration,
-			OutputContinuation:   call.OutputContinuation,
-			ParentCallEvidenceID: call.ParentCallID,
-			SourceCorrection:     call.SourceCorrection,
-			RequestedModel:       prepared.BaseModel,
-			Prepared:             prepared,
+			OutputContinuation:     call.OutputContinuation,
+			DispatchAttempt:        call.DispatchAttempt,
+			ParentCallEvidenceID:   call.ParentCallID,
+			ReplacesCallEvidenceID: call.ReplacesCallID,
+			SourceCorrection:       call.SourceCorrection,
+			RequestedModel:         prepared.BaseModel,
+			Prepared:               prepared,
 		},
 	)
 	if persistErr != nil {

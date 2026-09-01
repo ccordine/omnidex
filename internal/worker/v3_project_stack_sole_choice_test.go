@@ -28,7 +28,7 @@ func TestSelectDirectCodingProjectComparesSoleFormatWithUnsupportedAlternative(t
 					"unexpected project selection call kind=%q model=%q", job.Kind, modelName,
 				)
 			}
-			return assemblyline.PortableResult{JobID: job.ID, Candidate: "A"}, nil
+			return assemblyline.PortableResult{JobID: job.ID, Candidate: "B"}, nil
 		},
 	}
 	selection, err := selectDirectCodingProjectFromRegistries(
@@ -65,7 +65,7 @@ func TestSelectDirectCodingProjectDoesNotForceSoleFormatOverExplicitConflict(t *
 	runtime := typedWorkerRuntime{
 		Context: context.Background(),
 		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
-			return assemblyline.PortableResult{JobID: job.ID, Candidate: "B"}, nil
+			return assemblyline.PortableResult{JobID: job.ID, Candidate: "C"}, nil
 		},
 	}
 	_, err = selectDirectCodingProjectFromRegistries(
@@ -131,7 +131,7 @@ func TestSelectDirectCodingProjectUsesInferenceForMultipleFormats(t *testing.T) 
 			if modelName != "selection-model" {
 				t.Fatalf("model name = %q, want selection-model", modelName)
 			}
-			return assemblyline.PortableResult{JobID: job.ID, Candidate: "A"}, nil
+			return assemblyline.PortableResult{JobID: job.ID, Candidate: "E"}, nil
 		},
 	}
 	selection, err := selectDirectCodingProjectFromRegistries(

@@ -189,8 +189,8 @@ func DecodeRoleplayOngoingActionValue(
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	value, err := decodeRawSemanticLeaf(
-		"roleplay ongoing action", raw, roleplay.MaxOngoingActionBytes, false,
+	value, err := decodeOrdinarySemanticText(
+		"roleplay ongoing action", raw, roleplay.MaxOngoingActionBytes,
 	)
 	if err != nil {
 		return "", err

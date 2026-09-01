@@ -12,9 +12,10 @@ import (
 const llmCallEvidenceColumns = `
 	calls.id,calls.job_id,calls.generation,calls.step_id,calls.step_attempt,calls.worker_id,
 	 calls.scope,calls.work_id,calls.work_kind,calls.iteration,calls.output_continuation,
-	 calls.parent_call_evidence_id,
+	 calls.dispatch_attempt,calls.parent_call_evidence_id,calls.replaces_call_evidence_id,
 	calls.source_base_candidate,calls.source_base_sha256,calls.source_start_byte,
-	calls.source_end_byte,calls.source_question,calls.source_question_sha256,
+	calls.source_end_byte,
+	calls.source_question,calls.source_question_sha256,
 	calls.requested_model,calls.model,calls.protocol,
 	calls.system_envelope,calls.model_input,calls.model_input_sha256,
 	calls.model_input_bytes,calls.provider_request,calls.provider_request_sha256,
@@ -208,14 +209,14 @@ type llmCallEvidenceScanner interface {
 
 func scanLLMCallOpening(scanner llmCallEvidenceScanner, evidence *LLMCallEvidence) error {
 	var providerRequest []byte
-	var parentCallEvidenceID *int64
+	var parentCallEvidenceID, replacesCallEvidenceID *int64
 	var sourceBaseCandidate, sourceBaseSHA256, sourceQuestion, sourceQuestionSHA256 *string
 	var sourceStartByte, sourceEndByte *int
 	if err := scanner.Scan(
 		&evidence.ID, &evidence.JobID, &evidence.Generation, &evidence.StepID,
 		&evidence.StepAttempt, &evidence.WorkerID, &evidence.Scope, &evidence.WorkID,
 		&evidence.WorkKind, &evidence.Iteration, &evidence.OutputContinuation,
-		&parentCallEvidenceID,
+		&evidence.DispatchAttempt, &parentCallEvidenceID, &replacesCallEvidenceID,
 		&sourceBaseCandidate, &sourceBaseSHA256, &sourceStartByte, &sourceEndByte,
 		&sourceQuestion, &sourceQuestionSHA256,
 		&evidence.RequestedModel, &evidence.Model, &evidence.Protocol,
@@ -229,6 +230,9 @@ func scanLLMCallOpening(scanner llmCallEvidenceScanner, evidence *LLMCallEvidenc
 	}
 	if parentCallEvidenceID != nil {
 		evidence.ParentCallEvidenceID = *parentCallEvidenceID
+	}
+	if replacesCallEvidenceID != nil {
+		evidence.ReplacesCallEvidenceID = *replacesCallEvidenceID
 	}
 	assignLLMCallSourceCorrection(
 		evidence, sourceBaseCandidate, sourceBaseSHA256, sourceStartByte,
@@ -254,14 +258,14 @@ func scanLLMCallEvidenceWithOutcome(
 	var outcomeStatus, outcomeCandidateSHA256, outcomeError, outcomeErrorSHA256 *string
 	var outcomeProjection []byte
 	var outcomeCreatedAt *time.Time
-	var parentCallEvidenceID *int64
+	var parentCallEvidenceID, replacesCallEvidenceID *int64
 	var sourceBaseCandidate, sourceBaseSHA256, sourceQuestion, sourceQuestionSHA256 *string
 	var sourceStartByte, sourceEndByte *int
 	if err := scanner.Scan(
 		&evidence.ID, &evidence.JobID, &evidence.Generation, &evidence.StepID,
 		&evidence.StepAttempt, &evidence.WorkerID, &evidence.Scope, &evidence.WorkID,
 		&evidence.WorkKind, &evidence.Iteration, &evidence.OutputContinuation,
-		&parentCallEvidenceID,
+		&evidence.DispatchAttempt, &parentCallEvidenceID, &replacesCallEvidenceID,
 		&sourceBaseCandidate, &sourceBaseSHA256, &sourceStartByte, &sourceEndByte,
 		&sourceQuestion, &sourceQuestionSHA256,
 		&evidence.RequestedModel, &evidence.Model, &evidence.Protocol,
@@ -281,6 +285,9 @@ func scanLLMCallEvidenceWithOutcome(
 	}
 	if parentCallEvidenceID != nil {
 		evidence.ParentCallEvidenceID = *parentCallEvidenceID
+	}
+	if replacesCallEvidenceID != nil {
+		evidence.ReplacesCallEvidenceID = *replacesCallEvidenceID
 	}
 	assignLLMCallSourceCorrection(
 		evidence, sourceBaseCandidate, sourceBaseSHA256, sourceStartByte,

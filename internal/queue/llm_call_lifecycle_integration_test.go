@@ -83,7 +83,7 @@ func TestFreshSchemaAbandonedLLMOpeningBlocksCompletionAndExpiresInterrupted(t *
 	}
 }
 
-func TestFreshSchemaTerminalAttemptPreservesBothLLMCallRaceOrderings(t *testing.T) {
+func TestFreshSchemaExpiredAttemptPreservesReceiptFirstAndRejectsTerminalFirstReceipt(t *testing.T) {
 	databaseURL := evidenceDatabaseURL(t)
 	pool, repository := freshEvidenceRepository(t, databaseURL)
 	ctx := context.Background()
@@ -97,7 +97,7 @@ func TestFreshSchemaTerminalAttemptPreservesBothLLMCallRaceOrderings(t *testing.
 	}
 
 	receiptFirst := exactLLMEvidenceFixture(
-		t, assemblyline.WorkApplicationClassify, "Classify before cancellation.", "A",
+		t, assemblyline.WorkApplicationClassify, "Classify before expiration.", "A",
 	)
 	receiptFirst.Authority = claim.Authority
 	receiptEvidence, err := recordExactLLMEvidenceFixture(ctx, repository, receiptFirst)
@@ -105,7 +105,7 @@ func TestFreshSchemaTerminalAttemptPreservesBothLLMCallRaceOrderings(t *testing.
 		t.Fatalf("receipt-first evidence=%#v err=%v", receiptEvidence, err)
 	}
 	terminalFirst := exactLLMEvidenceFixture(
-		t, assemblyline.WorkArtifactHandling, "Classify ARTIFACT_1 after cancellation.", "B",
+		t, assemblyline.WorkArtifactHandling, "Classify ARTIFACT_1 after expiration.", "B",
 	)
 	terminalFirst.Authority = claim.Authority
 	terminalFirst.WorkID = strings.Repeat("b", 64)
@@ -113,7 +113,7 @@ func TestFreshSchemaTerminalAttemptPreservesBothLLMCallRaceOrderings(t *testing.
 	if err != nil {
 		t.Fatalf("reserve provider-in-flight call: %v", err)
 	}
-	if _, err := setEvidenceAttemptStatus(ctx, pool, claim.Authority, "canceled"); err != nil {
+	if _, err := setEvidenceAttemptStatus(ctx, pool, claim.Authority, "expired"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -128,19 +128,21 @@ func TestFreshSchemaTerminalAttemptPreservesBothLLMCallRaceOrderings(t *testing.
 		t.Fatalf("terminalized call outcome err=%v", err)
 	}
 	calls, err := listAllLLMCallEvidenceForJob(ctx, repository, job.ID)
-	if err != nil || len(calls) != 2 || calls[0].Outcome == nil ||
-		calls[0].Outcome.Status != LLMCallRejected || calls[1].Outcome == nil ||
+	if err != nil || len(calls) != 2 || calls[0].Outcome != nil ||
+		!calls[0].ProviderReceiptPresent || calls[1].Outcome == nil ||
 		calls[1].Outcome.Status != LLMCallInterrupted || calls[1].ProviderReceiptPresent {
-		t.Fatalf("cancellation outcomes=%#v err=%v", calls, err)
+		t.Fatalf("expiration outcomes=%#v err=%v", calls, err)
 	}
 	lateEvidence, err := repository.FinalizeLLMCallEvidence(
 		ctx, terminalFirst.receipt(terminalOpening.ID),
 	)
-	if !errors.Is(err, ErrLLMCallTerminalizedByAttempt) ||
-		!lateEvidence.ProviderReceiptPresent || lateEvidence.Outcome == nil ||
-		lateEvidence.Outcome.Status != LLMCallInterrupted ||
-		string(lateEvidence.RawResponse) != string(terminalFirst.Generation.ProviderResponseCapture) {
+	if err == nil || lateEvidence.ProviderReceiptPresent || lateEvidence.Outcome != nil {
 		t.Fatalf("late provider receipt=%#v err=%v", lateEvidence, err)
+	}
+	calls, err = listAllLLMCallEvidenceForJob(ctx, repository, job.ID)
+	if err != nil || len(calls) != 2 || calls[1].ProviderReceiptPresent ||
+		calls[1].Outcome == nil || calls[1].Outcome.Status != LLMCallInterrupted {
+		t.Fatalf("terminal-first opening changed after late receipt: calls=%#v err=%v", calls, err)
 	}
 }
 

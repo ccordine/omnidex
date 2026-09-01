@@ -45,28 +45,73 @@ func TestExactPreparedCompletionRequestIsBoundedAndNonStreaming(t *testing.T) {
 	}
 }
 
-func TestExactPreparedRequestRejectsOutputBudgetConsumingNativeContext(t *testing.T) {
+func TestExactPreparedRequestAcceptsOutputBudgetEqualToNativeContext(t *testing.T) {
 	t.Parallel()
 	prepared := exactPreparedRequestFixture()
 	prepared.MaxOutputTokens = prepared.ContextTokens
-	if _, err := ExactPreparedRequestBytes(prepared); err == nil {
-		t.Fatal("request accepted an output budget leaving no native input authority")
+	raw, err := ExactPreparedRequestBytes(prepared)
+	if err != nil {
+		t.Fatalf("num_predict equal to num_ctx was rejected: %v", err)
+	}
+	var request struct {
+		Options map[string]json.RawMessage `json:"options"`
+	}
+	if err := json.Unmarshal(raw, &request); err != nil {
+		t.Fatal(err)
+	}
+	want := "8192"
+	if got := string(request.Options["num_predict"]); got != want {
+		t.Fatalf("num_predict = %s, want %s", got, want)
+	}
+	if got := string(request.Options["num_ctx"]); got != want {
+		t.Fatalf("num_ctx = %s, want %s", got, want)
 	}
 }
 
-func TestValidateExactPreparedNativeUsageEnforcesOutputBudget(t *testing.T) {
+func TestExactPreparedRequestUsesProviderNativeUnlimitedNumPredict(t *testing.T) {
 	t.Parallel()
-	if err := ValidateExactPreparedNativeUsage(8192, 7680, 512, ProviderGenerationUsage{
-		PromptEvalCount: 128,
-		EvalCount:       512,
-	}); err != nil {
-		t.Fatalf("usage at the explicit output budget was rejected: %v", err)
+	prepared := exactPreparedRequestFixture()
+	prepared.MaxOutputTokens = -1
+	raw, err := ExactPreparedRequestBytes(prepared)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := ValidateExactPreparedNativeUsage(8192, 7680, 512, ProviderGenerationUsage{
+	var request struct {
+		Options map[string]json.RawMessage `json:"options"`
+	}
+	if err := json.Unmarshal(raw, &request); err != nil {
+		t.Fatal(err)
+	}
+	if got := string(request.Options["num_predict"]); got != "-1" {
+		t.Fatalf("num_predict=%s; want -1", got)
+	}
+}
+
+func TestValidateExactPreparedNativeUsageEnforcesProviderTokenAuthorities(t *testing.T) {
+	t.Parallel()
+	if err := ValidateExactPreparedNativeUsage(8192, 512, ProviderGenerationUsage{
+		PromptEvalCount: 7681,
+		EvalCount:       511,
+	}); err != nil {
+		t.Fatalf("usage within aggregate native context was rejected: %v", err)
+	}
+	if err := ValidateExactPreparedNativeUsage(8192, 512, ProviderGenerationUsage{
 		PromptEvalCount: 128,
 		EvalCount:       513,
 	}); err == nil {
 		t.Fatal("usage exceeding the explicit output budget was accepted")
+	}
+	if err := ValidateExactPreparedNativeUsage(8192, 512, ProviderGenerationUsage{
+		PromptEvalCount: 7681,
+		EvalCount:       512,
+	}); err == nil {
+		t.Fatal("usage exceeding the aggregate native context was accepted")
+	}
+	if err := ValidateExactPreparedNativeUsage(8192, -1, ProviderGenerationUsage{
+		PromptEvalCount: 1024,
+		EvalCount:       4096,
+	}); err != nil {
+		t.Fatalf("provider-unlimited usage inside native context was rejected: %v", err)
 	}
 }
 

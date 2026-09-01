@@ -48,6 +48,11 @@ func RenderOpaqueModelChoiceQuestion(
 	if err := validateOpaqueModelChoices(choices); err != nil {
 		return "", err
 	}
+	if len(choices) == 1 {
+		return "", fmt.Errorf(
+			"sole opaque model choice must be consumed by deterministic code before model rendering",
+		)
+	}
 	question = strings.TrimSpace(question)
 	if question == "" || !utf8.ValidString(question) || strings.ContainsRune(question, '\x00') {
 		return "", fmt.Errorf("opaque model choice requires one exact semantic question")

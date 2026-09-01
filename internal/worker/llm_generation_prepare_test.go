@@ -29,3 +29,21 @@ func TestOpaqueSourceCorrectionUsesLineFramingAndExplicitBudget(t *testing.T) {
 		)
 	}
 }
+
+func TestOrdinarySourceUsesProviderNativeUnlimitedGeneration(t *testing.T) {
+	t.Parallel()
+	call := exactStationCall{
+		WorkID: "work.ordinary-source", WorkKind: assemblyline.WorkFragmentGeneration,
+		Prompt: "implement", ContextTokens: 8192, MaxOutputTokens: -1,
+	}
+	prepared, err := prepareExactStationCall(call, "fixture-model", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared.RawTextStopSequence != "" || prepared.MaxOutputTokens != -1 {
+		t.Fatalf(
+			"ordinary source stop=%q num_predict=%d",
+			prepared.RawTextStopSequence, prepared.MaxOutputTokens,
+		)
+	}
+}

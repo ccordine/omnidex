@@ -30,6 +30,13 @@ func TestFreshSchemaLLMCallEvidenceIsExactTerminalAndImmutable(t *testing.T) {
 	)
 	accepted.Authority = claim.Authority
 	accepted.WorkID = strings.Repeat("a", 64)
+	accepted.Prepared.ContextTokens = llm.MaxInferenceContextTokens
+	accepted.Generation.ProviderRequestSHA256, err = llm.ExactPreparedRequestSHA256(
+		accepted.Prepared,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	acceptedEvidence, err := recordExactLLMEvidenceFixture(ctx, repository, accepted)
 	if err != nil {
 		t.Fatal(err)
@@ -43,6 +50,9 @@ func TestFreshSchemaLLMCallEvidenceIsExactTerminalAndImmutable(t *testing.T) {
 		Candidate: accepted.Generation.Content, Projection: &projection,
 	}); err != nil {
 		t.Fatal(err)
+	}
+	if acceptedEvidence.ContextTokens != llm.MaxInferenceContextTokens {
+		t.Fatalf("fresh schema context tokens=%d", acceptedEvidence.ContextTokens)
 	}
 
 	rejected := exactLLMEvidenceFixture(

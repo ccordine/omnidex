@@ -15,7 +15,9 @@ type exactStationCall struct {
 	WorkKind           assemblyline.WorkKind
 	Iteration          int
 	OutputContinuation int
+	DispatchAttempt    int
 	ParentCallID       int64
+	ReplacesCallID     int64
 	Prompt             string
 	ContextTokens      int
 	MaxOutputTokens    int
@@ -30,6 +32,7 @@ type exactStationExecution struct {
 	Model                    string
 	Iteration                int
 	OutputContinuation       int
+	DispatchAttempt          int
 	ProviderCalls            int
 	Candidate                string
 	CandidateResponseSHA256  string
@@ -45,11 +48,23 @@ func (s *Service) executeExactPortableStation(
 	job assemblyline.PortableJob,
 	modelName string,
 ) (assemblyline.PortableResult, exactStationExecution, error) {
-	if ctx == nil || s == nil || s.repo == nil {
+	if ctx == nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf("exact station requires context, worker, and PostgreSQL authority")
 	}
 	if err := ctx.Err(); err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, err
+	}
+	deterministic, resolved, err := assemblyline.ResolvePortableJobWithoutInference(job)
+	if err != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, err
+	}
+	if resolved {
+		return deterministic, exactStationExecution{
+			WorkID: job.ID, WorkKind: job.Kind, Candidate: deterministic.Candidate,
+		}, nil
+	}
+	if s == nil || s.repo == nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf("exact station requires context, worker, and PostgreSQL authority")
 	}
 	if modelName == "" {
 		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf("exact station model is required")
@@ -72,7 +87,7 @@ func (s *Service) executeExactPortableStation(
 	}
 	call := exactStationCall{
 		WorkID: job.ID, WorkKind: job.Kind, Prompt: prompt,
-		Iteration:     1,
+		Iteration: 1, DispatchAttempt: 1,
 		ContextTokens: contextTokens, MaxOutputTokens: maxOutputTokens,
 	}
 	if nilWorkerTransport(s.stationClient) {
@@ -154,9 +169,11 @@ func (s *Service) executeExactPortableStationCorrection(
 	if err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, err
 	}
-	contextTokens, err := s.exactStationContextTokens(ctx)
-	if err != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, err
+	contextTokens := persisted.ContextTokens
+	if err := llm.ValidateExactPreparedContextTokens(contextTokens); err != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
+			"persisted exact station model context is invalid: %w", err,
+		)
 	}
 	opaqueResponseBytes, opaqueCorrection, err := correction.OpaqueResponseMaximumBytes()
 	if err != nil {
@@ -170,7 +187,7 @@ func (s *Service) executeExactPortableStationCorrection(
 	}
 	call := exactStationCall{
 		WorkID: job.ID, WorkKind: job.Kind, Iteration: previous.Iteration + 1,
-		ParentCallID: previous.CallEvidenceID, Prompt: prompt,
+		DispatchAttempt: 1, ParentCallID: previous.CallEvidenceID, Prompt: prompt,
 		ContextTokens: contextTokens, MaxOutputTokens: maxOutputTokens,
 		SingleLine:       opaqueCorrection,
 		SourceCorrection: &correctionEvidence,

@@ -32,6 +32,7 @@ func BuildTypeScriptFragmentPrompt(input TypeScriptFragmentPrompt) (string, erro
 	parts := []string{
 		"What TypeScript statements implement this behavior?",
 		contract,
+		"This job is only the implementation itself; usage examples and documentation are not part of the task.",
 		"The source dialect is " + dialect + ".",
 		"These parameters and return constraints are in scope:\n" + signature,
 	}

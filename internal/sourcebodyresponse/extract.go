@@ -14,25 +14,25 @@ type Candidate struct {
 	Fenced bool
 }
 
-// ExtractCandidate normalizes one ordinary response and, when fences are
-// present, requires exactly one complete non-empty fenced region. Text outside
-// that region is discarded. Multiple or malformed regions are ambiguous and
-// fail rather than giving prose mutation authority.
-func ExtractCandidate(raw string, maximumBytes int) (Candidate, error) {
+// ExtractCandidates normalizes one ordinary response. When complete non-empty
+// fences are present, each fenced region is returned as a candidate and text
+// outside those regions is discarded. With no fences, the complete ordinary
+// response is returned as one unfenced candidate.
+func ExtractCandidates(raw string, maximumBytes int) ([]Candidate, error) {
 	if maximumBytes < 1 {
-		return Candidate{}, fmt.Errorf("source response maximum must be positive")
+		return nil, fmt.Errorf("source response maximum must be positive")
 	}
 	if !utf8.ValidString(raw) || strings.ContainsRune(raw, '\x00') {
-		return Candidate{}, fmt.Errorf("source response must be valid UTF-8 without NUL bytes")
+		return nil, fmt.Errorf("source response must be valid UTF-8 without NUL bytes")
 	}
 	normalized := strings.ReplaceAll(raw, "\r\n", "\n")
 	normalized = strings.ReplaceAll(normalized, "\r", "\n")
 	normalized = strings.TrimSpace(normalized)
 	if normalized == "" {
-		return Candidate{}, fmt.Errorf("source response is empty")
+		return nil, fmt.Errorf("source response is empty")
 	}
 	if len(normalized) > maximumBytes {
-		return Candidate{}, fmt.Errorf("source response exceeds %d bytes", maximumBytes)
+		return nil, fmt.Errorf("source response exceeds %d bytes", maximumBytes)
 	}
 
 	lines := strings.Split(normalized, "\n")
@@ -56,7 +56,7 @@ func ExtractCandidate(raw string, maximumBytes int) (Candidate, error) {
 		if closingFence(line, fenceByte, fenceWidth) {
 			block := strings.TrimSpace(strings.Join(lines[start:index], "\n"))
 			if block == "" {
-				return Candidate{}, fmt.Errorf("fenced source response is empty")
+				return nil, fmt.Errorf("fenced source response is empty")
 			}
 			blocks = append(blocks, block)
 			inFence = false
@@ -65,24 +65,39 @@ func ExtractCandidate(raw string, maximumBytes int) (Candidate, error) {
 		}
 	}
 	if inFence {
-		return Candidate{}, fmt.Errorf("source response contains an unterminated fence")
+		return nil, fmt.Errorf("source response contains an unterminated fence")
 	}
 	if len(blocks) == 0 {
 		if strings.Contains(normalized, "```") || strings.Contains(normalized, "~~~") {
-			return Candidate{}, fmt.Errorf("source response contains a malformed fence")
+			return nil, fmt.Errorf("source response contains a malformed fence")
 		}
-		return Candidate{Source: normalized}, nil
+		return []Candidate{{Source: normalized}}, nil
 	}
-	if len(blocks) != 1 {
+	candidates := make([]Candidate, 0, len(blocks))
+	for _, block := range blocks {
+		if len(block) > maximumBytes {
+			return nil, fmt.Errorf("fenced source response exceeds %d bytes", maximumBytes)
+		}
+		candidates = append(candidates, Candidate{Source: block, Fenced: true})
+	}
+	return candidates, nil
+}
+
+// ExtractCandidate requires exactly one candidate. Multiple fenced regions
+// remain ambiguous unless a language-specific deterministic parser can prove
+// that exactly one region has the required syntactic kind.
+func ExtractCandidate(raw string, maximumBytes int) (Candidate, error) {
+	candidates, err := ExtractCandidates(raw, maximumBytes)
+	if err != nil {
+		return Candidate{}, err
+	}
+	if len(candidates) != 1 {
 		return Candidate{}, fmt.Errorf(
 			"source response contains %d fenced regions; exactly one is required for deterministic extraction",
-			len(blocks),
+			len(candidates),
 		)
 	}
-	if len(blocks[0]) > maximumBytes {
-		return Candidate{}, fmt.Errorf("fenced source response exceeds %d bytes", maximumBytes)
-	}
-	return Candidate{Source: blocks[0], Fenced: true}, nil
+	return candidates[0], nil
 }
 
 func openingFence(line string) (byte, int, bool) {

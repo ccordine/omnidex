@@ -355,13 +355,6 @@ func (correction SourceBodyCorrection) Mutable() string {
 	return correction.base[correction.startByte:correction.endByte]
 }
 
-func (correction SourceBodyCorrection) MutableRange() (int, int, error) {
-	if err := correction.Validate(); err != nil {
-		return 0, 0, err
-	}
-	return correction.startByte, correction.endByte, nil
-}
-
 func (correction SourceBodyCorrection) BaseCandidate() string {
 	return correction.base
 }
@@ -385,48 +378,35 @@ func (correction SourceBodyCorrection) Evidence() (SourceBodyCorrectionEvidence,
 }
 
 func (correction SourceBodyCorrection) Apply(rawReplacement string) (string, error) {
-	result, _, _, err := correction.ApplyWithReplacementRange(rawReplacement)
-	return result, err
-}
-
-// ApplyWithReplacementRange returns the exact range occupied by the decoded
-// replacement in the new body. Callers use it only to prevent a failed model
-// replacement from authorizing another correction over its own prose.
-func (correction SourceBodyCorrection) ApplyWithReplacementRange(
-	rawReplacement string,
-) (result string, replacementStart int, replacementEnd int, err error) {
 	if err := correction.Validate(); err != nil {
-		return "", 0, 0, err
+		return "", err
 	}
 	if len(correction.replacements) == 1 {
-		return "", 0, 0, fmt.Errorf(
+		return "", fmt.Errorf(
 			"source-body correction has one code-owned replacement and forbids a model response",
 		)
 	}
 	replacement := rawReplacement
 	if len(correction.replacements) > 1 {
-		replacement, err = DecodeOpaqueModelChoice(rawReplacement, correction.replacements)
+		decoded, err := DecodeOpaqueModelChoice(rawReplacement, correction.replacements)
+		if err != nil {
+			return "", err
+		}
+		replacement = decoded
 	} else {
 		candidate, extractErr := sourcebodyresponse.ExtractCandidate(
 			rawReplacement, MaxPortableRawCandidateBytes,
 		)
 		if extractErr != nil {
-			err = fmt.Errorf("source-span replacement extraction: %w", extractErr)
-		} else {
-			replacement, err = NormalizeSourceBodyResponse(candidate.Source)
+			return "", fmt.Errorf("source-span replacement extraction: %w", extractErr)
 		}
+		normalized, err := NormalizeSourceBodyResponse(candidate.Source)
 		if err != nil {
-			err = fmt.Errorf("source-span replacement: %w", err)
+			return "", fmt.Errorf("source-span replacement: %w", err)
 		}
+		replacement = normalized
 	}
-	if err != nil {
-		return "", 0, 0, err
-	}
-	result, err = correction.applyReplacement(replacement)
-	if err != nil {
-		return "", 0, 0, err
-	}
-	return result, correction.startByte, correction.startByte + len(replacement), nil
+	return correction.applyReplacement(replacement)
 }
 
 func (correction SourceBodyCorrection) applyReplacement(replacement string) (string, error) {

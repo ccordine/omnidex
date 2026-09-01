@@ -93,8 +93,13 @@ func TestRoleplayOngoingActionValueIsOrdinaryPlainText(t *testing.T) {
 	if value != raw {
 		t.Fatalf("value = %q, want exact ordinary response %q", value, raw)
 	}
-	if _, err := DecodeRoleplayOngoingActionValue(input, `{"ongoing_action":"Crossing the bridge."}`); err == nil {
-		t.Fatal("structured model response was accepted")
+	const jsonShaped = `{"ongoing_action":"Crossing the bridge."}`
+	value, err = DecodeRoleplayOngoingActionValue(input, jsonShaped)
+	if err != nil {
+		t.Fatalf("JSON-shaped ordinary action text: %v", err)
+	}
+	if value != jsonShaped {
+		t.Fatalf("JSON-shaped action text changed: got %q want %q", value, jsonShaped)
 	}
 }
 

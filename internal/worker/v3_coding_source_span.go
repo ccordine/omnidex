@@ -106,11 +106,16 @@ func directCodingSourceBodyError(
 	}
 	var defect *assemblyline.SourceBodyDefect
 	var err error
+	startByte := located.startByte - bodyStart
+	endByte := located.endByte - bodyStart
+	if startByte == 0 && endByte == len(body) {
+		return validationErr
+	}
 	if located.identifierReplacement {
 		defect, err = assemblyline.NewSourceBodyIdentifierDefect(
 			body,
-			located.startByte-bodyStart,
-			located.endByte-bodyStart,
+			startByte,
+			endByte,
 			located.question,
 			validationErr,
 			located.replacements,
@@ -118,8 +123,8 @@ func directCodingSourceBodyError(
 	} else {
 		defect, err = assemblyline.NewSourceBodyDefect(
 			body,
-			located.startByte-bodyStart,
-			located.endByte-bodyStart,
+			startByte,
+			endByte,
 			located.question,
 			validationErr,
 		)

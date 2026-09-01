@@ -81,14 +81,14 @@ func (client *exactEvidenceStationClient) GeneratePreparedExact(
 	return exactEvidenceSuccessfulGeneration(prepared, fixture.candidate)
 }
 
-func TestFreshSchemaOutputLimitContinuesSamePersistedCallWithoutPartialConsumption(t *testing.T) {
+func TestFreshSchemaOutputLimitFailsOnceWithoutPartialConsumption(t *testing.T) {
 	databaseURL := strings.TrimSpace(os.Getenv("OMNI_TEST_DATABASE_URL"))
 	if databaseURL == "" {
-		t.Skip("OMNI_TEST_DATABASE_URL is required for output continuation evidence coverage")
+		t.Skip("OMNI_TEST_DATABASE_URL is required for output-limit evidence coverage")
 	}
 	_, repository := freshWorkerEvidenceRepository(t, databaseURL)
 	ctx := context.Background()
-	job, err := repository.EnqueueCodingJob(ctx, "exercise bounded output continuation", t.TempDir())
+	job, err := repository.EnqueueCodingJob(ctx, "exercise terminal output limit", t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,6 @@ func TestFreshSchemaOutputLimitContinuesSamePersistedCallWithoutPartialConsumpti
 			candidate:  "unfinished output that must never reach the semantic decoder",
 			doneReason: "length", promptTokens: 11,
 		},
-		{candidate: "A"},
 	}}
 	service := &Service{
 		repo: repository, stationClient: client, inferenceContextTokens: "8192",
@@ -117,7 +116,7 @@ func TestFreshSchemaOutputLimitContinuesSamePersistedCallWithoutPartialConsumpti
 		t.Fatal(err)
 	}
 	decodedCandidates := make([]string, 0, 1)
-	value, err := runDirectCodingSemanticLeafCall(
+	_, err = runDirectCodingSemanticLeafCall(
 		runtime, "fixture-model", "classification", classification, nil,
 		func(candidate string) (string, error) {
 			decodedCandidates = append(decodedCandidates, candidate)
@@ -133,43 +132,32 @@ func TestFreshSchemaOutputLimitContinuesSamePersistedCallWithoutPartialConsumpti
 			return string(decoded.Surface), nil
 		},
 	)
-	if err != nil || value != string(assemblyline.ApplicationSurfaceBrowser) {
-		t.Fatalf("classification=%q err=%v", value, err)
+	if err == nil {
+		t.Fatal("output-limit response was accepted")
 	}
-	if client.calls != 2 || runtime.ProviderCalls == nil || runtime.ProviderCalls() != 2 {
+	var limit *llm.ExactPreparedOutputLimitReachedError
+	if !errors.As(err, &limit) {
+		t.Fatalf("output-limit error=%v", err)
+	}
+	if client.calls != 1 || runtime.ProviderCalls == nil || runtime.ProviderCalls() != 1 {
 		t.Fatalf("provider calls=%d runtime=%v", client.calls, runtime.ProviderCalls())
 	}
-	if len(decodedCandidates) != 1 || decodedCandidates[0] != "A" {
+	if len(decodedCandidates) != 0 {
 		t.Fatalf("semantic decoder candidates=%q", decodedCandidates)
 	}
-	if len(client.prepared) != 2 {
+	if len(client.prepared) != 1 {
 		t.Fatalf("prepared calls=%d", len(client.prepared))
-	}
-	initial, continued := client.prepared[0], client.prepared[1]
-	if continued.Prompt != initial.Prompt || continued.BaseModel != initial.BaseModel ||
-		continued.ContextModel != initial.ContextModel ||
-		continued.ContextTokens != initial.ContextTokens ||
-		continued.RawTextStopSequence != initial.RawTextStopSequence ||
-		continued.OutputLimitMode != initial.OutputLimitMode ||
-		continued.Temperature != initial.Temperature ||
-		continued.MaxOutputTokens != initial.ContextTokens-11 ||
-		continued.MaxOutputTokens <= initial.MaxOutputTokens {
-		t.Fatalf("mechanical continuation changed semantic authority: %#v %#v", initial, continued)
 	}
 	calls, err := listAllWorkerLLMCallEvidence(ctx, repository, job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(calls) != 2 || calls[0].Outcome == nil || calls[1].Outcome == nil ||
-		calls[0].WorkID != calls[1].WorkID || calls[0].Model != calls[1].Model ||
-		calls[0].Iteration != 1 || calls[1].Iteration != 1 ||
-		calls[0].OutputContinuation != 0 || calls[1].OutputContinuation != 1 ||
-		calls[1].ParentCallEvidenceID != calls[0].ID ||
+	if len(calls) != 1 || calls[0].Outcome == nil || calls[0].Iteration != 1 ||
+		calls[0].OutputContinuation != 0 || calls[0].ParentCallEvidenceID != 0 ||
 		!calls[0].OutputLimitReached || calls[0].Status != queue.LLMCallFailed ||
 		calls[0].Outcome.Status != queue.LLMCallProviderFailed ||
-		calls[0].Candidate != client.fixtures[0].candidate ||
-		calls[1].Outcome.Status != queue.LLMCallAccepted || calls[1].Candidate != "A" {
-		t.Fatalf("output continuation evidence=%#v", calls)
+		calls[0].Candidate != client.fixtures[0].candidate {
+		t.Fatalf("terminal output-limit evidence=%#v", calls)
 	}
 }
 
@@ -233,6 +221,9 @@ func TestFreshSchemaSourceBodyCorrectionContinuesSamePersistedContextWithoutBloc
 		); err != nil {
 			return assemblyline.PortableResult{}, err
 		}
+		// Configuration may change while this persisted job is alive. The
+		// correction must retain the parent's frozen native model context.
+		service.inferenceContextTokens = "16384"
 		return correct(job, modelName, correction)
 	}
 	input := assemblyline.FragmentGenerationInput{
@@ -286,8 +277,10 @@ func TestFreshSchemaSourceBodyCorrectionContinuesSamePersistedContextWithoutBloc
 		calls[1].WorkKind != string(assemblyline.WorkApplicationClassify) ||
 		calls[1].Iteration != 1 || calls[1].Outcome.Status != queue.LLMCallAccepted ||
 		calls[2].WorkID != calls[0].WorkID || calls[2].Model != calls[0].Model ||
-		calls[2].Iteration != 2 || calls[2].ParentCallEvidenceID != calls[0].ID ||
-		calls[2].Outcome.Status != queue.LLMCallAccepted ||
+		calls[2].Iteration != 2 || calls[2].OutputContinuation != 0 ||
+		calls[2].ParentCallEvidenceID != calls[0].ID ||
+		calls[2].OutputLimitReached || calls[2].Outcome.Status != queue.LLMCallAccepted ||
+		calls[0].ContextTokens != 8192 || calls[2].ContextTokens != calls[0].ContextTokens ||
 		calls[2].SourceBaseCandidate != "const total = left - right;\nreturn total;" ||
 		calls[2].SourceStartByte != len("const total = ") ||
 		calls[2].SourceEndByte != len("const total = left - right") {
@@ -295,6 +288,8 @@ func TestFreshSchemaSourceBodyCorrectionContinuesSamePersistedContextWithoutBloc
 	}
 	const wantedCorrectionInput = "Which expression computes the required sum?\n\nleft - right"
 	if len(client.prepared) != 3 || client.prepared[2].Prompt != wantedCorrectionInput ||
+		client.prepared[0].MaxOutputTokens != -1 ||
+		client.prepared[2].MaxOutputTokens != -1 ||
 		strings.Contains(client.prepared[2].Prompt, "const total") ||
 		strings.Contains(client.prepared[2].Prompt, "return total") ||
 		strings.Contains(client.prepared[2].Prompt, input.Signature) {
@@ -438,14 +433,14 @@ func TestFreshSchemaExactStationPipelineJournalsDecoderAndProviderOutcomes(t *te
 		t.Fatal(err)
 	}
 	if len(calls) != 5 || calls[0].Outcome == nil || calls[1].Outcome == nil ||
-		calls[2].Outcome == nil || calls[3].Outcome == nil || calls[4].Outcome == nil ||
+		calls[2].Outcome == nil || calls[3].Outcome != nil || calls[4].Outcome == nil ||
 		calls[0].Outcome.Status != queue.LLMCallAccepted ||
 		calls[1].Outcome.Status != queue.LLMCallRejected ||
 		calls[2].Outcome.Status != queue.LLMCallProviderFailed ||
-		calls[3].Outcome.Status != queue.LLMCallRejected ||
 		calls[4].Outcome.Status != queue.LLMCallInterrupted ||
 		!calls[2].RawResponsePresent || string(calls[2].RawResponse) != string(client.fixtures[2].partial) ||
-		!calls[4].ProviderReceiptPresent || !calls[4].RawResponsePresent {
+		!calls[3].ProviderReceiptPresent || !calls[3].RawResponsePresent ||
+		calls[4].ProviderReceiptPresent || calls[4].RawResponsePresent {
 		t.Fatalf("station call evidence=%#v", calls)
 	}
 	if calls[0].WorkKind == calls[1].WorkKind {

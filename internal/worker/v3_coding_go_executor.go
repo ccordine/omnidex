@@ -22,15 +22,15 @@ func validateDirectCodingGoFragment(
 	if !errors.As(err, &located) {
 		return "", err
 	}
-	if located.StartByte == 0 && located.EndByte == len(candidate) {
-		return "", err
-	}
 	failed := candidate[located.StartByte:located.EndByte]
 	replacements, replacementErr := directCodingGoIdentifierChoices(
 		input, candidate, failed, located.StartByte,
 	)
 	if replacementErr != nil {
 		return "", fmt.Errorf("enumerate exact Go identifier replacements: %w", replacementErr)
+	}
+	if located.StartByte == 0 && located.EndByte == len(candidate) {
+		return "", err
 	}
 	defect, defectErr := assemblyline.NewSourceBodyIdentifierDefect(
 		candidate,

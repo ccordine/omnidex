@@ -53,7 +53,7 @@ func TestTypeScriptParserCorrectionUsesOnlyAtomicNonemptyLeaf(t *testing.T) {
 	}
 }
 
-func TestParserCorrectionRejectsCompositeMissingAndWholeBodyErrors(t *testing.T) {
+func TestParserCorrectionRejectsCompositeAndMissingErrors(t *testing.T) {
 	t.Parallel()
 	validators := []struct {
 		name     string
@@ -85,7 +85,6 @@ func TestParserCorrectionRejectsCompositeMissingAndWholeBodyErrors(t *testing.T)
 	}{
 		{name: "composite", body: "return left @ right;"},
 		{name: "missing", body: "return left + ;"},
-		{name: "whole-body", body: "@"},
 	}
 	for _, validator := range validators {
 		validator := validator
@@ -107,6 +106,47 @@ func TestParserCorrectionRejectsCompositeMissingAndWholeBodyErrors(t *testing.T)
 				}
 			})
 		}
+	}
+}
+
+func TestParserCorrectionRejectsACompletePreviousBody(t *testing.T) {
+	t.Parallel()
+	validators := []struct {
+		name     string
+		validate func(string) error
+	}{
+		{
+			name: "javascript",
+			validate: func(body string) error {
+				_, err := ValidateJavaScriptFragment("function Value()", body)
+				return err
+			},
+		},
+		{
+			name: "typescript",
+			validate: func(body string) error {
+				_, err := ParseTypeScriptFunctionBody(
+					TypeScriptFunctionContract{Signature: "function Value(): number"},
+					body,
+				)
+				return err
+			},
+		},
+	}
+	for _, validator := range validators {
+		validator := validator
+		t.Run(validator.name, func(t *testing.T) {
+			t.Parallel()
+			const body = "@"
+			err := validator.validate(body)
+			if err == nil {
+				t.Fatal("invalid complete body unexpectedly passed")
+			}
+			var defect *SourceBodyDefect
+			if errors.As(err, &defect) {
+				t.Fatalf("complete previous body authorized correction: %v", err)
+			}
+		})
 	}
 }
 

@@ -20,6 +20,12 @@ func TestTypeScriptFragmentQuestionDoesNotDefineAResponsePacket(t *testing.T) {
 	if strings.Count(prompt, input.Signature) != 1 {
 		t.Fatalf("minimum lexical scope is absent or duplicated: %q", prompt)
 	}
+	if !strings.Contains(
+		prompt,
+		"This job is only the implementation itself; usage examples and documentation are not part of the task.",
+	) {
+		t.Fatalf("semantic job scope is absent: %q", prompt)
+	}
 	for _, forbidden := range []string{
 		"Return only", "raw code only", "response grammar", "response schema",
 		"CODE_OWNED", "CURRENT_DECLARATION", "EXACT_SIGNATURE", "JSON",

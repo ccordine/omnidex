@@ -50,10 +50,15 @@ func validateBoundedSourceFragment(
 		syntaxFailure.startByte >= syntaxFailure.endByte {
 		return "", err
 	}
+	startByte := syntaxFailure.startByte - bodyStart
+	endByte := syntaxFailure.endByte - bodyStart
+	if startByte == 0 && endByte == len(normalizedBody) {
+		return "", err
+	}
 	defect, defectErr := NewSourceBodyDefect(
 		normalizedBody,
-		syntaxFailure.startByte-bodyStart,
-		syntaxFailure.endByte-bodyStart,
+		startByte,
+		endByte,
 		"What should replace this syntactically invalid span?",
 		err,
 	)

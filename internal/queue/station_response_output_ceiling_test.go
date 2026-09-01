@@ -7,7 +7,7 @@ import (
 	"github.com/gryph/omnidex/internal/llm"
 )
 
-func TestExpectedPortableStationMaxOutputTokensBoundsSourceBody(t *testing.T) {
+func TestExpectedPortableStationMaxOutputTokensLeavesSourceBodyUnlimited(t *testing.T) {
 	t.Parallel()
 	job, err := assemblyline.NewFragmentGenerationJob(assemblyline.FragmentGenerationInput{
 		Language: "typescript", Dialect: "TypeScript",
@@ -20,8 +20,8 @@ func TestExpectedPortableStationMaxOutputTokensBoundsSourceBody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != maxSourceBodyOutputTokens {
-		t.Fatalf("source output budget = %d, want %d", got, maxSourceBodyOutputTokens)
+	if got != -1 {
+		t.Fatalf("source num_predict = %d, want provider-native unlimited", got)
 	}
 }
 
@@ -52,7 +52,7 @@ func TestExpectedSourceBodyCorrectionBudgets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if open != maxSourceBodyCorrectionOutputTokens || opaque != minSingleLineCompletionTokens {
+	if open != -1 || opaque != minSingleLineCompletionTokens {
 		t.Fatalf("correction budgets = (open=%d opaque=%d)", open, opaque)
 	}
 }

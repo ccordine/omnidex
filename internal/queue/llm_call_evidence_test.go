@@ -144,7 +144,7 @@ func TestNormalizeLLMCallEvidenceClassifiesOnlyValidatedOutputLimit(t *testing.T
 
 func TestCompactLLMCallGenerationReceiptDoesNotDuplicateLargeModelContent(t *testing.T) {
 	t.Parallel()
-	content := strings.Repeat("\"", llm.MaxExactPreparedProviderResponseBytes)
+	content := strings.Repeat("\"", llm.MaxExactPreparedModelContentBytes)
 	receipt, err := encodeLLMCallGenerationReceipt(llm.PreparedGeneration{
 		Schema: llm.PreparedGenerationSchemaV1, Content: content,
 	})
@@ -181,6 +181,12 @@ func TestNormalizeLLMCallEvidenceRejectsUnboundOrInexactRecords(t *testing.T) {
 		"second output continuation": func(record *exactLLMEvidenceFixtureRecord) {
 			record.OutputContinuation = 2
 			record.ParentCallEvidenceID = 7
+		},
+		"zero dispatch attempt": func(record *exactLLMEvidenceFixtureRecord) {
+			record.DispatchAttempt = 0
+		},
+		"replacement without interrupted call": func(record *exactLLMEvidenceFixtureRecord) {
+			record.DispatchAttempt = 2
 		},
 		"semantic correction": func(record *exactLLMEvidenceFixtureRecord) {
 			record.Iteration = 2
@@ -275,7 +281,7 @@ func exactLLMEvidenceFixture(
 			JobID: 1, Generation: 1, StepID: 1, Attempt: 1, WorkerID: "fixture-worker",
 		},
 			Scope: mustLLMEvidenceScope(t, kind), WorkID: strings.Repeat("a", 64),
-			WorkKind: kind, Iteration: 1,
+			WorkKind: kind, Iteration: 1, DispatchAttempt: 1,
 			RequestedModel: prepared.BaseModel, Prepared: prepared,
 		},
 		Generation: llm.PreparedGeneration{

@@ -12,20 +12,25 @@ const (
 	// reaches one returns incomplete evidence which is rejected before semantic
 	// decoding. Ordinary responses end earlier with done_reason=stop.
 	maxPortableStationOutputTokens      = 2048
-	maxSourceBodyOutputTokens           = 1024
 	maxSourceBodyCorrectionOutputTokens = 512
 	minSingleLineCompletionTokens       = 8
 )
 
-// ExpectedPortableStationMaxOutputTokens derives one finite provider-side
-// generation budget for a validated semantic job. Decoder byte limits remain
-// independent post-response validation authority.
+// ExpectedPortableStationMaxOutputTokens uses Ollama's native unlimited
+// generation for an ordinary source response. Intrinsically bounded station
+// answers retain their complete-answer limit.
 func ExpectedPortableStationMaxOutputTokens(
 	job assemblyline.PortableJob,
 	contextTokens int,
 ) (int, error) {
 	if err := llm.ValidateExactPreparedContextTokens(contextTokens); err != nil {
 		return 0, err
+	}
+	if err := job.Validate(); err != nil {
+		return 0, err
+	}
+	if job.Kind == assemblyline.WorkFragmentGeneration {
+		return -1, nil
 	}
 	responseBytes, err := assemblyline.PortableResponseMaximumBytesForJob(job)
 	if err != nil {
@@ -46,16 +51,12 @@ func ExpectedPortableStationMaxOutputTokens(
 		budget < minSingleLineCompletionTokens {
 		budget = minSingleLineCompletionTokens
 	}
-	ceiling := maxPortableStationOutputTokens
-	if job.Kind == assemblyline.WorkFragmentGeneration {
-		ceiling = maxSourceBodyOutputTokens
-	}
-	return boundedProviderOutputTokens(budget, ceiling, contextTokens)
+	return boundedProviderOutputTokens(budget, maxPortableStationOutputTokens, contextTokens)
 }
 
 // ExpectedSourceBodyCorrectionMaxOutputTokens gives an exact opaque choice
-// only enough room for its ID and line termination. An open exact-span
-// replacement receives the smaller correction resource budget.
+// only enough room for its complete ID and line termination. An ordinary
+// exact-span replacement uses Ollama's native unlimited generation.
 func ExpectedSourceBodyCorrectionMaxOutputTokens(
 	opaqueResponseBytes int,
 	opaque bool,
@@ -81,11 +82,7 @@ func ExpectedSourceBodyCorrectionMaxOutputTokens(
 	if opaqueResponseBytes != 0 {
 		return 0, fmt.Errorf("open source correction cannot carry an opaque response bound")
 	}
-	return boundedProviderOutputTokens(
-		maxSourceBodyCorrectionOutputTokens,
-		maxSourceBodyCorrectionOutputTokens,
-		contextTokens,
-	)
+	return -1, nil
 }
 
 func boundedProviderOutputTokens(budget, ceiling, contextTokens int) (int, error) {

@@ -106,7 +106,18 @@ func resolveDirectCodingProjectFormatDecision(
 	input assemblyline.ApplicationProjectStackConstraintInput,
 	decision assemblyline.ApplicationProjectStackConstraintDecision,
 ) (directCodingProjectSelection, error) {
+	if err := decision.ValidateFor(input); err != nil {
+		return directCodingProjectSelection{}, err
+	}
 	switch decision.CandidateID {
+	case assemblyline.ApplicationProjectStackUnconstrained:
+		if len(formats) == 0 || len(formats) != len(input.Candidates) ||
+			input.Candidates[0].TechnicalFormat != formats[0].Format {
+			return directCodingProjectSelection{}, fmt.Errorf(
+				"unconstrained project format lacks its code-owned default mapping",
+			)
+		}
+		return directCodingProjectSelectionForFormat(formats[0])
 	case assemblyline.ApplicationProjectStackUnsupported:
 		return directCodingProjectSelection{}, fmt.Errorf(
 			"accepted application authority requires an unsupported or contradictory technical format",

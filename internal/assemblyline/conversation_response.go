@@ -104,7 +104,7 @@ func (decision ConversationResponseDecision) ValidateFor(input ConversationRespo
 	if input.RoleplayIdentity != nil {
 		maxBytes = roleplay.MaxNarrativeResponseBytes
 	}
-	if err := validateGroundedText("conversation response text", decision.Text, maxBytes, true); err != nil {
+	if err := validateGroundedText("conversation response text", decision.Text, maxBytes, false); err != nil {
 		return err
 	}
 	if input.RoleplayIdentity != nil {
@@ -135,7 +135,7 @@ func DecodeConversationResponseDecision(
 	if input.RoleplayIdentity != nil {
 		maximum = roleplay.MaxNarrativeResponseBytes
 	}
-	leaf, err := decodeRawSemanticLeaf("conversation response", raw, maximum, true)
+	leaf, err := decodeOrdinarySemanticText("conversation response", raw, maximum)
 	if err != nil {
 		return ConversationResponseDecision{}, err
 	}

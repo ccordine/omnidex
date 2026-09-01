@@ -5,9 +5,8 @@ import (
 )
 
 // ExactPreparedOutputLimitReachedError is a validated provider completion
-// fact. It contains no returned content and is never semantic output. Code may
-// use it only to repeat the same persisted call once with the remaining native
-// context assigned to num_predict; it grants no correction or workflow
+// fact. It contains no returned content and is never semantic output. It is a
+// terminal provider failure and grants no retry, correction, or workflow
 // authority.
 type ExactPreparedOutputLimitReachedError struct {
 	DoneReason      string
@@ -32,7 +31,8 @@ func (failure *ExactPreparedOutputLimitReachedError) Error() string {
 func (failure ExactPreparedOutputLimitReachedError) Validate() error {
 	if failure.DoneReason != "length" || failure.PromptTokens < 1 ||
 		failure.OutputTokens < 1 || failure.ContextTokens < 1 ||
-		failure.MaxOutputTokens < 1 || failure.MaxOutputTokens > failure.ContextTokens ||
+		(failure.MaxOutputTokens != -1 &&
+			(failure.MaxOutputTokens < 1 || failure.MaxOutputTokens > failure.ContextTokens)) ||
 		failure.PromptTokens+failure.OutputTokens > failure.ContextTokens ||
 		failure.ContentBytes < 1 ||
 		failure.ContentBytes > MaxExactPreparedModelContentBytes {
@@ -63,7 +63,6 @@ func ValidateExactPreparedGenerationForRequest(
 	}
 	if err := ValidateExactPreparedNativeUsage(
 		prepared.ContextTokens,
-		prepared.ContextTokens-prepared.MaxOutputTokens,
 		prepared.MaxOutputTokens,
 		generation.Usage,
 	); err != nil {

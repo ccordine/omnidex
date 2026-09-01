@@ -156,6 +156,54 @@ func TestRustTypeCorrectionTargetsOnlyTypeToken(t *testing.T) {
 	}
 }
 
+func TestRustWholeBodyFailureDoesNotInvokeCorrection(t *testing.T) {
+	t.Parallel()
+	input := assemblyline.FragmentGenerationInput{
+		Language: "rust", Dialect: "Rust 2021",
+		Signature: "fn value() -> i32", Behavior: "Return one safe value.",
+	}
+	correctionCalls := 0
+	runtime := typedWorkerRuntime{
+		Context: context.Background(), MaxAttempts: assemblyline.MaxSourceBodyAttempts,
+		Execute: func(job assemblyline.PortableJob, model string) (assemblyline.PortableResult, error) {
+			if model != "fixture-model" {
+				return assemblyline.PortableResult{}, fmt.Errorf("initial model=%q", model)
+			}
+			return exactSourceBodyTestResult(t, job, "unsafe { 1 }"), nil
+		},
+		Correct: func(
+			assemblyline.PortableJob,
+			string,
+			assemblyline.SourceBodyCorrection,
+		) (assemblyline.PortableResult, error) {
+			correctionCalls++
+			return assemblyline.PortableResult{}, fmt.Errorf("whole-body correction reached provider")
+		},
+		Release: func(assemblyline.PortableJob) error { return nil },
+		Finalize: func(
+			assemblyline.PortableJob,
+			assemblyline.PortableResult,
+			error,
+		) error {
+			return nil
+		},
+	}
+	_, err := runDirectCodingLanguageFragmentWorker(
+		runtime,
+		"fixture-model",
+		directCodingLanguageGenerationJob{
+			Subject: "source.rust-whole-body-forbidden", Input: input,
+			Validate: validateDirectCodingRustFragment,
+		},
+	)
+	if err == nil || !strings.Contains(err.Error(), "no code-proven mutable source span") {
+		t.Fatalf("whole-body validation error=%v", err)
+	}
+	if correctionCalls != 0 {
+		t.Fatalf("whole-body correction calls=%d; want zero", correctionCalls)
+	}
+}
+
 func TestRustCorrectionChoicesStayInsideTheFailedNamespace(t *testing.T) {
 	t.Parallel()
 	input := assemblyline.FragmentGenerationInput{

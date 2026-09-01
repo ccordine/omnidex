@@ -7,9 +7,33 @@ import (
 	"unicode/utf8"
 )
 
-// decodeRawSemanticLeaf is the shared acceptance boundary for model-authored
-// semantic text. Structured source nodes use their parser-specific decoders;
-// semantic stations return only the requested leaf as plain text.
+// decodeOrdinarySemanticText accepts one bounded model-authored text value
+// without interpreting its presentation. Markdown, source snippets, quoted
+// prose, and JSON-shaped text can all be the semantic response itself; typed
+// framework structure is supplied by the calling code after this boundary.
+func decodeOrdinarySemanticText(label string, raw string, maximum int) (string, error) {
+	if maximum < 1 {
+		return "", fmt.Errorf("%s has no positive byte bound", label)
+	}
+	if len(raw) > maxPortableCandidateBytes {
+		return "", fmt.Errorf("%s exceeds %d bytes", label, maxPortableCandidateBytes)
+	}
+	if !utf8.ValidString(raw) || strings.ContainsRune(raw, '\x00') {
+		return "", fmt.Errorf("%s must be valid UTF-8 without NUL bytes", label)
+	}
+	if strings.TrimSpace(raw) == "" {
+		return "", fmt.Errorf("%s is empty", label)
+	}
+	if len(raw) > maximum {
+		return "", fmt.Errorf("%s exceeds %d bytes", label, maximum)
+	}
+	return raw, nil
+}
+
+// decodeRawSemanticLeaf is the strict acceptance boundary for canonical IDs,
+// numeric leaves, sentinel-bearing inventories, and individual inventory
+// lines. Genuinely free-form semantic text uses decodeOrdinarySemanticText so
+// presentation-shaped content is not mistaken for a response packet.
 func decodeRawSemanticLeaf(
 	label string,
 	raw string,

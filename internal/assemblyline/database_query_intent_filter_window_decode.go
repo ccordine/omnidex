@@ -54,8 +54,8 @@ func DecodeDatabaseQueryFilterValueLeaf(
 	if closed {
 		value, err = DecodeOpaqueModelChoice(raw, choices)
 	} else {
-		value, err = decodeRawSemanticLeaf(
-			"database query filter value", raw, maxDatabaseQueryLeafBytes, false,
+		value, err = decodeOrdinarySemanticText(
+			"database query filter value", raw, maxDatabaseQueryLeafBytes,
 		)
 	}
 	if err != nil {

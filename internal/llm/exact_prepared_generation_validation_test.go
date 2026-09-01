@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -37,6 +38,18 @@ func TestExactPreparedGenerationRejectsLengthAsIncompleteEvidence(t *testing.T) 
 	}
 	if limit.OutputTokens != prepared.MaxOutputTokens || limit.ContentBytes < 1 {
 		t.Fatalf("length evidence = %#v", limit)
+	}
+}
+
+func TestExactPreparedGenerationRejectsAggregateNativeContextOverflow(t *testing.T) {
+	t.Parallel()
+	prepared := exactPreparedRequestFixture()
+	generation := exactPreparedGenerationFixture(
+		t, prepared, "stop", prepared.ContextTokens-11, 12,
+	)
+	err := ValidateExactPreparedGenerationForRequest(prepared, generation)
+	if err == nil || !strings.Contains(err.Error(), "aggregate native context exceeded") {
+		t.Fatalf("aggregate native overflow error = %v", err)
 	}
 }
 

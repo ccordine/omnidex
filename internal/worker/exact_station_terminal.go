@@ -18,6 +18,11 @@ func (s *Service) dispatchExactStationCall(
 	call exactStationCall,
 	prepared llm.PreparedModel,
 ) (assemblyline.PortableResult, exactStationExecution, error) {
+	if _, err := assemblyline.SemanticUncertaintyContractForWorkKind(call.WorkKind); err != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
+			"admit exact station semantic uncertainty before dispatch: %w", err,
+		)
+	}
 	if _, err := llm.ExactPreparedRequestBytes(prepared); err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
 			"validate exact station request before dispatch: %w", err,
@@ -51,18 +56,13 @@ func (s *Service) dispatchExactStationCall(
 	execution := exactStationExecution{
 		CallEvidenceID: opening.ID, WorkID: call.WorkID, WorkKind: call.WorkKind,
 		Model: prepared.BaseModel, Iteration: call.Iteration,
-		OutputContinuation: call.OutputContinuation, ProviderCalls: 1,
+		OutputContinuation: call.OutputContinuation,
+		DispatchAttempt:    call.DispatchAttempt, ProviderCalls: 1,
 	}
 	if evidenceErr != nil {
 		return assemblyline.PortableResult{}, execution, evidenceErr
 	}
 	if callErr != nil {
-		var outputLimit *llm.ExactPreparedOutputLimitReachedError
-		if call.OutputContinuation == 0 && errors.As(callErr, &outputLimit) {
-			return s.continueExactStationAfterOutputLimit(
-				ctx, authority, call, prepared, evidence, outputLimit,
-			)
-		}
 		return assemblyline.PortableResult{}, execution, fmt.Errorf(
 			"exact station provider call: %w", callErr,
 		)

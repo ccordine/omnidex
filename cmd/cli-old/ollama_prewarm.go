@@ -75,13 +75,16 @@ func runOllamaPrewarm(args []string) {
 	modelName := fs.String("model", ollamaPrewarmDefaultModel(), "exact installed Ollama model")
 	keepAlive := fs.String("keep-alive", "10m", "positive Ollama model retention duration")
 	numCtx := fs.Int("num-ctx", defaultContext, "inference context tokens")
-	timeout := fs.Duration("timeout", 10*time.Minute, "complete model-load timeout")
+	timeout := fs.Duration(
+		"timeout", llm.MaximumModelRequestDuration,
+		"complete model-load timeout; must be positive and no greater than 30 minutes",
+	)
 	baseURL := fs.String("base-url", defaultOllamaBaseURL(), "Ollama base URL")
 	asJSON := fs.Bool("json", false, "print JSON report")
 	_ = fs.Parse(args)
 
-	if *timeout <= 0 {
-		die("ollama prewarm timeout must be positive")
+	if err := validateOllamaPrewarmTimeout(*timeout); err != nil {
+		die(err.Error())
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
@@ -100,6 +103,16 @@ func runOllamaPrewarm(args []string) {
 		return
 	}
 	printOllamaPrewarmReport(report)
+}
+
+func validateOllamaPrewarmTimeout(timeout time.Duration) error {
+	if timeout <= 0 || timeout > llm.MaximumModelRequestDuration {
+		return fmt.Errorf(
+			"ollama prewarm timeout must be positive and no greater than %s",
+			llm.MaximumModelRequestDuration,
+		)
+	}
+	return nil
 }
 
 func probeOllamaModel(ctx context.Context, baseURL string, options ollamaPrewarmOptions) (ollamaPrewarmReport, error) {
@@ -169,6 +182,8 @@ func probeOllamaModel(ctx context.Context, baseURL string, options ollamaPrewarm
 }
 
 func ollamaPrewarmJSON(ctx context.Context, method, endpoint string, input, output any) error {
+	callCtx, cancel := ollamaPrewarmRequestContext(ctx)
+	defer cancel()
 	var body io.Reader
 	if input != nil {
 		encoded, err := json.Marshal(input)
@@ -177,7 +192,7 @@ func ollamaPrewarmJSON(ctx context.Context, method, endpoint string, input, outp
 		}
 		body = bytes.NewReader(encoded)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, endpoint, body)
+	req, err := http.NewRequestWithContext(callCtx, method, endpoint, body)
 	if err != nil {
 		return err
 	}
@@ -200,6 +215,10 @@ func ollamaPrewarmJSON(ctx context.Context, method, endpoint string, input, outp
 		return fmt.Errorf("decode response: %w", err)
 	}
 	return nil
+}
+
+func ollamaPrewarmRequestContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(ctx, llm.MaximumModelRequestDuration)
 }
 
 func ollamaPrewarmDefaultModel() string {
