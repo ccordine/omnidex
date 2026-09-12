@@ -23,7 +23,7 @@ func resolveDatabaseQueryFilters(
 			State: state, Collection: assemblyline.DatabaseQueryFilterPurpose,
 			ScopeRelationID: scopeRelationID, ParentPurpose: parentPurpose,
 		},
-		datasource.MaxIntentFilters-len(accepted), false, call, total,
+		datasource.MaxIntentFilters-len(accepted), call, total,
 	)
 	total = nextTotal
 	if err != nil {
@@ -130,7 +130,7 @@ func resolveDatabaseQueryFilterValues(
 			ScopeRelationID: leaf.ScopeRelationID, ParentPurpose: leaf.Purpose,
 			FocusedFieldID: leaf.FieldID, FocusedOperator: leaf.Operator,
 		},
-		datasource.MaxIntentFilterValues, true, call, total,
+		datasource.MaxIntentFilterValues, call, total,
 	)
 	total = nextTotal
 	if err != nil {

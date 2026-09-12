@@ -123,7 +123,7 @@ func applyChannelSessionReplanTx(
 	command ChannelSessionTurnCommand,
 	job model.Job,
 ) (model.Job, error) {
-	feedback, feedbackSHA, err := validateSessionReplanFeedback(command.Text)
+	feedback, err := validateSessionReplanFeedback(command.Text)
 	if err != nil {
 		return model.Job{}, fmt.Errorf("%w: %v", ErrChannelSessionTurnInvalid, err)
 	}
@@ -134,7 +134,7 @@ func applyChannelSessionReplanTx(
 		WorkspaceRoot:     command.WorkspaceRoot,
 		WorkspaceIdentity: command.WorkspaceIdentity,
 	}
-	result, _, err := applyReplanJobTx(ctx, tx, replan, feedbackSHA, job)
+	result, _, err := applyReplanJobTx(ctx, tx, replan, job)
 	return result, err
 }
 

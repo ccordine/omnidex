@@ -13,11 +13,10 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/projectroot"
 	"github.com/gryph/omnidex/internal/queue"
 )
 
-const testWorkspaceIdentity = "directory_identity_v1_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+const testWorkspaceIdentity = "directory_1_101"
 
 func TestCLIChatTransportPreservesWorkspaceAndReusesOneChannel(t *testing.T) {
 	t.Parallel()
@@ -128,7 +127,11 @@ func TestCLIChatSessionReadsUseExactQueries(t *testing.T) {
 				"limit=200&workspace_identity="+testWorkspaceIdentity,
 			)
 			writeJSON(t, writer, http.StatusOK, ChatSessionSnapshot{
-				RealtimeCursor: 7, Revision: testSessionRevision('b'), Channel: channel,
+				RealtimeCursor: 7, Channel: channel,
+				State: ChatSessionState{
+					ChannelID: channel.ID, WorkspaceRoot: channel.WorkspaceRoot,
+					WorkspaceIdentity: testWorkspaceIdentity, ChannelUpdatedAt: channel.UpdatedAt,
+				},
 				WorkspaceIdentity: testWorkspaceIdentity,
 				Messages:          []model.ChannelMessage{},
 				Turns:             []queue.ChannelSessionTurn{},
@@ -143,7 +146,7 @@ func TestCLIChatSessionReadsUseExactQueries(t *testing.T) {
 			writeJSON(t, writer, http.StatusOK, ChatSessionState{
 				ChannelID: channel.ID, WorkspaceRoot: workspaceRoot,
 				WorkspaceIdentity: testWorkspaceIdentity,
-				Revision:          testSessionRevision('c'),
+				ChannelUpdatedAt:  channel.UpdatedAt,
 			})
 		default:
 			t.Errorf("unexpected request %d: %s %s", requestNumber, request.Method, request.URL.String())
@@ -188,7 +191,7 @@ func TestCLIChatBootstrapRejectsSubstitutedSameRootAssistantChannel(t *testing.T
 		workspaceRoot,
 		testWorkspaceIdentity,
 	)
-	if err == nil || !strings.Contains(err.Error(), "differs from exact workspace channel") {
+	if err == nil || !strings.Contains(err.Error(), "server-issued CLI channel identity") {
 		t.Fatalf("substituted bootstrap channel error = %v", err)
 	}
 }
@@ -205,10 +208,7 @@ func TestGenericAssistantChannelRemainsValidOutsideCLIBootstrap(t *testing.T) {
 
 func testCLIChannel(workspaceRoot string) model.Channel {
 	createdAt := time.Date(2026, time.August, 31, 12, 0, 0, 0, time.UTC)
-	channelID, err := projectroot.CLIChatChannelID(workspaceRoot, testWorkspaceIdentity)
-	if err != nil {
-		panic(fmt.Sprintf("derive test CLI channel identity: %v", err))
-	}
+	channelID := model.ChannelID("cli-chat-0123456789abcdef0123456789abcdef")
 	return model.Channel{
 		ID: channelID, Scope: model.ChannelScopeUser,
 		Name: "CLI session", Tags: []string{"cli"}, WorkspaceRoot: workspaceRoot,
@@ -219,15 +219,11 @@ func testCLIChannel(workspaceRoot string) model.Channel {
 
 func testOperationID(t *testing.T, part string) queue.LifecycleOperationID {
 	t.Helper()
-	operationID, err := queue.NewLifecycleOperationID("client-contract-test", part)
+	operationID, err := queue.NewLifecycleOperationID()
 	if err != nil {
 		t.Fatalf("create operation ID: %v", err)
 	}
 	return operationID
-}
-
-func testSessionRevision(character byte) string {
-	return "channel_session_revision_" + strings.Repeat(string(character), 64)
 }
 
 func testClient(t *testing.T, baseURL string) *Client {

@@ -34,9 +34,6 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*Runtime, 
 	if ctx == nil {
 		return nil, fmt.Errorf("runtime requires context")
 	}
-	if err := cfg.CodingScopeMode.Validate(); err != nil {
-		return nil, fmt.Errorf("runtime coding scope authority: %w", err)
-	}
 	if strings.TrimSpace(cfg.DatabaseURL) == "" {
 		return nil, fmt.Errorf("runtime database operation requires DATABASE_URL")
 	}
@@ -49,7 +46,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*Runtime, 
 		cancel()
 		return nil, fmt.Errorf("connect runtime database: %w", err)
 	}
-	repo := queue.New(pool, cfg.ModelAuthority, cfg.CodingScopeMode)
+	repo := queue.New(pool, cfg.ModelAuthority)
 
 	transports := llmprovider.NewLazyFromConfig(cfg)
 	server, err := api.NewServer(repo, transports.Embeddings, api.ServerOptions{

@@ -97,8 +97,6 @@ func sortCodebaseMap(codebase *CodebaseMap) {
 	sort.Slice(codebase.Tests, func(i, j int) bool { return codebase.Tests[i].Path < codebase.Tests[j].Path })
 }
 
-func hashJoin(values ...string) string { return workspaceHash(strings.Join(values, "|")) }
-
 func limitStrings(values []string, limit int) []string {
 	if limit <= 0 || len(values) <= limit {
 		return values

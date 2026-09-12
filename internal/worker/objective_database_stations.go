@@ -2,7 +2,6 @@ package worker
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/station"
@@ -10,30 +9,30 @@ import (
 
 type objectiveDatabaseStations interface {
 	SelectSchema(context.Context, assemblyline.DatabaseSchemaSelectionInput) (
-		assemblyline.DatabaseSchemaSelectionDecision, objectiveStationReceipt, error,
+		assemblyline.DatabaseSchemaSelectionDecision, int, error,
 	)
 	BuildIntent(context.Context, assemblyline.DatabaseQueryIntentInput) (
-		assemblyline.DatabaseQueryIntentDecision, objectiveStationReceipt, error,
+		assemblyline.DatabaseQueryIntentDecision, int, error,
 	)
 	SelectJoinPath(context.Context, assemblyline.DatabaseJoinPathSelectionInput) (
-		assemblyline.DatabaseJoinPathSelectionDecision, objectiveStationReceipt, error,
+		assemblyline.DatabaseJoinPathSelectionDecision, int, error,
 	)
 }
 
 func (adapter portableObjectiveDatabaseStations) SelectJoinPath(
 	ctx context.Context,
 	input assemblyline.DatabaseJoinPathSelectionInput,
-) (assemblyline.DatabaseJoinPathSelectionDecision, objectiveStationReceipt, error) {
+) (assemblyline.DatabaseJoinPathSelectionDecision, int, error) {
 	decision, resolved, err := assemblyline.ResolveSoleDatabaseJoinPathSelectionDecision(input)
 	if err != nil {
-		return assemblyline.DatabaseJoinPathSelectionDecision{}, objectiveStationReceipt{}, err
+		return assemblyline.DatabaseJoinPathSelectionDecision{}, 0, err
 	}
 	if resolved {
-		return decision, objectiveStationReceipt{}, nil
+		return decision, 0, nil
 	}
 	job, err := assemblyline.NewDatabaseJoinPathSelectionJob(input)
 	if err != nil {
-		return assemblyline.DatabaseJoinPathSelectionDecision{}, objectiveStationReceipt{}, err
+		return assemblyline.DatabaseJoinPathSelectionDecision{}, 0, err
 	}
 	return runObjectivePortableRawLeafStation(
 		ctx, adapter.runtime, "database_join_path_selection", job,
@@ -54,46 +53,27 @@ type portableObjectiveDatabaseStations struct {
 func (adapter portableObjectiveDatabaseStations) SelectSchema(
 	ctx context.Context,
 	input assemblyline.DatabaseSchemaSelectionInput,
-) (assemblyline.DatabaseSchemaSelectionDecision, objectiveStationReceipt, error) {
+) (assemblyline.DatabaseSchemaSelectionDecision, int, error) {
 	resolveModel := func() (string, error) {
 		return objectiveStationModel(adapter.runtime, station.DatabaseSchemaSelection)
 	}
-	var ledger objectiveDatabaseRawLeafCallLedger
 	decision, calls, err := resolveObjectiveDatabaseSchemaSelection(
 		ctx, input,
-		adapter.rawLeafCall(station.DatabaseSchemaSelection, resolveModel, &ledger),
+		adapter.rawLeafCall(station.DatabaseSchemaSelection, resolveModel),
 	)
-	if err != nil {
-		return decision, ledger.partial(), err
-	}
-	if len(ledger.receipts) == 0 {
-		if calls != 0 {
-			return decision, objectiveStationReceipt{}, fmt.Errorf(
-				"database schema selection reported %d calls without a leaf receipt",
-				calls,
-			)
-		}
-		return decision, objectiveStationReceipt{}, nil
-	}
-	receipt, err := ledger.complete(calls)
-	return decision, receipt, err
+	return decision, calls, err
 }
 
 func (adapter portableObjectiveDatabaseStations) BuildIntent(
 	ctx context.Context,
 	input assemblyline.DatabaseQueryIntentInput,
-) (assemblyline.DatabaseQueryIntentDecision, objectiveStationReceipt, error) {
+) (assemblyline.DatabaseQueryIntentDecision, int, error) {
 	resolveModel := func() (string, error) {
 		return objectiveStationModel(adapter.runtime, station.DatabaseQueryIntent)
 	}
-	var ledger objectiveDatabaseRawLeafCallLedger
 	decision, calls, err := resolveObjectiveDatabaseQueryIntent(
 		ctx, input,
-		adapter.rawLeafCall(station.DatabaseQueryIntent, resolveModel, &ledger),
+		adapter.rawLeafCall(station.DatabaseQueryIntent, resolveModel),
 	)
-	if err != nil {
-		return decision, ledger.partial(), err
-	}
-	receipt, err := ledger.complete(calls)
-	return decision, receipt, err
+	return decision, calls, err
 }

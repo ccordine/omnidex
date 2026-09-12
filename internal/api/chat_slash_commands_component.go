@@ -3,7 +3,6 @@ package api
 import (
 	"fmt"
 	"html"
-	"regexp"
 	"strconv"
 	"strings"
 	"unicode/utf16"
@@ -17,8 +16,6 @@ const (
 	chatSlashCommandListID         = "slash-command-list"
 	maxChatSlashCommandBundleBytes = 1024 * 1024
 )
-
-var chatSlashCommandOptionIDPattern = regexp.MustCompile(`^slash-command-option-[0-9a-f]{16}$`)
 
 type chatSlashCommandsComponent struct {
 	ChannelID    model.ChannelID   `json:"channel_id"`
@@ -64,22 +61,17 @@ func renderChatSlashCommandsComponent(
 	var markup strings.Builder
 	markup.WriteString(`<div id="` + chatSlashCommandListID + `" role="listbox" aria-label="Available slash commands" data-slash-command-list data-slash-command-channel-id="` +
 		html.EscapeString(string(channel.ID)) + `" class="max-h-72 space-y-1 overflow-y-auto p-1">`)
-	seenIDs := make(map[string]struct{}, len(commands))
 	seenExact := make(map[string]struct{}, len(commands))
 	for index, command := range commands {
 		if err := validateChatSlashCommand(command, index); err != nil {
 			return chatSlashCommandsComponent{}, err
 		}
-		if _, duplicate := seenIDs[command.ID]; duplicate {
-			return chatSlashCommandsComponent{}, fmt.Errorf("slash command component repeats an option identity")
-		}
 		if _, duplicate := seenExact[command.Insertion]; duplicate {
 			return chatSlashCommandsComponent{}, fmt.Errorf("slash command component repeats exact syntax")
 		}
-		seenIDs[command.ID] = struct{}{}
 		seenExact[command.Insertion] = struct{}{}
 		prefix := "/" + command.Key
-		markup.WriteString(`<button id="` + html.EscapeString(command.ID) +
+		markup.WriteString(`<button id="slash-command-option-` + strconv.Itoa(index) +
 			`" type="button" role="option" aria-selected="false" tabindex="-1" data-chat-slash-option data-action="chat#chooseSlashCommand" data-slash-command="` +
 			html.EscapeString(command.Insertion) + `" data-slash-command-cursor="` + strconv.Itoa(command.CursorUTF16) +
 			`" data-slash-command-prefix="` + html.EscapeString(prefix) + `" data-slash-command-kind="` +
@@ -117,9 +109,6 @@ func renderChatSlashCommandsComponent(
 }
 
 func validateChatSlashCommand(command roleplay.SimulationSlashCommand, index int) error {
-	if !chatSlashCommandOptionIDPattern.MatchString(command.ID) {
-		return fmt.Errorf("slash command option %d has invalid code-issued identity", index)
-	}
 	if !roleplaySimulationKeyPattern.MatchString(command.Key) || command.DisplayOrder != index {
 		return fmt.Errorf("slash command option %d has invalid key or order", index)
 	}

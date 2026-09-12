@@ -38,7 +38,6 @@ func (r *Repository) ExecuteScrumChannelOperation(
 		tx,
 		descriptor.Request.OperationID,
 		LifecycleScrumChannel,
-		descriptor.SHA256,
 		descriptor.Payload,
 	)
 	if err != nil {
@@ -72,7 +71,7 @@ func (r *Repository) ExecuteScrumChannelOperation(
 	var lockedMetadata scrum.JobMetadata
 	if command.Effect.Kind == ScrumChannelStartJob {
 		lockedMetadata, _, err = scrumPlayAuthorityTx(
-			ctx, tx, current, r.modelAuthority, r.codingScopeMode,
+			ctx, tx, current, r.modelAuthority,
 		)
 		if err != nil {
 			return ScrumChannelOperationResult{}, err
@@ -85,7 +84,14 @@ func (r *Repository) ExecuteScrumChannelOperation(
 		}
 		lockedMetadata.ReturnColumn = string(column)
 	}
-	job, err := r.executeScrumChannelEffectTx(ctx, tx, command, current, lockedMetadata)
+	effectOperationID := command.Request.OperationID
+	if command.Effect.Kind != ScrumChannelStartJob {
+		effectOperationID, err = NewLifecycleOperationID()
+		if err != nil {
+			return ScrumChannelOperationResult{}, err
+		}
+	}
+	job, err := r.executeScrumChannelEffectTx(ctx, tx, command, current, lockedMetadata, effectOperationID)
 	if err != nil {
 		return ScrumChannelOperationResult{}, err
 	}
@@ -109,7 +115,7 @@ func (r *Repository) ExecuteScrumChannelOperation(
 		MessageTotal: card.ChannelMessageCount, PreviousCard: current, Job: job,
 		Action: command.ResultAction, Applied: true,
 	}
-	if err := insertScrumChannelOperationTx(ctx, tx, descriptor, command, result); err != nil {
+	if err := insertScrumChannelOperationTx(ctx, tx, descriptor, command, result, effectOperationID); err != nil {
 		return ScrumChannelOperationResult{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -124,6 +130,7 @@ func (r *Repository) executeScrumChannelEffectTx(
 	command ScrumChannelOperationCommand,
 	card DBScrumCard,
 	lockedMetadata scrum.JobMetadata,
+	operationID LifecycleOperationID,
 ) (model.Job, error) {
 	effect := command.Effect
 	if effect.Kind != ScrumChannelStartJob {
@@ -154,9 +161,9 @@ func (r *Repository) executeScrumChannelEffectTx(
 			ctx, tx, effect.Instruction, command.Request.ProjectID, lockedMetadata,
 		)
 	case ScrumChannelReplanJob:
-		job, err = executeScrumChannelReplanTx(ctx, tx, command)
+		job, err = executeScrumChannelReplanTx(ctx, tx, command, operationID)
 	case ScrumChannelSubmitFeedback:
-		job, err = executeScrumChannelFeedbackTx(ctx, tx, command)
+		job, err = executeScrumChannelFeedbackTx(ctx, tx, command, operationID)
 	default:
 		return model.Job{}, fmt.Errorf("Scrum channel effect kind %q is not registered", effect.Kind)
 	}
@@ -177,12 +184,9 @@ func executeScrumChannelReplanTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	command ScrumChannelOperationCommand,
+	operationID LifecycleOperationID,
 ) (model.Job, error) {
-	operationID, err := scrumChannelEffectOperationID(command)
-	if err != nil {
-		return model.Job{}, err
-	}
-	replan, feedbackSHA, err := normalizeReplanJobCommand(ReplanJobCommand{
+	replan, err := normalizeReplanJobCommand(ReplanJobCommand{
 		OperationID: operationID, JobID: command.Effect.JobID, Feedback: command.Request.Message,
 	})
 	if err != nil {
@@ -195,7 +199,7 @@ func executeScrumChannelReplanTx(
 	if err := lockLifecycleOperationIdentityTx(ctx, tx, operationID); err != nil {
 		return model.Job{}, err
 	}
-	result, err := replanJobTx(ctx, tx, replan, feedbackSHA, descriptor)
+	result, err := replanJobTx(ctx, tx, replan, descriptor)
 	return result.Job, err
 }
 
@@ -203,11 +207,8 @@ func executeScrumChannelFeedbackTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	command ScrumChannelOperationCommand,
+	operationID LifecycleOperationID,
 ) (model.Job, error) {
-	operationID, err := scrumChannelEffectOperationID(command)
-	if err != nil {
-		return model.Job{}, err
-	}
 	feedback, err := normalizeSubmitFeedbackCommand(SubmitJobFeedbackCommand{
 		OperationID: operationID, JobID: command.Effect.JobID, Feedback: command.Request.Message,
 	})
@@ -223,15 +224,6 @@ func executeScrumChannelFeedbackTx(
 	}
 	result, err := submitJobFeedbackTx(ctx, tx, feedback, descriptor)
 	return result.Job, err
-}
-
-func scrumChannelEffectOperationID(command ScrumChannelOperationCommand) (LifecycleOperationID, error) {
-	return NewLifecycleOperationID(
-		"scrum-channel-effect.v1",
-		string(command.Request.OperationID),
-		string(command.Effect.Kind),
-		strconv.FormatInt(command.Effect.JobID, 10),
-	)
 }
 
 func validateScrumChannelCardUpdate(

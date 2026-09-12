@@ -1,424 +1,197 @@
-# Omnidex code-owned cognition resolution contract — Charmeleon build
-
-Status: normative sub-contract of
-[`CHARMELEON_COGNITION_RUNTIME.md`](CHARMELEON_COGNITION_RUNTIME.md).
-
-The assembly-line authority in
-[`CHARMANDER_ASSEMBLY_LINE.md`](CHARMANDER_ASSEMBLY_LINE.md) is absolute: code does
-everything it can derive reliably. Inference may fill only one explicitly named
-semantic gap that deterministic machinery cannot cross.
-
-## Sole cognition path
-
-```text
-restore typed authoritative state
-        ↓
-evaluate code-owned completion
-        ↓
-run deterministic prerequisite closure
-        ├─ unique grounded operation → code prepares and executes it
-        ├─ one registered semantic uncertainty → one tiny station call
-        └─ no registered resolution → fail loudly
-```
-
-The model is an interrupt, not the loop. A model call without a persisted named
-uncertainty is an invariant failure. There is no alternate model-agent runtime.
-
-Provider discovery, bootstrap observation, attestation, process activation, and
-station-call preparation are lazy. They occur only after the resolver persists a
-named uncertainty for a registered station. A deterministic episode must start,
-execute, seal, and recover with no provider configured or contacted and with no
-fabricated provider-bootstrap, activation, projection, or call evidence. Encountering
-a named uncertainty without its required provider authority fails explicitly.
-
-## Application front-door closure
-
-An ordinary coding request enters this same resolver contract. Code first hashes the
-immutable request and bootstraps the exact fact it can establish immediately: whether
-the workspace is empty or existing. Any repository, runtime, or external fact added
-afterward must be acquired by a registered code-owned provider and retained with source
-identity and digest.
-It never asks a model what files exist, which command to run, or which provider to use.
-
-Repository, runtime, and external facts after bootstrap are acquired only by registered
-deterministic providers when authoritative state requires them. There is no
-application-context-question inventory, necessity, duplicate-relation, or completeness
-model station. Provider transcripts and broad search results are not planning context.
-The promoted fresh-workspace vertical resolves context mechanically and
-makes no context-question model call.
-
-When a semantic stage begins with one bounded inventory, that output is untrusted
-candidate data rather than a completeness claim or workflow decision. Code parses the
-inventory into a source-order queue, removes exact repeats mechanically, and submits
-each remaining candidate only to the independently necessary one-candidate or pairwise
-relations registered for that stage. A structurally invalid station response fails at
-that station. A structurally valid but semantically malformed, rejected, unauthorized,
-unnecessary, or duplicate candidate evaporates locally; it cannot block an independent
-candidate or reopen accepted state. Queue exhaustion ends the sieve without a coverage, review,
-completion, `NO_UNCOVERED`, or `REMAINS` call. No model returns continuation,
-acceptance, retry, execution, search, or planning authority.
-
-Existing-repository artifact interpretation keeps two unresolved relations separate.
-One station answers only whether one repository-authoritative semantic artifact and all
-behavior it owns must be absent. A different station answers only whether one exact
-cohesive requirement calls for one new complete unstructured plain-text artifact and no
-other change. Each genuine closed choice returns only a call-local opaque ID which code
-maps to its retained relation; internal relation labels are not model text. Code decides
-which uncertainty is present, invokes only that station, and owns candidate selection,
-target construction, mutation, and verification.
-
-Intent interpretation occurs only after that closure. Exactly one bounded,
-source-ordered requirement-inventory station returns either
-`NO_RUNTIME_REQUIREMENT_CANDIDATES` or between one and the code-owned maximum positive
-atomic finished-software runtime-outcome candidates. Code parses and counts those lines
-mechanically. No semantic station pre-counts the inventory, and no pre-count receipt
-exists. Inventory generation is untrusted candidate intake, not
-authorization or a completeness claim. The inventory may turn a purpose-denoting product
-or category name into only its literal core operation or governed result. It omits
-construction constraints, customary features, and speculative enhancements. Code owns
-the queue and exact deduplication. Every positive candidate is
-first checked by one request-entailment authorization relation; an unauthorized candidate
-evaporates before classification. Code then invokes kind and cardinality only for
-authorized candidates. An authorized candidate that still proves mixed or compound may
-return one bounded partition whose children re-enter the same queue and authorization
-boundary. A structurally invalid partition response fails at that station; a structurally
-valid child whose semantic content remains malformed, cyclic, over-depth, or over-capacity
-dies without blocking independent candidates or reopening accepted state. No later
-product-name generator or aggregate review may reopen intake. Only an authorized
-task-local one-outcome candidate is compared pairwise with one accepted requirement at
-a time. A semantic duplicate evaporates;
-only a distinct candidate reaches the result-relation station. A missing determining
-relation may use the separately bound request/context grounding relation and one exact
-candidate correction, after which that replacement re-enters ordinary exact-dedup,
-authorization, kind, cardinality, duplicate, and result checks. Queue exhaustion freezes
-the currently accepted functional objective for this iteration. It does not invoke a
-review, coverage, completeness, or `REQUIREMENT_REMAINS` station; later objectives may
-continue iteratively from verified reality. Any rejected, speculative, or over-capacity
-candidate retained as a possible follow-up remains non-authoritative and outside the
-current ledger, workload, verifier, and completion criteria until a later explicit user
-objective sends it through the ordinary sieve.
-
-Only when at least one task-local leaf survives does code resolve product, surface, or
-deployment semantics, and each such semantic leaf runs only at its first concrete
-consumer. An empty accepted queue creates no downstream interpretation work.
-
-Code binds the assembled typed intent to the immutable request digest and never asks a
-model to emit or review the aggregate. Authority does not depend on reproducing a
-contiguous substring or allocating non-overlapping text intervals. Models see no
-operation catalog, task graph, or completion control. The sole tree-visible boundary is
-the target-tree declaration station defined in
-[TARGET_TREE_PLANNING.md](TARGET_TREE_PLANNING.md): when naming remains unresolved, it
-receives the exact immutable request, selected technical tree context, and a bounded
-code-built current tree and returns one complete raw node hierarchy. Code constructs all
-normalized relative paths, and the request is not forwarded into source generation.
-Source-body generation and its same-job correction continuation remain path-blind;
-there is no repair-guidance or repair-execution station.
-
-Code projects each accepted task-local runtime implementation requirement into exactly one frozen task in source order.
-That task contains only its code-owned task identity, requirement identity, and exact
-accepted requirement. No cognition gap, correction boundary, or model call elaborates
-the requirement into an objective, behavior list, acceptance contract, dependency, or
-schedule. Downstream code consumes the exact requirement and owns all construction,
-verification, routing, and completion state.
-
-## Autonomous substrate and subjective meaning
-
-Turning inference off must not stop the world. Code-owned systems continue sensing,
-reducing state, regulating numeric or categorical baselines, scheduling, traversing,
-acquiring deterministic evidence, enforcing mechanics, executing uniquely determined
-operations, and evaluating completion. The AI does not decide that a need exists,
-reconstruct legal mechanics, or invoke the simulation's equivalent of a tool.
-
-Parsers, compilers, type checkers, indexes, transaction managers, schedulers, graph
-algorithms, rules engines, and environment mechanics are never model roles or
-model-selected tools. Code invokes them whenever typed state requires them and treats
-their validated output as authority. Inference receives only the semantic remainder
-that those systems cannot compute exactly.
-
-Models do not call tools. An LLM may not request deterministic machinery;
-deterministic machinery runs whenever code-owned authoritative state requires it, and
-inference receives only the unresolved semantic remainder produced after deterministic
-closure. A tool registry, function-call catalog, shell operation,
-repository operation, environment operation, or adapter command is never a
-provider-visible capability. Code owns tool selection, arguments, ordering,
-invocation, retries, budgets, and validation. For example, after code receives one
-model-generated implementation body, code supplies and parses the declaration, inserts it into an in-memory document,
-formats it, compiles it, runs the predetermined checks, and routes an exact failure;
-the model is never asked whether to perform any of those operations.
-
-Some environments legitimately use inference to add semantic or narrative meaning to
-authoritative events. That is a separate named gap, such as interpreting how one
-bounded event relates to an existing trait, relationship, preference, or unresolved
-belief. A role-specific appraisal station may return one bounded subjective value.
-Its result:
-
-- cites the exact authoritative state and event inputs it interprets;
-- is stored with model-proposal or accepted-subjective authority, never as world fact;
-- cannot negate, replace, or fabricate an authoritative observation;
-- cannot directly mutate needs, mechanics, relationships, schedules, or baselines;
-- influences later behavior only through a registered code-owned acceptance and
-  bounded-effect policy; and
-- is recalled by deterministic scope, relevance, freshness, and budget rules rather
-  than by transcript replay or model-managed memory.
-
-This is the permitted "yes-and" role: code generates reality; inference adds bounded
-meaning consistent with that reality; code incorporates the accepted meaning and
-continues. A free-form narrative that has no registered downstream consumer is
-model-authored autobiography and is forbidden.
-
-## Public causal surface
-
-An environment registers an execution schema and a public causal contract for every
-operation. The causal contract uses opaque typed identities; code must not infer
-causality by scanning requirement names, observation prose, or workload nouns.
-
-The contract is equivalent to:
-
-```go
-type RequirementID string
-
-type RequirementKind string
-type RequirementLifetime string
-
-const (
-    RequirementPredicate RequirementKind = "predicate"
-    RequirementValue     RequirementKind = "value"
-)
-
-type PublicRequirement struct {
-	ID          RequirementID
-	Version     string
-	Kind        RequirementKind
-	Lifetime    RequirementLifetime // episode-immutable or exact-current-revision
-	ValueSchema *ValidatedValueSchema
-	SHA256      Digest
-}
-
-type ArgumentBinding struct {
-    Argument ActionArgumentName
-    Source   RequirementID
-}
-
-type PublicOperationContract struct {
-    SpecID         ActionSchemaID
-    Requires       []RequirementID
-    Provides       []RequirementID
-    Achieves       []Predicate
-    Bindings       []ArgumentBinding
-    FixedArguments []ActionArgument
-}
-
-type ReducerSourceKind string
-
-const (
-    ReducerSourceInitial   ReducerSourceKind = "initial"
-    ReducerSourceOperation ReducerSourceKind = "operation"
-)
-
-type ObservationReducerContract struct {
-    Ref       ObservationReducerRef
-    InputKind ObservationKind
-    Source    ObservationReducerSource // initial or exact ActionSchemaRef
-    Outputs   []PublicRequirementRef
-    SHA256    Digest
-}
-```
-
-Requirements, value schemas, operation contracts, reducers, and their canonical
-digests are frozen before an episode. A reducer implementation identity binds its
-exact named function to the digest of the running executable measured by code; an
-adapter cannot assert an expected source digest or substitute another code authority.
-The model cannot create or modify any of them.
-
-The public causal surface contains only mechanics legitimately available to the
-coordinator. It must not expose latent solutions, hidden guards, private facts,
-unobserved entities, oracle labels, generator seeds, or scores. Environment-private
-preconditions remain private and are enforced atomically when an operation is
-applied.
-
-Public observations become prerequisite state only during ingestion of an exact
-validated environment journal state. The sole code-owned reducer registry executes
-one implementation bound to one exact reducer reference and contract. Callers cannot
-pass raw observations, synthesize an action, or register a second function under the
-same identity. Initial reduction consumes only the journal's exact Start transition.
-Operation reduction consumes only the journal's exact successful Apply receipt and
-its registered action. Reducer input observations are selected from that transition
-and canonically ordered by their complete evidence identity before code executes.
-
-A reducer contract binds its exact input observation kind, exact versioned+hashed
-output requirements, and either initial-transition authority or one exact producing
-action schema. The accepted value and immutable evidence lineage are outputs of that
-code path; callers cannot construct or mutate accepted knowledge fields directly.
-Opaque JSON, natural-language guidance, arbitrary supplied values, and model
-assertions are not machine knowledge.
-
-Every requirement declares its validity lifetime. Episode-scoped knowledge is
-permitted only for facts whose truth is immutable for that episode. Revision-scoped
-knowledge must be derived from evidence at the exact current world revision; advancing
-the world invalidates it. A requirement without an explicit registered lifetime is
-invalid. This first resolver is deliberately monotonic: applicability, consumption,
-negative effects, or mutable baselines require an explicit later contract and may not
-be inferred from absence.
-
-The current bounded environment journal authenticates evidence membership only from
-the exact observations contained in its Start transition and successful current Apply
-receipt. A matching episode/revision tuple—including the current receipt's expected
-revision—is not observation ancestry. Accepted knowledge citing any other observation
-fails loudly even when its episode, revision number, and revision digest appear
-plausible. Numeric ordering is not ancestry. Supporting deeper history requires a
-bounded, exact observation-membership authority restored by the production store; the
-resolver must never infer that authority from `revision.Number < current.Number`.
-
-The catalog is causally total. Every referenced prerequisite has at least one exact
-materialization route: an initial reducer or a registered providing operation. Every
-operation-provided requirement has one exact reducer bound to that producer; initial
-reducers are registered separately. Missing, orphaned, duplicate, cross-producer, or
-prior-version reducer authority makes the catalog invalid before execution. An
-operation that depends on accepted knowledge may not declare evidence forbidden and
-silently erase the causal lineage.
-
-## Deterministic prerequisite resolver
-
-The resolver receives one immutable, model-free code-owned resolution state restored
-from the exact environment journal, obligation graph, active attempt, public-causal
-catalog and accepted knowledge. It does not depend on a Context Projection, provider
-identity, or model-call budget. The first implementation accepts only an active goal
-containing exactly one positive `All` predicate and derives that predicate itself.
-`Any`, `Not`, or compound goals fail loudly until a separate code-owned scheduler can
-prove their exact semantics. The resolver never flattens a goal, chooses the first item
-in a caller-provided list, or accepts a caller-selected target. It walks only
-registered public causal edges under hard node and depth limits. It:
-
-1. evaluates requirements against accepted typed knowledge and public state;
-2. locates registered producers for missing requirements;
-3. recursively resolves uniquely determined acquisition operations;
-4. binds arguments from accepted values or registered fixed values;
-5. selects supporting evidence from the value's immutable lineage;
-6. prepares a request only when every public requirement and binding is exact; and
-7. blocks on ambiguity unless a separate concrete station contract has been
-   registered and persisted by the production coordinator.
-
-Its result is a closed tagged type:
-
-```go
-type ResolutionKind string
-
-const (
-    ResolutionExecute ResolutionKind = "execute"
-    ResolutionBlocked ResolutionKind = "blocked"
-)
-
-type Resolution struct {
-    Kind    ResolutionKind
-    Action  *PreparedAction
-    Failure *ResolutionFailure
-}
-```
-
-`PreparedAction` is entirely code-constructed. It binds the exact resolution-state
-digest, catalog, active obligation, current revision, operation-contract digest and
-resolution digest. The action journal assigns its durable identity after verifying
-that binding against the same restored state.
-
-No producer, a causal cycle, a missing binding, an exceeded bound, or ambiguity
-without a registered station returns an explicit `blocked` failure. Conflicting or
-stale accepted knowledge makes resolution-state restoration invalid before planning;
-it returns an error and no plausible resolution value. None of these conditions
-falls through to a general model call.
-
-## Named cognitive gaps
-
-The prerequisite core has no generic uncertainty DTO and does not fabricate one from
-ambiguity. Until a concrete station is registered with a complete persisted authority,
-ambiguity is `blocked`. Adding a station adds its own exact gap type rather than
-expanding `Resolution` into a speculative universal union.
-
-The first permitted inference role is bounded candidate selection:
-
-```go
-type CandidateSelectionCall struct {
-    UncertaintyID UncertaintyID
-    Question      BoundQuestion
-    Evidence      []BoundEvidence
-    Candidates    []OpaqueCandidate
-    Projection    ContextProjectionRef
-}
-
-type CandidateSelection struct {
-    CandidateID CandidateID
-}
-```
-
-This port is legal only for a real plurality. Code constructs the complete applicable
-set first: zero candidates take the station's explicit zero-candidate behavior and one
-candidate is consumed immediately with zero model resolution, zero model execution,
-and no rejection. With two or more candidates, the provider-visible response contains
-only one call-local opaque ID from the exact bounded set. Code owns the mapping,
-validates and persists the result as typed state, and reruns deterministic closure.
-
-Classification, extraction, and hypothesis selection require separate hard-typed semantic
-ports when justified. Source-body generation instead returns ordinary raw text with no
-model-visible schema; one proven body defect continues that same persisted source job and
-model rather than creating a repair port. No port may review accepted state or decide completion.
-There is no generic station result union. A station cannot emit:
-
-- an environment operation or its arguments;
-- action evidence or an expected effect;
-- a Task Ledger or obligation-graph mutation;
-- a Working Set retain, release, pin, or selection request;
-- a durable identity; or
-- a completion result.
-
-Every call binds the named uncertainty, exact candidates, selected evidence, active
-attempt, episode revision, obligation generation, public-causal-catalog version,
-Working Set version, projection, station and renderer versions, and hard budgets. A
-later operation is derived anew by code; it is never copied from a station response.
-The durable station projection contains exactly the prompt and renderer identity. All
-current provider results are raw text; a response schema is neither stored nor offered
-as model-output authority.
-
-## Recovery
-
-Recovery restores either deterministic resolver state, one unresolved station call,
-or one already prepared code-owned action. It never reconstructs cognition from a
-transcript or asks a model what happened. After removing only actor-fence fields, the
-named uncertainty, candidate set, evidence, and rendered station context must match an
-uninterrupted run at the same boundary.
-
-## Rejected experimental path
-
-The universal `CognitionDecision` path is rejected. Its model-owned action,
-arguments, evidence references, expected effect, proposals, attention requests, and
-completion-shaped fields are not compatibility surfaces.
-
-The production cutover must remove that path, its provider schema, its persistence
-types, and its recovery route. Old serialized usage fails explicitly. There is no
-old/new feature flag, adapter, alias, shadow fallback, or semantic backfill.
-
-## Required behavioral gates
-
-The first gates run through the isolated in-memory executable specification. They are
-required before freezing a persistence representation or implementing recovery:
-
-- a unique goal-achieving operation completes with zero model calls;
-- a missing typed prerequisite invokes its unique producer, reduces the resulting
-  observation, grounds the consumer operation, and completes with zero model calls;
-- both deterministic cases run with no provider configured and contain no provider
-  discovery, bootstrap, activation, projection, or call records;
-- zero candidates follow the registered zero-option rule with no model call, one
-  candidate is used directly with no model call or rejection, and two genuinely
-  ambiguous opaque candidates cause exactly one candidate-selection call whose payload
-  contains no environment-action or memory-management surface;
-- missing, contradictory, cyclic, ambiguous-unregistered, or stale state fails
-  loudly;
-- procedural mechanics, read-only repository traversal, recursive workload
-  compilation, bounded implementation-body generation with code-owned declarations, and deterministic verification each
-  preserve the same code-owned operation and completion authority; and
-- source-level absence tests reject the universal decision APIs, renderer instruction,
-  JSON fields, persistence consumers, compatibility aliases, and fallbacks.
-
-After those behaviors pass through the one production path, durability may mirror
-them. Its additional gates are exact restart after prerequisite acquisition, the same
-next deterministic operation or named gap after recovery, stale-writer rejection,
-replay equality, and complete provenance. Persistence is not permitted to introduce a
-new transition rule, planner, inference role, or fallback.
+# Omnidex deterministic resolution and semantic leaves
+
+Status: authoritative sub-contract of
+[CHARMELEON_COGNITION_RUNTIME.md](CHARMELEON_COGNITION_RUNTIME.md).
+
+Code does everything it can determine exactly. A model answers only one necessary
+semantic question left unresolved by that work.
+
+## Dispatch invariant
+
+Before each call, the production code must establish:
+
+1. What exact semantic question remains?
+2. Why can code not determine its answer?
+3. What minimum information does the model need?
+4. What single semantic value must it return?
+5. Which deterministic consumer validates and uses that value?
+
+If any answer is missing, the call is forbidden. A provider is unnecessary for work
+that code resolves completely. Provider preparation must not manufacture a semantic
+job merely because a workflow stage exists.
+
+The station's code-owned kind, inputs, renderer, and consumer express the boundary.
+Do not introduce a universal cognition-decision object, action-selection model,
+hash-bound reducer catalog, or generic uncertainty framework as a replacement.
+
+## Deterministic closure
+
+Repository reads, search execution, parsing, type checking, indexing, graph
+construction, compilation, command execution, persistence, and verification belong
+to code. The current objective and registered consumers determine when they run.
+
+Code must not reconstruct natural-language meaning with keywords, phrase lists,
+regular expressions, or one expected wording. Interpretation is a legitimate
+semantic leaf when its exact question cannot be determined mechanically.
+
+The result of deterministic work is the actual acquired value, parsed structure,
+observed execution, or explicit failure. Its identity associates it with its source
+and consumer; a digest does not make it true.
+
+Call counters measure usage and enforce dispatch bounds; agreement between
+duplicate counters is not execution evidence. A deterministic result must not
+require a positive inference count or a separate call-proof ledger before its
+consumer can use it. Database completion checks the executed query and recorded
+rows; web completion checks the acquired source and actual citation projection.
+Context compilation and shared objective stations consume validated semantic
+values with plain dispatch counts, without a separate receipt wrapper or reuse
+flag. None requires a second in-memory history of model receipts.
+Failed work retains its observed call usage without authorizing a partial result.
+
+Fixed web acquisition uses direct discovery and fetch calls. Their static sequence
+owns the execution bound; it needs no versioned specialist registry, attempt
+reservation, verification receipt, or write-only stage counter. Code checks actual
+query, source, diagnostic, and size constraints before accepting evidence. Bounded
+reports returned by failed or cancelled acquisition remain observations, not selected
+evidence or permission to invoke another semantic station.
+
+## Application intake
+
+The request enters unchanged through its explicit transport. Code first acquires
+the workspace and other facts it can establish, then projects only the required
+path-free context into interpretation. There is no model-owned context-question
+inventory, acquisition plan, or context-completeness gate.
+
+Exactly one bounded requirement inventory returns either
+`NO_RUNTIME_REQUIREMENT_CANDIDATES` or a bounded positive sequence of ordinary
+candidate lines. Code parses and counts the lines. There is no pre-count station or
+pre-count receipt, and the inventory is neither authorization nor a completeness
+claim.
+
+Each candidate enters the ordinary sieve independently:
+
+1. Code removes exact repeats.
+2. A request-entailment leaf resolves whether this candidate is authorized.
+3. Only an authorized candidate reaches its necessary kind and cardinality leaves.
+4. A bounded compound candidate may be partitioned; each child re-enters ordinary
+   authorization.
+5. A task-local candidate is compared with one retained requirement at a time only
+   where semantic duplication remains unresolved.
+6. A distinct candidate receives its necessary result-relation question.
+7. Only a specifically grounded missing relation may receive one exact candidate
+   correction, which re-enters the same validation path.
+
+A valid negative semantic relation discards that candidate without failing
+independent work. Structurally invalid station output fails loudly. Rejected,
+unnecessary, unsupported, malformed, or speculative content never reopens accepted
+requirements or silently becomes a new obligation.
+
+Queue exhaustion freezes the current accepted objective. There is no global review,
+coverage, challenge, approval, or completion model. An optional follow-up remains
+outside the workload and verifier until a later explicit user objective authorizes it.
+
+Product, surface, deployment, and other downstream semantic leaves run only after
+a requirement survives and at their first actual consumer. They do not enlarge an
+upstream station's job. The detailed semantic rules are canonical in
+[CHARMANDER_ASSEMBLY_LINE.md](CHARMANDER_ASSEMBLY_LINE.md).
+
+## Source-local inventories
+
+An open-ended bounded inventory already determines whether it contains any
+candidates. Application requirements, source-local fictional canon, and one
+database-query purpose collection each use a single plain-text inventory with
+an explicit absence value. Code parses and counts the candidates; a separate
+presence or pre-count call is not required. Positive candidates enter their
+source-local sieve. Code alone checks whether the resulting empty collection is
+valid for its actual consumer, such as a query shape requiring a projection.
+
+## Closed choices
+
+Code constructs the complete applicable option set before considering inference:
+
+- zero options use the station's explicit zero-option behavior;
+- one option is consumed directly with zero model calls and no rejection;
+- two or more options may require one semantic choice whose response is one
+  call-local opaque ID or letter.
+
+Code maps the response to its already-known value. The model does not reproduce
+schemas, internal enums, identifiers, argument structures, or retained state.
+
+A subset choice is a sequence of single-choice rounds over remaining candidates
+plus one no-additional-choice alternative. Code removes each accepted candidate
+before the next round. Letters are remapped locally, and a model cannot repeat a
+selection or emit a list of workflow decisions.
+
+## Candidate and call ownership
+
+[Context acquisition](../internal/contextcompiler/compiler.go) has a fixed provider.
+When search is available, the exact instruction is the query; otherwise acquisition
+uses the explicit empty query set. One relevance call sees one candidate's content,
+not its source IDs, authority namespace, provider arguments, grouping, or queue.
+
+Other stations follow the same one-question boundary. A capability relation sees
+the two local needs whose direct relationship is unresolved. An artifact relation
+answers one artifact question. A source-body station receives one local responsibility.
+A narrative station returns one bounded prose response from the permitted fictional
+projection. None also selects tools, recipients, state transitions, or completion.
+
+Code retains accepted semantic values under the current job and generation. The
+actual input, provider response, and validation outcome are
+[call evidence](../internal/queue/llm_call_evidence_types.go), not model-authored
+authority. A negative or byte-identical result does not create a retry merely because
+a model emitted an action label.
+
+## Construction and correction
+
+Code projects accepted requirements into task-local construction responsibilities.
+The task graph, artifact graph, capability allowlist, declarations, paths, signatures,
+source ownership, ordering, and verification plan remain code-owned.
+
+The [target-tree station](TARGET_TREE_PLANNING.md) is the sole structural naming
+exception when naming cannot be resolved mechanically. It returns one raw basename
+hierarchy. Code constructs paths, diffs the managed surface, and decides permitted
+filesystem transitions. Current mechanical stack projections require no tree call.
+
+An initial source call returns only an ordinary implementation body. It is not asked
+to reproduce its declaration, JSON, AST, framework grammar, or a response schema.
+Only the direct allowed symbols and local behavioral context may be supplied.
+
+One code-proven defect can continue the same persisted source job and model route
+only after code identifies its exact mutable span and necessary semantic question.
+The model receives that span, not the complete prior body or surrounding accepted
+source. Code checks its retained base, splices the replacement text, and reruns the
+original validators. Every accepted byte outside the span remains unchanged.
+
+There is no repair-guidance model, repair-executor model, replacement control packet,
+whole-project restart, model swap, or accepted-state review. Invalid semantic leaves
+outside the explicitly registered local correction boundaries fail at their owner.
+
+## Same-runtime retry and startup
+
+Retry uses exact retained inputs and existing database call or lifecycle-operation
+IDs. It does not rehash requests or reconstruct a model-owned work identity. A stale
+attempt, conflicting input, or changed relevant source fails before it can modify
+accepted state.
+
+Within the same service lifecycle, code may reuse accepted work and resume an
+authorized current attempt. Stopping the service ends that internal lifecycle.
+Startup recreates the dedicated schema; it does not restore a Task Ledger, Working
+Set, environment journal, transcript, or old projection registry.
+
+## Required evidence
+
+Verification must exercise the actual production path and show:
+
+- deterministic work completes without a model call;
+- only genuine semantic plurality invokes a choice;
+- ordinary text is decoded by code into one semantic result;
+- model-visible bytes contain no tools, orchestration, or unrelated state;
+- accepted state remains usable after unrelated work or exact retry;
+- a relevant mismatch and an unbound or stale result fail explicitly;
+- source correction affects only its proven span;
+- actual executed checks, rather than hashes or model judgments, support completion.
+
+The detailed evidence and remaining limits are recorded in
+[EVIDENCE_LEDGER.md](EVIDENCE_LEDGER.md) and
+[CHARMANDER_PROOF.md](CHARMANDER_PROOF.md). A reference algorithm, schema definition,
+or favorable test count does not prove an ordinary user objective was accomplished.

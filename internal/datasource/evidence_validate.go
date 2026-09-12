@@ -1,12 +1,11 @@
 package datasource
 
 import (
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math"
+	"reflect"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -23,34 +22,32 @@ func (evidence EvidenceResult) ValidateForPlan(
 	if err := validateExecutionBounds(plan.Intent.Limit, limits); err != nil {
 		return err
 	}
-	provenance := evidence.Provenance
-	if evidence.Schema != EvidenceResultV1 || provenance.SourceID != plan.SourceID ||
-		provenance.SchemaFingerprint != plan.SchemaFingerprint || provenance.IntentHash != plan.IntentHash {
+	execution := evidence.Execution
+	if evidence.Schema != EvidenceResultV1 || execution.SourceID != plan.SourceID {
 		return fmt.Errorf("database evidence authority does not match relational plan")
 	}
-	for label, value := range map[string]string{
-		"intent hash": provenance.IntentHash, "query hash": provenance.QueryHash,
-		"result hash": provenance.ResultHash,
-	} {
-		if !exactSHA256(value) {
-			return fmt.Errorf("database evidence %s is not an exact SHA-256", label)
-		}
-	}
-	if math.IsNaN(provenance.Plan.TotalCost) || math.IsInf(provenance.Plan.TotalCost, 0) ||
-		provenance.Plan.TotalCost < 0 || provenance.Plan.TotalCost > limits.MaxTotalCost ||
-		provenance.Plan.EstimatedRows < 0 || provenance.Plan.EstimatedRows > limits.MaxPlanRows {
-		return fmt.Errorf("database evidence execution plan exceeds its authorized bounds")
-	}
-	if provenance.AcquiredAt.IsZero() || provenance.AcquiredAt.Location() != time.UTC {
-		return fmt.Errorf("database evidence requires one UTC acquisition time")
-	}
-	if err := validateTypedEvidenceResult(evidence.Result, plan.Outputs, limits); err != nil {
+	compiled, err := CompilePostgresPlan(snapshot, plan)
+	if err != nil {
 		return err
 	}
-	if provenance.ResultHash != evidence.Result.Hash {
-		return fmt.Errorf("database evidence provenance does not bind its typed result")
+	query, err := compiled.executionEvidence()
+	if err != nil {
+		return err
 	}
-	return nil
+	if !reflect.DeepEqual(execution.Query, query) {
+		return fmt.Errorf("database evidence statement or arguments differ from the compiled relational plan")
+	}
+	if math.IsNaN(execution.Plan.TotalCost) || math.IsInf(execution.Plan.TotalCost, 0) ||
+		execution.Plan.TotalCost < 0 || execution.Plan.TotalCost > limits.MaxTotalCost ||
+		execution.Plan.EstimatedRows < 0 || execution.Plan.EstimatedRows > limits.MaxPlanRows {
+		return fmt.Errorf("database evidence execution plan exceeds its authorized bounds")
+	}
+	if execution.AcquiredAt.IsZero() || execution.AcquiredAt.Location() != time.UTC || execution.DurationMS < 0 {
+		return fmt.Errorf("database evidence requires one UTC acquisition time and a nonnegative duration")
+	}
+	resultLimits := limits
+	resultLimits.MaxRows = plan.Intent.Limit
+	return validateTypedEvidenceResult(evidence.Result, plan.Outputs, resultLimits)
 }
 
 func validateTypedEvidenceResult(
@@ -91,17 +88,6 @@ func validateTypedEvidenceResult(
 	}
 	if byteCount != result.ByteCount || byteCount > limits.MaxBytes {
 		return fmt.Errorf("database evidence byte count is invalid or exceeds its authorized bound")
-	}
-	canonical, err := json.Marshal(struct {
-		Columns []EvidenceColumn  `json:"columns"`
-		Rows    [][]EvidenceValue `json:"rows"`
-	}{Columns: result.Columns, Rows: result.Rows})
-	if err != nil {
-		return fmt.Errorf("encode database evidence result: %w", err)
-	}
-	digest := sha256.Sum256(canonical)
-	if result.Hash != hex.EncodeToString(digest[:]) {
-		return fmt.Errorf("database evidence result hash does not match its typed rows")
 	}
 	return nil
 }
@@ -151,9 +137,4 @@ func validateEvidenceValue(value EvidenceValue, category ColumnTypeCategory) err
 		}
 	}
 	return nil
-}
-
-func exactSHA256(value string) bool {
-	decoded, err := hex.DecodeString(value)
-	return err == nil && len(decoded) == sha256.Size && value == strings.ToLower(value)
 }

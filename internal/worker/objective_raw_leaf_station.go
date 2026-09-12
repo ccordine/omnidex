@@ -16,35 +16,35 @@ func runObjectivePortableRawLeafStation[T any](
 	_ station.ID,
 	resolveModel func() (string, error),
 	decode objectiveRawLeafDecoder[T],
-) (T, objectiveStationReceipt, error) {
+) (T, int, error) {
 	var zero T
 	if ctx == nil || decode == nil {
-		return zero, objectiveStationReceipt{}, fmt.Errorf(
+		return zero, 0, fmt.Errorf(
 			"objective raw leaf requires exact running step authority",
 		)
 	}
 	if err := ctx.Err(); err != nil {
-		return zero, objectiveStationReceipt{}, err
+		return zero, 0, err
 	}
 	deterministic, resolved, err := assemblyline.ResolvePortableJobWithoutInference(job)
 	if err != nil {
-		return zero, objectiveStationReceipt{}, err
+		return zero, 0, err
 	}
 	if resolved {
 		value, err := decode(deterministic.Candidate)
-		return value, objectiveStationReceipt{}, err
+		return value, 0, err
 	}
 	if runtime == nil || runtime.svc == nil || runtime.claim == nil || resolveModel == nil {
-		return zero, objectiveStationReceipt{}, fmt.Errorf(
+		return zero, 0, fmt.Errorf(
 			"objective raw leaf requires exact running step authority",
 		)
 	}
 	model, err := resolveModel()
 	if err != nil {
-		return zero, objectiveStationReceipt{}, err
+		return zero, 0, err
 	}
 	value, calls, err := runObjectivePortableRawLeafCall(
 		ctx, runtime, model, subject, job, decode,
 	)
-	return value, objectiveStationReceipt{Calls: calls}, err
+	return value, calls, err
 }

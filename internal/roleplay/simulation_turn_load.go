@@ -2,7 +2,6 @@ package roleplay
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -43,7 +42,6 @@ func (s *Store) LoadSimulationTurnForJob(
 		  AND job.metadata->>'roleplay_scene_id'=preparation.scene_id
 		  AND job.metadata->>'roleplay_scene_revision'=preparation.scene_revision::text
 		  AND job.metadata->>'roleplay_input_kind'=preparation.input_kind
-		  AND job.metadata->>'roleplay_narrative_fingerprint'=preparation.result->>'narrative_fingerprint'
 		  AND job.metadata->>'roleplay_viewpoint_character_id'=
 		      preparation.result->'responder_routes'->0->>'character_id'
 		  AND job.metadata->'roleplay_participant_character_ids'=preparation.result->'participant_character_ids'
@@ -57,12 +55,5 @@ func (s *Store) LoadSimulationTurnForJob(
 	if err != nil {
 		return SimulationTurnAuthority{}, err
 	}
-	var authority SimulationTurnAuthority
-	if err := json.Unmarshal(payload, &authority); err != nil {
-		return SimulationTurnAuthority{}, fmt.Errorf("decode simulation turn authority: %w", err)
-	}
-	if err := authority.Validate(); err != nil {
-		return SimulationTurnAuthority{}, fmt.Errorf("persisted simulation turn authority is invalid: %w", err)
-	}
-	return authority, nil
+	return decodeTurnAuthority(payload)
 }

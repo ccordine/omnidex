@@ -1,7 +1,7 @@
 package main
 
 import (
-	"strings"
+	"fmt"
 	"testing"
 	"time"
 
@@ -11,39 +11,38 @@ import (
 func planReviewFixture(t *testing.T) model.CodingPlan {
 	t.Helper()
 	created := time.Unix(1_700_000_000, 0).UTC()
-	return model.CodingPlan{
+	plan := model.CodingPlan{
 		JobID: 42, Generation: 3, Revision: 1,
-		State: model.CodingPlanStateReview, ScopeMode: model.CodingScopeModeNormal,
-		RequestSHA256: strings.Repeat("a", 64),
+		State: model.CodingPlanStateReview,
 		Leaves: []model.CodingPlanLeaf{
 			planReviewFixtureLeaf(
 				t,
-				"Create the grounded behavior",
-				model.CodingPlanAnnotationGrounded,
+				"Confirm the selected item",
 				model.CodingPlanDecisionApproved,
 			),
 			planReviewFixtureLeaf(
 				t,
-				"Include the reasonable derivation",
-				model.CodingPlanAnnotationReasonableDerivation,
+				"Display the item's status",
 				model.CodingPlanDecisionPending,
 			),
 			planReviewFixtureLeaf(
 				t,
-				"Consider the speculative detail",
-				model.CodingPlanAnnotationSpeculativeReview,
+				"Archive the selected item",
 				model.CodingPlanDecisionRejected,
 			),
 			planReviewFixtureLeaf(
 				t,
-				"Do the conflicting thing",
-				model.CodingPlanAnnotationConcreteConflict,
+				"Restore an archived item",
 				model.CodingPlanDecisionRejected,
 			),
 		},
 		CreatedAt: created,
 		UpdatedAt: created.Add(time.Second),
 	}
+	for index := range plan.Leaves {
+		plan.Leaves[index].ID = model.CodingPlanLeafID(fmt.Sprintf("coding_plan_leaf_%032x", index+1))
+	}
+	return plan
 }
 
 func eligiblePlanReviewFixture(t *testing.T) model.CodingPlan {
@@ -68,16 +67,15 @@ func freezePlanReviewFixture(plan *model.CodingPlan) {
 func planReviewFixtureLeaf(
 	t *testing.T,
 	statement string,
-	annotation model.CodingPlanAnnotation,
 	decision model.CodingPlanDecision,
 ) model.CodingPlanLeaf {
 	t.Helper()
-	id, err := model.NewCodingPlanLeafID(statement)
+	id, err := model.NewCodingPlanLeafID()
 	if err != nil {
 		t.Fatal(err)
 	}
 	return model.CodingPlanLeaf{
-		ID: id, Statement: statement, Annotation: annotation, Decision: decision,
+		ID: id, Statement: statement, Decision: decision,
 	}
 }
 

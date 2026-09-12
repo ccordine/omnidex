@@ -17,15 +17,6 @@ func portableDatabaseResponseMaximum(job PortableJob) (int, bool, error) {
 	case WorkDatabaseQueryShape:
 		maximum, err := opaqueModelChoiceBuilderResponseMaximum(databaseQueryShapeChoices)
 		return maximum, true, err
-	case WorkDatabaseQueryPurposePresence:
-		var input DatabaseQueryPurposeAuthority
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return 0, true, err
-		}
-		maximum, err := opaqueModelChoiceBuilderResponseMaximum(func() ([]OpaqueModelChoice, error) {
-			return databaseQueryPurposePresenceChoices(input)
-		})
-		return maximum, true, err
 	case WorkDatabaseQueryPurposeInventory:
 		return maxDatabaseQueryPurposeInventoryBytes, true, nil
 	case WorkDatabaseQueryPurposeNecessity:
@@ -87,9 +78,13 @@ func portableDatabaseResponseMaximum(job PortableJob) (int, bool, error) {
 		)
 		return maximum, true, err
 	case WorkDatabaseQueryHavingAggregate:
-		maximum, err := opaqueModelChoiceBuilderResponseMaximum(
-			databaseQueryHavingAggregateChoices,
-		)
+		var input DatabaseQueryHavingLeafInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return 0, true, err
+		}
+		maximum, err := opaqueModelChoiceBuilderResponseMaximum(func() ([]OpaqueModelChoice, error) {
+			return databaseQueryHavingAggregateChoices(input)
+		})
 		return maximum, true, err
 	case WorkDatabaseQueryHavingField:
 		maximum, err := databaseHavingFieldMaximum(job)

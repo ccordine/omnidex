@@ -13,17 +13,15 @@ type FrozenApplicationTask struct {
 
 type FrozenApplicationWorkload struct {
 	Schema       string                  `json:"schema"`
-	SHA256       string                  `json:"sha256"`
 	Surface      ApplicationSurface      `json:"surface"`
 	ProductQuote string                  `json:"product_quote"`
 	Tasks        []FrozenApplicationTask `json:"tasks"`
 }
 
 type ApplicationTaskContext struct {
-	WorkloadSHA256 string                     `json:"workload_sha256"`
-	Surface        ApplicationSurface         `json:"surface"`
-	ProductQuote   string                     `json:"product_quote"`
-	Task           ApplicationTaskContextTask `json:"task"`
+	Surface      ApplicationSurface         `json:"surface"`
+	ProductQuote string                     `json:"product_quote"`
+	Task         ApplicationTaskContextTask `json:"task"`
 }
 
 type ApplicationTaskContextTask struct {

@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/queue"
-	workspacefacts "github.com/gryph/omnidex/internal/workspace"
 )
 
 const directCodingVerificationStreamLimit = 1024 * 1024
@@ -48,7 +47,6 @@ func (s *directCodingSession) runRecordedVerificationCommand(
 	root string,
 	phase queue.VerificationCommandPhase,
 	command directCodingVerificationCommand,
-	trackWorkspace bool,
 ) (result directCodingVerificationCommandResult, resultErr error) {
 	if s == nil || s.runtime == nil || s.runtime.svc == nil || s.runtime.svc.repo == nil ||
 		s.runtime.claim == nil || s.runtime.ctx == nil {
@@ -65,18 +63,6 @@ func (s *directCodingSession) runRecordedVerificationCommand(
 		return result, fmt.Errorf("verification working directory is not one exact directory")
 	}
 	commandDirectory := root
-	var observationFence *workspacefacts.MutationFence
-	ownedObservationFence := false
-	defer func() {
-		if ownedObservationFence {
-			if releaseErr := observationFence.Release(); releaseErr != nil {
-				resultErr = errors.Join(
-					resultErr,
-					fmt.Errorf("release isolated verification root authority: %w", releaseErr),
-				)
-			}
-		}
-	}()
 	if directCodingVerificationPhaseUsesHostRoot(phase) {
 		if root != s.root {
 			return result, fmt.Errorf("host verification command root differs from the coding session root")
@@ -84,17 +70,10 @@ func (s *directCodingSession) runRecordedVerificationCommand(
 		if err := s.runtime.requireWorkspaceMutationFence(); err != nil {
 			return result, err
 		}
-		observationFence = s.runtime.workspaceFence
-		commandDirectory, err = observationFence.CommandWorkingDirectory(root)
+		commandDirectory, err = s.runtime.workspaceFence.CommandWorkingDirectory(root)
 		if err != nil {
 			return result, fmt.Errorf("anchor host verification command cwd: %w", err)
 		}
-	} else if trackWorkspace {
-		observationFence, err = workspacefacts.AcquireMutationFence(s.runtime.ctx, root)
-		if err != nil {
-			return result, fmt.Errorf("acquire isolated verification root authority: %w", err)
-		}
-		ownedObservationFence = true
 	}
 	if len(command.Argv) == 0 || strings.TrimSpace(command.Argv[0]) == "" {
 		return result, fmt.Errorf("verification command argv is empty")
@@ -109,13 +88,6 @@ func (s *directCodingSession) runRecordedVerificationCommand(
 	if err != nil {
 		return result, err
 	}
-	workspaceBefore := ""
-	if trackWorkspace {
-		workspaceBefore, err = directCodingAuthoritativeWorkspaceSHA256(observationFence, root)
-		if err != nil {
-			return result, fmt.Errorf("hash authoritative workspace before verification command: %w", err)
-		}
-	}
 	ordinal, err := s.nextVerificationCommandOrdinal()
 	if err != nil {
 		return result, err
@@ -125,7 +97,7 @@ func (s *directCodingSession) runRecordedVerificationCommand(
 	)
 	defer cancel()
 	if directCodingVerificationPhaseUsesHostRoot(phase) {
-		commandDirectory, err = observationFence.CommandWorkingDirectory(root)
+		commandDirectory, err = s.runtime.workspaceFence.CommandWorkingDirectory(root)
 		if err != nil {
 			return result, fmt.Errorf("reattest fd-rooted host command cwd before launch: %w", err)
 		}
@@ -145,53 +117,37 @@ func (s *directCodingSession) runRecordedVerificationCommand(
 	finishedAt := directCodingVerificationTimestamp(time.Now())
 	result.Stdout = append([]byte{}, stdout.buffer.Bytes()...)
 	result.Stderr = append([]byte{}, stderr.buffer.Bytes()...)
-	workspaceAfter := ""
 	observationError := ""
-	if trackWorkspace {
-		workspaceAfter, observationError = directCodingVerificationWorkspaceAfter(
-			observationFence, root,
-		)
-	}
 	if directCodingVerificationPhaseUsesHostRoot(phase) {
-		if err := observationFence.Reattest(root); err != nil && observationError == "" {
+		if err := s.runtime.workspaceFence.Reattest(root); err != nil {
 			observationError = trimForBudget(
 				"reattest authoritative host workspace after verification command: "+err.Error(),
 				4000,
 			)
 		}
 	}
-	if ownedObservationFence {
-		if err := observationFence.Release(); err != nil && observationError == "" {
-			observationError = trimForBudget(
-				"release isolated verification root authority: "+err.Error(), 4000,
-			)
-		}
-		ownedObservationFence = false
-	}
 	exitCode, launchError := directCodingVerificationExit(runErr, commandContext.Err())
 	if stdout.overflow || stderr.overflow {
 		exitCode = nil
-		launchError = "verification command output exceeded the immutable 1 MiB stream evidence bound"
+		launchError = "verification command output exceeded the 1 MiB stream bound"
 	}
 	record := queue.VerificationCommandEvidence{
-		Authority:             s.runtime.claim.Authority,
-		Phase:                 phase,
-		Ordinal:               ordinal,
-		Argv:                  append([]string(nil), command.Argv...),
-		Environment:           append([]string(nil), processEnvironment...),
-		Stdin:                 append([]byte{}, command.Stdin...),
-		WorkingDirectory:      root,
-		StartedAt:             startedAt,
-		FinishedAt:            finishedAt,
-		ExitCode:              exitCode,
-		LaunchError:           launchError,
-		ObservationError:      observationError,
-		Stdout:                result.Stdout,
-		StdoutComplete:        !stdout.overflow,
-		Stderr:                result.Stderr,
-		StderrComplete:        !stderr.overflow,
-		WorkspaceSHA256Before: workspaceBefore,
-		WorkspaceSHA256After:  workspaceAfter,
+		Authority:        s.runtime.claim.Authority,
+		Phase:            phase,
+		Ordinal:          ordinal,
+		Argv:             append([]string(nil), command.Argv...),
+		Environment:      append([]string(nil), processEnvironment...),
+		Stdin:            append([]byte{}, command.Stdin...),
+		WorkingDirectory: root,
+		StartedAt:        startedAt,
+		FinishedAt:       finishedAt,
+		ExitCode:         exitCode,
+		LaunchError:      launchError,
+		ObservationError: observationError,
+		Stdout:           result.Stdout,
+		StdoutComplete:   !stdout.overflow,
+		Stderr:           result.Stderr,
+		StderrComplete:   !stderr.overflow,
 	}
 	if command.Stdin == nil {
 		record.Stdin = nil
@@ -199,7 +155,7 @@ func (s *directCodingSession) runRecordedVerificationCommand(
 	persistenceContext, stopPersistence := directCodingVerificationEvidenceContext(s.runtime.ctx)
 	defer stopPersistence()
 	if err := s.runtime.svc.repo.AppendVerificationCommandEvidence(persistenceContext, record); err != nil {
-		return result, fmt.Errorf("persist immutable verification command evidence %d: %w", ordinal, err)
+		return result, fmt.Errorf("record verification command %d: %w", ordinal, err)
 	}
 	if observationError != "" {
 		return result, fmt.Errorf("verification command %d post-run observation failed: %s", ordinal, observationError)
@@ -217,27 +173,7 @@ func (s *directCodingSession) runRecordedVerificationCommand(
 			trimForBudget(strings.TrimSpace(string(result.Stderr)), 12_000),
 		)
 	}
-	if trackWorkspace && workspaceBefore != workspaceAfter {
-		return result, fmt.Errorf(
-			"verification command %d changed authoritative workspace identity from %s to %s",
-			ordinal, workspaceBefore, workspaceAfter,
-		)
-	}
 	return result, nil
-}
-
-func directCodingVerificationWorkspaceAfter(
-	fence *workspacefacts.MutationFence,
-	root string,
-) (string, string) {
-	workspaceAfter, err := directCodingAuthoritativeWorkspaceSHA256(fence, root)
-	if err == nil {
-		return workspaceAfter, ""
-	}
-	return "", trimForBudget(
-		"hash authoritative workspace after verification command: "+err.Error(),
-		4000,
-	)
 }
 
 func directCodingVerificationPhaseUsesHostRoot(phase queue.VerificationCommandPhase) bool {
@@ -305,6 +241,7 @@ func directCodingVerificationProcessEnvironment(overrides []string) ([]string, e
 		"GOSUMDB": {}, "GOTELEMETRY": {}, "GOTOOLCHAIN": {}, "GOWORK": {},
 		"NPM_CONFIG_AUDIT": {}, "NPM_CONFIG_CACHE": {}, "NPM_CONFIG_FUND": {},
 		"NPM_CONFIG_UPDATE_NOTIFIER": {}, "NPM_CONFIG_USERCONFIG": {},
+		"CARGO_HOME": {}, "CARGO_INCREMENTAL": {}, "CARGO_TARGET_DIR": {},
 	}
 	names := make(map[string]struct{}, len(overrides))
 	for _, override := range overrides {

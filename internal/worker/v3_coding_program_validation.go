@@ -29,6 +29,11 @@ func validateDirectCodingProgramAssembly(
 	if err := stack.ValidateSourceOwnership(program.Workload, program.Source); err != nil {
 		return fmt.Errorf("project stack %s rejected source ownership: %w", stack.ID, err)
 	}
+	if stack.ID == genericJavaScriptCommandLineAdapter || stack.ID == genericRustCommandLineAdapter || stack.ID == genericJavaCommandLineAdapter {
+		if err := validateDirectCodingLanguageAcceptanceProgram(program); err != nil {
+			return err
+		}
+	}
 	if err := program.RequirementRelations.validateCompleteFor(program.Workload); err != nil {
 		return err
 	}
@@ -88,6 +93,11 @@ func validateDirectCodingProjectedProgramAssembly(
 	}
 	if err := stack.ValidateBlueprint(program.Source); err != nil {
 		return fmt.Errorf("project stack %s rejected projected source: %w", stack.ID, err)
+	}
+	if stack.ID == genericJavaScriptCommandLineAdapter || stack.ID == genericRustCommandLineAdapter || stack.ID == genericJavaCommandLineAdapter {
+		if err := validateDirectCodingLanguageAcceptanceProgram(program); err != nil {
+			return err
+		}
 	}
 	files := make(map[string]struct{}, len(assembly.Files))
 	for _, file := range assembly.Files {

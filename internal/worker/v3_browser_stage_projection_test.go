@@ -30,7 +30,7 @@ func TestTypeScriptBrowserStageProjectionsRetainStaticVerificationAuthority(t *t
 	for _, fixture := range fixtures {
 		fixture := fixture
 		t.Run(fixture.name, func(t *testing.T) {
-			program := testTypeScriptBrowserProgram(t, fixture.name, fixture.product, fixture.requirement)
+			program := testTypeScriptBrowserProgram(t, fixture.product, fixture.requirement)
 			context, err := assemblyline.ProjectApplicationTaskContext(
 				program.Workload, program.Workload.Tasks[0].ID,
 			)

@@ -12,10 +12,10 @@ ui-dev:
 build: omnidex omni
 
 omnidex:
-	go build -trimpath -o bin/omnidex ./cmd/omnidex
+	./scripts/build-core.sh
 
 omni:
-	go build -trimpath -o bin/omni ./cmd/omni
+	./scripts/build-core.sh --package ./cmd/omni
 
 fmt:
 	gofmt -w ./cmd ./internal

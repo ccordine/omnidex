@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -139,6 +140,15 @@ func TestPlanReviewNoteBytesCannotBecomeAChatTurnBeforeHandoff(t *testing.T) {
 }
 
 func TestBracketedMultilinePasteRemainsOneAuthorizedChatInput(t *testing.T) {
+	for _, pasted := range []string{"first\nsecond", "first\rsecond", "first\r\nsecond"} {
+		t.Run(fmt.Sprintf("%q", pasted), func(t *testing.T) {
+			testBracketedPasteChatInput(t, pasted)
+		})
+	}
+}
+
+func testBracketedPasteChatInput(t *testing.T, pasted string) {
+	t.Helper()
 	source, input := io.Pipe()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(func() {
@@ -160,11 +170,11 @@ func TestBracketedMultilinePasteRemainsOneAuthorizedChatInput(t *testing.T) {
 	}
 	chatInputs, chatDone := readChatInput(ctx, console)
 
-	writePlanReviewInput(t, input, "\x1b[200~first\nsecond\x1b[201~\r/exit\r")
+	writePlanReviewInput(t, input, "\x1b[200~"+pasted+"\x1b[201~\r/exit\r")
 	select {
 	case event := <-chatInputs:
 		if event.Err != nil || event.EOF || !event.Pasted ||
-			event.Text != "first\nsecond" ||
+			event.Text != pasted ||
 			event.Authority != router.CurrentInputAuthority() {
 			t.Fatalf("multiline paste event = %#v", event)
 		}

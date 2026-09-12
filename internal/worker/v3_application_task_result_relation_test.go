@@ -1,32 +1,21 @@
 package worker
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
-func TestApplicationTaskResultRelationPlanBindsRawRequestAndWorkload(t *testing.T) {
+func TestApplicationTaskResultRelationPlanMapsAcceptedWorkload(t *testing.T) {
 	t.Parallel()
-	const rawRequest = "Build a neutral console while preserving /srv/example/source.txt."
-	const modelRequest = "Build a neutral console while preserving ARTIFACT_1."
-	authority, err := newDirectCodingApplicationRequestAuthority(rawRequest, modelRequest)
-	if err != nil {
-		t.Fatal(err)
-	}
 	workload := directCodingResultRelationWorkloadFixture(t)
-	accepted := directCodingAcceptedResultRelationFixture(t, workload, authority.requestSHA256)
-	plan, err := newDirectCodingApplicationTaskResultRelationPlan(workload, accepted, authority)
+	accepted := directCodingAcceptedResultRelationFixture(t, workload)
+	plan, err := newDirectCodingApplicationTaskResultRelationPlan(workload, accepted)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := plan.validateCompleteFor(workload); err != nil {
 		t.Fatal(err)
-	}
-	if plan.RequestSHA256 != assemblyline.ExactObjectiveContextSHA(rawRequest) ||
-		plan.RequestSHA256 == assemblyline.ExactObjectiveContextSHA(modelRequest) {
-		t.Fatalf("plan request authority=%q", plan.RequestSHA256)
 	}
 	projected, err := plan.projectTask(workload, "task_002")
 	if err != nil {
@@ -42,31 +31,26 @@ func TestApplicationTaskResultRelationPlanBindsRawRequestAndWorkload(t *testing.
 	}
 }
 
-func TestApplicationTaskResultRelationPlanRejectsTamper(t *testing.T) {
+func TestApplicationTaskResultRelationPlanRejectsInvalidTaskValues(t *testing.T) {
 	t.Parallel()
-	const request = "Build a neutral records console."
-	authority, err := newDirectCodingApplicationRequestAuthority(request, request)
-	if err != nil {
-		t.Fatal(err)
-	}
 	workload := directCodingResultRelationWorkloadFixture(t)
-	accepted := directCodingAcceptedResultRelationFixture(t, workload, authority.requestSHA256)
-	valid, err := newDirectCodingApplicationTaskResultRelationPlan(workload, accepted, authority)
+	accepted := directCodingAcceptedResultRelationFixture(t, workload)
+	valid, err := newDirectCodingApplicationTaskResultRelationPlan(workload, accepted)
 	if err != nil {
 		t.Fatal(err)
 	}
 	mutations := map[string]func(*directCodingApplicationTaskResultRelationPlan){
-		"workload hash": func(plan *directCodingApplicationTaskResultRelationPlan) {
-			plan.WorkloadSHA256 = strings.Repeat("a", 64)
+		"task identity": func(plan *directCodingApplicationTaskResultRelationPlan) {
+			plan.Bindings[0].TaskID = "task_002"
 		},
-		"request hash": func(plan *directCodingApplicationTaskResultRelationPlan) {
-			plan.RequestSHA256 = strings.Repeat("b", 64)
+		"changed statement": func(plan *directCodingApplicationTaskResultRelationPlan) {
+			plan.Bindings[0].Statement = "a different requirement"
 		},
 		"missing binding": func(plan *directCodingApplicationTaskResultRelationPlan) {
 			plan.Bindings = plan.Bindings[:1]
 		},
-		"candidate receipt": func(plan *directCodingApplicationTaskResultRelationPlan) {
-			plan.Bindings[0].Receipt.CandidateSHA256 = strings.Repeat("c", 64)
+		"unregistered result": func(plan *directCodingApplicationTaskResultRelationPlan) {
+			plan.Bindings[0].Receipt.Relation = "unregistered relation"
 		},
 		"under-determined receipt": func(plan *directCodingApplicationTaskResultRelationPlan) {
 			plan.Bindings[0].Receipt.Relation = assemblyline.ApplicationRequirementMissingResultRelation
@@ -106,7 +90,6 @@ func directCodingResultRelationWorkloadFixture(t testing.TB) assemblyline.Frozen
 func directCodingAcceptedResultRelationFixture(
 	t testing.TB,
 	workload assemblyline.FrozenApplicationWorkload,
-	requestSHA256 string,
 ) []assemblyline.ApplicationRequirement {
 	t.Helper()
 	relations := []string{
@@ -160,7 +143,7 @@ func directCodingAcceptedResultRelationFixture(
 		}
 		accepted[index] = assemblyline.ApplicationRequirement{
 			ID: task.RequirementID, Statement: task.RequirementQuote,
-			RequestSHA256: requestSHA256, ResultRelation: receipt,
+			ResultRelation: receipt,
 		}
 	}
 	return accepted

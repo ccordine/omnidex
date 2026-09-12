@@ -1,9 +1,6 @@
 package roleplay
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 )
 
@@ -30,11 +27,6 @@ func newCharacterProjection(
 		}
 		projection.Facts = append(projection.Facts, ContextFact{EventID: event.ID, Content: event.content})
 	}
-	fingerprint, err := ExactCharacterProjectionFingerprint(projection)
-	if err != nil {
-		return CharacterProjection{}, err
-	}
-	projection.Fingerprint = fingerprint
 	return projection, nil
 }
 
@@ -54,19 +46,7 @@ func (projection CharacterProjection) Validate() error {
 	if err := validateProjectionFacts(projection.Facts, "character projection"); err != nil {
 		return err
 	}
-	expected, err := ExactCharacterProjectionFingerprint(projection)
-	if err != nil {
-		return err
-	}
-	if projection.Fingerprint != expected {
-		return fmt.Errorf("roleplay character projection fingerprint does not match exact authority")
-	}
 	return nil
-}
-
-func ExactCharacterProjectionFingerprint(projection CharacterProjection) (string, error) {
-	projection.Fingerprint = ""
-	return projectionFingerprint(projection)
 }
 
 func newCanonProjection(world World, events []projectedEvent) (CanonProjection, error) {
@@ -89,11 +69,6 @@ func newCanonProjection(world World, events []projectedEvent) (CanonProjection, 
 		}
 		projection.Facts = append(projection.Facts, ContextFact{EventID: event.ID, Content: event.content})
 	}
-	fingerprint, err := ExactCanonProjectionFingerprint(projection)
-	if err != nil {
-		return CanonProjection{}, err
-	}
-	projection.Fingerprint = fingerprint
 	return projection, nil
 }
 
@@ -112,13 +87,6 @@ func (projection CanonProjection) Validate() error {
 	}
 	if err := validateProjectionFacts(projection.Facts, "canon projection"); err != nil {
 		return err
-	}
-	expected, err := ExactCanonProjectionFingerprint(projection)
-	if err != nil {
-		return err
-	}
-	if projection.Fingerprint != expected {
-		return fmt.Errorf("roleplay canon projection fingerprint does not match exact authority")
 	}
 	return nil
 }
@@ -145,11 +113,6 @@ func validateProjectionFacts(facts []ContextFact, label string) error {
 	return nil
 }
 
-func ExactCanonProjectionFingerprint(projection CanonProjection) (string, error) {
-	projection.Fingerprint = ""
-	return projectionFingerprint(projection)
-}
-
 func validateProjectionAuthority(world World, character Character) error {
 	if err := validateIdentity(world.ID, worldIdentity); err != nil {
 		return err
@@ -164,13 +127,4 @@ func validateProjectionAuthority(world World, character Character) error {
 		return err
 	}
 	return validateName(character.Name, "roleplay character name")
-}
-
-func projectionFingerprint(value any) (string, error) {
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return "", err
-	}
-	hash := sha256.Sum256(raw)
-	return hex.EncodeToString(hash[:]), nil
 }

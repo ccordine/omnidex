@@ -74,9 +74,9 @@ func (r *Repository) CreateScrumCard(
 		refFiles = json.RawMessage(`[]`)
 	}
 	for label, value := range map[string]string{
-		"Scrum title": title,
-		"Scrum description": description,
-		"Scrum checklist": string(checklist),
+		"Scrum title":           title,
+		"Scrum description":     description,
+		"Scrum checklist":       string(checklist),
 		"Scrum reference files": string(refFiles),
 	} {
 		if err := validateDatabaseText(label, value); err != nil {

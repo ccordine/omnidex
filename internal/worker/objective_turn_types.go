@@ -2,8 +2,6 @@ package worker
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -29,13 +27,13 @@ const (
 
 type turnAuthority struct {
 	JobID                           int64
+	Generation                      int64
 	Pipeline                        string
 	Instruction                     string
 	ModelInstruction                string
 	ModelRedactedInstruction        string
 	ModelArtifactIdentities         []assemblyline.ArtifactIdentity
 	ModelArtifactPaths              []string
-	SHA256                          string
 	DataSourceID                    model.DataSourceID
 	DelegatedDataAuthorityID        string
 	ChannelID                       model.ChannelID
@@ -47,7 +45,6 @@ type turnAuthority struct {
 	RoleplaySceneRevision           int64
 	RoleplayInputKind               roleplay.SimulationTurnInputKind
 	RoleplayParticipantCharacterIDs []model.RoleplayCharacterID
-	RoleplayNarrativeFingerprint    string
 	RoleplayGenerationConfig        *roleplay.CharacterGenerationConfig
 	RoleplayResponders              []roleplay.SimulationResponderRoute
 	RoleplayUserTurn                *roleplay.UserTurnAuthority
@@ -64,55 +61,9 @@ type roleplayRoundResponseAuthority struct {
 	Text          string
 }
 
-type objectiveStationReceipt struct {
-	Calls  int
-	Reused bool
-}
-
-func validateObjectiveStationReceipt(label string, receipt objectiveStationReceipt) error {
-	if receipt.Reused {
-		if receipt.Calls != 0 {
-			return fmt.Errorf("%s reuse reported %d provider calls", label, receipt.Calls)
-		}
-		return nil
-	}
-	if receipt.Calls != exactSemanticLeafCalls {
-		return fmt.Errorf(
-			"%s reported %d calls; one exact semantic leaf requires exactly %d",
-			label, receipt.Calls, exactSemanticLeafCalls,
-		)
-	}
-	return nil
-}
-
-func validateObjectiveBoundedStationReceipt(
-	label string,
-	receipt objectiveStationReceipt,
-	maximumCalls int,
-) error {
-	if maximumCalls < exactSemanticLeafCalls {
-		return fmt.Errorf(
-			"%s has invalid maximum call budget %d", label, maximumCalls,
-		)
-	}
-	if receipt.Reused {
-		if receipt.Calls != 0 {
-			return fmt.Errorf("%s reuse reported %d provider calls", label, receipt.Calls)
-		}
-		return nil
-	}
-	if receipt.Calls < exactSemanticLeafCalls || receipt.Calls > maximumCalls {
-		return fmt.Errorf(
-			"%s reported %d calls outside the 1..%d bounded leaf budget",
-			label, receipt.Calls, maximumCalls,
-		)
-	}
-	return nil
-}
-
 type objectiveKindStation interface {
 	Classify(context.Context, assemblyline.ConversationObjectiveKindInput) (
-		assemblyline.ConversationObjectiveKindDecision, objectiveStationReceipt, error,
+		assemblyline.ConversationObjectiveKindDecision, int, error,
 	)
 }
 
@@ -141,25 +92,25 @@ type objectiveContextSieveStations interface {
 
 type objectiveAnswerStation interface {
 	Answer(context.Context, assemblyline.GroundedAnswerInput) (
-		assemblyline.GroundedAnswerDecision, objectiveStationReceipt, error,
+		assemblyline.GroundedAnswerDecision, int, error,
 	)
 }
 
 type objectiveConversationStation interface {
 	Respond(context.Context, assemblyline.ConversationResponseInput, string) (
-		assemblyline.ConversationResponseDecision, objectiveStationReceipt, error,
+		assemblyline.ConversationResponseDecision, int, error,
 	)
 }
 
 type objectiveRoleplayCanonStation interface {
 	ExtractCanon(context.Context, assemblyline.RoleplayCanonExtractionInput) (
-		assemblyline.RoleplayCanonExtractionDecision, objectiveStationReceipt, error,
+		assemblyline.RoleplayCanonExtractionDecision, int, error,
 	)
 }
 
 type objectiveRoleplayGroundedStation interface {
 	RespondGrounded(context.Context, assemblyline.RoleplayGroundedResponseInput) (
-		assemblyline.RoleplayGroundedResponseDecision, objectiveStationReceipt, error,
+		assemblyline.RoleplayGroundedResponseDecision, int, error,
 	)
 }
 
@@ -176,38 +127,34 @@ type objectiveWorkflows struct {
 }
 
 type objectiveEvidenceAcquisition struct {
-	Evidence           []objectiveEvidence
-	ModelCalls         int
-	DatabaseCallLedger objectiveDatabaseAcquisitionCallLedger
+	Evidence   []objectiveEvidence
+	ModelCalls int
 }
 
 type objectiveRoleplayResearchAnswer struct {
-	Research       roleplay.ResearchTurnAuthority
-	Text           string
-	Rendered       string
-	RenderedSHA256 string
-	Paragraphs     []webresearch.GroundedParagraph
-	Evidence       []objectiveEvidence
-	EvidenceIDs    []string
-	ModelCalls     int
-	WebCallLedger  webresearch.SemanticCallLedger
+	Research   roleplay.ResearchTurnAuthority
+	Artifact   webresearch.Artifact
+	Sources    queue.WebEvidenceRecord
+	ModelCalls int
 }
 
 type objectiveEvidence struct {
-	Capsule       assemblyline.GroundedEvidenceCapsule
-	SourceType    string
-	SourceRef     string
-	SHA256        string
-	SourceSHA256  string
-	ParagraphMask uint8
-	ObservedAt    time.Time
-	Truncated     bool
+	Capsule            assemblyline.GroundedEvidenceCapsule
+	SourceType         string
+	SourceRef          string
+	WebEvidenceID      int64
+	WebEvidenceIndex   int
+	DatabaseEvidenceID int64
+	DatabaseRowStart   int
+	DatabaseRowEnd     int
+	ParagraphMask      uint8
+	ObservedAt         time.Time
+	Truncated          bool
 }
 
 type objectiveTurnResult struct {
 	ObjectiveID               string
 	RequirementID             string
-	InstructionSHA256         string
 	Kind                      assemblyline.ConversationObjectiveKind
 	Citations                 []objectiveEvidence
 	Output                    string
@@ -240,17 +187,10 @@ func newObjectiveEvidence(
 	); err != nil {
 		return objectiveEvidence{}, err
 	}
-	digest := sha256.Sum256([]byte(text))
 	return objectiveEvidence{
 		Capsule:    assemblyline.GroundedEvidenceCapsule{ID: id, Text: text},
 		SourceType: sourceType, SourceRef: sourceRef,
-		SHA256: hex.EncodeToString(digest[:]), SourceSHA256: hex.EncodeToString(digest[:]),
 	}, nil
-}
-
-func validObjectiveSHA256(value string) bool {
-	decoded, err := hex.DecodeString(value)
-	return err == nil && len(decoded) == sha256.Size && value == strings.ToLower(value)
 }
 
 func validateObjectiveEvidenceLine(label, value string, maximum int) error {
@@ -262,8 +202,8 @@ func validateObjectiveEvidenceLine(label, value string, maximum int) error {
 }
 
 func newTurnAuthority(job model.Job) (turnAuthority, error) {
-	if job.ID < 1 {
-		return turnAuthority{}, fmt.Errorf("conversation turn requires a positive job ID")
+	if job.ID < 1 || job.CurrentGeneration < 1 {
+		return turnAuthority{}, fmt.Errorf("conversation turn requires a positive job ID and generation")
 	}
 	pipeline := job.Pipeline
 	switch pipeline {
@@ -277,7 +217,6 @@ func newTurnAuthority(job model.Job) (turnAuthority, error) {
 	if !utf8.ValidString(job.Instruction) || strings.ContainsRune(job.Instruction, '\x00') {
 		return turnAuthority{}, fmt.Errorf("conversation turn instruction is invalid UTF-8 or contains NUL")
 	}
-	digest := sha256.Sum256([]byte(job.Instruction))
 	var metadata struct {
 		ChannelID                       model.ChannelID                     `json:"channel_id"`
 		DataSourceID                    model.DataSourceID                  `json:"data_source_id"`
@@ -290,7 +229,6 @@ func newTurnAuthority(job model.Job) (turnAuthority, error) {
 		RoleplaySceneRevision           int64                               `json:"roleplay_scene_revision"`
 		RoleplayInputKind               roleplay.SimulationTurnInputKind    `json:"roleplay_input_kind"`
 		RoleplayParticipantCharacterIDs []model.RoleplayCharacterID         `json:"roleplay_participant_character_ids"`
-		RoleplayNarrativeFingerprint    string                              `json:"roleplay_narrative_fingerprint"`
 		RoleplayGenerationConfig        *roleplay.CharacterGenerationConfig `json:"roleplay_generation_config"`
 		RoleplayResponders              []roleplay.SimulationResponderRoute `json:"roleplay_responders"`
 		RoleplayUserTurn                *roleplay.UserTurnAuthority         `json:"roleplay_user_turn"`
@@ -312,7 +250,7 @@ func newTurnAuthority(job model.Job) (turnAuthority, error) {
 		if metadata.RoleplayViewpointCharacterID != "" || metadata.RoleplaySimulationPreparationID != "" ||
 			metadata.RoleplayWorldID != "" || metadata.RoleplaySceneID != "" ||
 			metadata.RoleplaySceneRevision != 0 || metadata.RoleplayInputKind != "" ||
-			metadata.RoleplayParticipantCharacterIDs != nil || metadata.RoleplayNarrativeFingerprint != "" ||
+			metadata.RoleplayParticipantCharacterIDs != nil ||
 			metadata.RoleplayGenerationConfig != nil || metadata.RoleplayResponders != nil ||
 			metadata.RoleplayUserTurn != nil {
 			return turnAuthority{}, fmt.Errorf("assistant conversation cannot carry fictional simulation authority")
@@ -326,7 +264,7 @@ func newTurnAuthority(job model.Job) (turnAuthority, error) {
 		}
 		if metadata.RoleplaySimulationPreparationID == "" || metadata.RoleplayWorldID == "" ||
 			metadata.RoleplaySceneID == "" || metadata.RoleplaySceneRevision < 1 ||
-			metadata.RoleplayNarrativeFingerprint == "" || len(metadata.RoleplayParticipantCharacterIDs) < 1 {
+			len(metadata.RoleplayParticipantCharacterIDs) < 1 {
 			return turnAuthority{}, fmt.Errorf("conversation turn requires exact simulation preparation authority")
 		}
 		if metadata.RoleplayInputKind != roleplay.SimulationTurnProse &&
@@ -365,13 +303,9 @@ func newTurnAuthority(job model.Job) (turnAuthority, error) {
 			if err := responder.GenerationConfig.Validate(); err != nil {
 				return turnAuthority{}, fmt.Errorf("conversation turn roleplay responder %d generation: %w", index, err)
 			}
-			if responder.NarrativeFingerprint == "" {
-				return turnAuthority{}, fmt.Errorf("conversation turn roleplay responder %d has no narrative fingerprint", index)
-			}
 		}
 		if metadata.RoleplayResponders[0].CharacterID != string(metadata.RoleplayViewpointCharacterID) ||
-			metadata.RoleplayResponders[0].GenerationConfig != *metadata.RoleplayGenerationConfig ||
-			metadata.RoleplayResponders[0].NarrativeFingerprint != metadata.RoleplayNarrativeFingerprint {
+			metadata.RoleplayResponders[0].GenerationConfig != *metadata.RoleplayGenerationConfig {
 			return turnAuthority{}, fmt.Errorf("conversation turn primary roleplay responder differs from its response round")
 		}
 		if err := metadata.RoleplayGenerationConfig.Validate(); err != nil {
@@ -388,8 +322,8 @@ func newTurnAuthority(job model.Job) (turnAuthority, error) {
 		}
 	}
 	authority := turnAuthority{
-		JobID: job.ID, Pipeline: pipeline, Instruction: job.Instruction,
-		SHA256: hex.EncodeToString(digest[:]), DataSourceID: metadata.DataSourceID,
+		JobID: job.ID, Generation: job.CurrentGeneration, Pipeline: pipeline, Instruction: job.Instruction,
+		DataSourceID:                    metadata.DataSourceID,
 		DelegatedDataAuthorityID:        metadata.DelegatedDataAuthorityID,
 		ChannelID:                       metadata.ChannelID,
 		ChannelMode:                     metadata.ChannelMode,
@@ -398,7 +332,6 @@ func newTurnAuthority(job model.Job) (turnAuthority, error) {
 		RoleplayWorldID:                 metadata.RoleplayWorldID, RoleplaySceneID: metadata.RoleplaySceneID,
 		RoleplaySceneRevision: metadata.RoleplaySceneRevision, RoleplayInputKind: metadata.RoleplayInputKind,
 		RoleplayParticipantCharacterIDs: append([]model.RoleplayCharacterID(nil), metadata.RoleplayParticipantCharacterIDs...),
-		RoleplayNarrativeFingerprint:    metadata.RoleplayNarrativeFingerprint,
 		RoleplayGenerationConfig:        metadata.RoleplayGenerationConfig,
 		RoleplayResponders:              append([]roleplay.SimulationResponderRoute(nil), metadata.RoleplayResponders...),
 		RoleplayUserTurn:                metadata.RoleplayUserTurn,
@@ -409,46 +342,12 @@ func newTurnAuthority(job model.Job) (turnAuthority, error) {
 	return authority, nil
 }
 
-func objectiveTurnID(authority turnAuthority, kind assemblyline.ConversationObjectiveKind) string {
-	hash := sha256.New()
-	_, _ = fmt.Fprintf(hash, "%d\x00%s\x00%s\x00%s", authority.JobID, authority.Pipeline, authority.SHA256, kind)
-	_, _ = fmt.Fprintf(hash, "\x00data-source\x00%s", authority.DataSourceID)
-	_, _ = fmt.Fprintf(hash, "\x00delegated-data-authority\x00%s", authority.DelegatedDataAuthorityID)
-	_, _ = fmt.Fprintf(hash, "\x00channel\x00%s\x00channel-mode\x00%s\x00viewpoint\x00%s",
-		authority.ChannelID, authority.ChannelMode, authority.RoleplayViewpointCharacterID)
-	if authority.RoleplayIdentity != nil {
-		_, _ = fmt.Fprintf(hash, "\x00roleplay-context\x00%s", authority.RoleplayNarrativeFingerprint)
-	}
-	for _, capsule := range authority.Context.Capsules {
-		_, _ = fmt.Fprintf(hash, "\x00minified-context\x00%s", capsule.ContentSHA256)
-		for _, source := range capsule.Sources {
-			_, _ = fmt.Fprintf(hash, "\x00source\x00%s\x00%s\x00%s",
-				source.Namespace, source.CandidateID, source.ContentSHA256)
-		}
-	}
-	if replan := authority.Context.ReplanAuthority; replan != nil {
-		_, _ = fmt.Fprintf(hash, "\x00replan\x00%d\x00%d\x00%s",
-			replan.JobID, replan.Generation, replan.FeedbackSHA256)
-	}
-	if session := authority.SessionContext; session != nil {
-		_, _ = fmt.Fprintf(hash, "\x00session-job\x00%d\x00initial\x00%s",
-			session.JobID,
-			assemblyline.ExactObjectiveContextSHA(session.InitialInstruction),
-		)
-		for _, turn := range session.Turns {
-			_, _ = fmt.Fprintf(hash, "\x00session-turn\x00%s\x00%s\x00%d\x00%s\x00%s",
-				turn.OperationID,
-				turn.Kind,
-				turn.Generation,
-				turn.CreatedAt.UTC().Format(time.RFC3339Nano),
-				assemblyline.ExactObjectiveContextSHA(turn.ContextText),
-			)
-		}
-	}
-	return "objective-" + hex.EncodeToString(hash.Sum(nil))
+// Objective identity belongs to the persisted job generation, not its content.
+// Context acquisition and semantic resolution cannot create another objective.
+func objectiveTurnID(authority turnAuthority) string {
+	return fmt.Sprintf("objective-%d-%d", authority.JobID, authority.Generation)
 }
 
 func objectiveRequirementID(objectiveID string) string {
-	digest := sha256.Sum256([]byte("requirement\x00" + objectiveID))
-	return "requirement-" + hex.EncodeToString(digest[:])
+	return objectiveID + "-requirement"
 }

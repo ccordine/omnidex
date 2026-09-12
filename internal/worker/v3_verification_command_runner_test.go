@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/queue"
-	workspacefacts "github.com/gryph/omnidex/internal/workspace"
 )
 
 func TestVerificationEvidencePersistenceSurvivesCommandCancellation(t *testing.T) {
@@ -70,85 +69,6 @@ func TestVerificationProcessEnvironmentExcludesAmbientSecrets(t *testing.T) {
 		[]string{"DATABASE_URL=forbidden"},
 	); err == nil || errEnvironment != nil {
 		t.Fatalf("secret-bearing environment name unexpectedly accepted: %v", errEnvironment)
-	}
-}
-
-func TestVerificationWorkspaceObservationReportsPostRunHashFailure(t *testing.T) {
-	root := t.TempDir()
-	fence, err := workspacefacts.AcquireMutationFence(context.Background(), root)
-	if err != nil {
-		t.Fatalf("acquire observation fence: %v", err)
-	}
-	defer func() {
-		if err := fence.Release(); err != nil {
-			t.Errorf("release observation fence: %v", err)
-		}
-	}()
-	if err := os.RemoveAll(root); err != nil {
-		t.Fatalf("remove observation root: %v", err)
-	}
-	after, observationError := directCodingVerificationWorkspaceAfter(fence, root)
-	if after != "" || observationError == "" {
-		t.Fatalf("after=%q observation_error=%q; want explicit failed observation", after, observationError)
-	}
-}
-
-func TestAuthoritativeWorkspaceDigestTracksSourceAndOmnidexNamedPaths(t *testing.T) {
-	root := t.TempDir()
-	fence, err := workspacefacts.AcquireMutationFence(context.Background(), root)
-	if err != nil {
-		t.Fatalf("acquire digest fence: %v", err)
-	}
-	defer func() {
-		if err := fence.Release(); err != nil {
-			t.Errorf("release digest fence: %v", err)
-		}
-	}()
-	source := filepath.Join(root, "source.txt")
-	if err := os.WriteFile(source, []byte("first"), 0o600); err != nil {
-		t.Fatalf("write source: %v", err)
-	}
-	initial, err := directCodingAuthoritativeWorkspaceSHA256(fence, root)
-	if err != nil {
-		t.Fatalf("hash initial workspace: %v", err)
-	}
-	if err := os.WriteFile(source, []byte("second"), 0o600); err != nil {
-		t.Fatalf("mutate source: %v", err)
-	}
-	mutated, err := directCodingAuthoritativeWorkspaceSHA256(fence, root)
-	if err != nil {
-		t.Fatalf("hash mutated source: %v", err)
-	}
-	if initial == mutated {
-		t.Fatal("authoritative digest ignored source mutation")
-	}
-	hidden := filepath.Join(root, ".omnidex-npm-cache")
-	if err := os.Mkdir(hidden, 0o700); err != nil {
-		t.Fatalf("create Omnidex-named path: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(hidden, "entry"), []byte("visible"), 0o600); err != nil {
-		t.Fatalf("write Omnidex-named path: %v", err)
-	}
-	withHidden, err := directCodingAuthoritativeWorkspaceSHA256(fence, root)
-	if err != nil {
-		t.Fatalf("hash Omnidex-named path: %v", err)
-	}
-	if withHidden == mutated {
-		t.Fatal("authoritative digest excluded an Omnidex-named host path")
-	}
-	generated := filepath.Join(root, "node_modules")
-	if err := os.Mkdir(generated, 0o700); err != nil {
-		t.Fatalf("create generated root: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(generated, "entry"), []byte("tool output"), 0o600); err != nil {
-		t.Fatalf("write generated root: %v", err)
-	}
-	withGenerated, err := directCodingAuthoritativeWorkspaceSHA256(fence, root)
-	if err != nil {
-		t.Fatalf("hash generated root: %v", err)
-	}
-	if withGenerated != withHidden {
-		t.Fatal("ordinary generated tool output changed authoritative source identity")
 	}
 }
 

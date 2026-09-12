@@ -15,13 +15,13 @@ type objectiveRoleplayOngoingActionStation interface {
 		context.Context,
 		assemblyline.RoleplayOngoingActionRelationInput,
 	) (
-		assemblyline.RoleplayOngoingActionRelation, objectiveStationReceipt, error,
+		assemblyline.RoleplayOngoingActionRelation, int, error,
 	)
 	GenerateOngoingActionValue(
 		context.Context,
 		assemblyline.RoleplayOngoingActionValueInput,
 	) (
-		string, objectiveStationReceipt, error,
+		string, int, error,
 	)
 }
 
@@ -56,7 +56,7 @@ func resolveRoleplayUserOngoingAction(
 		preparation.UserTurn.PersonaName, contribution, previous,
 	)
 	if err != nil {
-		return nil, 0, fmt.Errorf("extract roleplay user ongoing action: %w", err)
+		return nil, calls, fmt.Errorf("extract roleplay user ongoing action: %w", err)
 	}
 	resolved := extracted.Action
 	if extracted.RequiresRestoration {
@@ -64,7 +64,7 @@ func resolveRoleplayUserOngoingAction(
 			authority, "roleplay user ongoing action", resolved,
 		)
 		if err != nil {
-			return nil, 0, err
+			return nil, calls, err
 		}
 	}
 	return &queue.RoleplayUserOngoingActionCompletion{
@@ -100,54 +100,55 @@ func extractRoleplayOngoingAction(
 	if _, err := assemblyline.NewRoleplayOngoingActionRelationJob(relationInput); err != nil {
 		return objectiveRoleplayOngoingActionResult{}, 0, err
 	}
-	relation, relationReceipt, err := station.ResolveOngoingActionRelation(ctx, relationInput)
+	relation, relationDispatches, err := station.ResolveOngoingActionRelation(ctx, relationInput)
+	calls := relationDispatches
 	if err != nil {
-		return objectiveRoleplayOngoingActionResult{}, 0, err
+		return objectiveRoleplayOngoingActionResult{}, calls, err
 	}
-	if err := validateObjectiveStationReceipt(
-		"roleplay ongoing-action relation station", relationReceipt,
+	if err := validateObjectiveLeafCallCount(
+		"roleplay ongoing-action relation station", relationDispatches,
 	); err != nil {
-		return objectiveRoleplayOngoingActionResult{}, 0, err
+		return objectiveRoleplayOngoingActionResult{}, calls, err
 	}
 	if err := relation.ValidateFor(relationInput); err != nil {
-		return objectiveRoleplayOngoingActionResult{}, 0, err
+		return objectiveRoleplayOngoingActionResult{}, calls, err
 	}
 	switch relation {
 	case assemblyline.RoleplayOngoingActionAbsent:
-		return objectiveRoleplayOngoingActionResult{}, relationReceipt.Calls, nil
+		return objectiveRoleplayOngoingActionResult{}, calls, nil
 	case assemblyline.RoleplayOngoingActionUnchanged:
 		copy := *previous
-		return objectiveRoleplayOngoingActionResult{Action: &copy}, relationReceipt.Calls, nil
+		return objectiveRoleplayOngoingActionResult{Action: &copy}, calls, nil
 	case assemblyline.RoleplayOngoingActionReplacement:
 		valueInput := assemblyline.RoleplayOngoingActionValueInput{
 			CharacterName: characterName, Source: source,
 			ExactContribution: exactContribution,
 		}
 		if _, err := assemblyline.NewRoleplayOngoingActionValueJob(valueInput); err != nil {
-			return objectiveRoleplayOngoingActionResult{}, 0, err
+			return objectiveRoleplayOngoingActionResult{}, calls, err
 		}
-		action, valueReceipt, err := station.GenerateOngoingActionValue(ctx, valueInput)
+		action, valueDispatches, err := station.GenerateOngoingActionValue(ctx, valueInput)
+		calls += valueDispatches
 		if err != nil {
-			return objectiveRoleplayOngoingActionResult{}, 0, err
+			return objectiveRoleplayOngoingActionResult{}, calls, err
 		}
-		if err := validateObjectiveStationReceipt(
-			"roleplay ongoing-action value station", valueReceipt,
+		if err := validateObjectiveLeafCallCount(
+			"roleplay ongoing-action value station", valueDispatches,
 		); err != nil {
-			return objectiveRoleplayOngoingActionResult{}, 0, err
+			return objectiveRoleplayOngoingActionResult{}, calls, err
 		}
 		if err := roleplay.ValidateOngoingActionText(action); err != nil {
-			return objectiveRoleplayOngoingActionResult{}, 0, err
+			return objectiveRoleplayOngoingActionResult{}, calls, err
 		}
 		if previous != nil && action == *previous {
 			copy := *previous
-			return objectiveRoleplayOngoingActionResult{Action: &copy},
-				relationReceipt.Calls + valueReceipt.Calls, nil
+			return objectiveRoleplayOngoingActionResult{Action: &copy}, calls, nil
 		}
 		copy := action
 		return objectiveRoleplayOngoingActionResult{
 			Action: &copy, RequiresRestoration: true,
-		}, relationReceipt.Calls + valueReceipt.Calls, nil
+		}, calls, nil
 	default:
-		return objectiveRoleplayOngoingActionResult{}, 0, fmt.Errorf("roleplay ongoing-action relation is not registered")
+		return objectiveRoleplayOngoingActionResult{}, calls, fmt.Errorf("roleplay ongoing-action relation is not registered")
 	}
 }

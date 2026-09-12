@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/model"
 )
 
@@ -53,9 +52,9 @@ func TestCodingPlanStoreAndDatabaseRequireExactCarriedDecision(t *testing.T) {
 		t, newLeaf.Leaf.Statement, model.CodingPlanDecisionApproved, 1,
 	)
 	if _, err := repository.StoreCodingPlanReview(ctx, StoreCodingPlanReviewCommand{
-		Authority: claim.Authority, ScopeMode: model.CodingScopeModeNormal,
-		RequestSHA256: assemblyline.ExactObjectiveContextSHA("false carried decision"),
-		Leaves:        []CodingPlanLeafWrite{falseDecision},
+		Authority: claim.Authority,
+
+		Leaves: []CodingPlanLeafWrite{falseDecision},
 	}); err == nil || !strings.Contains(err.Error(), "no exact prior user decision") {
 		t.Fatalf("false carried decision error = %v", err)
 	}
@@ -64,9 +63,9 @@ func TestCodingPlanStoreAndDatabaseRequireExactCarriedDecision(t *testing.T) {
 		t, original.Leaf.Statement, model.CodingPlanDecisionPending, 2,
 	)
 	if _, err := repository.StoreCodingPlanReview(ctx, StoreCodingPlanReviewCommand{
-		Authority: claim.Authority, ScopeMode: model.CodingScopeModeNormal,
-		RequestSHA256: assemblyline.ExactObjectiveContextSHA("suppressed carried decision"),
-		Leaves:        []CodingPlanLeafWrite{suppressedPrior},
+		Authority: claim.Authority,
+
+		Leaves: []CodingPlanLeafWrite{suppressedPrior},
 	}); err == nil || !strings.Contains(err.Error(), "differs from its exact prior user decision") {
 		t.Fatalf("suppressed carried decision error = %v", err)
 	}
@@ -74,10 +73,11 @@ func TestCodingPlanStoreAndDatabaseRequireExactCarriedDecision(t *testing.T) {
 	carried := codingPlanExecutableLeaf(
 		t, original.Leaf.Statement, model.CodingPlanDecisionApproved, 1,
 	)
+	carried.Leaf.ID = original.Leaf.ID
 	plan, err := repository.StoreCodingPlanReview(ctx, StoreCodingPlanReviewCommand{
-		Authority: claim.Authority, ScopeMode: model.CodingScopeModeNormal,
-		RequestSHA256: assemblyline.ExactObjectiveContextSHA("valid carried decision"),
-		Leaves:        []CodingPlanLeafWrite{carried, newLeaf},
+		Authority: claim.Authority,
+
+		Leaves: []CodingPlanLeafWrite{carried, newLeaf},
 	})
 	if err != nil {
 		t.Fatalf("store exact carried decision: %v", err)
@@ -92,14 +92,12 @@ func TestCodingPlanStoreAndDatabaseRequireExactCarriedDecision(t *testing.T) {
 	)
 	if _, err := pool.Exec(ctx, `
 		INSERT INTO coding_plan_leaves (
-			job_id,generation,leaf_id,sort_index,statement,annotation,decision,
-			decision_origin_generation,result_schema,candidate_sha256,
-			kind_receipt_sha256,cardinality_receipt_sha256,result_relation
-		) VALUES ($1,2,$2,2,$3,$4,$5,2,$6,$7,$8,$9,$10)
-	`, job.ID, direct.Leaf.ID, direct.Leaf.Statement, direct.Leaf.Annotation,
+			job_id,generation,leaf_id,sort_index,statement,decision,
+			decision_origin_generation,result_schema,result_relation
+		) VALUES ($1,2,$2,2,$3,$4,2,$5,$6)
+	`, job.ID, direct.Leaf.ID, direct.Leaf.Statement,
 		direct.Leaf.Decision, direct.ResultRelation.Schema,
-		direct.ResultRelation.CandidateSHA256, direct.ResultRelation.KindReceiptSHA256,
-		direct.ResultRelation.CardinalityReceiptSHA256, direct.ResultRelation.Relation,
+		direct.ResultRelation.Relation,
 	); err == nil || !strings.Contains(err.Error(), "active initial StoreCodingPlanReview transaction") {
 		t.Fatalf("direct preapproved insert error = %v", err)
 	}
@@ -108,14 +106,12 @@ func TestCodingPlanStoreAndDatabaseRequireExactCarriedDecision(t *testing.T) {
 	)
 	if _, err := pool.Exec(ctx, `
 		INSERT INTO coding_plan_leaves (
-			job_id,generation,leaf_id,sort_index,statement,annotation,decision,
-			decision_origin_generation,result_schema,candidate_sha256,
-			kind_receipt_sha256,cardinality_receipt_sha256,result_relation
-		) VALUES ($1,2,$2,2,$3,$4,$5,2,$6,$7,$8,$9,$10)
-	`, job.ID, pendingAppend.Leaf.ID, pendingAppend.Leaf.Statement, pendingAppend.Leaf.Annotation,
+			job_id,generation,leaf_id,sort_index,statement,decision,
+			decision_origin_generation,result_schema,result_relation
+		) VALUES ($1,2,$2,2,$3,$4,2,$5,$6)
+	`, job.ID, pendingAppend.Leaf.ID, pendingAppend.Leaf.Statement,
 		pendingAppend.Leaf.Decision, pendingAppend.ResultRelation.Schema,
-		pendingAppend.ResultRelation.CandidateSHA256, pendingAppend.ResultRelation.KindReceiptSHA256,
-		pendingAppend.ResultRelation.CardinalityReceiptSHA256, pendingAppend.ResultRelation.Relation,
+		pendingAppend.ResultRelation.Relation,
 	); err == nil || !strings.Contains(err.Error(), "active initial StoreCodingPlanReview transaction") {
 		t.Fatalf("post-store pending append error = %v", err)
 	}
@@ -137,14 +133,12 @@ func TestCodingPlanDecisionAndFreezeRequireLifecycleResultProvenance(t *testing.
 	)
 	if _, err := pool.Exec(ctx, `
 		INSERT INTO coding_plan_leaves (
-			job_id,generation,leaf_id,sort_index,statement,annotation,decision,
-			decision_origin_generation,result_schema,candidate_sha256,
-			kind_receipt_sha256,cardinality_receipt_sha256,result_relation
-		) VALUES ($1,1,$2,1,$3,$4,$5,1,$6,$7,$8,$9,$10)
-	`, job.ID, directInitial.Leaf.ID, directInitial.Leaf.Statement, directInitial.Leaf.Annotation,
+			job_id,generation,leaf_id,sort_index,statement,decision,
+			decision_origin_generation,result_schema,result_relation
+		) VALUES ($1,1,$2,1,$3,$4,1,$5,$6)
+	`, job.ID, directInitial.Leaf.ID, directInitial.Leaf.Statement,
 		directInitial.Leaf.Decision, directInitial.ResultRelation.Schema,
-		directInitial.ResultRelation.CandidateSHA256, directInitial.ResultRelation.KindReceiptSHA256,
-		directInitial.ResultRelation.CardinalityReceiptSHA256, directInitial.ResultRelation.Relation,
+		directInitial.ResultRelation.Relation,
 	); err == nil || !strings.Contains(err.Error(), "active initial StoreCodingPlanReview transaction") {
 		t.Fatalf("generation-one direct preapproval error = %v", err)
 	}

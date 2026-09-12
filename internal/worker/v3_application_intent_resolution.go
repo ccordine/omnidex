@@ -42,8 +42,8 @@ func resolveApprovedDirectCodingApplicationIntent(
 	}
 	if len(approved) == 0 {
 		return assemblyline.ApplicationIntentResolution{
-			RequestSHA256: authority.Context.RequestSHA256,
-			Requirements:  []assemblyline.ApplicationRequirement{},
+
+			Requirements: []assemblyline.ApplicationRequirement{},
 		}, nil
 	}
 	if len(approved) > assemblyline.MaxApplicationRequirementLeaves {
@@ -61,7 +61,6 @@ func resolveApprovedDirectCodingApplicationIntent(
 			return zero, fmt.Errorf("approved coding plan requirement %s: %w", requirement.ID, err)
 		}
 		resolvedRequirements[index] = requirement
-		resolvedRequirements[index].RequestSHA256 = authority.Context.RequestSHA256
 	}
 	productInput := assemblyline.ApplicationProductContextInput{
 		UserRequest: authority.UserRequest,
@@ -91,14 +90,13 @@ func resolveApprovedDirectCodingApplicationIntent(
 	}
 	return assemblyline.ApplicationIntentResolution{
 		ProductContext: productContext,
-		RequestSHA256:  authority.Context.RequestSHA256,
-		Requirements:   resolvedRequirements,
+
+		Requirements: resolvedRequirements,
 	}, nil
 }
 
 type directCodingApplicationRequirementProposal struct {
 	Statement      string
-	Annotation     model.CodingPlanAnnotation
 	ResultRelation assemblyline.ApplicationRequirementCandidateResultRelationResult
 }
 
@@ -106,17 +104,13 @@ func resolveDirectCodingApplicationPlan(
 	runtime typedWorkerRuntime,
 	models directCodingApplicationIntentModels,
 	authority assemblyline.ApplicationIntentInput,
-	scopeMode model.CodingScopeMode,
 	identities []assemblyline.ArtifactIdentity,
 ) ([]directCodingApplicationRequirementProposal, error) {
 	if err := models.validate(); err != nil {
 		return nil, err
 	}
-	if err := scopeMode.Validate(); err != nil {
-		return nil, err
-	}
 	inventoryInput := assemblyline.ApplicationRequirementInventoryInput{
-		UserRequest: authority.UserRequest, Context: authority.Context, ScopeMode: scopeMode,
+		UserRequest: authority.UserRequest, Context: authority.Context,
 	}
 	inventoryJob, err := assemblyline.NewApplicationRequirementInventoryJob(inventoryInput)
 	if err != nil {
@@ -183,15 +177,12 @@ func resolveDirectCodingApplicationPlan(
 			if !directCodingApplicationRequirementPartitionIsZero(resolved.Partition) {
 				return nil, fmt.Errorf("retained application requirement unexpectedly carries a partition receipt")
 			}
-			if err := resolved.Annotation.Validate(); err != nil {
-				return nil, fmt.Errorf("retained application requirement annotation is invalid: %v", err)
-			}
 			if err := resolved.ResultRelation.ValidateAcceptedFor(resolved.Candidate); err != nil {
 				return nil, fmt.Errorf("retained application requirement result relation: %w", err)
 			}
 			if len(proposals) < model.MaxCodingPlanLeaves {
 				proposals = append(proposals, directCodingApplicationRequirementProposal{
-					Statement: resolved.Candidate, Annotation: resolved.Annotation,
+					Statement:      resolved.Candidate,
 					ResultRelation: resolved.ResultRelation,
 				})
 				accepted = append(accepted, assemblyline.ApplicationIntentCandidateRequirement{
@@ -209,7 +200,5 @@ func directCodingApplicationRequirementPartitionIsZero(
 	partition assemblyline.ApplicationRequirementCandidatePartition,
 ) bool {
 	return partition.Schema == "" &&
-		partition.AuthoritySHA256 == "" &&
-		partition.RawSHA256 == "" &&
 		partition.Candidates == nil
 }

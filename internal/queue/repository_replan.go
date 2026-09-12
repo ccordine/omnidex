@@ -11,7 +11,7 @@ import (
 )
 
 func (r *Repository) ReplanJob(ctx context.Context, command ReplanJobCommand) (LifecycleJobResult, error) {
-	command, feedbackSHA, err := normalizeReplanJobCommand(command)
+	command, err := normalizeReplanJobCommand(command)
 	if err != nil {
 		return LifecycleJobResult{}, err
 	}
@@ -24,7 +24,7 @@ func (r *Repository) ReplanJob(ctx context.Context, command ReplanJobCommand) (L
 		return LifecycleJobResult{}, fmt.Errorf("begin replan for job %d: %w", command.JobID, err)
 	}
 	defer tx.Rollback(ctx)
-	result, err := replanJobTx(ctx, tx, command, feedbackSHA, descriptor)
+	result, err := replanJobTx(ctx, tx, command, descriptor)
 	if err != nil {
 		return LifecycleJobResult{}, err
 	}
@@ -38,7 +38,6 @@ func replanJobTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	command ReplanJobCommand,
-	feedbackSHA string,
 	descriptor lifecycleOperationDescriptor,
 ) (LifecycleJobResult, error) {
 	if err := lockLifecycleOperationIdentityTx(ctx, tx, command.OperationID); err != nil {
@@ -58,18 +57,18 @@ func replanJobTx(
 	if existing, found, err := loadLifecycleOperationTx(ctx, tx, descriptor, command.JobID); err != nil {
 		return LifecycleJobResult{}, err
 	} else if found {
-		if err := requireReplanReplayTx(ctx, tx, existing, command, feedbackSHA); err != nil {
+		if err := requireReplanReplayTx(ctx, tx, existing, command); err != nil {
 			return LifecycleJobResult{}, err
 		}
 		return LifecycleJobResult{Job: existing.ResultJob}, nil
 	}
-	job, currentGeneration, err := applyReplanJobTx(ctx, tx, command, feedbackSHA, job)
+	job, currentGeneration, err := applyReplanJobTx(ctx, tx, command, job)
 	if err != nil {
 		return LifecycleJobResult{}, err
 	}
 	if err := insertLifecycleOperationTx(ctx, tx, descriptor, lifecycleOperationRecord{
 		ID: descriptor.ID, JobID: command.JobID, ObservedGeneration: currentGeneration,
-		ResultGeneration: job.CurrentGeneration, Kind: descriptor.Kind, CommandSHA256: descriptor.SHA256,
+		ResultGeneration: job.CurrentGeneration, Kind: descriptor.Kind,
 		ResultJobStatus: job.Status, ResultJob: job,
 	}); err != nil {
 		return LifecycleJobResult{}, err
@@ -81,7 +80,6 @@ func applyReplanJobTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	command ReplanJobCommand,
-	feedbackSHA string,
 	job model.Job,
 ) (model.Job, int64, error) {
 	if terminalJobStatus(job.Status) {
@@ -134,7 +132,7 @@ func applyReplanJobTx(
 	}
 	newGeneration := currentGeneration + 1
 	if err := createReplanGenerationTx(
-		ctx, tx, command, feedbackSHA, currentGeneration, newGeneration, boundary,
+		ctx, tx, command, currentGeneration, newGeneration, boundary,
 	); err != nil {
 		return model.Job{}, 0, err
 	}

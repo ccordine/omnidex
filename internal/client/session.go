@@ -28,7 +28,7 @@ const (
 
 type ChatSessionSnapshot struct {
 	RealtimeCursor    uint64                        `json:"realtime_cursor"`
-	Revision          string                        `json:"revision"`
+	State             ChatSessionState              `json:"state"`
 	Channel           model.Channel                 `json:"channel"`
 	WorkspaceIdentity string                        `json:"workspace_identity"`
 	Messages          []model.ChannelMessage        `json:"messages"`
@@ -89,8 +89,11 @@ func validateChatSessionSnapshot(
 	workspaceIdentity string,
 	messageLimit int,
 ) error {
-	if !canonicalSessionRevision(snapshot.Revision) {
-		return fmt.Errorf("chat session snapshot has an invalid persisted revision")
+	if err := validateChatSessionState(snapshot.Channel, workspaceIdentity, snapshot.State); err != nil {
+		return fmt.Errorf("chat session snapshot state: %w", err)
+	}
+	if !snapshot.State.ChannelUpdatedAt.Equal(snapshot.Channel.UpdatedAt) {
+		return fmt.Errorf("chat session snapshot state differs from its channel timestamp")
 	}
 	if snapshot.WorkspaceIdentity != workspaceIdentity {
 		return fmt.Errorf("chat session snapshot differs from exact workspace identity")

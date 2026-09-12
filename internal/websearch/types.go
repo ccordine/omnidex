@@ -59,6 +59,7 @@ type QueryRequest struct {
 	Query string
 }
 
+// CandidateID is a reference local to one discovery report, not a URL digest.
 type CandidateID string
 
 type CandidateSource struct {
@@ -102,18 +103,18 @@ type FetchRequest struct {
 	CandidateIDs []CandidateID
 }
 
+// DocumentID is a reference local to one fetch report, not a content digest.
 type DocumentID string
 
 type Document struct {
-	ID            DocumentID
-	CandidateID   CandidateID
-	URL           string
-	Title         string
-	Snippet       string
-	Content       string
-	ContentSHA256 string
-	ObservedAt    time.Time
-	Truncated     bool
+	ID          DocumentID
+	CandidateID CandidateID
+	URL         string
+	Title       string
+	Snippet     string
+	Content     string
+	ObservedAt  time.Time
+	Truncated   bool
 }
 
 type FetchOutcome string

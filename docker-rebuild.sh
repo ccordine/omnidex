@@ -9,8 +9,6 @@ die() {
   exit 1
 }
 
-source "${SCRIPT_DIR}/scripts/managed-checkout-lib.sh"
-managed_checkout_export_build_commit "${SCRIPT_DIR}"
 
 compose() {
   env -u DOCKER_CONTEXT -u DOCKER_CONFIG \

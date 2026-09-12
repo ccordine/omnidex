@@ -41,28 +41,21 @@ func TestCodingPlanAPICommitsServerAuthoritativeDecisionsAndFreeze(t *testing.T)
 	if claim == nil || claim.Job.ID != job.ID || claim.Step.Action != "v3_coding_plan" {
 		t.Fatalf("coding plan claim=%#v", claim)
 	}
-	leafID, err := model.NewCodingPlanLeafID(statement)
+	leafID, err := model.NewCodingPlanLeafID()
 	if err != nil {
 		t.Fatal(err)
 	}
 	relation := apiCodingPlanResultRelation(t, statement)
 	plan, err := repository.StoreCodingPlanReview(context.Background(), queue.StoreCodingPlanReviewCommand{
-		Authority:     claim.Authority,
-		ScopeMode:     model.CodingScopeModeNormal,
-		RequestSHA256: assemblyline.ExactObjectiveContextSHA(statement),
+		Authority: claim.Authority,
+
 		Leaves: []queue.CodingPlanLeafWrite{{
 			Leaf: model.CodingPlanLeaf{
 				ID: leafID, Statement: statement,
-				Annotation: model.CodingPlanAnnotationGrounded,
-				Decision:   model.CodingPlanDecisionPending,
+				Decision: model.CodingPlanDecisionPending,
 			},
 			DecisionOriginGeneration: 1,
-			ResultRelation: &queue.CodingPlanResultRelationReceipt{
-				Schema: relation.Schema, CandidateSHA256: relation.CandidateSHA256,
-				KindReceiptSHA256:        relation.KindReceiptSHA256,
-				CardinalityReceiptSHA256: relation.CardinalityReceiptSHA256,
-				Relation:                 relation.Relation,
-			},
+			ResultRelation:           &relation,
 		}},
 	})
 	if err != nil {
@@ -103,9 +96,7 @@ func TestCodingPlanAPICommitsServerAuthoritativeDecisionsAndFreeze(t *testing.T)
 		{action: "cancel", field: "reason", value: "Cancel this exact job."},
 	} {
 		control := control
-		operationID, err := queue.NewLifecycleOperationID(
-			"coding-plan-api", "missing-"+control.action+"-workspace", jsonInt(job.ID),
-		)
+		operationID, err := queue.NewLifecycleOperationID()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -123,9 +114,7 @@ func TestCodingPlanAPICommitsServerAuthoritativeDecisionsAndFreeze(t *testing.T)
 			http.StatusBadRequest,
 		)
 
-		operationID, err = queue.NewLifecycleOperationID(
-			"coding-plan-api", "wrong-"+control.action+"-workspace", jsonInt(job.ID),
-		)
+		operationID, err = queue.NewLifecycleOperationID()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -154,7 +143,7 @@ func TestCodingPlanAPICommitsServerAuthoritativeDecisionsAndFreeze(t *testing.T)
 	requireStatus(
 		http.MethodGet, planPath+"?"+wrongPlanQuery.Encode(), nil, http.StatusConflict,
 	)
-	missingDecisionID, err := queue.NewLifecycleOperationID("coding-plan-api", "missing-authority", jsonInt(job.ID))
+	missingDecisionID, err := queue.NewLifecycleOperationID()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +161,7 @@ func TestCodingPlanAPICommitsServerAuthoritativeDecisionsAndFreeze(t *testing.T)
 	requireStatus(
 		http.MethodPost, planPath+"/decisions", missingDecisionBody, http.StatusBadRequest,
 	)
-	wrongDecisionID, err := queue.NewLifecycleOperationID("coding-plan-api", "wrong-authority", jsonInt(job.ID))
+	wrongDecisionID, err := queue.NewLifecycleOperationID()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +201,7 @@ func TestCodingPlanAPICommitsServerAuthoritativeDecisionsAndFreeze(t *testing.T)
 		t.Fatalf("read plan=%+v", readPlan)
 	}
 
-	decisionID, err := queue.NewLifecycleOperationID("coding-plan-api", "decide", jsonInt(job.ID))
+	decisionID, err := queue.NewLifecycleOperationID()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,7 +237,7 @@ func TestCodingPlanAPICommitsServerAuthoritativeDecisionsAndFreeze(t *testing.T)
 		decided.Leaves[0].Decision != model.CodingPlanDecisionApproved {
 		t.Fatalf("decided plan=%+v", decided)
 	}
-	missingFreezeID, err := queue.NewLifecycleOperationID("coding-plan-api", "missing-freeze-authority", jsonInt(job.ID))
+	missingFreezeID, err := queue.NewLifecycleOperationID()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,7 +252,7 @@ func TestCodingPlanAPICommitsServerAuthoritativeDecisionsAndFreeze(t *testing.T)
 	requireStatus(
 		http.MethodPost, planPath+"/freeze", missingFreezeBody, http.StatusBadRequest,
 	)
-	wrongFreezeID, err := queue.NewLifecycleOperationID("coding-plan-api", "wrong-freeze-authority", jsonInt(job.ID))
+	wrongFreezeID, err := queue.NewLifecycleOperationID()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -281,7 +270,7 @@ func TestCodingPlanAPICommitsServerAuthoritativeDecisionsAndFreeze(t *testing.T)
 		http.MethodPost, planPath+"/freeze", wrongFreezeBody, http.StatusConflict,
 	)
 
-	freezeID, err := queue.NewLifecycleOperationID("coding-plan-api", "freeze", jsonInt(job.ID))
+	freezeID, err := queue.NewLifecycleOperationID()
 	if err != nil {
 		t.Fatal(err)
 	}

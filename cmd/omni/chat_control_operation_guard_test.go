@@ -102,8 +102,12 @@ func operationGuardActiveSnapshot(t *testing.T, session *chatSession) client.Cha
 		t.Fatalf("encode active job metadata: %v", err)
 	}
 	return client.ChatSessionSnapshot{
-		Revision: "channel_session_revision_" + strings.Repeat("b", 64),
-		Channel:  session.channel, WorkspaceIdentity: session.workspaceIdentity,
+		State: client.ChatSessionState{
+			ChannelID: session.channel.ID, WorkspaceRoot: session.channel.WorkspaceRoot,
+			WorkspaceIdentity: session.workspaceIdentity, ChannelUpdatedAt: session.channel.UpdatedAt,
+			LatestJob: &client.ChatSessionJobState{ID: 41, Generation: 1, Status: model.JobStatusRunning, UpdatedAt: now},
+		},
+		Channel: session.channel, WorkspaceIdentity: session.workspaceIdentity,
 		Messages: []model.ChannelMessage{{
 			ID: 1, ChannelID: session.channel.ID, Role: model.ChannelMessageRoleUser,
 			Content: instruction, CreatedAt: now,

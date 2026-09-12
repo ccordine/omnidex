@@ -7,12 +7,6 @@ import (
 	"github.com/gryph/omnidex/internal/websearch"
 )
 
-func cloneObjective(value Objective) Objective {
-	value.KnownArtifactPaths = append([]string{}, value.KnownArtifactPaths...)
-	value.Context = assemblyline.CloneObjectiveContext(value.Context)
-	return value
-}
-
 func cloneCandidates(values []websearch.Candidate) []websearch.Candidate {
 	result := make([]websearch.Candidate, len(values))
 	for index, value := range values {

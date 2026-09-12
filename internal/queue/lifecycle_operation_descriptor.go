@@ -12,17 +12,15 @@ import (
 )
 
 const (
-	lifecycleOperationCommandSchema = "omnidex.lifecycle-operation-command.v1"
-	maxLifecycleOutputBytes         = 4 << 20
-	maxLifecycleContextKeyBytes     = 512
-	maxObjectiveCompletionEvidence  = 32
-	maxObjectiveEvidenceSetBytes    = 128 << 10
+	maxLifecycleOutputBytes        = 4 << 20
+	maxLifecycleContextKeyBytes    = 512
+	maxObjectiveCompletionEvidence = 32
+	maxObjectiveEvidenceSetBytes   = 128 << 10
 )
 
 type lifecycleOperationDescriptor struct {
 	ID      LifecycleOperationID
 	Kind    LifecycleOperationKind
-	SHA256  string
 	Payload []byte
 }
 
@@ -43,7 +41,6 @@ func describeLifecycleOperation(
 	}
 	return lifecycleOperationDescriptor{
 		ID: id, Kind: kind, Payload: payload,
-		SHA256: lifecycleIdentityDigest(lifecycleOperationCommandSchema, string(kind), string(payload)),
 	}, nil
 }
 
@@ -198,7 +195,7 @@ func normalizeSubmitFeedbackCommand(command SubmitJobFeedbackCommand) (SubmitJob
 	if command.JobID <= 0 {
 		return SubmitJobFeedbackCommand{}, fmt.Errorf("feedback command requires a positive job ID")
 	}
-	feedback, _, err := validateJobFeedback(command.Feedback)
+	feedback, err := validateJobFeedback(command.Feedback)
 	if err != nil {
 		return SubmitJobFeedbackCommand{}, err
 	}
@@ -209,34 +206,34 @@ func normalizeSubmitFeedbackCommand(command SubmitJobFeedbackCommand) (SubmitJob
 	return command, nil
 }
 
-func normalizeReplanJobCommand(command ReplanJobCommand) (ReplanJobCommand, string, error) {
+func normalizeReplanJobCommand(command ReplanJobCommand) (ReplanJobCommand, error) {
 	if command.JobID <= 0 {
-		return ReplanJobCommand{}, "", fmt.Errorf("replan command requires a positive job ID")
+		return ReplanJobCommand{}, fmt.Errorf("replan command requires a positive job ID")
 	}
-	feedback, feedbackSHA, err := validateReplanFeedback(command.Feedback)
+	feedback, err := validateReplanFeedback(command.Feedback)
 	if err != nil {
-		return ReplanJobCommand{}, "", err
+		return ReplanJobCommand{}, err
 	}
 	command.Feedback = feedback
 	if err := validateLifecycleWorkspaceBinding(command.WorkspaceRoot, command.WorkspaceIdentity); err != nil {
-		return ReplanJobCommand{}, "", err
+		return ReplanJobCommand{}, err
 	}
-	return command, feedbackSHA, nil
+	return command, nil
 }
 
-func normalizeInterruptJobCommand(command ReplanJobCommand) (ReplanJobCommand, string, error) {
+func normalizeInterruptJobCommand(command ReplanJobCommand) (ReplanJobCommand, error) {
 	if command.JobID <= 0 {
-		return ReplanJobCommand{}, "", fmt.Errorf("interrupt command requires a positive job ID")
+		return ReplanJobCommand{}, fmt.Errorf("interrupt command requires a positive job ID")
 	}
-	feedback, feedbackSHA, err := validateInterruptFeedback(command.Feedback)
+	feedback, err := validateInterruptFeedback(command.Feedback)
 	if err != nil {
-		return ReplanJobCommand{}, "", err
+		return ReplanJobCommand{}, err
 	}
 	command.Feedback = feedback
 	if err := validateLifecycleWorkspaceBinding(command.WorkspaceRoot, command.WorkspaceIdentity); err != nil {
-		return ReplanJobCommand{}, "", err
+		return ReplanJobCommand{}, err
 	}
-	return command, feedbackSHA, nil
+	return command, nil
 }
 
 func normalizeCancelJobCommand(command CancelJobCommand) (CancelJobCommand, error) {

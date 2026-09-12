@@ -39,7 +39,6 @@ type JobGenerationHistory struct {
 	PredecessorGeneration *int64    `json:"predecessor_generation,omitempty"`
 	BoundaryAction        string    `json:"boundary_action,omitempty"`
 	Feedback              string    `json:"feedback,omitempty"`
-	FeedbackSHA256        string    `json:"feedback_sha256,omitempty"`
 	CreatedAt             time.Time `json:"created_at"`
 }
 

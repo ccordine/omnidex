@@ -54,20 +54,19 @@ func requireRegisteredScrumChannelIdentity(
 	descriptor scrumChannelOperationDescriptor,
 ) (bool, error) {
 	var kind LifecycleOperationKind
-	var commandSHA string
 	var payloadMatches bool
 	err := query.QueryRow(ctx, `
-		SELECT kind, command_sha256, command_payload=$2::jsonb
+		SELECT kind, command_payload=$2::jsonb
 		FROM lifecycle_operation_registry
 		WHERE operation_id=$1
-	`, descriptor.Request.OperationID, string(descriptor.Payload)).Scan(&kind, &commandSHA, &payloadMatches)
+	`, descriptor.Request.OperationID, string(descriptor.Payload)).Scan(&kind, &payloadMatches)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
 	if err != nil {
 		return false, fmt.Errorf("read Scrum channel lifecycle identity: %w", err)
 	}
-	if kind != LifecycleScrumChannel || commandSHA != descriptor.SHA256 || !payloadMatches {
+	if kind != LifecycleScrumChannel || !payloadMatches {
 		return false, fmt.Errorf(
 			"%w: operation ID %q is reserved for different kind, scope, or command content",
 			ErrLifecycleOperationConflict,
@@ -133,15 +132,8 @@ func insertScrumChannelOperationTx(
 	descriptor scrumChannelOperationDescriptor,
 	command ScrumChannelOperationCommand,
 	result ScrumChannelOperationResult,
+	effectOperationID LifecycleOperationID,
 ) error {
-	effectOperationID := descriptor.Request.OperationID
-	if command.Effect.Kind != ScrumChannelStartJob {
-		var err error
-		effectOperationID, err = scrumChannelEffectOperationID(command)
-		if err != nil {
-			return err
-		}
-	}
 	tag, err := tx.Exec(ctx, `
 		INSERT INTO scrum_channel_operations (
 			operation_id,project_id,card_id,effect_kind,effect_operation_id,job_id,result_action

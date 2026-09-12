@@ -20,7 +20,7 @@ func TestObjectiveSoleChoiceSkipsModelResolutionAndExecution(t *testing.T) {
 		t.Fatal(err)
 	}
 	modelResolutions := 0
-	decision, receipt, err := runObjectivePortableRawLeafStation(
+	decision, dispatches, err := runObjectivePortableRawLeafStation(
 		context.Background(), nil, "sole_join_path", job, station.DatabaseJoinPathSelection,
 		func() (string, error) {
 			modelResolutions++
@@ -33,8 +33,8 @@ func TestObjectiveSoleChoiceSkipsModelResolutionAndExecution(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if modelResolutions != 0 || receipt.Calls != 0 {
-		t.Fatalf("model resolutions=%d provider calls=%d", modelResolutions, receipt.Calls)
+	if modelResolutions != 0 || dispatches != 0 {
+		t.Fatalf("model resolutions=%d dispatches=%+v", modelResolutions, dispatches)
 	}
 	if decision.PathID != "customer-orders" {
 		t.Fatalf("selected path = %q", decision.PathID)
@@ -103,18 +103,14 @@ func TestZeroCallProviderReplayIsNotClassifiedAsInferenceFree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	projection, err := assemblyline.NewExactPortableResultProjection("A")
-	if err != nil {
-		t.Fatal(err)
-	}
 	result := assemblyline.PortableResult{
-		JobID: job.ID, Candidate: "A", Projection: &projection,
+		Candidate: "A",
 	}
 	execution := exactStationExecution{
-		CallEvidenceID: 9, WorkID: job.ID, WorkKind: job.Kind,
+		CallEvidenceID: 9, WorkInput: string(job.Payload), WorkKind: job.Kind,
 		Model: "provider-model", Iteration: 1, Candidate: "A",
-		CandidateResponseSHA256: projection.SourceResponseSHA256,
-		Replayed:                true,
+
+		Replayed: true,
 	}
 	handled, err := finalizeInferenceFreePortableResult(job, result, execution)
 	if err != nil || handled {

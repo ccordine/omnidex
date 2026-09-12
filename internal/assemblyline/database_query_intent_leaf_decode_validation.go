@@ -127,10 +127,9 @@ func validateDatabaseQueryHaving(
 
 func databaseQueryValidationIntent(state DatabaseQueryIntentLeafState) datasource.RelationalIntent {
 	return datasource.RelationalIntent{
-		Schema:            datasource.RelationalIntentV1,
-		SourceID:          state.Authority.SchemaProjection.SourceID,
-		SchemaFingerprint: state.Authority.SchemaProjection.SchemaFingerprint,
-		FromRelationID:    state.FromRelationID, Limit: 1,
+		Schema:         datasource.RelationalIntentV1,
+		SourceID:       state.Authority.SchemaProjection.SourceID,
+		FromRelationID: state.FromRelationID, Limit: 1,
 		Projections: []datasource.RelationalProjection{}, Filters: []datasource.RelationalPredicate{},
 		TemporalWindows: []datasource.TemporalWindow{}, Exists: []datasource.ExistencePredicate{},
 		GroupBy: []int{}, Having: []datasource.AggregatePredicate{}, OrderBy: []datasource.OrderTerm{},

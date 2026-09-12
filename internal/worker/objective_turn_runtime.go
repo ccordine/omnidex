@@ -116,7 +116,7 @@ func directCodingRequestFromObjectiveAuthority(
 					source.Namespace,
 				)
 			}
-			if replan == nil || source.ContentSHA256 != replan.FeedbackSHA256 {
+			if replan == nil || replan.JobID != authority.JobID || replan.Generation != authority.Generation {
 				return directCodingRequest{}, fmt.Errorf(
 					"workspace mutation replan context is not bound to exact same-job feedback authority",
 				)

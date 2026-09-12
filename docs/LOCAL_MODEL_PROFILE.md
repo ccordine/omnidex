@@ -46,7 +46,7 @@ INFERENCE_CONTEXT_TOKENS=8192
 CODING_FRAGMENT_CONCURRENCY=1
 ```
 
-The complete exact station-key list is checked in to `default.env` and `.env.example`.
+The complete exact station-key list is checked in to `.env.example`.
 The requirement inventory, authorization-first sieve, product context, and stack
 constraint use Qwen 3.5 9B. Only the two candidate-bound derived-value and
 determining-relation presence questions use Phi-4 14B; the exact operation-family and

@@ -5,7 +5,6 @@ import (
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/llm"
-	"github.com/gryph/omnidex/internal/model"
 )
 
 func TestExpectedPortableStationMaxOutputTokensLeavesSourceBodyUnlimited(t *testing.T) {
@@ -52,7 +51,7 @@ func TestExpectedPortableStationMaxOutputTokensLeavesInventoryUnlimited(t *testi
 	}
 	job, err := assemblyline.NewApplicationRequirementInventoryJob(
 		assemblyline.ApplicationRequirementInventoryInput{
-			UserRequest: request, Context: context, ScopeMode: model.CodingScopeModeNormal,
+			UserRequest: request, Context: context,
 		},
 	)
 	if err != nil {

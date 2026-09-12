@@ -2,27 +2,25 @@ package queue
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/projectroot"
 )
 
-// requireCLIChatSessionWorkspaceBinding preserves generic assistant-channel
-// behavior while making the reserved CLI channel identity inseparable from
-// the exact physical workspace identity which derived it.
+// requireCLIChatSessionWorkspaceBinding compares the retained physical directory
+// identity directly. Ordinary assistant channels have no CLI-specific binding.
 func requireCLIChatSessionWorkspaceBinding(
 	channelID model.ChannelID,
-	workspaceRoot string,
+	boundWorkspaceIdentity *string,
 	workspaceIdentity string,
 ) error {
-	if !projectroot.IsCLIChatChannelID(channelID) {
+	if boundWorkspaceIdentity == nil && !strings.HasPrefix(string(channelID), projectroot.CLIChatChannelIDPrefix) {
 		return nil
 	}
-	expectedID, err := projectroot.CLIChatChannelID(workspaceRoot, workspaceIdentity)
-	if err != nil {
-		return fmt.Errorf("validate CLI channel workspace binding: %w", err)
-	}
-	if channelID != expectedID {
+	if !projectroot.IsCLIChatChannelID(channelID) || boundWorkspaceIdentity == nil ||
+		projectroot.ValidateDirectoryIdentity(*boundWorkspaceIdentity) != nil ||
+		*boundWorkspaceIdentity != workspaceIdentity {
 		return fmt.Errorf(
 			"%w: CLI channel %q differs from the exact workspace identity binding",
 			ErrChannelSessionWorkspace,

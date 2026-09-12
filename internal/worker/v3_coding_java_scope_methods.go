@@ -7,7 +7,7 @@ func javaMethodInvocationArity(node *treesitter.Node) int {
 	if arguments == nil {
 		return 0
 	}
-	return int(arguments.NamedChildCount())
+	return len(javaNamedSyntaxChildren(arguments))
 }
 
 func javaLookupMethodAuthority(
@@ -55,9 +55,9 @@ func javaExpressionOwner(
 	case "method_invocation":
 		return javaMethodInvocationReturnOwner(node, source, authorities, receivers, bindings), false
 	case "parenthesized_expression":
-		if node.NamedChildCount() == 1 {
+		if children := javaNamedSyntaxChildren(node); len(children) == 1 {
 			return javaExpressionOwner(
-				node.NamedChild(0), source, authorities, receivers, bindings,
+				children[0], source, authorities, receivers, bindings,
 			)
 		}
 	}
@@ -73,8 +73,11 @@ func javaMethodInvocationReturnOwner(
 ) string {
 	name := node.ChildByFieldName("name")
 	object := node.ChildByFieldName("object")
-	if name == nil || object == nil {
+	if name == nil {
 		return ""
+	}
+	if object == nil {
+		return receivers[""][javaMethodKey{Name: javaNodeText(name, source), Arity: javaMethodInvocationArity(node)}].ReturnOwner
 	}
 	owner, staticReceiver := javaExpressionOwner(
 		object, source, authorities, receivers, bindings,

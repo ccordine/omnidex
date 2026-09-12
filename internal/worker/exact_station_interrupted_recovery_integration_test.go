@@ -67,8 +67,9 @@ func TestLegacyContinuationAndReplacementEvidenceIsTerminalWithoutProviderCall(t
 		JobID: 19, Generation: 2, StepID: 7, Attempt: 3, WorkerID: "legacy-test-worker",
 	}
 	base := queue.LLMCallEvidence{
+		ID:    12,
 		JobID: authority.JobID, Generation: authority.Generation, StepID: authority.StepID,
-		WorkID: job.ID, WorkKind: string(job.Kind), Scope: scope,
+		WorkInput: job.Payload, WorkKind: string(job.Kind), Scope: scope,
 		RequestedModel: "fixture-model", Model: "fixture-model",
 		Protocol:  string(llm.ExactPreparedProtocolPlainCompletionV4),
 		Iteration: 1, DispatchAttempt: 1,
@@ -90,7 +91,7 @@ func TestLegacyContinuationAndReplacementEvidenceIsTerminalWithoutProviderCall(t
 			evidence := base
 			mutate(&evidence)
 			recovery, err := service.recoverExactPortableStationEvidence(
-				job, "fixture-model", authority, evidence,
+				job, "fixture-model", authority, evidence, base,
 			)
 			if err == nil || recovery != nil {
 				t.Fatalf("legacy state recovery=%#v err=%v", recovery, err)
@@ -148,7 +149,7 @@ func reserveInterruptedInitialOpening(
 		t.Fatal(err)
 	}
 	call := exactStationCall{
-		WorkID: job.ID, WorkKind: job.Kind, Iteration: 1,
+		WorkInput: string(job.Payload), WorkKind: job.Kind, Iteration: 1,
 		Prompt: prompt, ContextTokens: contextTokens, MaxOutputTokens: maximum,
 	}
 	prepared, err := prepareExactStationCall(call, modelName, nil)

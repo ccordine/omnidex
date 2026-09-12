@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/projectroot"
 	"github.com/gryph/omnidex/internal/roleplay"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -93,6 +95,9 @@ func (r *Repository) createChannel(
 	}
 	if err := channel.ValidateForCreate(); err != nil {
 		return model.Channel{}, err
+	}
+	if strings.HasPrefix(string(channel.ID), projectroot.CLIChatChannelIDPrefix) {
+		return model.Channel{}, fmt.Errorf("CLI chat channel identities require the server bootstrap boundary")
 	}
 	channel.Tags = append([]string(nil), channel.Tags...)
 	if channel.Tags == nil {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"reflect"
 	"time"
 
 	"github.com/gryph/omnidex/internal/datasource"
@@ -82,21 +83,17 @@ func (r *nativeRuntimeV3) acquireDirectDatabaseEvidence(
 		callContext context.Context,
 		exactSnapshot datasource.SchemaSnapshot,
 		plan datasource.RelationalQueryPlan,
-	) (datasource.EvidenceResult, error) {
+	) (queue.DatabaseEvidenceRecord, error) {
 		if !sameDatabaseSnapshotAuthority(exactSnapshot, snapshot) {
-			return datasource.EvidenceResult{}, fmt.Errorf("database executor received stale schema authority")
-		}
-		compiled, err := datasource.CompilePostgresPlan(exactSnapshot, plan)
-		if err != nil {
-			return datasource.EvidenceResult{}, err
+			return queue.DatabaseEvidenceRecord{}, fmt.Errorf("database executor received stale schema authority")
 		}
 		evidence, err := datasource.ExecuteEvidence(
-			callContext, pool, exactSnapshot, compiled, objectiveDatabaseExecutionLimits(),
+			callContext, pool, exactSnapshot, plan, objectiveDatabaseExecutionLimits(),
 		)
 		if err != nil {
-			return datasource.EvidenceResult{}, err
+			return queue.DatabaseEvidenceRecord{}, err
 		}
-		return r.persistDatabaseEvidence(callContext, authority.JobID, evidence)
+		return r.svc.repo.RecordDatabaseEvidence(callContext, authority.JobID, exactSnapshot, plan, evidence)
 	}
 	return runObjectiveDatabaseEvidenceWorkflow(
 		ctx, authority, requirementID, snapshot, portableObjectiveDatabaseStations{runtime: r}, execute,
@@ -129,18 +126,18 @@ func (r *nativeRuntimeV3) acquireDelegatedDatabaseEvidence(
 		callContext context.Context,
 		exactSnapshot datasource.SchemaSnapshot,
 		plan datasource.RelationalQueryPlan,
-	) (datasource.EvidenceResult, error) {
+	) (queue.DatabaseEvidenceRecord, error) {
 		if !sameDatabaseSnapshotAuthority(exactSnapshot, snapshot) {
-			return datasource.EvidenceResult{}, fmt.Errorf("delegated database executor received stale schema authority")
+			return queue.DatabaseEvidenceRecord{}, fmt.Errorf("delegated database executor received stale schema authority")
 		}
 		evidence, err := client.Execute(
 			callContext, authority.DelegatedDataAuthorityID, exactSnapshot, plan,
 			objectiveDatabaseExecutionLimits(),
 		)
 		if err != nil {
-			return datasource.EvidenceResult{}, err
+			return queue.DatabaseEvidenceRecord{}, err
 		}
-		return r.persistDatabaseEvidence(callContext, authority.JobID, evidence)
+		return r.svc.repo.RecordDatabaseEvidence(callContext, authority.JobID, exactSnapshot, plan, evidence)
 	}
 	return runObjectiveDatabaseEvidenceWorkflow(
 		ctx, authority, requirementID, snapshot, portableObjectiveDatabaseStations{runtime: r}, execute,
@@ -168,17 +165,6 @@ func loadDelegatedDatabaseCredential(record queue.DataSourceRecord) (string, err
 	return token, nil
 }
 
-func (r *nativeRuntimeV3) persistDatabaseEvidence(
-	ctx context.Context,
-	jobID int64,
-	evidence datasource.EvidenceResult,
-) (datasource.EvidenceResult, error) {
-	if _, err := r.svc.repo.SaveDatabaseEvidenceReceipt(ctx, jobID, evidence); err != nil {
-		return datasource.EvidenceResult{}, err
-	}
-	return evidence, nil
-}
-
 func sameDatabaseSnapshotAuthority(left, right datasource.SchemaSnapshot) bool {
-	return left.SourceID == right.SourceID && left.Fingerprint == right.Fingerprint
+	return reflect.DeepEqual(left, right)
 }

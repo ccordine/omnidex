@@ -86,30 +86,6 @@ func databaseQueryShapeChoices() ([]OpaqueModelChoice, error) {
 	})
 }
 
-func databaseQueryProjectionAggregateChoices(
-	input DatabaseQueryProjectionLeafInput,
-) ([]OpaqueModelChoice, error) {
-	if err := input.validate(); err != nil {
-		return nil, err
-	}
-	specs := []databaseOpaqueChoiceSpec{}
-	if input.State.Shape != datasource.ResultScalar {
-		specs = append(specs, databaseOpaqueChoiceSpec{
-			"Select a field directly without aggregation", databaseQueryDirectProjectionChoice,
-		})
-	}
-	specs = append(specs,
-		databaseOpaqueChoiceSpec{"Count matching rows", string(datasource.AggregateCountRows)},
-		databaseOpaqueChoiceSpec{"Count non-null values in one field", string(datasource.AggregateCount)},
-		databaseOpaqueChoiceSpec{"Count distinct non-null values in one field", string(datasource.AggregateCountDistinct)},
-		databaseOpaqueChoiceSpec{"Sum numeric values in one field", string(datasource.AggregateSum)},
-		databaseOpaqueChoiceSpec{"Average numeric values in one field", string(datasource.AggregateAverage)},
-		databaseOpaqueChoiceSpec{"Minimum value in one field", string(datasource.AggregateMinimum)},
-		databaseOpaqueChoiceSpec{"Maximum value in one field", string(datasource.AggregateMaximum)},
-	)
-	return databaseOpaqueChoices(specs)
-}
-
 func databaseQueryFieldChoices(
 	state DatabaseQueryIntentLeafState,
 	relationID string,
@@ -228,16 +204,6 @@ func databaseQueryExistenceNegatedChoices() ([]OpaqueModelChoice, error) {
 	})
 }
 
-func databaseQueryHavingAggregateChoices() ([]OpaqueModelChoice, error) {
-	return databaseOpaqueChoices([]databaseOpaqueChoiceSpec{
-		{"Count matching rows", string(datasource.AggregateCountRows)},
-		{"Count non-null values in one field", string(datasource.AggregateCount)},
-		{"Count distinct non-null values in one field", string(datasource.AggregateCountDistinct)},
-		{"Sum numeric values in one field", string(datasource.AggregateSum)},
-		{"Average numeric values in one field", string(datasource.AggregateAverage)},
-	})
-}
-
 func databaseQueryHavingOperatorChoices() ([]OpaqueModelChoice, error) {
 	return databaseOpaqueChoices([]databaseOpaqueChoiceSpec{
 		{"Equal to the requested value", string(datasource.FilterEqual)},
@@ -278,4 +244,8 @@ func databaseQueryOrderDirectionChoices() ([]OpaqueModelChoice, error) {
 		{"Ascending: smaller or earlier values first", string(datasource.OrderAscending)},
 		{"Descending: larger or later values first", string(datasource.OrderDescending)},
 	})
+}
+
+func databaseQueryTemporalFieldEligible(column datasource.IntentColumnProjection) bool {
+	return column.TypeCategory == datasource.TypeTemporal || column.TypeCategory == datasource.TypeDate
 }

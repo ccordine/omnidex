@@ -25,12 +25,13 @@ type directCodingArtifactValidation struct {
 // It identifies a leaf, advertises only mechanics that code can really run, and
 // never exposes a tool catalogue or grants the model any authority.
 type directCodingArtifactAdapter struct {
-	ID               string
-	Validation       directCodingArtifactValidation
-	Recognize        func(path string) (assemblyline.TargetArtifactKind, bool)
-	ComposeDocument  func(assemblyline.SourceDocument, assemblyline.SourceComposition) (assemblyline.ComposedSourceDocument, error)
-	SourceLanguage   string
-	ValidateFragment directCodingLanguageFragmentValidator
+	ID                 string
+	Validation         directCodingArtifactValidation
+	Recognize          func(path string) (assemblyline.TargetArtifactKind, bool)
+	ComposeDocument    func(assemblyline.SourceDocument, assemblyline.SourceComposition) (assemblyline.ComposedSourceDocument, error)
+	SourceLanguage     string
+	ValidateFragment   directCodingLanguageFragmentValidator
+	ValidateAcceptance func(assemblyline.SourceBlockRef, string) error
 }
 
 func registeredDirectCodingArtifactAdapters() []directCodingArtifactAdapter {
@@ -49,25 +50,25 @@ func registeredDirectCodingArtifactAdapters() []directCodingArtifactAdapter {
 		sourceArtifactAdapter(
 			"go", "go", suffixArtifactRecognizer(".go", "_test.go"),
 			assemblyline.ComposeGoDocument, validateGoArtifactSource,
-			validateDirectCodingGoFragment,
+			validateDirectCodingGoFragment, nil,
 		),
 		parsedArtifactAdapter("go_module", goModuleArtifactRecognizer, validateGoModuleArtifactSource),
 		sourceArtifactAdapter(
 			"javascript", "javascript", javascriptArtifactRecognizer,
 			assemblyline.ComposeJavaScriptDocument, validateJavaScriptArtifactSource,
-			validateDirectCodingJavaScriptFragment,
+			validateDirectCodingJavaScriptFragment, validateDirectCodingJavaScriptAcceptance,
 		),
 		structuralArtifactAdapter("css_tailwind", suffixArtifactRecognizer(".css", ""), validateCSSArtifactSource),
 		parsedArtifactAdapter("html", suffixArtifactRecognizer(".html", ".test.html"), validateHTMLArtifactSource),
 		sourceArtifactAdapter(
 			"java", "java", suffixArtifactRecognizer(".java", "Test.java"),
 			assemblyline.ComposeJavaDocument, validateJavaArtifactSource,
-			validateDirectCodingJavaFragment,
+			validateDirectCodingJavaFragment, validateDirectCodingJavaAcceptance,
 		),
 		sourceArtifactAdapter(
 			"rust", "rust", suffixArtifactRecognizer(".rs", "_test.rs"),
 			assemblyline.ComposeRustDocument, validateRustArtifactSource,
-			validateDirectCodingRustFragment,
+			validateDirectCodingRustFragment, validateDirectCodingRustAcceptance,
 		),
 		parsedArtifactAdapter("cargo_toml", cargoTOMLArtifactRecognizer, validateCargoTOMLArtifactSource),
 		parsedArtifactAdapter("structured_json", suffixArtifactRecognizer(".json", ""), validateJSONArtifactSource),
@@ -85,10 +86,12 @@ func sourceArtifactAdapter(
 	compose func(assemblyline.SourceDocument, assemblyline.SourceComposition) (assemblyline.ComposedSourceDocument, error),
 	parseSource func(path string, source []byte) error,
 	validate directCodingLanguageFragmentValidator,
+	validateAcceptance func(assemblyline.SourceBlockRef, string) error,
 ) directCodingArtifactAdapter {
 	adapter := parsedArtifactAdapter(id, recognize, parseSource, compose)
 	adapter.SourceLanguage = language
 	adapter.ValidateFragment = validate
+	adapter.ValidateAcceptance = validateAcceptance
 	return adapter
 }
 

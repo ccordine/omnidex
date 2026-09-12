@@ -45,6 +45,7 @@ func javaPureMethodAuthorities() map[string]map[javaMethodKey]javaMethodAuthorit
 			}
 		}
 	}
+	add("Object", "equals", "Boolean", false, 1)
 	add("Map", "of", "Map", true, 0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20)
 	add("Map", "copyOf", "Map", true, 1)
 	add("Map", "get", "Object", false, 1)

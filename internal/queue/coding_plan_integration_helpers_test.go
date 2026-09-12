@@ -4,8 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
-	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -44,7 +42,7 @@ func freshCodingPlanRepository(t *testing.T) (*pgxpool.Pool, *Repository) {
 	if err != nil {
 		t.Fatalf("freeze coding-plan model authority: %v", err)
 	}
-	return pool, New(pool, authority, model.CodingScopeModeNormal)
+	return pool, New(pool, authority)
 }
 
 func storeCodingPlanFixture(
@@ -66,9 +64,9 @@ func storeCodingPlanFixture(
 		t.Fatalf("coding-plan fixture claim = %#v", claim)
 	}
 	plan, err := repository.StoreCodingPlanReview(ctx, StoreCodingPlanReviewCommand{
-		Authority: claim.Authority, ScopeMode: model.CodingScopeModeNormal,
-		RequestSHA256: assemblyline.ExactObjectiveContextSHA(job.Instruction),
-		Leaves:        leaves,
+		Authority: claim.Authority,
+
+		Leaves: leaves,
 	})
 	if err != nil {
 		t.Fatalf("store coding-plan fixture: %v", err)
@@ -83,14 +81,14 @@ func codingPlanExecutableLeaf(
 	originGeneration int64,
 ) CodingPlanLeafWrite {
 	t.Helper()
-	id, err := model.NewCodingPlanLeafID(statement)
+	id, err := model.NewCodingPlanLeafID()
 	if err != nil {
 		t.Fatalf("construct coding-plan leaf identity: %v", err)
 	}
 	receipt := codingPlanAcceptedReceipt(t, statement)
 	return CodingPlanLeafWrite{
 		Leaf: model.CodingPlanLeaf{
-			ID: id, Statement: statement, Annotation: model.CodingPlanAnnotationGrounded,
+			ID: id, Statement: statement,
 			Decision: decision,
 		},
 		DecisionOriginGeneration: originGeneration,
@@ -98,46 +96,21 @@ func codingPlanExecutableLeaf(
 	}
 }
 
-func codingPlanConflictLeaf(t *testing.T, statement string, originGeneration int64) CodingPlanLeafWrite {
+func codingPlanAcceptedReceipt(t *testing.T, statement string) assemblyline.ApplicationRequirementCandidateResultRelationResult {
 	t.Helper()
-	write := codingPlanExecutableLeaf(t, statement, model.CodingPlanDecisionPending, originGeneration)
-	write.Leaf.Annotation = model.CodingPlanAnnotationConcreteConflict
-	return write
-}
-
-func codingPlanAcceptedReceipt(t *testing.T, statement string) CodingPlanResultRelationReceipt {
-	t.Helper()
-	candidateSHA := assemblyline.ExactObjectiveContextSHA(statement)
-	kind := assemblyline.ApplicationRequirementCandidateKindResult{
-		Schema:          assemblyline.ApplicationRequirementCandidateKindSchemaV1,
-		CandidateSHA256: candidateSHA, Relation: assemblyline.ApplicationRequirementCandidateTaskLocal,
+	result := assemblyline.ApplicationRequirementCandidateResultRelationResult{
+		Schema:   assemblyline.ApplicationRequirementCandidateResultRelationSchemaV1,
+		Relation: assemblyline.ApplicationRequirementNoDerivedResult,
 	}
-	cardinality := assemblyline.ApplicationRequirementCandidateCardinalityResult{
-		Schema:          assemblyline.ApplicationRequirementCandidateCardinalitySchemaV1,
-		CandidateSHA256: candidateSHA, Relation: assemblyline.ApplicationRequirementOneRuntimeOutcome,
+	if err := result.ValidateAcceptedFor(statement); err != nil {
+		t.Fatal(err)
 	}
-	kindJSON, err := json.Marshal(kind)
-	if err != nil {
-		t.Fatalf("encode kind receipt: %v", err)
-	}
-	cardinalityJSON, err := json.Marshal(cardinality)
-	if err != nil {
-		t.Fatalf("encode cardinality receipt: %v", err)
-	}
-	return CodingPlanResultRelationReceipt{
-		Schema:                   assemblyline.ApplicationRequirementCandidateResultRelationSchemaV1,
-		CandidateSHA256:          candidateSHA,
-		KindReceiptSHA256:        assemblyline.ExactObjectiveContextSHA(string(kindJSON)),
-		CardinalityReceiptSHA256: assemblyline.ExactObjectiveContextSHA(string(cardinalityJSON)),
-		Relation:                 assemblyline.ApplicationRequirementNoDerivedResult,
-	}
+	return result
 }
 
 func codingPlanOperationID(t *testing.T, label string, jobID int64) LifecycleOperationID {
 	t.Helper()
-	id, err := NewLifecycleOperationID(
-		"coding-plan-integration", label, fmt.Sprintf("%d", jobID), codingPlanTestNonce(t),
-	)
+	id, err := NewLifecycleOperationID()
 	if err != nil {
 		t.Fatalf("construct coding-plan operation ID: %v", err)
 	}
@@ -165,7 +138,6 @@ func codingPlanTestNonce(t *testing.T) string {
 func sameCodingPlanProjection(left, right model.CodingPlan) bool {
 	if left.JobID != right.JobID || left.Generation != right.Generation ||
 		left.Revision != right.Revision || left.State != right.State ||
-		left.ScopeMode != right.ScopeMode || left.RequestSHA256 != right.RequestSHA256 ||
 		len(left.Leaves) != len(right.Leaves) || !left.CreatedAt.Equal(right.CreatedAt) ||
 		!left.UpdatedAt.Equal(right.UpdatedAt) {
 		return false

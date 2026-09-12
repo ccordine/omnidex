@@ -10,16 +10,15 @@ func TestApplicationContextProjectionOmitsCodeOwnedFactState(t *testing.T) {
 	const request = "Build a maintenance tracker."
 	const factValue = "The repository already uses PostgreSQL."
 	context := ApplicationContext{
-		Schema:        ApplicationContextSchemaV1,
-		RequestSHA256: ExactObjectiveContextSHA(request),
+		Schema: ApplicationContextSchemaV1,
+
 		Facts: []ApplicationContextFact{{
-			ID:           "fact_001",
-			Kind:         ApplicationContextRepositoryFact,
-			Authority:    ApplicationContextEvidenceAuthority,
-			NeedID:       "need_001",
-			Value:        factValue,
-			SourceID:     "repository-snapshot",
-			SourceSHA256: ExactObjectiveContextSHA(factValue),
+			ID:        "fact_001",
+			Kind:      ApplicationContextRepositoryFact,
+			Authority: ApplicationContextEvidenceAuthority,
+			NeedID:    "need_001",
+			Value:     factValue,
+			SourceID:  "repository-snapshot",
 		}},
 	}
 	if err := context.Validate(); err != nil {
@@ -33,13 +32,11 @@ func TestApplicationContextProjectionOmitsCodeOwnedFactState(t *testing.T) {
 	}
 	for _, forbidden := range []string{
 		context.Schema,
-		context.RequestSHA256,
 		context.Facts[0].ID,
 		string(context.Facts[0].Kind),
 		string(context.Facts[0].Authority),
 		context.Facts[0].NeedID,
 		context.Facts[0].SourceID,
-		context.Facts[0].SourceSHA256,
 	} {
 		if strings.Contains(projection, forbidden) {
 			t.Fatalf("application context projection exposed code-owned value %q: %s", forbidden, projection)

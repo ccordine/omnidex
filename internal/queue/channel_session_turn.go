@@ -77,7 +77,6 @@ func (r *Repository) submitChannelSessionTurnAttempt(
 		tx,
 		descriptor.ID,
 		descriptor.Kind,
-		descriptor.SHA256,
 		descriptor.Payload,
 	)
 	if err != nil {
@@ -207,7 +206,7 @@ func validateAssistantSessionAuthority(
 	}
 	if err := requireCLIChatSessionWorkspaceBinding(
 		command.ChannelID,
-		command.WorkspaceRoot,
+		authority.CLIWorkspaceIdentity,
 		command.WorkspaceIdentity,
 	); err != nil {
 		return err

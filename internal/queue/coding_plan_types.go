@@ -1,32 +1,19 @@
 package queue
 
 import (
-	"fmt"
-
+	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/model"
 )
-
-// CodingPlanResultRelationReceipt is retained code-owned validation authority.
-// It is never included in the user-facing plan or any model-visible context.
-type CodingPlanResultRelationReceipt struct {
-	Schema                   string
-	CandidateSHA256          string
-	KindReceiptSHA256        string
-	CardinalityReceiptSHA256 string
-	Relation                 string
-}
 
 type CodingPlanLeafWrite struct {
 	Leaf                     model.CodingPlanLeaf
 	DecisionOriginGeneration int64
-	ResultRelation           *CodingPlanResultRelationReceipt
+	ResultRelation           *assemblyline.ApplicationRequirementCandidateResultRelationResult
 }
 
 type StoreCodingPlanReviewCommand struct {
-	Authority     model.StepAttemptAuthority
-	ScopeMode     model.CodingScopeMode
-	RequestSHA256 string
-	Leaves        []CodingPlanLeafWrite
+	Authority model.StepAttemptAuthority
+	Leaves    []CodingPlanLeafWrite
 }
 
 type CodingPlanDecisionChange struct {
@@ -61,19 +48,10 @@ type CodingPlanMutationResult struct {
 
 type FrozenCodingPlanLeaf struct {
 	Leaf           model.CodingPlanLeaf
-	ResultRelation CodingPlanResultRelationReceipt
+	ResultRelation assemblyline.ApplicationRequirementCandidateResultRelationResult
 }
 
 type FrozenCodingPlan struct {
 	Plan   model.CodingPlan
 	Leaves []FrozenCodingPlanLeaf
-}
-
-func (receipt CodingPlanResultRelationReceipt) validateFor(leaf model.CodingPlanLeaf) error {
-	if receipt.Schema == "" || receipt.CandidateSHA256 == "" ||
-		receipt.KindReceiptSHA256 == "" || receipt.CardinalityReceiptSHA256 == "" ||
-		receipt.Relation == "" {
-		return fmt.Errorf("executable coding plan leaf requires a complete result-relation receipt")
-	}
-	return nil
 }

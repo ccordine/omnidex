@@ -70,16 +70,14 @@ type CharacterProjection struct {
 	CharacterID   string             `json:"character_id"`
 	CharacterName string             `json:"character_name"`
 	Facts         []ContextFact      `json:"facts"`
-	Fingerprint   string             `json:"fingerprint"`
 }
 
 type CanonProjection struct {
-	Schema      string             `json:"schema"`
-	Authority   AuthorityNamespace `json:"authority"`
-	WorldID     string             `json:"world_id"`
-	WorldName   string             `json:"world_name"`
-	Facts       []ContextFact      `json:"facts"`
-	Fingerprint string             `json:"fingerprint"`
+	Schema    string             `json:"schema"`
+	Authority AuthorityNamespace `json:"authority"`
+	WorldID   string             `json:"world_id"`
+	WorldName string             `json:"world_name"`
+	Facts     []ContextFact      `json:"facts"`
 }
 
 type projectedEvent struct {

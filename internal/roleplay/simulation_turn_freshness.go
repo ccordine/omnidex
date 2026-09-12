@@ -3,6 +3,7 @@ package roleplay
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"slices"
 
 	"github.com/jackc/pgx/v5"
@@ -26,7 +27,7 @@ func (s *Store) LoadFreshSimulationTurnForJob(
 		return SimulationTurnAuthority{}, err
 	}
 	defer tx.Rollback(context.Background())
-	loaded, requestHash, exactText, err := loadMaterializationAuthorityTx(
+	loaded, exactText, err := loadMaterializationAuthorityTx(
 		ctx, tx, SimulationTurnMaterializationRequest{
 			PreparationID: preparation.PreparationID,
 			ChannelID:     preparation.ChannelID,
@@ -37,9 +38,9 @@ func (s *Store) LoadFreshSimulationTurnForJob(
 	if err != nil {
 		return SimulationTurnAuthority{}, err
 	}
-	if loaded.NarrativeFingerprint != preparation.NarrativeFingerprint {
+	if !reflect.DeepEqual(loaded, preparation) {
 		return SimulationTurnAuthority{}, fmt.Errorf(
-			"%w: loaded preparation fingerprint changed", ErrSimulationConflict,
+			"%w: loaded preparation changed", ErrSimulationConflict,
 		)
 	}
 	locked, err := lockSimulationSceneTx(ctx, tx, preparation.WorldID, preparation.SceneID)
@@ -67,7 +68,7 @@ func (s *Store) LoadFreshSimulationTurnForJob(
 		responderIDs[index] = responder.CharacterID
 	}
 	transition, responders, err := previewSimulationTurnAtTx(
-		ctx, tx, locked, preparation.PreparationID, requestHash,
+		ctx, tx, locked, preparation.PreparationID,
 		exactActionText(action, exactText), action, createdAt, responderIDs,
 	)
 	if err != nil {
@@ -114,12 +115,6 @@ func requirePreparedResponderRound(
 			actual[index].NarrativeProjection, actual[index].NarrativeAuthority,
 		); err != nil {
 			return err
-		}
-		if expected[index].NarrativeFingerprint != actual[index].NarrativeFingerprint {
-			return fmt.Errorf(
-				"%w: responding character narrative changed at position %d; restore and retry against the current turn state",
-				ErrSimulationStaleRevision, index,
-			)
 		}
 	}
 	return nil

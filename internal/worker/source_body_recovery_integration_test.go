@@ -48,7 +48,7 @@ func TestFreshSchemaExpiredAttemptReplaysTerminalOutputLimitWithoutDispatch(t *t
 		t.Fatal(err)
 	}
 	call := exactStationCall{
-		WorkID: classification.ID, WorkKind: classification.Kind, Iteration: 1,
+		WorkInput: string(classification.Payload), WorkKind: classification.Kind, Iteration: 1,
 		Prompt: prompt, ContextTokens: 8192, MaxOutputTokens: initialMaximum,
 	}
 	prepared, err := prepareExactStationCall(call, "fixture-model", nil)
@@ -284,7 +284,7 @@ func TestFreshSchemaExpiredAttemptReplaysAcceptedLeavesAndContinuesExactSourceCh
 		calls[2].ParentCallEvidenceID != calls[1].ID ||
 		calls[2].StepAttempt != claim2.Authority.Attempt ||
 		calls[2].WorkerID != claim2.Authority.WorkerID ||
-		calls[2].Model != calls[1].Model || calls[2].WorkID != calls[1].WorkID {
+		calls[2].Model != calls[1].Model || calls[2].WorkInput != nil || len(calls[1].WorkInput) == 0 {
 		t.Fatalf("recovered evidence=%#v", calls)
 	}
 }

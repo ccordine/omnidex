@@ -18,48 +18,46 @@ func prepareObjectiveDatabaseQueryPlan(
 	exactNeed string,
 	objectiveContext assemblyline.ObjectiveContext,
 	stations objectiveDatabaseStations,
-) (datasource.RelationalQueryPlan, objectiveStationReceipt, error) {
+) (datasource.RelationalQueryPlan, int, error) {
 	selected := map[string]string{}
-	var ledger objectiveDatabaseBoundedCallLedger
+	var total int
 	for attempts := 0; attempts <= datasource.MaxProjectedRelations; attempts++ {
 		plan, err := datasource.BuildRelationalQueryPlan(snapshot, intent, selected)
 		if err == nil {
-			if ledger.count() == 0 {
-				return plan, objectiveStationReceipt{}, nil
-			}
-			receipt, receiptErr := ledger.totalForSuccess("database join-path planning")
-			return plan, receipt, receiptErr
+			return plan, total, nil
 		}
 		var ambiguous *datasource.AmbiguousJoinPathError
 		if !errors.As(err, &ambiguous) {
-			return datasource.RelationalQueryPlan{}, ledger.partial(), err
+			return datasource.RelationalQueryPlan{}, total, err
 		}
 		if _, repeated := selected[ambiguous.ToRelationID]; repeated {
-			return datasource.RelationalQueryPlan{}, ledger.partial(), fmt.Errorf("database join-path selection made no planning progress")
+			return datasource.RelationalQueryPlan{}, total, fmt.Errorf("database join-path selection made no planning progress")
 		}
 		input, err := objectiveDatabaseJoinPathInput(
 			snapshot, evidenceNeedID, exactNeed, objectiveContext, ambiguous,
 		)
 		if err != nil {
-			return datasource.RelationalQueryPlan{}, ledger.partial(), err
+			return datasource.RelationalQueryPlan{}, total, err
 		}
-		decision, receipt, err := stations.SelectJoinPath(ctx, input)
+		if stations == nil {
+			return datasource.RelationalQueryPlan{}, total, fmt.Errorf("database join-path selection station is unavailable")
+		}
+		decision, dispatches, err := stations.SelectJoinPath(ctx, input)
+		total += dispatches
 		if err != nil {
-			return datasource.RelationalQueryPlan{}, ledger.partial(), err
+			return datasource.RelationalQueryPlan{}, total, err
 		}
-		if receipt != (objectiveStationReceipt{}) {
-			if err := ledger.record(
-				"database join-path planning", "selection", receipt, exactSemanticLeafCalls,
-			); err != nil {
-				return datasource.RelationalQueryPlan{}, ledger.partial(), err
-			}
+		if err := validateObjectiveCallCount(
+			"database join-path selection", dispatches, exactSemanticLeafCalls,
+		); err != nil {
+			return datasource.RelationalQueryPlan{}, total, err
 		}
 		if err := decision.ValidateFor(input); err != nil {
-			return datasource.RelationalQueryPlan{}, ledger.partial(), err
+			return datasource.RelationalQueryPlan{}, total, err
 		}
 		selected[ambiguous.ToRelationID] = decision.PathID
 	}
-	return datasource.RelationalQueryPlan{}, ledger.partial(), fmt.Errorf("database join-path resolution exceeded its bounded relation count")
+	return datasource.RelationalQueryPlan{}, total, fmt.Errorf("database join-path resolution exceeded its bounded relation count")
 }
 
 func objectiveDatabaseJoinPathInput(

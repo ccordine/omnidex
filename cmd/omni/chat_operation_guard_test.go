@@ -151,7 +151,7 @@ func newChatOperationTestSession(t *testing.T, baseURL string) *chatSession {
 		ctx:    context.Background(),
 		client: apiClient,
 		channel: model.Channel{
-			ID:            model.ChannelID("cli-chat-" + strings.Repeat("d", 64)),
+			ID:            model.ChannelID("cli-chat-" + strings.Repeat("d", 32)),
 			Scope:         model.ChannelScopeUser,
 			Name:          "CLI operation guard test",
 			Tags:          []string{"chat", "cli"},
@@ -160,7 +160,7 @@ func newChatOperationTestSession(t *testing.T, baseURL string) *chatSession {
 			CreatedAt:     now,
 			UpdatedAt:     now,
 		},
-		workspaceIdentity: "directory_identity_v1_" + strings.Repeat("a", 64),
+		workspaceIdentity: "directory_1_101",
 		signals:           make(chan os.Signal),
 		messages:          make(map[int64]model.ChannelMessage),
 		turns:             make(map[queue.LifecycleOperationID]queue.ChannelSessionTurn),

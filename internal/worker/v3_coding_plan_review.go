@@ -28,10 +28,6 @@ func (r *nativeRuntimeV3) runDirectCodingPlanAction() error {
 	if err != nil {
 		return err
 	}
-	scopeMode, err := codingScopeModeFromJobMetadata(r.claim.Job.Metadata)
-	if err != nil {
-		return err
-	}
 	proposals, err := resolveDirectCodingApplicationPlan(
 		inputs.Runtime,
 		directCodingApplicationIntentModels{
@@ -42,7 +38,6 @@ func (r *nativeRuntimeV3) runDirectCodingPlanAction() error {
 			UserRequest: inputs.RequestAuthority.modelRequest,
 			Context:     inputs.ApplicationContext,
 		},
-		scopeMode,
 		inputs.Identities,
 	)
 	if err != nil {
@@ -56,37 +51,35 @@ func (r *nativeRuntimeV3) runDirectCodingPlanAction() error {
 	}
 	writes := make([]queue.CodingPlanLeafWrite, len(proposals))
 	for index, proposal := range proposals {
-		id, err := model.NewCodingPlanLeafID(proposal.Statement)
-		if err != nil {
-			return fmt.Errorf("construct coding plan leaf %d identity: %w", index, err)
-		}
+		var id model.CodingPlanLeafID
 		decision := model.CodingPlanDecisionPending
 		originGeneration := r.claim.Job.CurrentGeneration
-		if retained, exists := prior[id]; exists {
+		if retained, exists := prior[proposal.Statement]; exists {
+			id = retained.LeafID
 			decision = retained.Decision
 			originGeneration = retained.OriginGeneration
+		} else {
+			id, err = model.NewCodingPlanLeafID()
+			if err != nil {
+				return fmt.Errorf("construct coding plan leaf %d identity: %w", index, err)
+			}
 		}
 		leaf := model.CodingPlanLeaf{
-			ID: id, Statement: proposal.Statement, Annotation: proposal.Annotation,
+			ID: id, Statement: proposal.Statement,
 			Decision: decision,
 		}
 		write := queue.CodingPlanLeafWrite{
 			Leaf: leaf, DecisionOriginGeneration: originGeneration,
 		}
-		write.ResultRelation = &queue.CodingPlanResultRelationReceipt{
-			Schema:                   proposal.ResultRelation.Schema,
-			CandidateSHA256:          proposal.ResultRelation.CandidateSHA256,
-			KindReceiptSHA256:        proposal.ResultRelation.KindReceiptSHA256,
-			CardinalityReceiptSHA256: proposal.ResultRelation.CardinalityReceiptSHA256,
-			Relation:                 proposal.ResultRelation.Relation,
+		write.ResultRelation = &assemblyline.ApplicationRequirementCandidateResultRelationResult{
+			Schema:   proposal.ResultRelation.Schema,
+			Relation: proposal.ResultRelation.Relation,
 		}
 		writes[index] = write
 	}
 	plan, err := r.svc.repo.StoreCodingPlanReview(r.ctx, queue.StoreCodingPlanReviewCommand{
-		Authority:     r.claim.Authority,
-		ScopeMode:     scopeMode,
-		RequestSHA256: inputs.RequestAuthority.requestSHA256,
-		Leaves:        writes,
+		Authority: r.claim.Authority,
+		Leaves:    writes,
 	})
 	if err != nil {
 		return err

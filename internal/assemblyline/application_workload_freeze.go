@@ -1,21 +1,10 @@
 package assemblyline
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"reflect"
 	"strings"
-
-	"github.com/gryph/omnidex/internal/exactjson"
 )
-
-type frozenApplicationWorkloadDigest struct {
-	Schema       string                  `json:"schema"`
-	Surface      ApplicationSurface      `json:"surface"`
-	ProductQuote string                  `json:"product_quote"`
-	Tasks        []FrozenApplicationTask `json:"tasks"`
-}
 
 // FreezeApplicationWorkload deterministically projects every accepted
 // requirement into exactly one task in accepted source order. There is no
@@ -35,14 +24,8 @@ func FreezeApplicationWorkload(
 			RequirementQuote: requirement.SourceQuote,
 		}
 	}
-	digest, err := applicationWorkloadDigest(
-		specification.Surface, specification.ProductQuote, tasks,
-	)
-	if err != nil {
-		return zero, err
-	}
 	return FrozenApplicationWorkload{
-		Schema: ApplicationWorkloadFrozenSchemaV2, SHA256: digest,
+		Schema:  ApplicationWorkloadFrozenSchemaV2,
 		Surface: specification.Surface, ProductQuote: specification.ProductQuote,
 		Tasks: tasks,
 	}, nil
@@ -54,11 +37,6 @@ func ValidateFrozenApplicationWorkload(workload FrozenApplicationWorkload) error
 			"frozen application workload schema must be %q",
 			ApplicationWorkloadFrozenSchemaV2,
 		)
-	}
-	decoded, err := hex.DecodeString(workload.SHA256)
-	if err != nil || len(decoded) != sha256.Size ||
-		workload.SHA256 != strings.ToLower(workload.SHA256) {
-		return fmt.Errorf("frozen application workload hash must be 64 lowercase hexadecimal characters")
 	}
 	specification, err := applicationSpecificationFromFrozenWorkload(workload)
 	if err != nil {
@@ -120,20 +98,4 @@ func applicationSpecificationFromFrozenWorkload(
 		return ApplicationSpecification{}, fmt.Errorf("frozen application workload authority: %w", err)
 	}
 	return specification, nil
-}
-
-func applicationWorkloadDigest(
-	surface ApplicationSurface,
-	productQuote string,
-	tasks []FrozenApplicationTask,
-) (string, error) {
-	raw, err := exactjson.Canonical(frozenApplicationWorkloadDigest{
-		Schema: ApplicationWorkloadFrozenSchemaV2, Surface: surface,
-		ProductQuote: productQuote, Tasks: tasks,
-	})
-	if err != nil {
-		return "", fmt.Errorf("canonicalize frozen application workload: %w", err)
-	}
-	digest := sha256.Sum256(raw)
-	return hex.EncodeToString(digest[:]), nil
 }

@@ -13,8 +13,8 @@ import (
 func TestLifecycleWorkspaceAuthorityIsConditionalAndExact(t *testing.T) {
 	t.Parallel()
 	const root = "/tmp/lifecycle-workspace-authority"
-	const identity = "directory_identity_v1_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	const otherIdentity = "directory_identity_v1_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	const identity = "directory_1_101"
+	const otherIdentity = "directory_1_102"
 
 	chatMetadata, err := marshalChannelTurnMetadata(
 		model.ChannelID("lifecycle-workspace-authority"),
@@ -24,7 +24,6 @@ func TestLifecycleWorkspaceAuthorityIsConditionalAndExact(t *testing.T) {
 		"",
 		model.ChannelModeAssistant,
 		modelconfig.Config{},
-		model.CodingScopeModeNormal,
 		nil,
 		identity,
 	)
@@ -72,7 +71,6 @@ func TestLifecycleWorkspaceAuthorityIsConditionalAndExact(t *testing.T) {
 		"",
 		model.ChannelModeAssistant,
 		modelconfig.Config{},
-		model.CodingScopeModeNormal,
 		nil,
 		"",
 	)
@@ -101,7 +99,7 @@ func TestLifecycleWorkspaceAuthorityIsConditionalAndExact(t *testing.T) {
 func TestCodingPlanWorkspaceAuthorityIsRequiredAndExact(t *testing.T) {
 	t.Parallel()
 	const root = "/tmp/coding-plan-authority"
-	const identity = "directory_identity_v1_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	const identity = "directory_1_101"
 	metadata, err := json.Marshal(map[string]string{
 		"client_cwd": root, "client_workspace_identity": identity,
 	})
@@ -125,7 +123,7 @@ func TestCodingPlanWorkspaceAuthorityIsRequiredAndExact(t *testing.T) {
 
 func TestCodingPlanCommandsRejectOmittedWorkspaceAuthority(t *testing.T) {
 	t.Parallel()
-	operationID, err := NewLifecycleOperationID("coding-plan-required-workspace")
+	operationID, err := NewLifecycleOperationID()
 	if err != nil {
 		t.Fatal(err)
 	}

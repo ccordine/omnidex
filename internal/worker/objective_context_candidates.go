@@ -318,12 +318,11 @@ func buildContextCandidateSet(
 				strings.TrimSpace(record.Content) == "" {
 				return fmt.Errorf("context source %q has invalid exact authority", record.SourceID)
 			}
-			recordHash := assemblyline.ExactObjectiveContextSHA(record.Content)
-			_, duplicate := seenRecordContent[recordHash]
+			_, duplicate := seenRecordContent[record.Content]
 			if duplicate && !(required && strings.HasPrefix(record.Namespace, "session_")) {
 				continue
 			}
-			seenRecordContent[recordHash] = struct{}{}
+			seenRecordContent[record.Content] = struct{}{}
 			chunks := splitContextCandidateContent(record.Content)
 			group := -1
 			if !required && len(chunks) > 1 {

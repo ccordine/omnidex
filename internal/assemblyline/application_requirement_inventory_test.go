@@ -5,8 +5,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/gryph/omnidex/internal/model"
 )
 
 func TestApplicationRequirementInventoryPreservesCleanSourceOrderedLines(t *testing.T) {
@@ -24,9 +22,6 @@ func TestApplicationRequirementInventoryPreservesCleanSourceOrderedLines(t *test
 	}
 	if !reflect.DeepEqual(result.Candidates, want) {
 		t.Fatalf("candidates=%q, want %q", result.Candidates, want)
-	}
-	if result.RawSHA256 != ExactObjectiveContextSHA(raw) {
-		t.Fatalf("raw hash=%q, want exact response hash", result.RawSHA256)
 	}
 }
 
@@ -79,9 +74,6 @@ func TestApplicationRequirementInventoryAcceptsOnlyExactAbsence(t *testing.T) {
 	}
 	if result.Candidates == nil || len(result.Candidates) != 0 {
 		t.Fatalf("absence candidates=%v, want non-nil empty array", result.Candidates)
-	}
-	if result.RawSHA256 != ExactObjectiveContextSHA(ApplicationNoRuntimeRequirementCandidates) {
-		t.Fatalf("absence raw hash=%q", result.RawSHA256)
 	}
 }
 
@@ -155,6 +147,6 @@ func applicationRequirementInventoryTestInput(t testing.TB) ApplicationRequireme
 		t.Fatal(err)
 	}
 	return ApplicationRequirementInventoryInput{
-		UserRequest: request, Context: context, ScopeMode: model.CodingScopeModeNormal,
+		UserRequest: request, Context: context,
 	}
 }

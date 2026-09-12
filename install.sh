@@ -124,28 +124,6 @@ run_dependency_bootstrap() {
   "${cmd[@]}"
 }
 
-build_staged_checkout() {
-  local repository="$1"
-  if ! command_exists go; then
-    die "go is required to build Omnidex binaries (install Go or rerun without --skip-deps)"
-  fi
-  managed_checkout_export_build_commit "${repository}"
-  "${repository}/scripts/build-ui.sh"
-  mkdir -p "${repository}/bin"
-  (
-    cd "${repository}"
-    ldflags="-X github.com/gryph/omnidex/internal/version.Commit=${OMNIDEX_COMMIT}"
-    build_dir="$(mktemp -d "${repository}/bin/.omnidex-build.XXXXXX")"
-    trap 'rm -f "${build_dir}/omnidex" "${build_dir}/omni"; rmdir "${build_dir}" 2>/dev/null || true' EXIT
-    go build -trimpath -ldflags "${ldflags}" -o "${build_dir}/omnidex" ./cmd/omnidex
-    go build -trimpath -ldflags "${ldflags}" -o "${build_dir}/omni" ./cmd/omni
-    managed_checkout_verify_binary_commit "${build_dir}/omnidex" "${OMNIDEX_COMMIT}" metadata
-    managed_checkout_verify_binary_commit "${build_dir}/omni" "${OMNIDEX_COMMIT}" json
-    mv -f "${build_dir}/omnidex" bin/omnidex
-    mv -f "${build_dir}/omni" bin/omni
-  )
-  log "built staged GUI and binaries"
-}
 
 parse_args() {
   while (($# > 0)); do
@@ -246,7 +224,7 @@ main() {
   trap '[[ -z "${stage:-}" ]] || rm -rf -- "${stage}"' EXIT
   managed_checkout_clone_exact "${SCRIPT_DIR}" "${stage}" "${source_branch}" "${source_origin}"
   managed_checkout_stage_env "${PREFIX}" "${stage}" "${ENV_FILE}"
-  build_staged_checkout "${stage}"
+  managed_checkout_build_binaries "${stage}"
   managed_checkout_validate_stage "${stage}"
   managed_checkout_publish "${stage}" "${PREFIX}"
   stage=""

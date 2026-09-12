@@ -2,8 +2,6 @@ package queue
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/model"
@@ -35,7 +33,7 @@ func requireRoleplayResearchCompletionReplayTx(
 		return true, lifecycleReplayStateError(record.ID, "research simulation transition")
 	}
 	var (
-		preparationID, authority, renderedSHA   string
+		preparationID, authority                string
 		storedJobID, sourceMessageID            int64
 		sourceChannelID, sourceRole, sourceText string
 		citationCount, evidenceCount            int
@@ -43,7 +41,7 @@ func requireRoleplayResearchCompletionReplayTx(
 	)
 	err = tx.QueryRow(ctx, `
 		SELECT completion.preparation_id,completion.job_id,
-		       completion.source_message_id,completion.rendered_sha256,
+		       completion.source_message_id,
 		       completion.authority_namespace,
 		       message.channel_id,message.role,message.content,
 		       (SELECT COUNT(*) FROM roleplay_research_completion_citations AS citation
@@ -60,7 +58,7 @@ func requireRoleplayResearchCompletionReplayTx(
 		  ON evidence_set.operation_id=completion.operation_id
 		WHERE completion.operation_id=$1
 	`, command.OperationID).Scan(
-		&preparationID, &storedJobID, &sourceMessageID, &renderedSHA, &authority,
+		&preparationID, &storedJobID, &sourceMessageID, &authority,
 		&sourceChannelID, &sourceRole, &sourceText, &citationCount, &evidenceCount,
 		&fictionalCount, &canonCount,
 	)
@@ -70,16 +68,14 @@ func requireRoleplayResearchCompletionReplayTx(
 	if err != nil {
 		return true, fmt.Errorf("validate research completion replay: %w", err)
 	}
-	digest := sha256.Sum256([]byte(command.Output))
 	if preparationID != research.PreparationID || storedJobID != job.ID || sourceMessageID < 1 ||
 		authority != string(roleplay.AuthorityRealWorld) || sourceChannelID != research.ChannelID ||
 		sourceRole != string(model.ChannelMessageRoleAssistant) || sourceText != command.Output ||
-		renderedSHA != hex.EncodeToString(digest[:]) || citationCount < 1 ||
+		citationCount < 1 ||
 		citationCount != evidenceCount || fictionalCount != 0 || canonCount != 0 {
 		return true, lifecycleReplayStateError(record.ID, "research completion authority")
 	}
 	if _, err := roleplay.AdvanceTurnTx(ctx, tx, roleplay.SimulationTurnAdvanceRequest{
-		OperationID:   roleplayTurnAdvanceOperationID(command.OperationID),
 		PreparationID: research.PreparationID, ChannelID: research.ChannelID,
 		UserMessageID: research.UserMessageID, JobID: job.ID,
 		ExpectedRevision: research.SceneRevision,

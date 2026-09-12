@@ -6,7 +6,6 @@ import (
 )
 
 type CodebaseMap struct {
-	WorkspaceID   string              `json:"workspace_id"`
 	Root          string              `json:"root"`
 	GeneratedAt   string              `json:"generated_at"`
 	Languages     []LanguageSummary   `json:"languages,omitempty"`
@@ -111,7 +110,6 @@ func BuildCodebaseMap(workspace string, cfg CodebaseMapConfig) (CodebaseMap, err
 func BuildCodebaseMapFromIndex(index WorkspaceIndex) CodebaseMap {
 	root := strings.TrimSpace(index.Workspace)
 	cm := CodebaseMap{
-		WorkspaceID: workspaceHash(root),
 		Root:        root,
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
 		Truncated:   index.Truncated,

@@ -47,9 +47,8 @@ type ApplicationEvidenceNeed struct {
 }
 
 type ApplicationContextEvidence struct {
-	Value        string `json:"value"`
-	SourceID     string `json:"source_id"`
-	SourceSHA256 string `json:"source_sha256"`
+	Value    string `json:"value"`
+	SourceID string `json:"source_id"`
 }
 
 func NewApplicationRepositoryContextNeed(index int, question string) (ApplicationEvidenceNeed, error) {
@@ -128,21 +127,17 @@ func AppendApplicationContextEvidence(
 		if item.SourceID == "" || item.SourceID != strings.TrimSpace(item.SourceID) {
 			return ApplicationContext{}, fmt.Errorf("application evidence need %q produced a fact without source identity", need.ID)
 		}
-		if item.SourceSHA256 != ExactObjectiveContextSHA(item.Value) {
-			return ApplicationContext{}, fmt.Errorf("application evidence need %q produced a fact with mismatched source hash", need.ID)
-		}
 		if _, duplicate := seenSources[item.SourceID]; duplicate {
 			return ApplicationContext{}, fmt.Errorf("application context source %q is duplicated", item.SourceID)
 		}
 		seenSources[item.SourceID] = struct{}{}
 		result.Facts = append(result.Facts, ApplicationContextFact{
-			ID:           fmt.Sprintf("fact_%03d", len(result.Facts)+1),
-			Kind:         ApplicationContextRepositoryFact,
-			Authority:    ApplicationContextEvidenceAuthority,
-			NeedID:       need.ID,
-			Value:        item.Value,
-			SourceID:     item.SourceID,
-			SourceSHA256: item.SourceSHA256,
+			ID:        fmt.Sprintf("fact_%03d", len(result.Facts)+1),
+			Kind:      ApplicationContextRepositoryFact,
+			Authority: ApplicationContextEvidenceAuthority,
+			NeedID:    need.ID,
+			Value:     item.Value,
+			SourceID:  item.SourceID,
 		})
 	}
 	if err := result.Validate(); err != nil {

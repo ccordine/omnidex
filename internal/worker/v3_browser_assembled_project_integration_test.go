@@ -24,7 +24,6 @@ func TestTypeScriptBrowserExactAssemblyPassesRegisteredToolchain(t *testing.T) {
 	}
 	program := testTypeScriptBrowserProgram(
 		t,
-		"neutral state fixture",
 		"A neutral state fixture",
 		"Expose one observable state after an explicit activation.",
 	)

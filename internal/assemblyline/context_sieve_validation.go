@@ -29,10 +29,9 @@ var (
 // identifies its code-owned authority class. CandidateID remains code-owned;
 // one relevance call returns only the binary relation for this candidate.
 type ContextCandidateAuthority struct {
-	Namespace     string `json:"namespace"`
-	CandidateID   string `json:"candidate_id"`
-	Content       string `json:"content"`
-	ContentSHA256 string `json:"content_sha256"`
+	Namespace   string `json:"namespace"`
+	CandidateID string `json:"candidate_id"`
+	Content     string `json:"content"`
 }
 
 func NewContextCandidateAuthority(
@@ -42,7 +41,6 @@ func NewContextCandidateAuthority(
 ) (ContextCandidateAuthority, error) {
 	authority := ContextCandidateAuthority{
 		Namespace: namespace, CandidateID: candidateID, Content: content,
-		ContentSHA256: ExactObjectiveContextSHA(content),
 	}
 	if err := validateContextCandidateAuthorities(
 		"context candidate", []ContextCandidateAuthority{authority}, 1,
@@ -99,16 +97,13 @@ func validateContextCandidateAuthorities(
 		); err != nil {
 			return fmt.Errorf("candidate %s: %w", authority.CandidateID, err)
 		}
-		if !exactObjectiveContextSHA(authority.Content, authority.ContentSHA256) {
-			return fmt.Errorf("%s candidate %s content hash does not match", label, authority.CandidateID)
-		}
-		if _, duplicate := seenContent[authority.ContentSHA256]; duplicate &&
+		if _, duplicate := seenContent[authority.Content]; duplicate &&
 			!strings.HasPrefix(authority.Namespace, "session_") {
 			return fmt.Errorf("%s candidate %s duplicates exact candidate content", label, authority.CandidateID)
 		}
-		seenContent[authority.ContentSHA256] = struct{}{}
+		seenContent[authority.Content] = struct{}{}
 		total += len(authority.Namespace) + len(authority.CandidateID) +
-			len(authority.Content) + len(authority.ContentSHA256)
+			len(authority.Content)
 	}
 	if total > maximumBytes {
 		return fmt.Errorf("%s candidate projection exceeds %d bytes", label, maximumBytes)

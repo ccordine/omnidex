@@ -28,6 +28,9 @@ func runDirectCodingApplicationTaskLifecycle(
 	if hooks.BuildBlock == nil {
 		return fmt.Errorf("application task lifecycle requires one source-generation hook")
 	}
+	if hooks.VerifyTask == nil || hooks.FinalStage == nil {
+		return fmt.Errorf("application task lifecycle requires task and complete verification hooks")
+	}
 	if len(program.Generated) != 0 {
 		return fmt.Errorf("application task lifecycle requires an empty generated-source set")
 	}
@@ -58,13 +61,11 @@ func runDirectCodingApplicationTaskLifecycle(
 			if validationErr := validateApplicationTaskGeneratedSet(stage.Generated, expectedIDs...); validationErr != nil {
 				return validationErr
 			}
-			if hooks.VerifyTask != nil {
-				if verifyErr := hooks.VerifyTask(context, &stage); verifyErr != nil {
-					return fmt.Errorf("verify application task %s: %w", context.Task.TaskID, verifyErr)
-				}
-				if validationErr := validateApplicationTaskGeneratedSet(stage.Generated, expectedIDs...); validationErr != nil {
-					return validationErr
-				}
+			if verifyErr := hooks.VerifyTask(context, &stage); verifyErr != nil {
+				return fmt.Errorf("verify application task %s: %w", context.Task.TaskID, verifyErr)
+			}
+			if validationErr := validateApplicationTaskGeneratedSet(stage.Generated, expectedIDs...); validationErr != nil {
+				return validationErr
 			}
 			for _, blockID := range expectedIDs {
 				program.Generated[blockID] = stage.Generated[blockID]
@@ -75,10 +76,8 @@ func runDirectCodingApplicationTaskLifecycle(
 	if err != nil {
 		return err
 	}
-	if hooks.FinalStage != nil {
-		if err := hooks.FinalStage(program); err != nil {
-			return fmt.Errorf("verify complete application workload: %w", err)
-		}
+	if err := hooks.FinalStage(program); err != nil {
+		return fmt.Errorf("verify complete application workload: %w", err)
 	}
 	return nil
 }

@@ -19,26 +19,23 @@ type SimulationTurnAuthority struct {
 	GenerationConfig        CharacterGenerationConfig      `json:"generation_config"`
 	NarrativeProjection     NarrativeSimulationProjection  `json:"narrative_projection"`
 	NarrativeAuthority      SimulationNarrativeAuthority   `json:"narrative_authority"`
-	NarrativeFingerprint    string                         `json:"narrative_fingerprint"`
 	Responders              []SimulationResponderAuthority `json:"responders"`
 	ResponderRoutes         []SimulationResponderRoute     `json:"responder_routes"`
 	CreatedAt               time.Time                      `json:"created_at"`
 }
 
 type SimulationResponderRoute struct {
-	Position             int                       `json:"position"`
-	CharacterID          string                    `json:"character_id"`
-	GenerationConfig     CharacterGenerationConfig `json:"generation_config"`
-	NarrativeFingerprint string                    `json:"narrative_fingerprint"`
+	Position         int                       `json:"position"`
+	CharacterID      string                    `json:"character_id"`
+	GenerationConfig CharacterGenerationConfig `json:"generation_config"`
 }
 
 type SimulationResponderAuthority struct {
-	Position             int                           `json:"position"`
-	CharacterID          string                        `json:"character_id"`
-	GenerationConfig     CharacterGenerationConfig     `json:"generation_config"`
-	NarrativeProjection  NarrativeSimulationProjection `json:"narrative_projection"`
-	NarrativeAuthority   SimulationNarrativeAuthority  `json:"narrative_authority"`
-	NarrativeFingerprint string                        `json:"narrative_fingerprint"`
+	Position            int                           `json:"position"`
+	CharacterID         string                        `json:"character_id"`
+	GenerationConfig    CharacterGenerationConfig     `json:"generation_config"`
+	NarrativeProjection NarrativeSimulationProjection `json:"narrative_projection"`
+	NarrativeAuthority  SimulationNarrativeAuthority  `json:"narrative_authority"`
 }
 
 type SimulationTurnPreparationRequest struct {
@@ -49,7 +46,6 @@ type SimulationTurnPreparationRequest struct {
 }
 
 type SimulationTurnAdvanceRequest struct {
-	OperationID      string `json:"operation_id"`
 	PreparationID    string `json:"preparation_id"`
 	ChannelID        string `json:"channel_id"`
 	UserMessageID    int64  `json:"user_message_id"`
@@ -65,7 +61,6 @@ type SimulationTurnMaterializationRequest struct {
 }
 
 type SimulationTurnAdvanceResult struct {
-	OperationID             string                    `json:"operation_id"`
 	PreparationID           string                    `json:"preparation_id"`
 	WorldID                 string                    `json:"world_id"`
 	SceneID                 string                    `json:"scene_id"`
@@ -76,6 +71,5 @@ type SimulationTurnAdvanceResult struct {
 	BeforeInitiative        SimulationInitiativeClock `json:"before_initiative"`
 	AfterInitiative         SimulationInitiativeClock `json:"after_initiative"`
 	ParticipantCharacterIDs []string                  `json:"participant_character_ids"`
-	NarrativeFingerprint    string                    `json:"narrative_fingerprint"`
 	CreatedAt               time.Time                 `json:"created_at"`
 }

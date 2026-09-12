@@ -18,10 +18,6 @@ func renderPortableApplicationJob(job PortableJob) (string, bool, error) {
 		return handledPortableRender(renderDecodedPortableInput(
 			job, BuildApplicationRequirementCandidateAuthorizationPrompt,
 		))
-	case WorkApplicationRequirementCandidateScopeRelation:
-		return handledPortableRender(renderDecodedPortableInput(
-			job, BuildApplicationRequirementCandidateScopeRelationPrompt,
-		))
 	case WorkApplicationRequirementCandidateOutcomeRelation:
 		return handledPortableRender(renderDecodedPortableInput(
 			job, BuildApplicationRequirementCandidateOutcomeRelationPrompt,

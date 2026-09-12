@@ -10,17 +10,22 @@ import (
 type repositoryGroundedInventoryLeaf func(
 	context.Context,
 	assemblyline.GroundedAnswerParagraphInventoryInput,
-) (assemblyline.GroundedAnswerParagraphInventory, objectiveStationReceipt, error)
+) (assemblyline.GroundedAnswerParagraphInventory, int, error)
 
 type repositoryGroundedSupportLeaf func(
 	context.Context,
 	assemblyline.GroundedAnswerParagraphEvidenceRelationInput,
-) (assemblyline.GroundedAnswerParagraphEvidenceRelationDecision, objectiveStationReceipt, error)
+) (assemblyline.GroundedAnswerParagraphEvidenceRelationDecision, int, error)
 
-type repositoryGroundedAuthorizationLeaf func(
+type repositoryGroundedRelevanceLeaf func(
 	context.Context,
-	assemblyline.GroundedAnswerParagraphAuthorizationInput,
-) (assemblyline.GroundedAnswerParagraphAuthorizationDecision, objectiveStationReceipt, error)
+	assemblyline.GroundedParagraphRelevanceInput,
+) (assemblyline.GroundedParagraphRelevance, int, error)
+
+type repositoryGroundedFullSupportLeaf func(
+	context.Context,
+	assemblyline.GroundedParagraphSupportInput,
+) (assemblyline.GroundedParagraphSupport, int, error)
 
 // resolveRepositoryGroundedParagraphQueue owns the exact-deduplicated queue.
 // Inventory output has no answer authority; accepted paragraphs are appended
@@ -30,16 +35,17 @@ func resolveRepositoryGroundedParagraphQueue(
 	input assemblyline.GroundedAnswerInput,
 	inventoryLeaf repositoryGroundedInventoryLeaf,
 	supportLeaf repositoryGroundedSupportLeaf,
-	authorizationLeaf repositoryGroundedAuthorizationLeaf,
-) (assemblyline.GroundedAnswerDecision, objectiveStationReceipt, error) {
+	relevanceLeaf repositoryGroundedRelevanceLeaf,
+	fullSupportLeaf repositoryGroundedFullSupportLeaf,
+) (assemblyline.GroundedAnswerDecision, int, error) {
 	var zero assemblyline.GroundedAnswerDecision
-	if ctx == nil || inventoryLeaf == nil || supportLeaf == nil || authorizationLeaf == nil {
-		return zero, objectiveStationReceipt{}, fmt.Errorf(
+	if ctx == nil || inventoryLeaf == nil || supportLeaf == nil || relevanceLeaf == nil || fullSupportLeaf == nil {
+		return zero, 0, fmt.Errorf(
 			"repository grounded paragraph queue requires context and all semantic leaves",
 		)
 	}
 	if err := input.Validate(); err != nil {
-		return zero, objectiveStationReceipt{}, err
+		return zero, 0, err
 	}
 	inventoryInput := assemblyline.GroundedAnswerParagraphInventoryInput{
 		ExactRequirement:   input.ExactRequirement,
@@ -47,19 +53,18 @@ func resolveRepositoryGroundedParagraphQueue(
 		Evidence:           append([]assemblyline.GroundedEvidenceCapsule(nil), input.Evidence...),
 		KnownArtifactPaths: append([]string(nil), input.KnownArtifactPaths...),
 	}
-	inventory, inventoryReceipt, err := inventoryLeaf(ctx, inventoryInput)
-	total := inventoryReceipt.Calls
-	allReused := inventoryReceipt.Reused
+	inventory, inventoryCalls, err := inventoryLeaf(ctx, inventoryInput)
+	total := inventoryCalls
 	if err != nil {
-		return zero, objectiveStationReceipt{Calls: total, Reused: allReused}, err
+		return zero, total, err
 	}
-	if err := validateObjectiveStationReceipt(
-		"repository grounded paragraph inventory", inventoryReceipt,
+	if err := validateObjectiveLeafCallCount(
+		"repository grounded paragraph inventory", inventoryCalls,
 	); err != nil {
-		return zero, objectiveStationReceipt{Calls: total, Reused: allReused}, err
+		return zero, total, err
 	}
 	if err := inventory.ValidateFor(inventoryInput); err != nil {
-		return zero, objectiveStationReceipt{Calls: total, Reused: allReused}, err
+		return zero, total, err
 	}
 
 	accepted := make([]assemblyline.GroundedAnswerParagraph, 0, len(inventory.Candidates))
@@ -70,28 +75,46 @@ func resolveRepositoryGroundedParagraphQueue(
 		}
 		seenCandidates[candidate] = struct{}{}
 
-		authorizationInput := assemblyline.GroundedAnswerParagraphAuthorizationInput{
-			ExactRequirement:   input.ExactRequirement,
+		relevanceInput := assemblyline.GroundedParagraphRelevanceInput{
+			ExactQuestion:      input.ExactRequirement,
 			Context:            assemblyline.CloneObjectiveContext(input.Context),
 			ParagraphText:      candidate,
+			KnownArtifactPaths: append([]string(nil), input.KnownArtifactPaths...),
+		}
+		relevance, leafCalls, err := relevanceLeaf(ctx, relevanceInput)
+		total += leafCalls
+		if err != nil {
+			return zero, total, err
+		}
+		if err := validateObjectiveLeafCallCount(
+			"repository grounded paragraph relevance", leafCalls,
+		); err != nil {
+			return zero, total, err
+		}
+		if err := relevance.ValidateFor(relevanceInput); err != nil {
+			return zero, total, err
+		}
+		if relevance != assemblyline.GroundedParagraphRelevant {
+			continue
+		}
+
+		fullSupportInput := assemblyline.GroundedParagraphSupportInput{
+			ParagraphText: candidate, ClaimDomain: assemblyline.GroundedAllFactualClaims,
 			Evidence:           append([]assemblyline.GroundedEvidenceCapsule(nil), input.Evidence...),
 			KnownArtifactPaths: append([]string(nil), input.KnownArtifactPaths...),
 		}
-		authorization, leafReceipt, err := authorizationLeaf(ctx, authorizationInput)
-		total += leafReceipt.Calls
-		allReused = allReused && leafReceipt.Reused
+		fullSupport, leafCalls, err := fullSupportLeaf(ctx, fullSupportInput)
+		total += leafCalls
 		if err != nil {
-			return zero, objectiveStationReceipt{Calls: total, Reused: allReused}, err
+			return zero, total, err
 		}
-		if err := validateObjectiveStationReceipt(
-			"repository grounded paragraph authorization", leafReceipt,
-		); err != nil {
-			return zero, objectiveStationReceipt{Calls: total, Reused: allReused}, err
+		if err := validateObjectiveLeafCallCount("repository grounded paragraph support", leafCalls); err != nil {
+			return zero, total, err
 		}
-		if err := authorization.ValidateFor(authorizationInput); err != nil {
-			return zero, objectiveStationReceipt{Calls: total, Reused: allReused}, err
+		if err := fullSupport.ValidateFor(fullSupportInput); err != nil {
+			return zero, total, err
 		}
-		if authorization.Relation != assemblyline.GroundedParagraphResponsiveAndFullySupported {
+		if fullSupport != assemblyline.GroundedParagraphFullySupported {
 			continue
 		}
 
@@ -103,19 +126,18 @@ func resolveRepositoryGroundedParagraphQueue(
 				Evidence:           evidence,
 				KnownArtifactPaths: append([]string(nil), input.KnownArtifactPaths...),
 			}
-			relation, leafReceipt, err := supportLeaf(ctx, relationInput)
-			total += leafReceipt.Calls
-			allReused = allReused && leafReceipt.Reused
+			relation, leafCalls, err := supportLeaf(ctx, relationInput)
+			total += leafCalls
 			if err != nil {
-				return zero, objectiveStationReceipt{Calls: total, Reused: allReused}, err
+				return zero, total, err
 			}
-			if err := validateObjectiveStationReceipt(
-				"repository grounded paragraph evidence relation", leafReceipt,
+			if err := validateObjectiveLeafCallCount(
+				"repository grounded paragraph evidence relation", leafCalls,
 			); err != nil {
-				return zero, objectiveStationReceipt{Calls: total, Reused: allReused}, err
+				return zero, total, err
 			}
 			if err := relation.ValidateFor(relationInput); err != nil {
-				return zero, objectiveStationReceipt{Calls: total, Reused: allReused}, err
+				return zero, total, err
 			}
 			if relation.Relation == assemblyline.GroundedEvidenceSupportsParagraph {
 				supporting = append(supporting, evidence)
@@ -130,10 +152,10 @@ func resolveRepositoryGroundedParagraphQueue(
 		})
 	}
 	if len(accepted) == 0 {
-		return zero, objectiveStationReceipt{Calls: total, Reused: allReused}, fmt.Errorf(
+		return zero, total, fmt.Errorf(
 			"repository grounded paragraph inventory queue produced no responsive fully supported paragraphs",
 		)
 	}
 	decision, err := assemblyline.AssembleGroundedAnswerDecision(input, accepted)
-	return decision, objectiveStationReceipt{Calls: total, Reused: allReused}, err
+	return decision, total, err
 }

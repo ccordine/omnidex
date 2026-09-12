@@ -60,7 +60,7 @@ func (s *directCodingSession) verifyAuthoritativeGoWorkspace(
 		resultErr = errors.Join(resultErr, workspaceErr, cacheErr, moduleCacheErr, outputErr)
 	}()
 	version, err := s.runRecordedVerificationCommand(
-		s.root, queue.VerificationHostInstall, directCodingGoVersionCommand(), true,
+		s.root, queue.VerificationHostInstall, directCodingGoVersionCommand(),
 	)
 	if err != nil {
 		return fmt.Errorf("observe authoritative Go toolchain version: %w", err)
@@ -78,7 +78,7 @@ func (s *directCodingSession) verifyAuthoritativeGoWorkspace(
 		return err
 	}
 	formatResult, err := s.runRecordedVerificationCommand(
-		s.root, queue.VerificationHostFinal, formatCommand, true,
+		s.root, queue.VerificationHostFinal, formatCommand,
 	)
 	if err != nil {
 		return err
@@ -98,7 +98,7 @@ func (s *directCodingSession) verifyAuthoritativeGoWorkspace(
 			return err
 		}
 		if _, err := s.runRecordedVerificationCommand(
-			s.root, queue.VerificationHostFinal, command, true,
+			s.root, queue.VerificationHostFinal, command,
 		); err != nil {
 			return err
 		}

@@ -6,7 +6,7 @@ func BuildDatabaseQueryExistenceRelationPrompt(input DatabaseQueryExistenceLeafI
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	authority, err := renderDatabaseQueryExistenceAuthority(input)
+	authority, err := renderDatabaseQuerySelectionAuthority(input.State, input.Purpose, "existence", false)
 	if err != nil {
 		return "", err
 	}
@@ -29,10 +29,7 @@ func BuildDatabaseQueryExistenceNegatedPrompt(input DatabaseQueryExistenceLeafIn
 	if err := input.validateRelation(); err != nil {
 		return "", err
 	}
-	authority, err := renderDatabaseQueryExistenceAuthority(input)
-	if err != nil {
-		return "", err
-	}
+	authority := renderDatabaseQueryFocusedPurpose(input.Purpose, "existence")
 	focused, err := renderDatabaseQueryFocusedRelation(input.State, input.RelationID)
 	if err != nil {
 		return "", err
@@ -52,11 +49,11 @@ func BuildDatabaseQueryHavingAggregatePrompt(input DatabaseQueryHavingLeafInput)
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	authority, err := renderDatabaseQueryHavingAuthority(input, true)
+	authority, err := renderDatabaseQuerySelectionAuthority(input.State, input.Purpose, "having", true)
 	if err != nil {
 		return "", err
 	}
-	choices, err := databaseQueryHavingAggregateChoices()
+	choices, err := databaseQueryHavingAggregateChoices(input)
 	if err != nil {
 		return "", err
 	}
@@ -71,7 +68,7 @@ func BuildDatabaseQueryHavingFieldPrompt(input DatabaseQueryHavingLeafInput) (st
 	if err := input.validateAggregate(); err != nil {
 		return "", err
 	}
-	authority, err := renderDatabaseQueryHavingAuthority(input, false)
+	authority, err := renderDatabaseQuerySelectionAuthority(input.State, input.Purpose, "having", false)
 	if err != nil {
 		return "", err
 	}
@@ -96,10 +93,7 @@ func BuildDatabaseQueryHavingOperatorPrompt(input DatabaseQueryHavingLeafInput) 
 	if err := input.validateField(); err != nil {
 		return "", err
 	}
-	authority, err := renderDatabaseQueryHavingAuthority(input, false)
-	if err != nil {
-		return "", err
-	}
+	authority := renderDatabaseQueryFocusedPurpose(input.Purpose, "having")
 	focused, err := renderDatabaseQueryFocusedHaving(input)
 	if err != nil {
 		return "", err
@@ -119,10 +113,7 @@ func BuildDatabaseQueryHavingValuePrompt(input DatabaseQueryHavingLeafInput) (st
 	if err := input.validateOperator(); err != nil {
 		return "", err
 	}
-	authority, err := renderDatabaseQueryHavingAuthority(input, false)
-	if err != nil {
-		return "", err
-	}
+	authority := renderDatabaseQueryFocusedPurpose(input.Purpose, "having")
 	focused, err := renderDatabaseQueryFocusedHaving(input)
 	if err != nil {
 		return "", err
@@ -143,10 +134,7 @@ func BuildDatabaseQueryOrderProjectionPrompt(input DatabaseQueryOrderLeafInput) 
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	authority, err := renderDatabaseQueryOrderAuthority(input)
-	if err != nil {
-		return "", err
-	}
+	authority := renderDatabaseQueryFocusedPurpose(input.Purpose, "order")
 	choices, err := databaseQueryOrderProjectionChoices(input)
 	if err != nil {
 		return "", err
@@ -162,10 +150,7 @@ func BuildDatabaseQueryOrderDirectionPrompt(input DatabaseQueryOrderLeafInput) (
 	if err := input.validateProjection(); err != nil {
 		return "", err
 	}
-	authority, err := renderDatabaseQueryOrderAuthority(input)
-	if err != nil {
-		return "", err
-	}
+	authority := renderDatabaseQueryFocusedPurpose(input.Purpose, "order")
 	focused, err := renderDatabaseQueryFocusedProjection(input.State, *input.Projection)
 	if err != nil {
 		return "", err
@@ -181,45 +166,6 @@ func BuildDatabaseQueryOrderDirectionPrompt(input DatabaseQueryOrderLeafInput) (
 	)
 }
 
-func renderDatabaseQueryExistenceAuthority(input DatabaseQueryExistenceLeafInput) (string, error) {
-	accepted, err := renderDatabaseQueryAcceptedQuery(input.State)
-	if err != nil {
-		return "", err
-	}
-	existence, err := renderDatabaseQueryAcceptedExistence(input.State)
-	if err != nil {
-		return "", err
-	}
-	return renderDatabaseQueryFocusedParameterAuthority(
-		input.Purpose, "existence", accepted, existence,
-	), nil
-}
-
-func renderDatabaseQueryHavingAuthority(
-	input DatabaseQueryHavingLeafInput,
-	includeSemanticFields bool,
-) (string, error) {
-	accepted, err := renderDatabaseQueryAcceptedQuery(input.State)
-	if err != nil {
-		return "", err
-	}
-	projections, err := renderDatabaseQueryAcceptedProjections(input.State)
-	if err != nil {
-		return "", err
-	}
-	having, err := renderDatabaseQueryAcceptedHaving(input.State)
-	if err != nil {
-		return "", err
-	}
-	sections := []string{accepted, projections, having}
-	if includeSemanticFields {
-		sections = append(sections, renderDatabaseQuerySemanticFields(input.State))
-	}
-	return renderDatabaseQueryFocusedParameterAuthority(
-		input.Purpose, "having", sections...,
-	), nil
-}
-
 func renderDatabaseQueryFocusedHaving(input DatabaseQueryHavingLeafInput) (string, error) {
 	if input.Aggregate == datasource.AggregateCountRows {
 		return "FOCUSED HAVING MEASURE:\ncount matching rows", nil
@@ -233,22 +179,4 @@ func renderDatabaseQueryFocusedHaving(input DatabaseQueryHavingLeafInput) (strin
 		return "", err
 	}
 	return "FOCUSED HAVING MEASURE:\n" + aggregate + " for " + field, nil
-}
-
-func renderDatabaseQueryOrderAuthority(input DatabaseQueryOrderLeafInput) (string, error) {
-	accepted, err := renderDatabaseQueryAcceptedQuery(input.State)
-	if err != nil {
-		return "", err
-	}
-	projections, err := renderDatabaseQueryAcceptedProjections(input.State)
-	if err != nil {
-		return "", err
-	}
-	order, err := renderDatabaseQueryAcceptedOrder(input.State)
-	if err != nil {
-		return "", err
-	}
-	return renderDatabaseQueryFocusedParameterAuthority(
-		input.Purpose, "order", accepted, projections, order,
-	), nil
 }

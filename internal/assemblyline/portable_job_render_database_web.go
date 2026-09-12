@@ -4,7 +4,6 @@ func renderPortableDatabaseWebJob(job PortableJob) (string, bool, error) {
 	switch job.Kind {
 	case WorkDatabaseSchemaRelationChoice,
 		WorkDatabaseQueryFromRelation, WorkDatabaseQueryShape,
-		WorkDatabaseQueryPurposePresence,
 		WorkDatabaseQueryPurposeInventory, WorkDatabaseQueryPurposeNecessity,
 		WorkDatabaseQueryPurposeRelation,
 		WorkDatabaseQueryProjectionAggregate,

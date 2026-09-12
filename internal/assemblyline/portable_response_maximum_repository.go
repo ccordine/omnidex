@@ -36,15 +36,14 @@ func portableRepositoryConversationResponseMaximum(job PortableJob) (int, bool, 
 			roleplayGroundedEvidenceRelationChoices,
 		)
 		return maximum, true, err
-	case WorkRoleplayGroundedResponseParagraphAuthorization:
-		maximum, err := opaqueModelChoiceBuilderResponseMaximum(
-			roleplayGroundedParagraphAuthorizationChoices,
-		)
-		return maximum, true, err
-	case WorkRoleplayCanonFactPresence:
-		maximum, err := opaqueModelChoiceBuilderResponseMaximum(
-			roleplayCanonFactPresenceChoices,
-		)
+	case WorkGroundedParagraphSupport:
+		var input GroundedParagraphSupportInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return 0, true, err
+		}
+		maximum, err := opaqueModelChoiceBuilderResponseMaximum(func() ([]OpaqueModelChoice, error) {
+			return groundedParagraphSupportChoices(input.ClaimDomain)
+		})
 		return maximum, true, err
 	case WorkRoleplayCanonFactInventory:
 		return maxRoleplayCanonFactInventoryBytes, true, nil
@@ -69,9 +68,9 @@ func portableRepositoryConversationResponseMaximum(job PortableJob) (int, bool, 
 			groundedAnswerParagraphEvidenceRelationChoices,
 		)
 		return maximum, true, err
-	case WorkGroundedAnswerParagraphAuthorization:
+	case WorkGroundedParagraphRelevance:
 		maximum, err := opaqueModelChoiceBuilderResponseMaximum(
-			groundedAnswerParagraphAuthorizationChoices,
+			groundedParagraphRelevanceChoices,
 		)
 		return maximum, true, err
 	default:

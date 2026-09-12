@@ -12,7 +12,6 @@ import (
 
 	"github.com/gryph/omnidex/database"
 	"github.com/gryph/omnidex/internal/db"
-	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/modelconfig"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -85,7 +84,7 @@ func freshEvidenceRepository(
 	if err != nil {
 		t.Fatal(err)
 	}
-	return pool, New(pool, authority, model.CodingScopeModeNormal)
+	return pool, New(pool, authority)
 }
 
 func evidenceNonce(t *testing.T) string {
@@ -97,27 +96,37 @@ func evidenceNonce(t *testing.T) string {
 	return hex.EncodeToString(value[:])
 }
 
-func TestEnqueueCodingJobSnapshotsCodingScopeMode(t *testing.T) {
+func TestEnqueueCodingJobHasNoScopePolicyOrAnnotationColumns(t *testing.T) {
 	databaseURL := evidenceDatabaseURL(t)
 	pool, _ := freshEvidenceRepository(t, databaseURL)
 	authority, err := modelconfig.Freeze(modelconfig.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	repository := New(pool, authority, model.CodingScopeModeExpansive)
+	repository := New(pool, authority)
 	job, err := repository.EnqueueCodingJob(
 		context.Background(), "exercise coding scope metadata", t.TempDir(),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var metadata struct {
-		CodingScopeMode model.CodingScopeMode `json:"coding_scope_mode"`
-	}
+	var metadata map[string]json.RawMessage
 	if err := json.Unmarshal(job.Metadata, &metadata); err != nil {
 		t.Fatal(err)
 	}
-	if metadata.CodingScopeMode != model.CodingScopeModeExpansive {
-		t.Fatalf("coding job scope mode=%q", metadata.CodingScopeMode)
+	if _, exists := metadata["coding_scope_mode"]; exists {
+		t.Fatal("coding job retains the removed scope policy")
+	}
+	var obsoleteColumns int
+	if err := pool.QueryRow(context.Background(), `
+		SELECT count(*) FROM information_schema.columns
+		WHERE table_schema=current_schema()
+		  AND table_name IN ('coding_plans','coding_plan_leaves')
+		  AND column_name IN ('scope_mode','annotation')
+	`).Scan(&obsoleteColumns); err != nil {
+		t.Fatal(err)
+	}
+	if obsoleteColumns != 0 {
+		t.Fatalf("fresh schema retains %d obsolete scope columns", obsoleteColumns)
 	}
 }

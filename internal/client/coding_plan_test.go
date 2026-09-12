@@ -121,9 +121,8 @@ func TestCodingPlanClientRejectsContradictoryServerAuthority(t *testing.T) {
 		want   string
 	}{
 		{name: "wrong job", mutate: func(plan *model.CodingPlan) { plan.JobID++ }, want: "differs from requested job"},
-		{name: "unknown scope", mutate: func(plan *model.CodingPlan) { plan.ScopeMode = "arbitrary" }, want: "unsupported"},
-		{name: "duplicate leaf", mutate: func(plan *model.CodingPlan) { plan.Leaves[1].ID = plan.Leaves[0].ID }, want: "does not match its exact statement"},
-		{name: "unknown annotation", mutate: func(plan *model.CodingPlan) { plan.Leaves[0].Annotation = "invented" }, want: "unsupported"},
+		{name: "duplicate leaf", mutate: func(plan *model.CodingPlan) { plan.Leaves[1].ID = plan.Leaves[0].ID }, want: "duplicate leaf"},
+		{name: "duplicate statement", mutate: func(plan *model.CodingPlan) { plan.Leaves[1].Statement = plan.Leaves[0].Statement }, want: "repeats the statement"},
 		{name: "unknown decision", mutate: func(plan *model.CodingPlan) { plan.Leaves[0].Decision = "maybe" }, want: "unsupported"},
 	}
 	for _, test := range tests {
@@ -152,7 +151,7 @@ func TestCodingPlanMutationRejectsInvalidAuthorityBeforeTransport(t *testing.T) 
 	channel := testCLIChannel("/tmp/coding-plan-invalid")
 	apiClient := testClient(t, "http://127.0.0.1:1")
 	validOperationID := testOperationID(t, "valid-plan-authority")
-	validLeafID, err := model.NewCodingPlanLeafID("The software lets a user confirm the item.")
+	validLeafID, err := model.NewCodingPlanLeafID()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,27 +193,25 @@ func codingPlanFixture(
 	now := time.Date(2026, time.September, 1, 12, 0, 0, 0, time.UTC)
 	leaves := make([]model.CodingPlanLeaf, 0, 3)
 	values := []struct {
-		statement  string
-		annotation model.CodingPlanAnnotation
-		decision   model.CodingPlanDecision
+		statement string
+		decision  model.CodingPlanDecision
 	}{
-		{"The software lets a user confirm the item.", model.CodingPlanAnnotationGrounded, model.CodingPlanDecisionPending},
-		{"The confirmed state persists.", model.CodingPlanAnnotationReasonableDerivation, model.CodingPlanDecisionPending},
-		{"Export the confirmed item to cloud storage.", model.CodingPlanAnnotationConcreteConflict, model.CodingPlanDecisionRejected},
+		{"The software lets a user confirm the item.", model.CodingPlanDecisionPending},
+		{"The confirmed state persists.", model.CodingPlanDecisionPending},
+		{"Export the confirmed item to cloud storage.", model.CodingPlanDecisionRejected},
 	}
 	for _, value := range values {
-		id, err := model.NewCodingPlanLeafID(value.statement)
+		id, err := model.NewCodingPlanLeafID()
 		if err != nil {
 			t.Fatal(err)
 		}
 		leaves = append(leaves, model.CodingPlanLeaf{
-			ID: id, Statement: value.statement, Annotation: value.annotation,
+			ID: id, Statement: value.statement,
 			Decision: value.decision,
 		})
 	}
 	return model.CodingPlan{
 		JobID: jobID, Generation: generation, Revision: revision, State: state,
-		ScopeMode: model.CodingScopeModeNormal, RequestSHA256: strings.Repeat("a", 64),
 		Leaves: leaves, CreatedAt: now, UpdatedAt: now,
 	}
 }

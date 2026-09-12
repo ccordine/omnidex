@@ -52,7 +52,7 @@ func (service *Service) Discover(ctx context.Context, request QueryRequest) (Can
 	indices := make(map[string]int, service.config.MaxCandidates)
 	for _, providerID := range service.config.Providers {
 		if err := ctx.Err(); err != nil {
-			return CandidateReport{}, err
+			return service.cloneCandidateReport(report, err)
 		}
 		definition, ok := providerDefinitionFor(providerID)
 		if !ok {
@@ -62,14 +62,14 @@ func (service *Service) Discover(ctx context.Context, request QueryRequest) (Can
 		diagnostic := ProviderDiagnostic{Provider: providerID, SearchURL: searchURL}
 		body, fetchErr := service.get(ctx, searchURL)
 		if fetchErr != nil {
-			if errors.Is(fetchErr, ErrUnsafeURL) || errors.Is(fetchErr, ErrInvalidFetchedText) {
-				return service.cloneCandidateReport(report, fetchErr)
-			}
 			diagnostic.Outcome = DiscoveryFailed
 			diagnostic.Failure = truncateUTF8(fetchErr.Error(), maxDiagnosticFailureBytes)
 			report.Diagnostics = append(report.Diagnostics, diagnostic)
 			if err := ctx.Err(); err != nil {
-				return CandidateReport{}, err
+				return service.cloneCandidateReport(report, errors.Join(fetchErr, err))
+			}
+			if errors.Is(fetchErr, ErrUnsafeURL) || errors.Is(fetchErr, ErrInvalidFetchedText) {
+				return service.cloneCandidateReport(report, fetchErr)
 			}
 			continue
 		}
@@ -77,7 +77,7 @@ func (service *Service) Discover(ctx context.Context, request QueryRequest) (Can
 			definition, searchURL, body, service.config.MaxCandidatesPerProvider,
 		)
 		if parseErr != nil {
-			return CandidateReport{}, parseErr
+			return service.failedDiscovery(report, diagnostic, parseErr)
 		}
 		diagnostic.CandidateCount = len(parsed)
 		if len(parsed) == 0 {
@@ -88,10 +88,10 @@ func (service *Service) Discover(ctx context.Context, request QueryRequest) (Can
 		diagnostic.Outcome = DiscoverySucceeded
 		for rank, candidate := range parsed {
 			if err := validateFetchedString("candidate title", candidate.title); err != nil {
-				return service.cloneCandidateReport(report, err)
+				return service.failedDiscovery(report, diagnostic, err)
 			}
 			if err := validateFetchedString("candidate snippet", candidate.snippet); err != nil {
-				return service.cloneCandidateReport(report, err)
+				return service.failedDiscovery(report, diagnostic, err)
 			}
 			source := CandidateSource{Provider: providerID, SearchURL: searchURL, Rank: rank + 1}
 			if index, duplicate := indices[candidate.url]; duplicate {
@@ -103,17 +103,27 @@ func (service *Service) Discover(ctx context.Context, request QueryRequest) (Can
 			}
 			indices[candidate.url] = len(report.Candidates)
 			report.Candidates = append(report.Candidates, Candidate{
-				ID: candidateID(candidate.url), URL: candidate.url,
+				ID: CandidateID(fmt.Sprintf("candidate_%d", len(report.Candidates)+1)), URL: candidate.url,
 				Title: candidate.title, Snippet: candidate.snippet,
 				Sources: []CandidateSource{source},
 			})
 		}
 		report.Diagnostics = append(report.Diagnostics, diagnostic)
 	}
+	if err := ctx.Err(); err != nil {
+		return service.cloneCandidateReport(report, err)
+	}
 	if len(report.Candidates) == 0 {
 		return service.cloneCandidateReport(report, fmt.Errorf("%w for query %q", ErrNoCandidates, query))
 	}
 	return service.cloneCandidateReport(report, nil)
+}
+
+func (service *Service) failedDiscovery(report CandidateReport, diagnostic ProviderDiagnostic, err error) (CandidateReport, error) {
+	diagnostic.Outcome = DiscoveryFailed
+	diagnostic.Failure = truncateUTF8(err.Error(), maxDiagnosticFailureBytes)
+	report.Diagnostics = append(report.Diagnostics, diagnostic)
+	return service.cloneCandidateReport(report, err)
 }
 
 func (service *Service) get(ctx context.Context, rawURL string) (string, error) {
@@ -187,7 +197,7 @@ func (service *Service) cloneCandidateReport(report CandidateReport, runErr erro
 	if err := validateCandidateReportBounds(
 		report, service.config.MaxCandidates, len(service.config.Providers),
 	); err != nil {
-		return CandidateReport{}, err
+		return CandidateReport{}, errors.Join(runErr, err)
 	}
 	copy := report
 	copy.Diagnostics = append([]ProviderDiagnostic{}, report.Diagnostics...)

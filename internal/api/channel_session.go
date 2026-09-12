@@ -13,7 +13,7 @@ const defaultChannelSessionMessageLimit = 100
 
 type channelSessionResponse struct {
 	RealtimeCursor    uint64                        `json:"realtime_cursor"`
-	Revision          string                        `json:"revision"`
+	State             queue.ChannelSessionState     `json:"state"`
 	WorkspaceIdentity string                        `json:"workspace_identity"`
 	Channel           model.Channel                 `json:"channel"`
 	Messages          []model.ChannelMessage        `json:"messages"`
@@ -97,7 +97,7 @@ func (s *Server) getChannelSession(
 	}
 	payload := channelSessionResponse{
 		RealtimeCursor:    realtimeCursor,
-		Revision:          snapshot.Revision,
+		State:             snapshot.State,
 		WorkspaceIdentity: snapshot.WorkspaceIdentity,
 		Channel:           snapshot.Channel,
 		Messages:          snapshot.Transcript.Messages,

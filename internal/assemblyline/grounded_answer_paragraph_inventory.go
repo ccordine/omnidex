@@ -3,8 +3,6 @@ package assemblyline
 import (
 	"fmt"
 	"strings"
-
-	"github.com/gryph/omnidex/internal/exactjson"
 )
 
 const (
@@ -15,13 +13,11 @@ const (
 )
 
 // GroundedAnswerParagraphInventory is untrusted candidate data. Code owns its
-// source-order queue and retains a candidate only after separate support and
-// complete-paragraph authorization relations succeed.
+// source-order queue and retains a candidate only after separate relevance,
+// factual-support, and source-attribution relations succeed.
 type GroundedAnswerParagraphInventory struct {
-	Schema          string   `json:"schema"`
-	AuthoritySHA256 string   `json:"authority_sha256"`
-	RawSHA256       string   `json:"raw_sha256"`
-	Candidates      []string `json:"candidates"`
+	Schema     string   `json:"schema"`
+	Candidates []string `json:"candidates"`
 }
 
 func NewGroundedAnswerParagraphInventoryJob(
@@ -100,15 +96,9 @@ func DecodeGroundedAnswerParagraphInventory(
 		}
 		candidates[index] = decoded
 	}
-	authoritySHA256, err := groundedAnswerParagraphInventoryAuthoritySHA256(input)
-	if err != nil {
-		return zero, err
-	}
 	result := GroundedAnswerParagraphInventory{
-		Schema:          GroundedAnswerParagraphInventorySchemaV1,
-		AuthoritySHA256: authoritySHA256,
-		RawSHA256:       ExactObjectiveContextSHA(leaf),
-		Candidates:      append([]string{}, candidates...),
+		Schema:     GroundedAnswerParagraphInventorySchemaV1,
+		Candidates: append([]string{}, candidates...),
 	}
 	if err := result.ValidateFor(input); err != nil {
 		return zero, err
@@ -128,13 +118,6 @@ func (inventory GroundedAnswerParagraphInventory) ValidateFor(
 			GroundedAnswerParagraphInventorySchemaV1,
 		)
 	}
-	authoritySHA256, err := groundedAnswerParagraphInventoryAuthoritySHA256(input)
-	if err != nil {
-		return err
-	}
-	if inventory.AuthoritySHA256 != authoritySHA256 {
-		return fmt.Errorf("grounded answer paragraph inventory authority hash does not match")
-	}
 	if len(inventory.Candidates) < 1 || len(inventory.Candidates) > MaxGroundedAnswerParagraphCandidates {
 		return fmt.Errorf(
 			"grounded answer paragraph inventory must contain 1..%d candidates",
@@ -149,22 +132,5 @@ func (inventory GroundedAnswerParagraphInventory) ValidateFor(
 			return fmt.Errorf("grounded answer paragraph candidate %d: %w", index, err)
 		}
 	}
-	raw := strings.Join(inventory.Candidates, "\n")
-	if inventory.RawSHA256 != ExactObjectiveContextSHA(raw) {
-		return fmt.Errorf("grounded answer paragraph inventory raw hash does not match")
-	}
 	return nil
-}
-
-func groundedAnswerParagraphInventoryAuthoritySHA256(
-	input GroundedAnswerParagraphInventoryInput,
-) (string, error) {
-	if err := input.validate(); err != nil {
-		return "", err
-	}
-	authority, err := exactjson.Canonical(input)
-	if err != nil {
-		return "", fmt.Errorf("encode grounded answer paragraph inventory authority: %w", err)
-	}
-	return ExactObjectiveContextSHA(string(authority)), nil
 }

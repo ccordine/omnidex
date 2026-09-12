@@ -7,18 +7,18 @@ import (
 )
 
 const (
-	KindFileExcerpt              = "file_excerpt"
-	KindCommandOutput            = "command_output"
-	KindTestResult               = "test_result"
-	KindWebPage                  = "web_page"
-	KindSearchResult             = "search_result"
-	KindMemoryExcerpt            = "memory_excerpt"
-	KindGeneratedDiff            = "generated_diff"
-	KindModelJudgment            = "model_judgment"
-	KindObjectiveCitation        = "objective_citation"
-	KindWorkspaceVerification    = "workspace_verification_receipt"
-	KindDeploymentObservation    = "deployment_observation"
-	KindDeploymentReceipt        = "deployment_receipt"
+	KindFileExcerpt           = "file_excerpt"
+	KindCommandOutput         = "command_output"
+	KindTestResult            = "test_result"
+	KindWebPage               = "web_page"
+	KindSearchResult          = "search_result"
+	KindMemoryExcerpt         = "memory_excerpt"
+	KindGeneratedDiff         = "generated_diff"
+	KindModelJudgment         = "model_judgment"
+	KindObjectiveCitation     = "objective_citation"
+	KindWorkspaceVerification = "workspace_verification_receipt"
+	KindDeploymentObservation = "deployment_observation"
+	KindDeploymentReceipt     = "deployment_receipt"
 )
 
 type Record struct {
@@ -33,7 +33,6 @@ type Record struct {
 	FilePaths                    []string       `json:"file_paths,omitempty"`
 	Excerpt                      string         `json:"excerpt,omitempty"`
 	Summary                      string         `json:"summary,omitempty"`
-	Hash                         string         `json:"hash,omitempty"`
 	Confidence                   float64        `json:"confidence,omitempty"`
 	RequirementAuthorityBindings []string       `json:"requirement_authority_bindings,omitempty"`
 	Warnings                     []string       `json:"warnings,omitempty"`

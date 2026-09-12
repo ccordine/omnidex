@@ -1,9 +1,6 @@
 package assemblyline
 
-import (
-	"fmt"
-	"strings"
-)
+import "fmt"
 
 func BuildDatabaseQueryFromRelationPrompt(state DatabaseQueryIntentLeafState) (string, error) {
 	if err := state.validate(); err != nil {
@@ -46,7 +43,7 @@ func BuildDatabaseQueryProjectionAggregatePrompt(input DatabaseQueryProjectionLe
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	authority, err := renderDatabaseQueryProjectionAuthority(input, true)
+	authority, err := renderDatabaseQuerySelectionAuthority(input.State, input.Purpose, "projection", true)
 	if err != nil {
 		return "", err
 	}
@@ -65,7 +62,7 @@ func BuildDatabaseQueryProjectionFieldPrompt(input DatabaseQueryProjectionLeafIn
 	if err := input.validateForField(); err != nil {
 		return "", err
 	}
-	authority, err := renderDatabaseQueryProjectionAuthority(input, false)
+	authority, err := renderDatabaseQuerySelectionAuthority(input.State, input.Purpose, "projection", false)
 	if err != nil {
 		return "", err
 	}
@@ -94,11 +91,8 @@ func BuildDatabaseQueryProjectionTimeBucketPrompt(input DatabaseQueryProjectionL
 	if err := input.validateForTimeBucket(); err != nil {
 		return "", err
 	}
-	authority, err := renderDatabaseQueryProjectionAuthority(input, false)
-	if err != nil {
-		return "", err
-	}
-	focused, err := renderDatabaseQueryFocusedField(input.State, input.FieldID)
+	authority := renderDatabaseQueryFocusedPurpose(input.Purpose, "projection")
+	focused, err := renderDatabaseQueryFocusedField(input.State, input.FieldID, false)
 	if err != nil {
 		return "", err
 	}
@@ -117,7 +111,7 @@ func BuildDatabaseQueryFilterFieldPrompt(input DatabaseQueryFilterLeafInput) (st
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	authority, err := renderDatabaseQueryFilterAuthority(input, false, false)
+	authority, err := renderDatabaseQueryFilterFieldAuthority(input)
 	if err != nil {
 		return "", err
 	}
@@ -136,7 +130,7 @@ func BuildDatabaseQueryFilterOperatorPrompt(input DatabaseQueryFilterLeafInput) 
 	if err := input.validateField(); err != nil {
 		return "", err
 	}
-	authority, err := renderDatabaseQueryFilterAuthority(input, true, false)
+	authority, err := renderDatabaseQueryFilterParameterAuthority(input)
 	if err != nil {
 		return "", err
 	}
@@ -155,7 +149,7 @@ func BuildDatabaseQueryFilterValuePrompt(input DatabaseQueryFilterLeafInput) (st
 	if err := input.validateOperator(); err != nil {
 		return "", err
 	}
-	authority, err := renderDatabaseQueryFilterAuthority(input, true, true)
+	authority, err := renderDatabaseQueryFilterParameterAuthority(input)
 	if err != nil {
 		return "", err
 	}
@@ -180,7 +174,7 @@ func BuildDatabaseQueryWindowFieldPrompt(input DatabaseQueryWindowLeafInput) (st
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	authority, err := renderDatabaseQueryWindowAuthority(input)
+	authority, err := renderDatabaseQuerySelectionAuthority(input.State, input.Purpose, "temporal-window", false)
 	if err != nil {
 		return "", err
 	}
@@ -199,11 +193,8 @@ func BuildDatabaseQueryWindowUnitPrompt(input DatabaseQueryWindowLeafInput) (str
 	if err := input.validateField(); err != nil {
 		return "", err
 	}
-	authority, err := renderDatabaseQueryWindowAuthority(input)
-	if err != nil {
-		return "", err
-	}
-	focused, err := renderDatabaseQueryFocusedField(input.State, input.FieldID)
+	authority := renderDatabaseQueryFocusedPurpose(input.Purpose, "temporal-window")
+	focused, err := renderDatabaseQueryFocusedField(input.State, input.FieldID, false)
 	if err != nil {
 		return "", err
 	}
@@ -222,11 +213,8 @@ func BuildDatabaseQueryWindowAmountPrompt(input DatabaseQueryWindowLeafInput) (s
 	if err := input.validateUnit(); err != nil {
 		return "", err
 	}
-	authority, err := renderDatabaseQueryWindowAuthority(input)
-	if err != nil {
-		return "", err
-	}
-	focused, err := renderDatabaseQueryFocusedField(input.State, input.FieldID)
+	authority := renderDatabaseQueryFocusedPurpose(input.Purpose, "temporal-window")
+	focused, err := renderDatabaseQueryFocusedField(input.State, input.FieldID, false)
 	if err != nil {
 		return "", err
 	}
@@ -239,84 +227,5 @@ func BuildDatabaseQueryWindowAmountPrompt(input DatabaseQueryWindowLeafInput) (s
 		extendDatabaseQueryAuthority(
 			authority, focused, "ACCEPTED WINDOW UNIT:\n"+unit,
 		),
-	), nil
-}
-
-func renderDatabaseQueryProjectionAuthority(
-	input DatabaseQueryProjectionLeafInput,
-	includeSemanticFields bool,
-) (string, error) {
-	accepted, err := renderDatabaseQueryAcceptedQuery(input.State)
-	if err != nil {
-		return "", err
-	}
-	projections, err := renderDatabaseQueryAcceptedProjections(input.State)
-	if err != nil {
-		return "", err
-	}
-	sections := []string{accepted, projections}
-	if includeSemanticFields {
-		sections = append(sections, renderDatabaseQuerySemanticFields(input.State))
-	}
-	return renderDatabaseQueryFocusedParameterAuthority(
-		input.Purpose, "projection", sections...,
-	), nil
-}
-
-func renderDatabaseQueryFilterAuthority(
-	input DatabaseQueryFilterLeafInput,
-	includeFocusedField bool,
-	includeAcceptedValues bool,
-) (string, error) {
-	accepted, err := renderDatabaseQueryAcceptedQuery(input.State)
-	if err != nil {
-		return "", err
-	}
-	scope, err := renderDatabaseQueryFilterScope(input)
-	if err != nil {
-		return "", err
-	}
-	filters, err := renderDatabaseQueryAcceptedFilters(input.State, input.AcceptedFilters)
-	if err != nil {
-		return "", err
-	}
-	sections := []string{accepted, scope, filters}
-	if input.ParentPurpose != "" {
-		sections = append(sections, "ACCEPTED PARENT QUERY PURPOSE:\n"+input.ParentPurpose)
-	}
-	if includeFocusedField {
-		focused, err := renderDatabaseQueryFocusedField(input.State, input.FieldID)
-		if err != nil {
-			return "", err
-		}
-		operator, err := renderDatabaseQueryFilterOperator(input)
-		if err != nil {
-			return "", err
-		}
-		sections = append(sections, focused, operator)
-	}
-	if includeAcceptedValues {
-		sections = append(sections, renderDatabaseQueryAcceptedValues(input))
-	}
-	return renderDatabaseQueryFocusedParameterAuthority(
-		input.Purpose, "filter", sections...,
-	), nil
-}
-
-func renderDatabaseQueryFocusedPurpose(purpose, collection string) string {
-	return "FOCUSED ACCEPTED " + strings.ToUpper(collection) + " PURPOSE:\n" + purpose
-}
-
-func renderDatabaseQueryWindowAuthority(input DatabaseQueryWindowLeafInput) (string, error) {
-	accepted, err := renderDatabaseQueryAcceptedQuery(input.State)
-	if err != nil {
-		return "", err
-	}
-	windows, err := renderDatabaseQueryAcceptedWindows(input.State)
-	if err != nil {
-		return "", err
-	}
-	return renderDatabaseQueryFocusedParameterAuthority(
-		input.Purpose, "temporal-window", accepted, windows,
 	), nil
 }

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/model"
 )
 
@@ -19,7 +18,7 @@ func TestCodingPlanReviewDecisionFreezeAndExecutionPersistence(t *testing.T) {
 	rejectedWrite := codingPlanExecutableLeaf(
 		t, "The confirmed state remains visible.", model.CodingPlanDecisionPending, 1,
 	)
-	conflictWrite := codingPlanConflictLeaf(t, "Export every confirmation to an unrelated cloud service.", 1)
+	conflictWrite := codingPlanExecutableLeaf(t, "Export the current confirmation.", model.CodingPlanDecisionPending, 1)
 	job, claim, plan := storeCodingPlanFixture(
 		t, repository, []CodingPlanLeafWrite{approvedWrite, rejectedWrite, conflictWrite},
 	)
@@ -37,13 +36,13 @@ func TestCodingPlanReviewDecisionFreezeAndExecutionPersistence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read current review plan: %v", err)
 	}
-	if current.RequestSHA256 != plan.RequestSHA256 || current.ScopeMode != model.CodingScopeModeNormal {
+	if current.JobID != plan.JobID || current.Generation != plan.Generation {
 		t.Fatalf("current plan authority = %#v", current)
 	}
 	restored, err := repository.StoreCodingPlanReview(ctx, StoreCodingPlanReviewCommand{
-		Authority: claim.Authority, ScopeMode: model.CodingScopeModeNormal,
-		RequestSHA256: assemblyline.ExactObjectiveContextSHA(job.Instruction),
-		Leaves:        []CodingPlanLeafWrite{approvedWrite, rejectedWrite, conflictWrite},
+		Authority: claim.Authority,
+
+		Leaves: []CodingPlanLeafWrite{approvedWrite, rejectedWrite, conflictWrite},
 	})
 	if err != nil {
 		t.Fatalf("replay exact persisted review result: %v", err)
@@ -85,7 +84,7 @@ func TestCodingPlanReviewDecisionFreezeAndExecutionPersistence(t *testing.T) {
 	waitingStatus := model.StepStatusWaiting
 	if err := insertLifecycleOperationTx(ctx, tx, descriptor, lifecycleOperationRecord{
 		ID: descriptor.ID, JobID: job.ID, ObservedGeneration: 1, ResultGeneration: 1,
-		StepID: &claim.Step.ID, Kind: descriptor.Kind, CommandSHA256: descriptor.SHA256,
+		StepID: &claim.Step.ID, Kind: descriptor.Kind,
 		ResultJobStatus: waitingJob.Status, ResultStepStatus: &waitingStatus, ResultJob: waitingJob,
 	}); err != nil {
 		_ = tx.Rollback(ctx)
@@ -196,7 +195,7 @@ func TestCodingPlanReviewDecisionFreezeAndExecutionPersistence(t *testing.T) {
 		loaded.Leaves[1].Leaf.Decision != model.CodingPlanDecisionApproved {
 		t.Fatalf("loaded frozen execution leaves = %#v", loaded)
 	}
-	if err := loaded.Leaves[0].ResultRelation.assemblyline().ValidateAcceptedFor(
+	if err := loaded.Leaves[0].ResultRelation.ValidateAcceptedFor(
 		approvedWrite.Leaf.Statement,
 	); err != nil {
 		t.Fatalf("loaded execution receipt: %v", err)

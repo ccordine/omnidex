@@ -12,20 +12,20 @@ func TestRepositoryGroundedEvidenceIsAggregatedFromIndependentBinaryLeaves(t *te
 	t.Parallel()
 	input, paragraph := repositoryGroundedSelectionFixture()
 	seenEvidence := make([]string, 0, len(input.Evidence))
-	decision, receipt, err := resolveRepositoryGroundedParagraphQueue(
+	decision, dispatches, err := resolveRepositoryGroundedParagraphQueue(
 		context.Background(),
 		input,
 		func(
 			_ context.Context,
 			leafInput assemblyline.GroundedAnswerParagraphInventoryInput,
-		) (assemblyline.GroundedAnswerParagraphInventory, objectiveStationReceipt, error) {
+		) (assemblyline.GroundedAnswerParagraphInventory, int, error) {
 			value, err := assemblyline.DecodeGroundedAnswerParagraphInventory(leafInput, paragraph)
-			return value, objectiveStationReceipt{Calls: 1}, err
+			return value, 1, err
 		},
 		func(
 			_ context.Context,
 			leafInput assemblyline.GroundedAnswerParagraphEvidenceRelationInput,
-		) (assemblyline.GroundedAnswerParagraphEvidenceRelationDecision, objectiveStationReceipt, error) {
+		) (assemblyline.GroundedAnswerParagraphEvidenceRelationDecision, int, error) {
 			seenEvidence = append(seenEvidence, leafInput.Evidence.ID)
 			raw := map[string]string{
 				"evidence_1": "A",
@@ -35,17 +35,10 @@ func TestRepositoryGroundedEvidenceIsAggregatedFromIndependentBinaryLeaves(t *te
 			value, err := assemblyline.DecodeGroundedAnswerParagraphEvidenceRelationDecision(
 				leafInput, raw,
 			)
-			return value, objectiveStationReceipt{Calls: 1}, err
+			return value, 1, err
 		},
-		func(
-			_ context.Context,
-			leafInput assemblyline.GroundedAnswerParagraphAuthorizationInput,
-		) (assemblyline.GroundedAnswerParagraphAuthorizationDecision, objectiveStationReceipt, error) {
-			value, err := assemblyline.DecodeGroundedAnswerParagraphAuthorizationDecision(
-				leafInput, "A",
-			)
-			return value, objectiveStationReceipt{Calls: 1}, err
-		},
+		fixtureGroundedParagraphRelevance,
+		fixtureGroundedParagraphFullSupport,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -56,8 +49,8 @@ func TestRepositoryGroundedEvidenceIsAggregatedFromIndependentBinaryLeaves(t *te
 	if want := []string{"evidence_1", "evidence_3"}; !reflect.DeepEqual(decision.EvidenceIDs, want) {
 		t.Fatalf("code-owned evidence IDs=%v, want %v", decision.EvidenceIDs, want)
 	}
-	if decision.Text != paragraph || receipt.Calls != 5 || receipt.Reused {
-		t.Fatalf("decision=%+v receipt=%+v", decision, receipt)
+	if decision.Text != paragraph || dispatches != 6 {
+		t.Fatalf("decision=%+v dispatches=%+v", decision, dispatches)
 	}
 }
 
@@ -71,41 +64,34 @@ func TestRepositoryGroundedEvidenceRejectsAggregateModelPackets(t *testing.T) {
 		t.Run(raw, func(t *testing.T) {
 			input, paragraph := repositoryGroundedSelectionFixture()
 			supportCalls := 0
-			_, receipt, err := resolveRepositoryGroundedParagraphQueue(
+			_, dispatches, err := resolveRepositoryGroundedParagraphQueue(
 				context.Background(),
 				input,
 				func(
 					_ context.Context,
 					leafInput assemblyline.GroundedAnswerParagraphInventoryInput,
-				) (assemblyline.GroundedAnswerParagraphInventory, objectiveStationReceipt, error) {
+				) (assemblyline.GroundedAnswerParagraphInventory, int, error) {
 					value, err := assemblyline.DecodeGroundedAnswerParagraphInventory(leafInput, paragraph)
-					return value, objectiveStationReceipt{Calls: 1}, err
+					return value, 1, err
 				},
 				func(
 					_ context.Context,
 					leafInput assemblyline.GroundedAnswerParagraphEvidenceRelationInput,
-				) (assemblyline.GroundedAnswerParagraphEvidenceRelationDecision, objectiveStationReceipt, error) {
+				) (assemblyline.GroundedAnswerParagraphEvidenceRelationDecision, int, error) {
 					supportCalls++
 					value, err := assemblyline.DecodeGroundedAnswerParagraphEvidenceRelationDecision(
 						leafInput, raw,
 					)
-					return value, objectiveStationReceipt{Calls: 1}, err
+					return value, 1, err
 				},
-				func(
-					_ context.Context,
-					leafInput assemblyline.GroundedAnswerParagraphAuthorizationInput,
-				) (assemblyline.GroundedAnswerParagraphAuthorizationDecision, objectiveStationReceipt, error) {
-					value, err := assemblyline.DecodeGroundedAnswerParagraphAuthorizationDecision(
-						leafInput, "A",
-					)
-					return value, objectiveStationReceipt{Calls: 1}, err
-				},
+				fixtureGroundedParagraphRelevance,
+				fixtureGroundedParagraphFullSupport,
 			)
 			if err == nil {
 				t.Fatal("aggregate model response was decoded as repository evidence selection")
 			}
-			if supportCalls != 1 || receipt.Calls != 3 {
-				t.Fatalf("support calls=%d receipt=%+v", supportCalls, receipt)
+			if supportCalls != 1 || dispatches != 4 {
+				t.Fatalf("support calls=%d dispatches=%+v", supportCalls, dispatches)
 			}
 		})
 	}
@@ -123,4 +109,18 @@ func repositoryGroundedSelectionFixture() (assemblyline.GroundedAnswerInput, str
 		},
 		KnownArtifactPaths: []string{},
 	}, "The inspection occurs Monday."
+}
+
+func fixtureGroundedParagraphRelevance(
+	_ context.Context, input assemblyline.GroundedParagraphRelevanceInput,
+) (assemblyline.GroundedParagraphRelevance, int, error) {
+	value, err := assemblyline.DecodeGroundedParagraphRelevance(input, "A")
+	return value, 1, err
+}
+
+func fixtureGroundedParagraphFullSupport(
+	_ context.Context, input assemblyline.GroundedParagraphSupportInput,
+) (assemblyline.GroundedParagraphSupport, int, error) {
+	value, err := assemblyline.DecodeGroundedParagraphSupport(input, "A")
+	return value, 1, err
 }

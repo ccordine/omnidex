@@ -24,8 +24,6 @@ func TestHavingUsesCanonicalSoleFieldWithoutFieldCall(t *testing.T) {
 		providerCalls++
 		var raw string
 		switch subject {
-		case "database_query_purpose_presence":
-			raw = "A"
 		case "database_query_purpose_inventory":
 			raw = "Require a positive sum"
 		case "database_query_purpose_necessity":
@@ -50,8 +48,8 @@ func TestHavingUsesCanonicalSoleFieldWithoutFieldCall(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve having: %v", err)
 	}
-	if calls != 6 || providerCalls != 6 {
-		t.Fatalf("provider calls = reported %d actual %d, want 6 non-field calls", calls, providerCalls)
+	if calls != 5 || providerCalls != 5 {
+		t.Fatalf("provider calls = reported %d actual %d, want 5 non-field calls", calls, providerCalls)
 	}
 	if fieldCalls != 0 {
 		t.Fatalf("canonical sole having field made %d provider calls", fieldCalls)
@@ -77,8 +75,6 @@ func TestOrderUsesSoleProjectionWithoutProjectionCall(t *testing.T) {
 		providerCalls++
 		var raw string
 		switch subject {
-		case "database_query_purpose_presence":
-			raw = "A"
 		case "database_query_purpose_inventory":
 			raw = "Order by the numeric measurement"
 		case "database_query_purpose_necessity":
@@ -99,8 +95,8 @@ func TestOrderUsesSoleProjectionWithoutProjectionCall(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve order: %v", err)
 	}
-	if calls != 4 || providerCalls != 4 {
-		t.Fatalf("provider calls = reported %d actual %d, want 4 non-projection calls", calls, providerCalls)
+	if calls != 3 || providerCalls != 3 {
+		t.Fatalf("provider calls = reported %d actual %d, want 3 non-projection calls", calls, providerCalls)
 	}
 	if projectionCalls != 0 {
 		t.Fatalf("sole order projection made %d provider calls", projectionCalls)

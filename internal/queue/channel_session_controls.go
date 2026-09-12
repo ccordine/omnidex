@@ -82,7 +82,7 @@ func listChannelSessionControlsTx(
 		switch kind {
 		case LifecycleInterruptJob:
 			control.Kind = ChannelSessionControlInterrupt
-			if _, _, err := validateInterruptFeedback(control.Text); err != nil {
+			if _, err := validateInterruptFeedback(control.Text); err != nil {
 				return nil, false, err
 			}
 			if control.Generation < 2 || control.Status != model.JobStatusWaiting {
@@ -94,7 +94,7 @@ func listChannelSessionControlsTx(
 			}
 		case LifecycleReplanJob:
 			control.Kind = ChannelSessionControlReplan
-			if _, _, err := validateReplanFeedback(control.Text); err != nil {
+			if _, err := validateReplanFeedback(control.Text); err != nil {
 				return nil, false, err
 			}
 			if control.Generation < 2 || control.Status != model.JobStatusRunning {

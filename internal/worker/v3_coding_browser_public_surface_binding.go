@@ -135,8 +135,10 @@ func (executor *directCodingTypeScriptProjectStageExecutor) bindBrowserPublicSur
 	if err != nil {
 		return directCodingBrowserPublicSurfaceBinding{}, err
 	}
-	if context.WorkloadSHA256 != stage.Workload.SHA256 ||
-		context.Task.RequirementID != resultRelation.RequirementID {
+	if err := context.ValidateFor(stage.Workload); err != nil {
+		return directCodingBrowserPublicSurfaceBinding{}, err
+	}
+	if context.Task.RequirementID != resultRelation.RequirementID {
 		return directCodingBrowserPublicSurfaceBinding{}, fmt.Errorf(
 			"browser public-surface result relation differs from current task authority",
 		)

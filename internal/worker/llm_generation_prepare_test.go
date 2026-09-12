@@ -10,8 +10,8 @@ import (
 func TestOpaqueSourceCorrectionUsesLineFramingAndExplicitBudget(t *testing.T) {
 	t.Parallel()
 	call := exactStationCall{
-		WorkID: "work.opaque-correction", WorkKind: assemblyline.WorkFragmentGeneration,
-		Prompt: "choose", ContextTokens: 8192, MaxOutputTokens: 8,
+		WorkKind: assemblyline.WorkFragmentGeneration,
+		Prompt:   "choose", ContextTokens: 8192, MaxOutputTokens: 8,
 		SingleLine: true,
 	}
 	prepared, err := prepareExactStationCall(call, "fixture-model", nil)
@@ -33,8 +33,8 @@ func TestOpaqueSourceCorrectionUsesLineFramingAndExplicitBudget(t *testing.T) {
 func TestOrdinarySourceUsesProviderNativeUnlimitedGeneration(t *testing.T) {
 	t.Parallel()
 	call := exactStationCall{
-		WorkID: "work.ordinary-source", WorkKind: assemblyline.WorkFragmentGeneration,
-		Prompt: "implement", ContextTokens: 8192, MaxOutputTokens: -1,
+		WorkKind: assemblyline.WorkFragmentGeneration,
+		Prompt:   "implement", ContextTokens: 8192, MaxOutputTokens: -1,
 	}
 	prepared, err := prepareExactStationCall(call, "fixture-model", nil)
 	if err != nil {

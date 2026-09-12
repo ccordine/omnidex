@@ -86,7 +86,8 @@ func TestProductionModelRenderersContainNoResponsePacketProtocol(t *testing.T) {
 					)
 				}
 				for _, tokenValue := range uppercaseControlTokens(value) {
-					if tokenValue != ApplicationNoRuntimeRequirementCandidates {
+					if tokenValue != ApplicationNoRuntimeRequirementCandidates &&
+						tokenValue != RoleplayNoCanonFactCandidates && tokenValue != DatabaseNoQueryPurposeCandidates {
 						t.Errorf(
 							"%s %s exposes forbidden control token %q",
 							filename, function.Name.Name, tokenValue,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/gryph/omnidex/internal/assemblyline"
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
@@ -42,13 +43,6 @@ func (r *Repository) StoreCodingPlanReview(
 			"coding plan review requires the v3_coding_plan step, received %q", action,
 		)
 	}
-	storedMode, err := codingScopeModeFromJob(job)
-	if err != nil {
-		return model.CodingPlan{}, err
-	}
-	if storedMode != command.ScopeMode {
-		return model.CodingPlan{}, fmt.Errorf("coding plan scope mode differs from immutable job authority")
-	}
 	if err := requireCarriedCodingPlanDecisionsTx(
 		ctx, tx, job.ID, command.Authority.Generation, command.Leaves,
 	); err != nil {
@@ -81,24 +75,22 @@ func (r *Repository) StoreCodingPlanReview(
 	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO coding_plans (
-			job_id,generation,revision,state,scope_mode,request_sha256,plan_step_id
-		) VALUES ($1,$2,1,$3,$4,$5,$6)
+			job_id,generation,revision,state,plan_step_id
+		) VALUES ($1,$2,1,$3,$4)
 	`, job.ID, command.Authority.Generation, model.CodingPlanStateReview,
-		command.ScopeMode, command.RequestSHA256, command.Authority.StepID); err != nil {
+		command.Authority.StepID); err != nil {
 		return model.CodingPlan{}, fmt.Errorf("store coding plan review: %w", err)
 	}
 	for index, write := range command.Leaves {
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO coding_plan_leaves (
-				job_id,generation,leaf_id,sort_index,statement,annotation,decision,
-				decision_origin_generation,result_schema,candidate_sha256,
-				kind_receipt_sha256,cardinality_receipt_sha256,result_relation
-			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+				job_id,generation,leaf_id,sort_index,statement,decision,
+				decision_origin_generation,result_schema,result_relation
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
 		`, job.ID, command.Authority.Generation, write.Leaf.ID, index,
-			write.Leaf.Statement, write.Leaf.Annotation, write.Leaf.Decision,
+			write.Leaf.Statement, write.Leaf.Decision,
 			write.DecisionOriginGeneration, write.ResultRelation.Schema,
-			write.ResultRelation.CandidateSHA256, write.ResultRelation.KindReceiptSHA256,
-			write.ResultRelation.CardinalityReceiptSHA256, write.ResultRelation.Relation); err != nil {
+			write.ResultRelation.Relation); err != nil {
 			return model.CodingPlan{}, fmt.Errorf("store coding plan leaf %d: %w", index, err)
 		}
 	}
@@ -149,20 +141,21 @@ func requireCarriedCodingPlanDecisionsTx(
 	leaves []CodingPlanLeafWrite,
 ) error {
 	for _, write := range leaves {
+		var id model.CodingPlanLeafID
 		var decision model.CodingPlanDecision
 		var origin int64
 		err := tx.QueryRow(ctx, `
-			SELECT leaf.decision,leaf.decision_origin_generation
+			SELECT leaf.leaf_id,leaf.decision,leaf.decision_origin_generation
 			FROM coding_plan_leaves AS leaf
 			JOIN coding_plans AS plan
 			  ON plan.job_id=leaf.job_id AND plan.generation=leaf.generation
-			WHERE leaf.job_id=$1 AND leaf.generation<$2 AND leaf.leaf_id=$3
+			WHERE leaf.job_id=$1 AND leaf.generation<$2 AND leaf.statement=$3
 			  AND leaf.decision IN ($4,$5) AND plan.state=$6
 			ORDER BY leaf.generation DESC
 			LIMIT 1
-		`, jobID, generation, write.Leaf.ID,
+		`, jobID, generation, write.Leaf.Statement,
 			model.CodingPlanDecisionApproved, model.CodingPlanDecisionRejected,
-			model.CodingPlanStateSuperseded).Scan(&decision, &origin)
+			model.CodingPlanStateSuperseded).Scan(&id, &decision, &origin)
 		if errors.Is(err, pgx.ErrNoRows) {
 			if write.Leaf.Decision != model.CodingPlanDecisionPending ||
 				write.DecisionOriginGeneration != generation {
@@ -176,7 +169,7 @@ func requireCarriedCodingPlanDecisionsTx(
 		if err != nil {
 			return fmt.Errorf("load prior decision for coding plan leaf %q: %w", write.Leaf.ID, err)
 		}
-		if decision != write.Leaf.Decision || origin != write.DecisionOriginGeneration {
+		if id != write.Leaf.ID || decision != write.Leaf.Decision || origin != write.DecisionOriginGeneration {
 			return fmt.Errorf(
 				"coding plan leaf %q differs from its exact prior user decision",
 				write.Leaf.ID,
@@ -252,13 +245,12 @@ func requireStoredCodingPlanCommandTx(
 	plan model.CodingPlan,
 	command StoreCodingPlanReviewCommand,
 ) error {
-	if plan.Generation != command.Authority.Generation || plan.ScopeMode != command.ScopeMode ||
-		plan.RequestSHA256 != command.RequestSHA256 || len(plan.Leaves) != len(command.Leaves) {
+	if plan.Generation != command.Authority.Generation ||
+		len(plan.Leaves) != len(command.Leaves) {
 		return fmt.Errorf("persisted coding plan differs from exact planning result")
 	}
 	rows, err := tx.Query(ctx, `
-		SELECT leaf_id,decision_origin_generation,result_schema,candidate_sha256,
-		       kind_receipt_sha256,cardinality_receipt_sha256,result_relation
+		SELECT leaf_id,decision_origin_generation,result_schema,result_relation
 		FROM coding_plan_leaves
 		WHERE job_id=$1 AND generation=$2 ORDER BY sort_index
 	`, plan.JobID, plan.Generation)
@@ -273,14 +265,14 @@ func requireStoredCodingPlanCommandTx(
 		}
 		var id model.CodingPlanLeafID
 		var origin int64
-		var schema, candidate, kind, cardinality, relation *string
-		if err := rows.Scan(&id, &origin, &schema, &candidate, &kind, &cardinality, &relation); err != nil {
+		var schema, relation *string
+		if err := rows.Scan(&id, &origin, &schema, &relation); err != nil {
 			return err
 		}
 		write := command.Leaves[index]
 		if id != write.Leaf.ID || plan.Leaves[index] != write.Leaf ||
 			origin != write.DecisionOriginGeneration ||
-			!sameCodingPlanReceipt(write.ResultRelation, schema, candidate, kind, cardinality, relation) {
+			!sameCodingPlanReceipt(write.ResultRelation, schema, relation) {
 			return fmt.Errorf("persisted coding plan leaf %q differs from exact planning result", id)
 		}
 		index++
@@ -295,14 +287,12 @@ func requireStoredCodingPlanCommandTx(
 }
 
 func sameCodingPlanReceipt(
-	want *CodingPlanResultRelationReceipt,
-	schema, candidate, kind, cardinality, relation *string,
+	want *assemblyline.ApplicationRequirementCandidateResultRelationResult,
+	schema, relation *string,
 ) bool {
 	if want == nil {
-		return schema == nil && candidate == nil && kind == nil && cardinality == nil && relation == nil
+		return schema == nil && relation == nil
 	}
-	return schema != nil && candidate != nil && kind != nil && cardinality != nil && relation != nil &&
-		*schema == want.Schema && *candidate == want.CandidateSHA256 &&
-		*kind == want.KindReceiptSHA256 && *cardinality == want.CardinalityReceiptSHA256 &&
+	return schema != nil && relation != nil && *schema == want.Schema &&
 		*relation == want.Relation
 }

@@ -45,12 +45,8 @@ func (c *Client) doExactProviderRequest(
 	return nil, llm.ProviderRequestDispatched, err
 }
 
-func exactProviderContentEncoding(response *http.Response) bool {
-	return exactProviderContentEncodingEvidence(response).IsIdentity()
-}
-
-func exactProviderContentEncodingEvidence(response *http.Response) llm.ProviderContentEncodingEvidence {
-	return llm.NewProviderContentEncodingEvidence(
+func exactProviderContentEncoding(response *http.Response) llm.ProviderContentEncoding {
+	return llm.ClassifyProviderContentEncoding(
 		response.Header.Values("Content-Encoding"), response.Uncompressed,
 	)
 }

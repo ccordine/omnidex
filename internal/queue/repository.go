@@ -16,9 +16,8 @@ import (
 )
 
 type Repository struct {
-	pool            *pgxpool.Pool
-	modelAuthority  modelconfig.Authority
-	codingScopeMode model.CodingScopeMode
+	pool           *pgxpool.Pool
+	modelAuthority modelconfig.Authority
 }
 
 type stepSeed struct {
@@ -29,10 +28,9 @@ type stepSeed struct {
 func New(
 	pool *pgxpool.Pool,
 	modelAuthority modelconfig.Authority,
-	codingScopeMode model.CodingScopeMode,
 ) *Repository {
 	return &Repository{
-		pool: pool, modelAuthority: modelAuthority, codingScopeMode: codingScopeMode,
+		pool: pool, modelAuthority: modelAuthority,
 	}
 }
 
@@ -48,22 +46,17 @@ func (r *Repository) EnqueueCodingJob(
 	instruction string,
 	clientCWD string,
 ) (model.Job, error) {
-	if err := r.codingScopeMode.Validate(); err != nil {
-		return model.Job{}, fmt.Errorf("coding job scope authority: %w", err)
-	}
 	workspaceIdentity, err := projectroot.DirectoryIdentity(clientCWD)
 	if err != nil {
 		return model.Job{}, fmt.Errorf("attest coding job workspace identity: %w", err)
 	}
 	metadataJSON, err := json.Marshal(struct {
-		ClientCWD               string                `json:"client_cwd"`
-		ClientWorkspaceIdentity string                `json:"client_workspace_identity"`
-		ModelConfig             modelconfig.Config    `json:"model_config"`
-		CodingScopeMode         model.CodingScopeMode `json:"coding_scope_mode"`
+		ClientCWD               string             `json:"client_cwd"`
+		ClientWorkspaceIdentity string             `json:"client_workspace_identity"`
+		ModelConfig             modelconfig.Config `json:"model_config"`
 	}{
 		ClientCWD: clientCWD, ClientWorkspaceIdentity: workspaceIdentity,
-		ModelConfig:     r.modelAuthority.Config(),
-		CodingScopeMode: r.codingScopeMode,
+		ModelConfig: r.modelAuthority.Config(),
 	})
 	if err != nil {
 		return model.Job{}, fmt.Errorf("encode coding job authority: %w", err)

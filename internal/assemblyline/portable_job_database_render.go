@@ -10,8 +10,6 @@ func renderPortableDatabaseLeaf(job PortableJob) (string, error) {
 		return renderPortableDatabaseInput(job, BuildDatabaseQueryFromRelationPrompt)
 	case WorkDatabaseQueryShape:
 		return renderPortableDatabaseInput(job, BuildDatabaseQueryShapePrompt)
-	case WorkDatabaseQueryPurposePresence:
-		return renderPortableDatabaseInput(job, BuildDatabaseQueryPurposePresencePrompt)
 	case WorkDatabaseQueryPurposeInventory:
 		return renderPortableDatabaseInput(job, BuildDatabaseQueryPurposeInventoryPrompt)
 	case WorkDatabaseQueryPurposeNecessity:

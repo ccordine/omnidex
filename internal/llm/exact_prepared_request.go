@@ -1,8 +1,6 @@
 package llm
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"math"
 	"strings"
@@ -90,19 +88,10 @@ func validateExactPreparedRequest(prepared PreparedModel) error {
 	)
 }
 
-func ExactPreparedRequestSHA256(prepared PreparedModel) (string, error) {
-	raw, err := ExactPreparedRequestBytes(prepared)
-	if err != nil {
-		return "", err
-	}
-	digest := sha256.Sum256(raw)
-	return hex.EncodeToString(digest[:]), nil
-}
-
 // ValidateExactPreparedInputAuthority validates the declared native token
 // ceilings and one coarse byte safety ceiling. It never interprets bytes as
 // tokens. Ollama tokenizes the exact raw request with truncate=false and its
-// immutable receipt supplies the actual prompt/output token counts.
+// response supplies the actual prompt/output token counts.
 func ValidateExactPreparedInputAuthority(
 	contextTokens int,
 	maxOutputTokens int,

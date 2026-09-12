@@ -1,9 +1,6 @@
 package datasource
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -89,17 +86,10 @@ func CompilePostgresWithJoinPaths(snapshot SchemaSnapshot, intent RelationalInte
 	}
 	limitPlaceholder := compiler.addParameter("integer", int64(intent.Limit))
 	sqlText += " LIMIT " + limitPlaceholder
-	intentHash, err := hashRelationalIntent(intent)
-	if err != nil {
-		return CompiledQuery{}, err
-	}
-	queryDigest := sha256.Sum256([]byte(sqlText))
 	compiled := CompiledQuery{
-		Schema: CompiledQueryV1, SourceID: snapshot.SourceID, SchemaFingerprint: snapshot.Fingerprint,
-		IntentHash: intentHash, QueryHash: hex.EncodeToString(queryDigest[:]), SQL: sqlText,
+		Schema: CompiledQueryV1, SourceID: snapshot.SourceID, SQL: sqlText,
 		Parameters: compiler.params, Outputs: outputs, Limit: intent.Limit,
 	}
-	compiled.seal = compiledQuerySeal(compiled)
 	return compiled, nil
 }
 
@@ -192,16 +182,6 @@ func quoteQualified(schema, relation string) string {
 	return quoteIdentifier(schema) + "." + quoteIdentifier(relation)
 }
 
-func hashRelationalIntent(intent RelationalIntent) (string, error) {
-	normalizeIntentSlices(&intent)
-	encoded, err := json.Marshal(intent)
-	if err != nil {
-		return "", fmt.Errorf("encode relational intent: %w", err)
-	}
-	digest := sha256.Sum256(encoded)
-	return hex.EncodeToString(digest[:]), nil
-}
-
 func normalizeIntentSlices(intent *RelationalIntent) {
 	if intent.Projections == nil {
 		intent.Projections = []RelationalProjection{}
@@ -234,20 +214,6 @@ func normalizeIntentSlices(intent *RelationalIntent) {
 			intent.Exists[index].Filters = []RelationalPredicate{}
 		}
 	}
-}
-
-func compiledQuerySeal(query CompiledQuery) [32]byte {
-	parts := []string{
-		query.Schema, query.SourceID, query.SchemaFingerprint, query.IntentHash,
-		query.QueryHash, query.SQL, fmt.Sprintf("%d", query.Limit),
-	}
-	for _, parameter := range query.Parameters {
-		parts = append(parts, fmt.Sprintf("%d", parameter.Position), parameter.Type, fmt.Sprintf("%T:%v", parameter.value, parameter.value))
-	}
-	for _, output := range query.Outputs {
-		parts = append(parts, output.Name, output.FieldID, string(output.Aggregate), string(output.TypeCategory))
-	}
-	return sha256.Sum256([]byte(strings.Join(parts, "\x00")))
 }
 
 func requiredJoinRelationIDs(snapshot SchemaSnapshot, intent RelationalIntent) ([]string, error) {

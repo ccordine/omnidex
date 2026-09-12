@@ -49,7 +49,7 @@ type chatSession struct {
 	signals            <-chan os.Signal
 	snapshotRevision   uint64
 	realtimeCursor     uint64
-	stateRevision      string
+	serverState        client.ChatSessionState
 	lastPollError      string
 }
 
@@ -205,7 +205,7 @@ func runChatSession(config chatSessionConfig) (resultErr error) {
 				continue
 			}
 			session.lastPollError = ""
-			if result.state.Revision == session.stateRevision {
+			if result.state.Equal(session.serverState) {
 				continue
 			}
 			if err := session.reloadSnapshot(); err != nil {

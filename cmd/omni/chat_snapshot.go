@@ -148,7 +148,7 @@ func (session *chatSession) reconcileSnapshot(
 		return err
 	}
 	session.realtimeCursor = snapshot.RealtimeCursor
-	session.stateRevision = snapshot.Revision
+	session.serverState = snapshot.State
 	session.snapshotRevision++
 	return nil
 }

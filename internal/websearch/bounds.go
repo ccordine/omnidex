@@ -96,7 +96,7 @@ func validateDocumentReportBounds(report DocumentReport, documents, diagnostics,
 	for _, document := range report.Documents {
 		if len(document.ID) > 128 || len(document.CandidateID) > 128 || len(document.URL) > maxURLBytes ||
 			len(document.Title) > maxCandidateTextBytes || len(document.Snippet) > maxCandidateTextBytes ||
-			len(document.Content) > contentBytes || len(document.ContentSHA256) > 64 {
+			len(document.Content) > contentBytes {
 			return fmt.Errorf("%w: document scalar field", ErrBoundExceeded)
 		}
 	}

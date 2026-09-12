@@ -1,8 +1,6 @@
 package llm
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"strings"
 	"testing"
@@ -78,26 +76,17 @@ func exactPreparedGenerationFixture(
 	if err != nil {
 		t.Fatal(err)
 	}
-	requestSHA, err := ExactPreparedRequestSHA256(prepared)
-	if err != nil {
-		t.Fatal(err)
-	}
-	responseDigest := sha256.Sum256(raw)
-	responseSHA := hex.EncodeToString(responseDigest[:])
 	return PreparedGeneration{
 		Schema:                        PreparedGenerationSchemaV1,
 		Protocol:                      prepared.Protocol,
 		ProviderRequestDisposition:    ProviderRequestDispatched,
 		Content:                       decoded.Content,
-		ProviderRequestSHA256:         requestSHA,
 		ProviderHTTPStatus:            200,
 		ProviderResponseDisposition:   decoded.Disposition,
 		ProviderResponseComplete:      true,
-		ProviderContentEncoding:       NewProviderContentEncodingEvidence(nil, false),
+		ProviderContentEncoding:       ClassifyProviderContentEncoding(nil, false),
 		ProviderResponseBytesKnown:    true,
-		ProviderResponseSHA256:        responseSHA,
 		ProviderResponseBytes:         int64(len(raw)),
-		ProviderResponseCaptureSHA256: responseSHA,
 		ProviderResponseCapturedBytes: len(raw),
 		ProviderResponseCapture:       raw,
 		ProviderDonePresent:           decoded.DonePresent,

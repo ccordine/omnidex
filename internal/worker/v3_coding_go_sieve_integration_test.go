@@ -79,10 +79,8 @@ func TestFreshSchemaExactGoProgramPassesRecordedFocusedAndFinalSieves(t *testing
 	for index, expected := range want {
 		actual := evidence[index]
 		if actual.Phase != expected.phase || !sameExactStrings(actual.Argv, expected.argv) ||
-			actual.Status != queue.VerificationCommandSucceeded ||
-			actual.WorkspaceSHA256Before == "" ||
-			actual.WorkspaceSHA256Before != actual.WorkspaceSHA256After {
-			t.Fatalf("Go command %d=%#v; want phase=%s argv=%v exact unchanged success", index+1, actual, expected.phase, expected.argv)
+			actual.Status != queue.VerificationCommandSucceeded {
+			t.Fatalf("Go command %d=%#v; want phase=%s argv=%v success", index+1, actual, expected.phase, expected.argv)
 		}
 	}
 }
@@ -126,16 +124,10 @@ func testExactGoSieveProgram(t *testing.T) directCodingProgram {
 		t.Fatal(err)
 	}
 	program, err := compileDirectCodingProgram(
-		"exact-go-sieve", specification, workload,
+		specification, workload,
 		directCodingCapabilityGraph{"requirement_001": nil},
 		directCodingProjectSelection{Stack: stack, Profile: profile, Dialect: dialect},
 		target, coverage, nil, nil, nil,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	requestAuthority, err := newDirectCodingApplicationRequestAuthority(
-		"Build one exact Go command.", "Build one exact Go command.",
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -162,9 +154,8 @@ func testExactGoSieveProgram(t *testing.T) directCodingProgram {
 		workload,
 		[]assemblyline.ApplicationRequirement{{
 			ID: "requirement_001", Statement: requirement,
-			RequestSHA256: requestAuthority.requestSHA256, ResultRelation: receipt,
+			ResultRelation: receipt,
 		}},
-		requestAuthority,
 	)
 	if err != nil {
 		t.Fatal(err)

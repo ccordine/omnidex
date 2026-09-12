@@ -14,10 +14,10 @@ type portableObjectiveRoleplayOngoingActionStation struct {
 func (adapter portableObjectiveRoleplayOngoingActionStation) ResolveOngoingActionRelation(
 	ctx context.Context,
 	input assemblyline.RoleplayOngoingActionRelationInput,
-) (assemblyline.RoleplayOngoingActionRelation, objectiveStationReceipt, error) {
+) (assemblyline.RoleplayOngoingActionRelation, int, error) {
 	job, err := assemblyline.NewRoleplayOngoingActionRelationJob(input)
 	if err != nil {
-		return "", objectiveStationReceipt{}, err
+		return "", 0, err
 	}
 	return runObjectivePortableRawLeafStation(
 		ctx, adapter.runtime, "roleplay_ongoing_action_relation", job,
@@ -32,10 +32,10 @@ func (adapter portableObjectiveRoleplayOngoingActionStation) ResolveOngoingActio
 func (adapter portableObjectiveRoleplayOngoingActionStation) GenerateOngoingActionValue(
 	ctx context.Context,
 	input assemblyline.RoleplayOngoingActionValueInput,
-) (string, objectiveStationReceipt, error) {
+) (string, int, error) {
 	job, err := assemblyline.NewRoleplayOngoingActionValueJob(input)
 	if err != nil {
-		return "", objectiveStationReceipt{}, err
+		return "", 0, err
 	}
 	return runObjectivePortableRawLeafStation(
 		ctx, adapter.runtime, "roleplay_ongoing_action_value", job,

@@ -110,7 +110,7 @@ func validateConversationFollowup(followup conversationFollowup) error {
 		if followup.phase != 0 || followup.generation < 2 {
 			return fmt.Errorf("redirect has invalid generation or chronological phase")
 		}
-		if _, _, err := validateSessionReplanFeedback(followup.text); err != nil {
+		if _, err := validateSessionReplanFeedback(followup.text); err != nil {
 			return err
 		}
 		expectedContext = "\n\nuser redirect:\n" + followup.text
@@ -118,7 +118,7 @@ func validateConversationFollowup(followup conversationFollowup) error {
 		if followup.phase != 0 || followup.generation < 2 {
 			return fmt.Errorf("interruption has invalid generation or chronological phase")
 		}
-		if _, _, err := validateInterruptFeedback(followup.text); err != nil {
+		if _, err := validateInterruptFeedback(followup.text); err != nil {
 			return err
 		}
 		expectedContext = "\n\nuser interruption:\n" + followup.text

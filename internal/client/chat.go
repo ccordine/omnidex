@@ -49,16 +49,8 @@ func (client *Client) BootstrapCLIChatSession(
 	if err != nil {
 		return model.Channel{}, err
 	}
-	expectedChannelID, err := projectroot.CLIChatChannelID(clientCWD, workspaceIdentity)
-	if err != nil {
-		return model.Channel{}, fmt.Errorf("derive expected CLI chat channel identity: %w", err)
-	}
-	if channel.ID != expectedChannelID {
-		return model.Channel{}, fmt.Errorf(
-			"CLI chat session channel %q differs from exact workspace channel %q",
-			channel.ID,
-			expectedChannelID,
-		)
+	if !projectroot.IsCLIChatChannelID(channel.ID) {
+		return model.Channel{}, fmt.Errorf("CLI chat session does not contain a server-issued CLI channel identity")
 	}
 	return channel, nil
 }

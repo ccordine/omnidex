@@ -12,7 +12,7 @@ func applySimulationStateTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	locked lockedSimulationScene,
-	operationID, requestHash, exactAction string,
+	operationID, exactAction string,
 	action *SimulationAction,
 	createdAt time.Time,
 ) (*SimulationTransitionResult, bool, error) {
@@ -63,7 +63,7 @@ func applySimulationStateTx(
 	}
 	observerCharacterIDs := simulationParticipantIDs(locked.Participants)
 	if err := persistSimulationTransitionTx(
-		ctx, tx, requestHash, exactAction, observerCharacterIDs, result,
+		ctx, tx, exactAction, observerCharacterIDs, result,
 	); err != nil {
 		return nil, false, err
 	}

@@ -2,8 +2,6 @@ package assemblyline
 
 import (
 	"fmt"
-
-	"github.com/gryph/omnidex/internal/exactjson"
 )
 
 const (
@@ -22,9 +20,8 @@ type ApplicationRequirementCandidateAuthorizationInput struct {
 }
 
 type ApplicationRequirementCandidateAuthorizationResult struct {
-	Schema          string `json:"schema"`
-	AuthoritySHA256 string `json:"authority_sha256"`
-	Relation        string `json:"relation"`
+	Schema   string `json:"schema"`
+	Relation string `json:"relation"`
 }
 
 func NewApplicationRequirementCandidateAuthorizationJob(
@@ -119,14 +116,9 @@ func applicationRequirementCandidateAuthorizationResult(
 	relation string,
 ) (ApplicationRequirementCandidateAuthorizationResult, error) {
 	var zero ApplicationRequirementCandidateAuthorizationResult
-	authoritySHA256, err := applicationRequirementCandidateAuthorizationAuthoritySHA256(input)
-	if err != nil {
-		return zero, err
-	}
 	result := ApplicationRequirementCandidateAuthorizationResult{
-		Schema:          ApplicationRequirementCandidateAuthorizationSchemaV1,
-		AuthoritySHA256: authoritySHA256,
-		Relation:        relation,
+		Schema:   ApplicationRequirementCandidateAuthorizationSchemaV1,
+		Relation: relation,
 	}
 	if err := result.ValidateFor(input); err != nil {
 		return zero, err
@@ -164,13 +156,6 @@ func (result ApplicationRequirementCandidateAuthorizationResult) ValidateFor(
 			ApplicationRequirementCandidateAuthorizationSchemaV1,
 		)
 	}
-	authoritySHA256, err := applicationRequirementCandidateAuthorizationAuthoritySHA256(input)
-	if err != nil {
-		return err
-	}
-	if result.AuthoritySHA256 != authoritySHA256 {
-		return fmt.Errorf("application requirement candidate authorization authority hash does not match")
-	}
 	switch result.Relation {
 	case ApplicationRequirementCandidateEntailed,
 		ApplicationRequirementCandidateNotEntailed:
@@ -181,17 +166,4 @@ func (result ApplicationRequirementCandidateAuthorizationResult) ValidateFor(
 			result.Relation,
 		)
 	}
-}
-
-func applicationRequirementCandidateAuthorizationAuthoritySHA256(
-	input ApplicationRequirementCandidateAuthorizationInput,
-) (string, error) {
-	if err := input.validate(); err != nil {
-		return "", err
-	}
-	authority, err := exactjson.Canonical(input)
-	if err != nil {
-		return "", fmt.Errorf("encode application requirement candidate authorization authority: %w", err)
-	}
-	return ExactObjectiveContextSHA(string(authority)), nil
 }

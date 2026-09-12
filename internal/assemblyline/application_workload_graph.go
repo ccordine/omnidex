@@ -15,9 +15,8 @@ func ProjectApplicationTaskContext(
 			continue
 		}
 		return ApplicationTaskContext{
-			WorkloadSHA256: workload.SHA256,
-			Surface:        workload.Surface,
-			ProductQuote:   workload.ProductQuote,
+			Surface:      workload.Surface,
+			ProductQuote: workload.ProductQuote,
 			Task: ApplicationTaskContextTask{
 				TaskID: task.ID, RequirementID: task.RequirementID,
 				RequirementQuote: task.RequirementQuote,
@@ -25,4 +24,15 @@ func ProjectApplicationTaskContext(
 		}, nil
 	}
 	return zero, fmt.Errorf("application workload task %q is unknown", taskID)
+}
+
+func (context ApplicationTaskContext) ValidateFor(workload FrozenApplicationWorkload) error {
+	want, err := ProjectApplicationTaskContext(workload, context.Task.TaskID)
+	if err != nil {
+		return err
+	}
+	if context != want {
+		return fmt.Errorf("application task context differs from the current workload task")
+	}
+	return nil
 }

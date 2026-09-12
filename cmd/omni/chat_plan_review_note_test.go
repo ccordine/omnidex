@@ -13,7 +13,7 @@ import (
 )
 
 func TestChatPlanReviewNoteReplansTheSamePersistedJob(t *testing.T) {
-	const workspaceIdentity = "directory_identity_v1_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	const workspaceIdentity = "directory_1_101"
 	const jobID int64 = 84
 	const note = "Keep confirmation local and remove the speculative export leaf."
 	const selectedStatement = "The software lets a user confirm the item."
@@ -48,9 +48,6 @@ func TestChatPlanReviewNoteReplansTheSamePersistedJob(t *testing.T) {
 				}}
 			}
 			snapshot := chatPlanReviewSnapshot(t, session, status, generation, controls)
-			if generation == 2 {
-				snapshot.Revision = "channel_session_revision_" + strings.Repeat("c", 64)
-			}
 			writeChatPlanReviewJSON(t, writer, http.StatusOK, snapshot)
 		case request.URL.Path == "/v1/jobs/84/replan":
 			replanRequests++
@@ -171,7 +168,7 @@ func TestPlanReviewNoteSubjectUsesOnlyAuthoritativeSemanticStatement(t *testing.
 		t.Fatalf("selected plan-note subject = %q", subject)
 	}
 
-	otherID, err := model.NewCodingPlanLeafID("An unrelated outcome.")
+	otherID, err := model.NewCodingPlanLeafID()
 	if err != nil {
 		t.Fatal(err)
 	}

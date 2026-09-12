@@ -25,11 +25,6 @@ func portableApplicationResponseMaximum(job PortableJob) (int, bool, error) {
 			applicationRequirementCandidateAuthorizationOpaqueChoices,
 		)
 		return maximum, true, err
-	case WorkApplicationRequirementCandidateScopeRelation:
-		maximum, err := opaqueModelChoiceBuilderResponseMaximum(
-			applicationRequirementCandidateScopeRelationOpaqueChoices,
-		)
-		return maximum, true, err
 	case WorkApplicationRequirementCandidateOutcomeRelation:
 		maximum, err := opaqueModelChoiceBuilderResponseMaximum(
 			applicationRequirementCandidateOutcomeRelationOpaqueChoices,

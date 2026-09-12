@@ -3,8 +3,6 @@ package assemblyline
 import (
 	"fmt"
 	"strings"
-
-	"github.com/gryph/omnidex/internal/exactjson"
 )
 
 const (
@@ -29,10 +27,8 @@ type ApplicationRequirementCandidatePartitionInput struct {
 }
 
 type ApplicationRequirementCandidatePartition struct {
-	Schema          string   `json:"schema"`
-	AuthoritySHA256 string   `json:"authority_sha256"`
-	RawSHA256       string   `json:"raw_sha256"`
-	Candidates      []string `json:"candidates"`
+	Schema     string   `json:"schema"`
+	Candidates []string `json:"candidates"`
 }
 
 func NewApplicationRequirementCandidatePartitionJob(
@@ -119,7 +115,7 @@ func DecodeApplicationRequirementCandidatePartition(
 		return zero, err
 	}
 	minimum, maximum := applicationRequirementCandidatePartitionBounds(input)
-	children, normalized, err := decodeApplicationRequirementCandidateLines(
+	children, _, err := decodeApplicationRequirementCandidateLines(
 		"application requirement candidate partition",
 		raw,
 		minimum,
@@ -138,15 +134,9 @@ func DecodeApplicationRequirementCandidatePartition(
 		}
 		seen[child] = struct{}{}
 	}
-	authoritySHA256, err := applicationRequirementCandidatePartitionAuthoritySHA256(input)
-	if err != nil {
-		return zero, err
-	}
 	result := ApplicationRequirementCandidatePartition{
-		Schema:          ApplicationRequirementCandidatePartitionSchemaV1,
-		AuthoritySHA256: authoritySHA256,
-		RawSHA256:       ExactObjectiveContextSHA(normalized),
-		Candidates:      append([]string(nil), children...),
+		Schema:     ApplicationRequirementCandidatePartitionSchemaV1,
+		Candidates: append([]string(nil), children...),
 	}
 	if err := result.ValidateFor(input); err != nil {
 		return zero, err
@@ -165,13 +155,6 @@ func (partition ApplicationRequirementCandidatePartition) ValidateFor(
 			"application requirement candidate partition schema must be %q",
 			ApplicationRequirementCandidatePartitionSchemaV1,
 		)
-	}
-	authoritySHA256, err := applicationRequirementCandidatePartitionAuthoritySHA256(input)
-	if err != nil {
-		return err
-	}
-	if partition.AuthoritySHA256 != authoritySHA256 {
-		return fmt.Errorf("application requirement candidate partition authority hash does not match")
 	}
 	minimum, maximum := applicationRequirementCandidatePartitionBounds(input)
 	if len(partition.Candidates) < minimum || len(partition.Candidates) > maximum {
@@ -201,10 +184,6 @@ func (partition ApplicationRequirementCandidatePartition) ValidateFor(
 		}
 		seen[child] = struct{}{}
 	}
-	raw := strings.Join(partition.Candidates, "\n")
-	if partition.RawSHA256 != ExactObjectiveContextSHA(raw) {
-		return fmt.Errorf("application requirement candidate partition raw hash does not match")
-	}
 	return nil
 }
 
@@ -215,17 +194,4 @@ func applicationRequirementCandidatePartitionBounds(
 		return 2, 2
 	}
 	return 2, MaxApplicationRequirementCandidatePartitionLeaves
-}
-
-func applicationRequirementCandidatePartitionAuthoritySHA256(
-	input ApplicationRequirementCandidatePartitionInput,
-) (string, error) {
-	if err := input.validate(); err != nil {
-		return "", err
-	}
-	authority, err := exactjson.Canonical(input)
-	if err != nil {
-		return "", fmt.Errorf("encode application requirement candidate partition authority: %w", err)
-	}
-	return ExactObjectiveContextSHA(string(authority)), nil
 }

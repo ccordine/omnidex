@@ -8,18 +8,7 @@ import (
 	"github.com/gryph/omnidex/internal/modelconfig"
 )
 
-func TestRepositoryRetainsCodingScopeMode(t *testing.T) {
-	authority, err := modelconfig.Freeze(modelconfig.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	repository := New(nil, authority, model.CodingScopeModeStrict)
-	if repository.codingScopeMode != model.CodingScopeModeStrict {
-		t.Fatalf("repository coding scope mode=%q", repository.codingScopeMode)
-	}
-}
-
-func TestChannelTurnMetadataSnapshotsCodingScopeMode(t *testing.T) {
+func TestChannelTurnMetadataHasNoCodingScopePolicy(t *testing.T) {
 	raw, err := marshalChannelTurnMetadata(
 		model.ChannelID("scope-mode-channel"),
 		1,
@@ -28,7 +17,6 @@ func TestChannelTurnMetadataSnapshotsCodingScopeMode(t *testing.T) {
 		"",
 		model.ChannelModeAssistant,
 		modelconfig.Config{},
-		model.CodingScopeModeExpansive,
 		nil,
 		"",
 	)
@@ -42,12 +30,11 @@ func TestChannelTurnMetadataSnapshotsCodingScopeMode(t *testing.T) {
 	if err := validateChannelTurnMetadata(metadata); err != nil {
 		t.Fatalf("validate channel metadata: %v", err)
 	}
-	if metadata.CodingScopeMode != model.CodingScopeModeExpansive {
-		t.Fatalf("channel coding scope mode=%q", metadata.CodingScopeMode)
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatal(err)
 	}
-
-	metadata.CodingScopeMode = ""
-	if err := validateChannelTurnMetadata(metadata); err == nil {
-		t.Fatal("expected missing channel coding scope mode to fail")
+	if _, exists := fields["coding_scope_mode"]; exists {
+		t.Fatal("channel metadata retains the removed coding scope policy")
 	}
 }

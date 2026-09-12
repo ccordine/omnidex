@@ -1,8 +1,6 @@
 package assemblyline
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"strings"
 	"unicode/utf8"
@@ -27,29 +25,26 @@ const (
 // generation of this same job. It is sibling authority, not a rewritten user
 // instruction.
 type ObjectiveReplanAuthority struct {
-	JobID          int64  `json:"job_id"`
-	Generation     int64  `json:"generation"`
-	Feedback       string `json:"feedback"`
-	FeedbackSHA256 string `json:"feedback_sha256"`
+	JobID      int64  `json:"job_id"`
+	Generation int64  `json:"generation"`
+	Feedback   string `json:"feedback"`
 }
 
 // ObjectiveContextSource binds one compiled capsule back to the exact
 // code-acquired authority selected by the relevance sieve. Source bytes are
 // intentionally absent: downstream models receive only the compiled capsule.
 type ObjectiveContextSource struct {
-	Namespace     string `json:"namespace"`
-	CandidateID   string `json:"candidate_id"`
-	ContentSHA256 string `json:"content_sha256"`
+	Namespace   string `json:"namespace"`
+	CandidateID string `json:"candidate_id"`
 }
 
 // ObjectiveContextCapsule is the only historical/contextual prose projected
 // to downstream objective stations. Its text is either selected authority
 // preserved verbatim or the result of necessary staged semantic reduction.
-// Code owns its sources, hash, ordering, and resource bounds.
+// Code owns its sources, ordering, and resource bounds.
 type ObjectiveContextCapsule struct {
-	Sources       []ObjectiveContextSource `json:"sources"`
-	Content       string                   `json:"content"`
-	ContentSHA256 string                   `json:"content_sha256"`
+	Sources []ObjectiveContextSource `json:"sources"`
+	Content string                   `json:"content"`
 }
 
 // ObjectiveContext is the sole bounded continuity projection shared by the
@@ -62,7 +57,7 @@ type ObjectiveContext struct {
 }
 
 // renderObjectiveContextForModel exposes only accepted context prose. Source
-// identities, hashes, and portable state remain code-owned.
+// identities and portable state remain code-owned.
 func renderObjectiveContextForModel(context ObjectiveContext) (string, error) {
 	if err := context.Validate(); err != nil {
 		return "", err
@@ -95,21 +90,12 @@ func (context ObjectiveContext) Validate() error {
 				return fmt.Errorf("objective context source %q is duplicated", source.CandidateID)
 			}
 			seenSources[source.CandidateID] = struct{}{}
-			if len(source.ContentSHA256) != 64 {
-				return fmt.Errorf("objective context source %q has invalid content hash", source.CandidateID)
-			}
-			if _, err := hex.DecodeString(source.ContentSHA256); err != nil || source.ContentSHA256 != strings.ToLower(source.ContentSHA256) {
-				return fmt.Errorf("objective context source %q has invalid content hash", source.CandidateID)
-			}
-			total += len(source.Namespace) + len(source.CandidateID) + len(source.ContentSHA256)
+			total += len(source.Namespace) + len(source.CandidateID)
 		}
 		if err := validateObjectiveContextText("context capsule", capsule.Content, MaxContextMinifiedBytes); err != nil {
 			return fmt.Errorf("objective context capsule %d: %w", capsuleIndex, err)
 		}
-		if !exactObjectiveContextSHA(capsule.Content, capsule.ContentSHA256) {
-			return fmt.Errorf("objective context capsule %d content hash does not match", capsuleIndex)
-		}
-		total += len(capsule.Content) + len(capsule.ContentSHA256)
+		total += len(capsule.Content)
 	}
 	if context.ReplanAuthority != nil {
 		replan := context.ReplanAuthority
@@ -120,9 +106,6 @@ func (context ObjectiveContext) Validate() error {
 			"replan feedback", replan.Feedback, MaxObjectiveReplanFeedbackBytes,
 		); err != nil {
 			return err
-		}
-		if !exactObjectiveContextSHA(replan.Feedback, replan.FeedbackSHA256) {
-			return fmt.Errorf("objective replan feedback hash does not match")
 		}
 		total += len(replan.Feedback)
 	}
@@ -147,15 +130,6 @@ func CloneObjectiveContext(value ObjectiveContext) ObjectiveContext {
 		value.ReplanAuthority = &copy
 	}
 	return value
-}
-
-func ExactObjectiveContextSHA(value string) string {
-	digest := sha256.Sum256([]byte(value))
-	return hex.EncodeToString(digest[:])
-}
-
-func exactObjectiveContextSHA(value, expected string) bool {
-	return expected == ExactObjectiveContextSHA(value)
 }
 
 func validateObjectiveContextText(label, value string, maximum int) error {

@@ -22,10 +22,11 @@ model-visible text.
 Grounded synthesis begins with one bounded positive raw paragraph-candidate inventory
 containing between one and the code-owned maximum candidate lines. Code parses that
 inventory once and owns a source-order queue. Each unique candidate first receives one
-paragraph-local authorization relation against the exact question and complete supplied
-evidence set. That relation asks only whether the complete paragraph directly answers
-the question and whether every factual claim is fully supported by that evidence. A
-negative candidate evaporates before citation work. Only a positive candidate receives
+question-relevance relation containing only the question, compact meaning context, and
+paragraph. Evidence is absent. Only a relevant candidate reaches a separate factual-support
+relation containing only the paragraph and complete bounded evidence set; the question
+and meaning context are absent. Each call resolves just its own semantic relation. A
+negative candidate evaporates immediately. Only a candidate positive in both relations receives
 one pairwise paragraph-to-evidence relation per capsule so code can bind the exact
 supporting citation identities. This later attribution does not re-authorize or review
 the paragraph; a positive candidate with no attributable evidence evaporates locally.
@@ -36,8 +37,9 @@ coverage, completeness, or accepted-paragraph review call.
 
 There is no web review or correction model. Invalid relevance or synthesis output
 fails explicitly. After synthesis, code binds returned support relations to acquired
-evidence identities, constructs citations and the rendered artifact, validates exact
-digests and completion invariants, and alone records completion.
+evidence identities, constructs citations and the rendered artifact, compares the
+actual recorded acquisition, source excerpts, and completion values, and alone
+records completion. No question, source, or answer digest authorizes that result.
 
 ## Historical motivation (non-normative)
 
@@ -214,9 +216,9 @@ S14 estimates X;
 S18 disputes X due to Y.
 
 In the current implementation, one synthesis call emits at most the bounded raw
-paragraph-candidate inventory. Code queues its lines in source order and authorizes each
-unique candidate once against the exact question and complete supplied evidence set.
-Only a positive candidate proceeds to one raw paragraph-to-evidence attribution
+paragraph-candidate inventory. Code queues its lines in source order and resolves each
+unique candidate's question relevance and factual support in separate bounded calls.
+Only a candidate positive in both relations proceeds to one raw paragraph-to-evidence attribution
 relation per capsule. Code binds the supporting citation identities and assembles the
 grounded response after queue exhaustion when at least one paragraph survives; no model
 emits the query, evidence capsule set, structured final-answer aggregate, or a

@@ -10,10 +10,8 @@ func renderPortableConversationRoleplayJob(job PortableJob) (string, bool, error
 		return handledPortableRender(renderDecodedPortableInput(job, BuildRoleplayGroundedParagraphInventoryPrompt))
 	case WorkRoleplayGroundedResponseEvidenceRelation:
 		return handledPortableRender(renderDecodedPortableInput(job, BuildRoleplayGroundedResponseEvidenceRelationPrompt))
-	case WorkRoleplayGroundedResponseParagraphAuthorization:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildRoleplayGroundedParagraphAuthorizationPrompt))
-	case WorkRoleplayCanonFactPresence:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildRoleplayCanonFactPresencePrompt))
+	case WorkGroundedParagraphSupport:
+		return handledPortableRender(renderDecodedPortableInput(job, BuildGroundedParagraphSupportPrompt))
 	case WorkRoleplayCanonFactInventory:
 		return handledPortableRender(renderDecodedPortableInput(job, BuildRoleplayCanonFactInventoryPrompt))
 	case WorkRoleplayCanonFactCandidateAuthorization:
@@ -28,8 +26,8 @@ func renderPortableConversationRoleplayJob(job PortableJob) (string, bool, error
 		return handledPortableRender(renderDecodedPortableInput(job, BuildGroundedAnswerParagraphInventoryPrompt))
 	case WorkGroundedAnswerParagraphEvidenceRelation:
 		return handledPortableRender(renderDecodedPortableInput(job, BuildGroundedAnswerParagraphEvidenceRelationPrompt))
-	case WorkGroundedAnswerParagraphAuthorization:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildGroundedAnswerParagraphAuthorizationPrompt))
+	case WorkGroundedParagraphRelevance:
+		return handledPortableRender(renderDecodedPortableInput(job, BuildGroundedParagraphRelevancePrompt))
 	default:
 		return "", false, nil
 	}

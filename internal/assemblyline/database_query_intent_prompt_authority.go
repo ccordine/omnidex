@@ -110,6 +110,7 @@ func renderDatabaseQueryFocusedRelation(
 func renderDatabaseQueryFocusedField(
 	state DatabaseQueryIntentLeafState,
 	fieldID string,
+	includeAllowedValues bool,
 ) (string, error) {
 	column, relationID, ok := databaseQueryColumn(state, fieldID)
 	if !ok {
@@ -120,6 +121,9 @@ func renderDatabaseQueryFocusedField(
 		return "", fmt.Errorf("database query focused field relation %q was not projected", relationID)
 	}
 	var rendered strings.Builder
+	if !includeAllowedValues {
+		column.AllowedValues = nil
+	}
 	renderDatabaseQueryField(&rendered, "FOCUSED FIELD", relation, column)
 	return strings.TrimSpace(rendered.String()), nil
 }

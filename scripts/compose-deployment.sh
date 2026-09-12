@@ -79,15 +79,14 @@ case "${action}" in
           ;;
       esac
     done
-    managed_checkout_export_build_commit "${REPO_DIR}"
     compose_cmd="$(resolve_compose_cmd)"
     NO_BUILD=$((1 - build))
     NO_CACHE=0
     NO_RESTART=0
-    compose_build "${REPO_DIR}" "${compose_cmd}" "${REPO_DIR}/docker-compose.yml" core "${OMNIDEX_COMMIT}"
-    expected_image="$(compose_image_id "${REPO_DIR}" "${compose_cmd}" "${REPO_DIR}/docker-compose.yml" core "${OMNIDEX_COMMIT}")"
-    compose_require_image_commit "${expected_image}" "${OMNIDEX_COMMIT}" "${EXPECTED_RUNTIME_USER}"
-    compose_restart "${REPO_DIR}" "${compose_cmd}" "${REPO_DIR}/docker-compose.yml" core "${OMNIDEX_COMMIT}"
+    compose_build "${REPO_DIR}" "${compose_cmd}" "${REPO_DIR}/docker-compose.yml" core
+    expected_image="$(compose_image_id "${REPO_DIR}" "${compose_cmd}" "${REPO_DIR}/docker-compose.yml" core)"
+    compose_require_image_user "${expected_image}" "${EXPECTED_RUNTIME_USER}"
+    compose_restart "${REPO_DIR}" "${compose_cmd}" "${REPO_DIR}/docker-compose.yml" core
     ;;
   down)
     (($# == 0)) || die "down does not accept options"
@@ -106,7 +105,6 @@ esac
 if [[ "${action}" == "up" ]]; then
   core_container="$(
     cd "${REPO_DIR}"
-    export OMNIDEX_COMMIT
     runtime_export_compose_identity
     compose_docker -p "${COMPOSE_PROJECT}" -f "${REPO_DIR}/docker-compose.yml" ps -q core
   )"
@@ -114,8 +112,8 @@ if [[ "${action}" == "up" ]]; then
     die "core did not resolve to one running container after compose health wait"
   context_docker exec "${core_container}" sh -ec 'if [ -n "${HOST_AGENT_URL:-}" ]; then wget -q -O /dev/null "${HOST_AGENT_URL%/}/healthz"; fi; if [ "${LLM_PROVIDER:-}" = "ollama" ] || [ "${EMBEDDING_PROVIDER:-}" = "ollama" ]; then wget -q -O /dev/null "${OLLAMA_BASE_URL%/}/api/tags"; fi' ||
     die "core cannot reach one or more configured host dependencies"
-  compose_require_public_health "${core_container}" "${OMNIDEX_COMMIT}" "${CORE_URL_VALUE}"
-  compose_require_running_image "${REPO_DIR}" "${compose_cmd}" "${REPO_DIR}/docker-compose.yml" core "${expected_image}" "${OMNIDEX_COMMIT}" "${EXPECTED_RUNTIME_USER}"
+  compose_require_public_health "${core_container}" "${CORE_URL_VALUE}"
+  compose_require_running_image "${REPO_DIR}" "${compose_cmd}" "${REPO_DIR}/docker-compose.yml" core "${expected_image}" "${EXPECTED_RUNTIME_USER}"
   compose_require_healthy_service "${REPO_DIR}" "${compose_cmd}" "${REPO_DIR}/docker-compose.yml" postgres
   compose_require_healthy_service "${REPO_DIR}" "${compose_cmd}" "${REPO_DIR}/docker-compose.yml" redis
 fi

@@ -2,7 +2,6 @@ package datasource
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"database/sql/driver"
 	"encoding/base64"
 	"encoding/hex"
@@ -145,17 +144,4 @@ func formatUUIDValue(value any) string {
 		}
 	}
 	return fmt.Sprint(value)
-}
-
-func finalizeTypedResult(columns []EvidenceColumn, rows [][]EvidenceValue, byteCount int) (TypedEvidenceResult, error) {
-	canonical := struct {
-		Columns []EvidenceColumn  `json:"columns"`
-		Rows    [][]EvidenceValue `json:"rows"`
-	}{Columns: columns, Rows: rows}
-	encoded, err := json.Marshal(canonical)
-	if err != nil {
-		return TypedEvidenceResult{}, fmt.Errorf("encode typed evidence result: %w", err)
-	}
-	digest := sha256.Sum256(encoded)
-	return TypedEvidenceResult{Columns: columns, Rows: rows, RowCount: len(rows), ByteCount: byteCount, Hash: hex.EncodeToString(digest[:])}, nil
 }

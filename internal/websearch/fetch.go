@@ -2,8 +2,6 @@ package websearch
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -25,36 +23,33 @@ func (service *Service) Fetch(ctx context.Context, request FetchRequest) (Docume
 	remaining := service.config.TotalDocumentBytes
 	for _, candidate := range candidates {
 		if err := ctx.Err(); err != nil {
-			return DocumentReport{}, err
+			return service.cloneDocumentReport(report, err)
 		}
 		diagnostic := DocumentDiagnostic{CandidateID: candidate.ID, URL: candidate.URL}
 		body, fetchErr := service.getDocument(ctx, candidate.URL)
 		if fetchErr != nil {
-			if errors.Is(fetchErr, ErrUnsafeURL) || errors.Is(fetchErr, ErrDocumentRedirect) ||
-				errors.Is(fetchErr, ErrInvalidFetchedText) {
-				return service.cloneDocumentReport(report, fetchErr)
-			}
 			diagnostic.Outcome = FetchFailed
 			diagnostic.Failure = truncateUTF8(fetchErr.Error(), maxDiagnosticFailureBytes)
 			report.Diagnostics = append(report.Diagnostics, diagnostic)
 			if err := ctx.Err(); err != nil {
-				return DocumentReport{}, err
+				return service.cloneDocumentReport(report, errors.Join(fetchErr, err))
+			}
+			if errors.Is(fetchErr, ErrUnsafeURL) || errors.Is(fetchErr, ErrDocumentRedirect) ||
+				errors.Is(fetchErr, ErrInvalidFetchedText) {
+				return service.cloneDocumentReport(report, fetchErr)
 			}
 			continue
 		}
 		observedAt := time.Now().UTC().Truncate(time.Microsecond)
 		title, snippet, content := extractDocument(body)
-		if err := ctx.Err(); err != nil {
-			return DocumentReport{}, err
-		}
 		if err := validateFetchedString("extracted document title", title); err != nil {
-			return service.cloneDocumentReport(report, err)
+			return service.failedDocument(report, diagnostic, err)
 		}
 		if err := validateFetchedString("extracted document snippet", snippet); err != nil {
-			return service.cloneDocumentReport(report, err)
+			return service.failedDocument(report, diagnostic, err)
 		}
 		if err := validateFetchedString("extracted document text", content); err != nil {
-			return service.cloneDocumentReport(report, err)
+			return service.failedDocument(report, diagnostic, err)
 		}
 		if content == "" {
 			diagnostic.Outcome = FetchEmpty
@@ -68,14 +63,12 @@ func (service *Service) Fetch(ctx context.Context, request FetchRequest) (Docume
 		}
 		bounded := truncateUTF8(content, limit)
 		if bounded == "" {
-			return service.cloneDocumentReport(report, fmt.Errorf("%w: total document budget was exhausted", ErrInvalidFetch))
+			return service.failedDocument(report, diagnostic, fmt.Errorf("%w: total document budget was exhausted", ErrInvalidFetch))
 		}
 		remaining -= len(bounded)
 		if err := validateFetchedString("bounded document text", bounded); err != nil {
-			return service.cloneDocumentReport(report, err)
+			return service.failedDocument(report, diagnostic, err)
 		}
-		digest := sha256.Sum256([]byte(bounded))
-		contentSHA := hex.EncodeToString(digest[:])
 		if strings.TrimSpace(title) == "" {
 			title = candidate.Title
 		}
@@ -85,27 +78,34 @@ func (service *Service) Fetch(ctx context.Context, request FetchRequest) (Docume
 		title = truncateUTF8(title, maxCandidateTextBytes)
 		snippet = truncateUTF8(snippet, maxCandidateTextBytes)
 		if err := validateFetchedString("projected document title", title); err != nil {
-			return service.cloneDocumentReport(report, err)
+			return service.failedDocument(report, diagnostic, err)
 		}
 		if err := validateFetchedString("projected document snippet", snippet); err != nil {
-			return service.cloneDocumentReport(report, err)
+			return service.failedDocument(report, diagnostic, err)
 		}
 		report.Documents = append(report.Documents, Document{
-			ID: documentID(candidate.URL, contentSHA), CandidateID: candidate.ID,
+			ID: DocumentID(fmt.Sprintf("document_%d", len(report.Documents)+1)), CandidateID: candidate.ID,
 			URL: candidate.URL, Title: title, Snippet: snippet,
-			Content: bounded, ContentSHA256: contentSHA, ObservedAt: observedAt,
+			Content: bounded, ObservedAt: observedAt,
 			Truncated: len(bounded) < len(content),
 		})
-		if err := ctx.Err(); err != nil {
-			return DocumentReport{}, err
-		}
 		diagnostic.Outcome = FetchSucceeded
 		report.Diagnostics = append(report.Diagnostics, diagnostic)
+	}
+	if err := ctx.Err(); err != nil {
+		return service.cloneDocumentReport(report, err)
 	}
 	if len(report.Documents) == 0 {
 		return service.cloneDocumentReport(report, fmt.Errorf("%w", ErrNoDocuments))
 	}
 	return service.cloneDocumentReport(report, nil)
+}
+
+func (service *Service) failedDocument(report DocumentReport, diagnostic DocumentDiagnostic, err error) (DocumentReport, error) {
+	diagnostic.Outcome = FetchFailed
+	diagnostic.Failure = truncateUTF8(err.Error(), maxDiagnosticFailureBytes)
+	report.Diagnostics = append(report.Diagnostics, diagnostic)
+	return service.cloneDocumentReport(report, err)
 }
 
 func (service *Service) validateFetchRequest(request FetchRequest) ([]Candidate, error) {
@@ -156,7 +156,7 @@ func (service *Service) cloneDocumentReport(report DocumentReport, runErr error)
 	if err := validateDocumentReportBounds(
 		report, service.config.MaxDocuments, service.config.MaxDocuments, service.config.PerDocumentBytes,
 	); err != nil {
-		return DocumentReport{}, err
+		return DocumentReport{}, errors.Join(runErr, err)
 	}
 	copy := report
 	copy.Documents = append([]Document{}, report.Documents...)

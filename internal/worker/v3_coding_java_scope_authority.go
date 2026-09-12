@@ -104,6 +104,13 @@ func javaCollectAPIDeclarations(
 					}
 				} else {
 					methods[key] = struct{}{}
+					if receivers[""] == nil {
+						receivers[""] = make(map[javaMethodKey]javaMethodAuthority)
+					}
+					receivers[""][key] = javaMethodAuthority{
+						ReturnOwner: javaDeclaredTypeOwner(node.ChildByFieldName("type"), content),
+						Static:      javaMethodDeclarationStatic(node, content),
+					}
 				}
 			}
 		case "variable_declarator":
@@ -232,7 +239,7 @@ func javaDeclarationArity(node *treesitter.Node) int {
 	if parameters == nil {
 		return 0
 	}
-	return int(parameters.NamedChildCount())
+	return len(javaNamedSyntaxChildren(parameters))
 }
 
 func javaMethodDeclarationStatic(node *treesitter.Node, source []byte) bool {

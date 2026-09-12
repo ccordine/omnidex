@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -47,10 +48,14 @@ func (s *Service) reserveExactStationCallEvidence(
 	}
 	persistCtx, cancel := exactStationEvidenceContext(ctx)
 	defer cancel()
+	var workInput json.RawMessage
+	if call.Iteration == 1 {
+		workInput = json.RawMessage(call.WorkInput)
+	}
 	evidence, persistErr := s.repo.ReserveLLMCallEvidence(
 		persistCtx,
 		queue.LLMCallOpeningRecord{
-			Authority: authority, Scope: scope, WorkID: call.WorkID,
+			Authority: authority, Scope: scope, WorkInput: workInput,
 			WorkKind: call.WorkKind, Iteration: call.Iteration,
 			OutputContinuation:     0,
 			DispatchAttempt:        1,
@@ -105,13 +110,12 @@ func (s *Service) persistExactStationSemanticOutcome(
 	result assemblyline.PortableResult,
 	validationErr error,
 ) error {
-	projection := result.Projection
-	if projection != nil && projection.ValidateFor(execution.Candidate) != nil {
-		projection = nil
+	if validationErr == nil && result.Candidate != execution.Candidate {
+		return fmt.Errorf("station validation result differs from the returned candidate")
 	}
 	record := queue.LLMCallOutcomeRecord{
 		Authority: authority, CallEvidenceID: execution.CallEvidenceID,
-		Candidate: execution.Candidate, Projection: projection,
+		Candidate: execution.Candidate,
 	}
 	if validationErr != nil {
 		record.ValidationError = exactStationEvidenceError(validationErr)

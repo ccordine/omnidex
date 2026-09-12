@@ -21,11 +21,7 @@ func AdvanceTurnTx(
 	if err := validateTurnAdvanceRequest(request); err != nil {
 		return SimulationTurnAdvanceResult{}, err
 	}
-	requestHash, err := simulationRequestHash("turn-advance.v1", request)
-	if err != nil {
-		return SimulationTurnAdvanceResult{}, err
-	}
-	if result, found, err := loadTurnAdvanceTx(ctx, tx, request.OperationID, requestHash); err != nil || found {
+	if result, found, err := loadTurnAdvanceTx(ctx, tx, request); err != nil || found {
 		return result, err
 	}
 	preparation, err := loadBoundPreparationTx(ctx, tx, request)
@@ -36,7 +32,7 @@ func AdvanceTurnTx(
 	if err != nil {
 		return SimulationTurnAdvanceResult{}, err
 	}
-	if result, found, err := loadTurnAdvanceTx(ctx, tx, request.OperationID, requestHash); err != nil || found {
+	if result, found, err := loadTurnAdvanceTx(ctx, tx, request); err != nil || found {
 		return result, err
 	}
 	if request.ExpectedRevision != preparation.SceneRevision || locked.Sheet.Revision != preparation.SceneRevision ||
@@ -64,20 +60,16 @@ func AdvanceTurnTx(
 	if err != nil {
 		return SimulationTurnAdvanceResult{}, err
 	}
-	fingerprint, err := simulationNarrativeFingerprintTx(ctx, tx, preparation.WorldID, nextCharacterID)
-	if err != nil {
-		return SimulationTurnAdvanceResult{}, err
-	}
 	result := SimulationTurnAdvanceResult{
-		OperationID: request.OperationID, PreparationID: request.PreparationID,
-		WorldID: preparation.WorldID, SceneID: preparation.SceneID,
+		PreparationID: request.PreparationID,
+		WorldID:       preparation.WorldID, SceneID: preparation.SceneID,
 		PreviousCharacterID: preparation.ActiveCharacterID, ActiveCharacterID: nextCharacterID,
 		BeforeRevision: locked.Sheet.Revision, AfterRevision: afterRevision,
 		BeforeInitiative: locked.Sheet.Initiative, AfterInitiative: nextInitiative,
 		ParticipantCharacterIDs: append([]string(nil), preparation.ParticipantCharacterIDs...),
-		NarrativeFingerprint:    fingerprint, CreatedAt: time.Now().UTC().Truncate(time.Microsecond),
+		CreatedAt:               time.Now().UTC().Truncate(time.Microsecond),
 	}
-	if err := persistTurnAdvanceTx(ctx, tx, requestHash, request, result); err != nil {
+	if err := persistTurnAdvanceTx(ctx, tx, request, result); err != nil {
 		return SimulationTurnAdvanceResult{}, err
 	}
 	return result, nil
@@ -104,7 +96,6 @@ func loadBoundPreparationTx(
 		  AND job.metadata->>'roleplay_scene_id'=preparation.scene_id
 		  AND job.metadata->>'roleplay_scene_revision'=preparation.scene_revision::text
 		  AND job.metadata->>'roleplay_input_kind'=preparation.input_kind
-		  AND job.metadata->>'roleplay_narrative_fingerprint'=preparation.result->>'narrative_fingerprint'
 		  AND job.metadata->>'roleplay_viewpoint_character_id'=
 		      preparation.result->'responder_routes'->0->>'character_id'
 		  AND job.metadata->'roleplay_participant_character_ids'=preparation.result->'participant_character_ids'
@@ -121,14 +112,8 @@ func loadBoundPreparationTx(
 }
 
 func validateTurnAdvanceRequest(request SimulationTurnAdvanceRequest) error {
-	if err := validateIdentity(request.OperationID, transitionIdentity); err != nil {
-		return err
-	}
 	if err := validateIdentity(request.PreparationID, transitionIdentity); err != nil {
 		return err
-	}
-	if request.OperationID == request.PreparationID {
-		return fmt.Errorf("turn advance requires an identity distinct from preparation")
 	}
 	if err := validateChannelID(request.ChannelID); err != nil {
 		return err
@@ -142,7 +127,6 @@ func validateTurnAdvanceRequest(request SimulationTurnAdvanceRequest) error {
 func persistTurnAdvanceTx(
 	ctx context.Context,
 	tx pgx.Tx,
-	requestHash string,
 	request SimulationTurnAdvanceRequest,
 	result SimulationTurnAdvanceResult,
 ) error {
@@ -156,18 +140,18 @@ func persistTurnAdvanceTx(
 	}
 	_, err = tx.Exec(ctx, `
 		INSERT INTO roleplay_simulation_turn_advances (
-			operation_id,preparation_id,job_id,world_id,scene_id,
+			preparation_id,job_id,world_id,scene_id,
 			before_revision,after_revision,previous_character_id,active_character_id,
 			before_initiative_round,before_initiative_turn,before_fictional_time_tick,
 			after_initiative_round,after_initiative_turn,after_fictional_time_tick,
-			participant_character_ids,narrative_fingerprint,request_sha256,result,created_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19::jsonb,$20)
-	`, request.OperationID, request.PreparationID, request.JobID,
+			participant_character_ids,result,created_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16::jsonb,$17)
+	`, request.PreparationID, request.JobID,
 		result.WorldID, result.SceneID, result.BeforeRevision, result.AfterRevision,
 		result.PreviousCharacterID, result.ActiveCharacterID,
 		result.BeforeInitiative.Round, result.BeforeInitiative.Turn,
 		result.BeforeInitiative.FictionalTimeTick, result.AfterInitiative.Round,
 		result.AfterInitiative.Turn, result.AfterInitiative.FictionalTimeTick,
-		string(participants), result.NarrativeFingerprint, requestHash, string(payload), result.CreatedAt)
+		string(participants), string(payload), result.CreatedAt)
 	return simulationDefinitionError("simulation turn advance", err)
 }

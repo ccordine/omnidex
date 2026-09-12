@@ -24,8 +24,8 @@ type directCodingProjectStack struct {
 		assemblyline.FrozenApplicationWorkload,
 		assemblyline.SourceBlueprint,
 	) error
-	RequireStagedVerification bool
-	NewSourceGenerator        func(*directCodingSession, directCodingProgram) (directCodingProjectSourceGenerator, error)
+	VerifyHost         func(*directCodingSession, directCodingProgram, directCodingAssembly) error
+	NewSourceGenerator func(*directCodingSession, directCodingProgram) (directCodingProjectSourceGenerator, error)
 }
 
 type directCodingProjectCompiler func(
@@ -40,9 +40,6 @@ type directCodingProjectCompiler func(
 
 type directCodingProjectSourceGenerator interface {
 	GenerateBlock(assemblyline.ApplicationTaskContext, *directCodingProgram, assemblyline.SourceBlockRef) (string, error)
-}
-
-type directCodingProjectStageVerifier interface {
 	VerifyTask(assemblyline.ApplicationTaskContext, *directCodingProgram) error
 	VerifyFinal(*directCodingProgram) error
 	Close() error
@@ -66,7 +63,7 @@ func registeredDirectCodingProjectStacks() []directCodingProjectStack {
 			CompileSource:             compileGenericTypeScriptBrowserBlueprint,
 			ValidateBlueprint:         assemblyline.ValidateTypeScriptSourceBlueprint,
 			ValidateSourceOwnership:   validateDirectCodingSinglePairSourceOwnership,
-			RequireStagedVerification: true,
+			VerifyHost:                (*directCodingSession).verifyAuthoritativeTypeScriptWorkspace,
 			NewSourceGenerator:        newDirectCodingTypeScriptSourceGenerator,
 		},
 		{
@@ -80,8 +77,8 @@ func registeredDirectCodingProjectStacks() []directCodingProjectStack {
 			CompileSource:            compileGenericGoCommandLineBlueprint,
 			ValidateBlueprint:        assemblyline.ValidateGoSourceBlueprint,
 			ValidateSourceOwnership:  validateDirectCodingSinglePairSourceOwnership,
-			RequireStagedVerification: true,
-			NewSourceGenerator:        newDirectCodingGoSourceGenerator,
+			VerifyHost:               (*directCodingSession).verifyAuthoritativeGoWorkspace,
+			NewSourceGenerator:       newDirectCodingGoSourceGenerator,
 		},
 		{
 			ID:                       genericJavaScriptCommandLineAdapter,
@@ -93,8 +90,9 @@ func registeredDirectCodingProjectStacks() []directCodingProjectStack {
 			ProjectFocusedTargetTree: projectJavaScriptCommandLineFocusedTargetTree,
 			CompileSource:            compileGenericJavaScriptCommandLineBlueprint,
 			ValidateBlueprint:        assemblyline.ValidateJavaScriptSourceBlueprint,
-			ValidateSourceOwnership:  validateDirectCodingSingleImplementationSourceOwnership,
-			NewSourceGenerator:       newDirectCodingLanguageSourceGeneratorForProgram,
+			ValidateSourceOwnership:  validateDirectCodingSinglePairSourceOwnership,
+			VerifyHost:               (*directCodingSession).verifyAuthoritativeCompiledLanguageWorkspace,
+			NewSourceGenerator:       newDirectCodingCompiledLanguageSourceGenerator,
 		},
 		{
 			ID:                    genericRustCommandLineAdapter,
@@ -108,8 +106,9 @@ func registeredDirectCodingProjectStacks() []directCodingProjectStack {
 			ProjectFocusedTargetTree: projectRustCommandLineFocusedTargetTree,
 			CompileSource:            compileGenericRustCommandLineBlueprint,
 			ValidateBlueprint:        assemblyline.ValidateRustSourceBlueprint,
-			ValidateSourceOwnership:  validateDirectCodingSingleImplementationSourceOwnership,
-			NewSourceGenerator:       newDirectCodingLanguageSourceGeneratorForProgram,
+			ValidateSourceOwnership:  validateDirectCodingSinglePairSourceOwnership,
+			VerifyHost:               (*directCodingSession).verifyAuthoritativeCompiledLanguageWorkspace,
+			NewSourceGenerator:       newDirectCodingCompiledLanguageSourceGenerator,
 		},
 		{
 			ID:                       genericJavaCommandLineAdapter,
@@ -121,8 +120,9 @@ func registeredDirectCodingProjectStacks() []directCodingProjectStack {
 			ProjectFocusedTargetTree: projectJavaCommandLineFocusedTargetTree,
 			CompileSource:            compileGenericJavaCommandLineBlueprint,
 			ValidateBlueprint:        assemblyline.ValidateJavaSourceBlueprint,
-			ValidateSourceOwnership:  validateDirectCodingSingleImplementationSourceOwnership,
-			NewSourceGenerator:       newDirectCodingLanguageSourceGeneratorForProgram,
+			ValidateSourceOwnership:  validateDirectCodingSinglePairSourceOwnership,
+			VerifyHost:               (*directCodingSession).verifyAuthoritativeCompiledLanguageWorkspace,
+			NewSourceGenerator:       newDirectCodingCompiledLanguageSourceGenerator,
 		},
 	}
 }

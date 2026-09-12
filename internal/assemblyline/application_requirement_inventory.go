@@ -3,9 +3,6 @@ package assemblyline
 import (
 	"fmt"
 	"strings"
-
-	"github.com/gryph/omnidex/internal/exactjson"
-	"github.com/gryph/omnidex/internal/model"
 )
 
 const (
@@ -21,19 +18,16 @@ const (
 )
 
 type ApplicationRequirementInventoryInput struct {
-	UserRequest string                `json:"user_request"`
-	Context     ApplicationContext    `json:"context"`
-	ScopeMode   model.CodingScopeMode `json:"scope_mode"`
+	UserRequest string             `json:"user_request"`
+	Context     ApplicationContext `json:"context"`
 }
 
 // ApplicationRequirementInventory is one bounded, untrusted generation of
 // candidate runtime leaves. Code owns authorization, classification,
 // partitioning, duplicate removal, retention, and queue exhaustion.
 type ApplicationRequirementInventory struct {
-	Schema          string   `json:"schema"`
-	AuthoritySHA256 string   `json:"authority_sha256"`
-	RawSHA256       string   `json:"raw_sha256"`
-	Candidates      []string `json:"candidates"`
+	Schema     string   `json:"schema"`
+	Candidates []string `json:"candidates"`
 }
 
 func NewApplicationRequirementInventoryJob(
@@ -46,13 +40,10 @@ func NewApplicationRequirementInventoryJob(
 }
 
 func (input ApplicationRequirementInventoryInput) validate() error {
-	if err := (ApplicationIntentInput{
+	return (ApplicationIntentInput{
 		UserRequest: input.UserRequest,
 		Context:     input.Context,
-	}).validate(); err != nil {
-		return err
-	}
-	return input.ScopeMode.Validate()
+	}).validate()
 }
 
 func BuildApplicationRequirementInventoryPrompt(
@@ -62,13 +53,9 @@ func BuildApplicationRequirementInventoryPrompt(
 		return "", err
 	}
 	projection := renderApplicationContextModelProjection(input.UserRequest, input.Context)
-	scopeGuidance, err := applicationRequirementInventoryScopeGuidance(input.ScopeMode)
-	if err != nil {
-		return "", err
-	}
 	return strings.Join([]string{
-		fmt.Sprintf("What atomic finished-software runtime outcomes would constitute useful work toward satisfying this request? List one independent outcome per line, up to %d. If there are none, answer %s.", MaxApplicationRequirementInventoryCandidates, ApplicationNoRuntimeRequirementCandidates),
-		scopeGuidance,
+		fmt.Sprintf("What atomic finished-software runtime outcomes are required by this request and established facts? List one independent outcome per line, up to %d. If there are none, answer %s.", MaxApplicationRequirementInventoryCandidates, ApplicationNoRuntimeRequirementCandidates),
+		"Include only outcomes grounded in the request and established facts. Do not add optional product scope.",
 		"Generate distinct semantic work or runtime outcomes, not speculative alternative implementation mechanisms. Each candidate must state exactly one independently testable runtime outcome: one behavior, user-visible element, observable quality, state or persistence behavior, or runtime data or output requirement. Different mechanisms for realizing the same outcome are not separate candidates. Split only independent outcomes; never enumerate modes, variants, cases, algorithms, or alternative ways to perform the same outcome.",
 		"The ordinary meaning of a purpose-denoting product or category name is request content. For each such named purpose, include one minimal end-to-end candidate containing only the literal core operation or governed result inherent in that name. Express the purpose noun as the simplest corresponding action and governed object. Do not add an input, parameter, criterion, destination, mechanism, interface, trigger, or qualifying phrase unless the request states it.",
 		"When the literal purpose is to transform, read, extract, decode, calculate, or otherwise derive a governed value, state the minimal independently verifiable governed result instead of a bare activity. Express the value produced by the operation at the abstraction inherent in the purpose. Verifiable does not authorize a presentation or delivery channel: never add display, show, render, return, download, store, transmit, notify, an interface, an output format, or any other unstated mechanism. Never invent the result's format, algorithm, defaults, quality rules, or limits.",
@@ -79,19 +66,6 @@ func BuildApplicationRequirementInventoryPrompt(
 		"Exclude bare product identity, build or create directions, delivery surface, language, framework, toolchain, packaging, testing, deployment, and other construction constraints. Do not turn customary implementation mechanisms or process steps into runtime outcomes.",
 		projection,
 	}, "\n\n"), nil
-}
-
-func applicationRequirementInventoryScopeGuidance(mode model.CodingScopeMode) (string, error) {
-	switch mode {
-	case model.CodingScopeModeStrict:
-		return "Include only outcomes directly grounded in the request and established facts. Do not add optional or derived product scope.", nil
-	case model.CodingScopeModeNormal:
-		return "Include directly stated outcomes and ordinary necessary or useful consequences reasonably justified by the objective or established facts. A useful consequence need not repeat the user's literal wording. Exclude unrelated or merely optional speculative enhancements.", nil
-	case model.CodingScopeModeExpansive:
-		return "Include directly stated outcomes, ordinary justified consequences, and cohesive objective-aligned possibilities that could usefully expand the objective. Do not include work that conflicts with the request or established facts or materially departs into an unrelated objective.", nil
-	default:
-		return "", fmt.Errorf("application requirement inventory scope mode %q is unsupported", mode)
-	}
 }
 
 func DecodeApplicationRequirementInventory(
@@ -123,27 +97,14 @@ func DecodeApplicationRequirementInventory(
 			return zero, err
 		}
 	}
-	authoritySHA256, err := applicationRequirementInventoryAuthoritySHA256(input)
-	if err != nil {
-		return zero, err
-	}
 	result := ApplicationRequirementInventory{
-		Schema:          ApplicationRequirementInventorySchemaV5,
-		AuthoritySHA256: authoritySHA256,
-		RawSHA256:       ExactObjectiveContextSHA(applicationRequirementInventoryRaw(candidates)),
-		Candidates:      append([]string{}, candidates...),
+		Schema:     ApplicationRequirementInventorySchemaV5,
+		Candidates: append([]string{}, candidates...),
 	}
 	if err := result.ValidateFor(input); err != nil {
 		return zero, err
 	}
 	return result, nil
-}
-
-func applicationRequirementInventoryRaw(candidates []string) string {
-	if len(candidates) == 0 {
-		return ApplicationNoRuntimeRequirementCandidates
-	}
-	return strings.Join(candidates, "\n")
 }
 
 func decodeApplicationRequirementCandidateLines(
@@ -208,13 +169,6 @@ func (inventory ApplicationRequirementInventory) ValidateFor(
 			ApplicationRequirementInventorySchemaV5,
 		)
 	}
-	authoritySHA256, err := applicationRequirementInventoryAuthoritySHA256(input)
-	if err != nil {
-		return err
-	}
-	if inventory.AuthoritySHA256 != authoritySHA256 {
-		return fmt.Errorf("application requirement inventory authority hash does not match")
-	}
 	if inventory.Candidates == nil {
 		return fmt.Errorf(
 			"application requirement inventory candidates must be an array",
@@ -244,22 +198,5 @@ func (inventory ApplicationRequirementInventory) ValidateFor(
 			return fmt.Errorf("application requirement inventory candidate %d: %w", index, err)
 		}
 	}
-	raw := applicationRequirementInventoryRaw(inventory.Candidates)
-	if inventory.RawSHA256 != ExactObjectiveContextSHA(raw) {
-		return fmt.Errorf("application requirement inventory raw hash does not match")
-	}
 	return nil
-}
-
-func applicationRequirementInventoryAuthoritySHA256(
-	input ApplicationRequirementInventoryInput,
-) (string, error) {
-	if err := input.validate(); err != nil {
-		return "", err
-	}
-	authority, err := exactjson.Canonical(input)
-	if err != nil {
-		return "", fmt.Errorf("encode application requirement inventory authority: %w", err)
-	}
-	return ExactObjectiveContextSHA(string(authority)), nil
 }

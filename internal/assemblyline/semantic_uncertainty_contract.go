@@ -1,20 +1,16 @@
 package assemblyline
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"strings"
 	"unicode/utf8"
 )
 
-const semanticUncertaintyContractIDPrefix = "omnidex.semantic-uncertainty."
-
 // SemanticUncertaintyContract is code-owned justification for one bounded
-// semantic call. It is operational evidence only and is never model context.
+// semantic call. These descriptions are not execution evidence or model context.
+// WorkKind selects the current answers; there is no separate versioned identity.
 // Registry lookups return values, so callers cannot mutate the registry.
 type SemanticUncertaintyContract struct {
-	ID                      string   `json:"id"`
 	WorkKind                WorkKind `json:"work_kind"`
 	ExactQuestion           string   `json:"exact_question"`
 	DeterministicLimitation string   `json:"deterministic_limitation"`
@@ -68,139 +64,7 @@ func semanticUncertaintyContract(
 	singleResult string,
 	consumer string,
 ) SemanticUncertaintyContract {
-	return semanticUncertaintyContractVersion(
-		kind, "v1", question, limitation, requiredInformation, singleResult, consumer,
-	)
-}
-
-func semanticUncertaintyContractV2(
-	kind WorkKind,
-	question string,
-	limitation string,
-	requiredInformation string,
-	singleResult string,
-	consumer string,
-) SemanticUncertaintyContract {
-	return semanticUncertaintyContractVersion(
-		kind, "v2", question, limitation, requiredInformation, singleResult, consumer,
-	)
-}
-
-func semanticUncertaintyContractV3(
-	kind WorkKind,
-	question string,
-	limitation string,
-	requiredInformation string,
-	singleResult string,
-	consumer string,
-) SemanticUncertaintyContract {
-	return semanticUncertaintyContractVersion(
-		kind, "v3", question, limitation, requiredInformation, singleResult, consumer,
-	)
-}
-
-func semanticUncertaintyContractV4(
-	kind WorkKind,
-	question string,
-	limitation string,
-	requiredInformation string,
-	singleResult string,
-	consumer string,
-) SemanticUncertaintyContract {
-	return semanticUncertaintyContractVersion(
-		kind, "v4", question, limitation, requiredInformation, singleResult, consumer,
-	)
-}
-
-func semanticUncertaintyContractV5(
-	kind WorkKind,
-	question string,
-	limitation string,
-	requiredInformation string,
-	singleResult string,
-	consumer string,
-) SemanticUncertaintyContract {
-	return semanticUncertaintyContractVersion(
-		kind, "v5", question, limitation, requiredInformation, singleResult, consumer,
-	)
-}
-
-func semanticUncertaintyContractV6(
-	kind WorkKind,
-	question string,
-	limitation string,
-	requiredInformation string,
-	singleResult string,
-	consumer string,
-) SemanticUncertaintyContract {
-	return semanticUncertaintyContractVersion(
-		kind, "v6", question, limitation, requiredInformation, singleResult, consumer,
-	)
-}
-
-func semanticUncertaintyContractV7(
-	kind WorkKind,
-	question string,
-	limitation string,
-	requiredInformation string,
-	singleResult string,
-	consumer string,
-) SemanticUncertaintyContract {
-	return semanticUncertaintyContractVersion(
-		kind, "v7", question, limitation, requiredInformation, singleResult, consumer,
-	)
-}
-
-func semanticUncertaintyContractV8(
-	kind WorkKind,
-	question string,
-	limitation string,
-	requiredInformation string,
-	singleResult string,
-	consumer string,
-) SemanticUncertaintyContract {
-	return semanticUncertaintyContractVersion(
-		kind, "v8", question, limitation, requiredInformation, singleResult, consumer,
-	)
-}
-
-func semanticUncertaintyContractV9(
-	kind WorkKind,
-	question string,
-	limitation string,
-	requiredInformation string,
-	singleResult string,
-	consumer string,
-) SemanticUncertaintyContract {
-	return semanticUncertaintyContractVersion(
-		kind, "v9", question, limitation, requiredInformation, singleResult, consumer,
-	)
-}
-
-func semanticUncertaintyContractV10(
-	kind WorkKind,
-	question string,
-	limitation string,
-	requiredInformation string,
-	singleResult string,
-	consumer string,
-) SemanticUncertaintyContract {
-	return semanticUncertaintyContractVersion(
-		kind, "v10", question, limitation, requiredInformation, singleResult, consumer,
-	)
-}
-
-func semanticUncertaintyContractVersion(
-	kind WorkKind,
-	version string,
-	question string,
-	limitation string,
-	requiredInformation string,
-	singleResult string,
-	consumer string,
-) SemanticUncertaintyContract {
 	return SemanticUncertaintyContract{
-		ID:       semanticUncertaintyContractIDPrefix + string(kind) + "." + version,
 		WorkKind: kind, ExactQuestion: question,
 		DeterministicLimitation: limitation,
 		RequiredInformation:     requiredInformation,
@@ -228,47 +92,14 @@ func (contract SemanticUncertaintyContract) Validate() error {
 			return err
 		}
 	}
-	if strings.Count(contract.ExactQuestion, "?") != 1 ||
-		!strings.HasSuffix(contract.ExactQuestion, "?") {
-		return fmt.Errorf("exact question must contain one terminal question mark")
-	}
-	if !strings.HasPrefix(contract.SingleResult, "One ") {
-		return fmt.Errorf("single result must begin with %q", "One ")
-	}
-	for _, value := range []string{
-		contract.ExactQuestion,
-		contract.DeterministicLimitation,
-		contract.RequiredInformation,
-		contract.SingleResult,
-		contract.DeterministicConsumer,
-	} {
-		if term := forbiddenSemanticUncertaintyLanguage(value); term != "" {
-			return fmt.Errorf("contract contains forbidden general authority language %q", term)
-		}
-	}
-	registered, ok := registeredSemanticUncertaintyContractByID(
-		contract.WorkKind, contract.ID,
-	)
+	registered, ok := registeredSemanticUncertaintyContract(contract.WorkKind)
 	if !ok {
-		return fmt.Errorf(
-			"work kind %q has no registered contract ID %q",
-			contract.WorkKind, contract.ID,
-		)
+		return fmt.Errorf("work kind %q has no registered semantic uncertainty", contract.WorkKind)
 	}
 	if contract != registered {
 		return fmt.Errorf("contract differs from the exact code-owned registry value")
 	}
 	return nil
-}
-
-func registeredSemanticUncertaintyContractByID(
-	kind WorkKind,
-	id string,
-) (SemanticUncertaintyContract, bool) {
-	if current, ok := registeredSemanticUncertaintyContract(kind); ok && current.ID == id {
-		return current, true
-	}
-	return SemanticUncertaintyContract{}, false
 }
 
 func validateSemanticUncertaintyContractField(name, value string) error {
@@ -279,41 +110,4 @@ func validateSemanticUncertaintyContractField(name, value string) error {
 		return fmt.Errorf("%s must be one bounded UTF-8 line", name)
 	}
 	return nil
-}
-
-func forbiddenSemanticUncertaintyLanguage(value string) string {
-	framed := " " + strings.ToLower(value) + " "
-	for _, term := range []string{
-		" agent ", " agents ", " worker ", " workers ", " orchestrator ",
-		" tool call ", " tool calls ", " tool choice ", " tool selection ",
-		" control plane ", " workflow decision ", " permission to continue ",
-		" approval to continue ", " completion status ", " retry decision ",
-	} {
-		if strings.Contains(framed, term) {
-			return strings.TrimSpace(term)
-		}
-	}
-	return ""
-}
-
-// Digest binds the registered identity and all five answers into stable
-// evidence bytes. Invalid or locally modified copies cannot be digested.
-func (contract SemanticUncertaintyContract) Digest() (string, error) {
-	if err := contract.Validate(); err != nil {
-		return "", err
-	}
-	hash := sha256.New()
-	for _, value := range []string{
-		contract.ID,
-		string(contract.WorkKind),
-		contract.ExactQuestion,
-		contract.DeterministicLimitation,
-		contract.RequiredInformation,
-		contract.SingleResult,
-		contract.DeterministicConsumer,
-	} {
-		_, _ = hash.Write([]byte(value))
-		_, _ = hash.Write([]byte{0})
-	}
-	return hex.EncodeToString(hash.Sum(nil)), nil
 }

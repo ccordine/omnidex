@@ -88,14 +88,13 @@ func Compile(
 			ctx, request.ModelInstruction, request.Scope,
 			request.KnownArtifactPaths, set.Optional, stations.Relevance,
 		)
+		result.ModelCalls += relevanceCalls
 		if err != nil {
 			return result, err
 		}
 		optional = expandOptionalSelectionGroups(
 			set.Optional, optional, set.OptionalSelectionGroups,
 		)
-		result.RelevanceCalls += relevanceCalls
-		result.ModelCalls += relevanceCalls
 		selected = append(selected, optional...)
 	}
 	if len(selected) == 0 {
@@ -108,21 +107,18 @@ func Compile(
 		ctx, request.ModelInstruction, request.Scope, request.KnownArtifactPaths,
 		selected, stations.Minification,
 	)
+	result.ModelCalls += minificationCalls
 	if err != nil {
 		return result, err
 	}
-	result.MinificationCalls += minificationCalls
-	result.ModelCalls += minificationCalls
 	sources := make([]assemblyline.ObjectiveContextSource, len(selected))
 	for index, authority := range selected {
 		sources[index] = assemblyline.ObjectiveContextSource{
 			Namespace: authority.Namespace, CandidateID: authority.CandidateID,
-			ContentSHA256: authority.ContentSHA256,
 		}
 	}
 	result.Context.Capsules = []assemblyline.ObjectiveContextCapsule{{
 		Sources: sources, Content: content,
-		ContentSHA256: assemblyline.ExactObjectiveContextSHA(content),
 	}}
 	if err := result.Context.Validate(); err != nil {
 		return Result{}, err
@@ -130,17 +126,11 @@ func Compile(
 	return result, nil
 }
 
-func validateReceipt(label string, receipt StationReceipt) error {
-	if receipt.Reused {
-		if receipt.Calls != 0 {
-			return fmt.Errorf("%s reuse reported %d provider calls", label, receipt.Calls)
-		}
-		return nil
-	}
-	if receipt.Calls != assemblyline.ExactSemanticLeafCalls {
+func validateCallCount(label string, calls int) error {
+	if calls < 0 || calls > assemblyline.ExactSemanticLeafCalls {
 		return fmt.Errorf(
-			"%s reported %d calls; one raw semantic leaf requires exactly %d",
-			label, receipt.Calls, assemblyline.ExactSemanticLeafCalls,
+			"%s reported %d calls outside 0..%d",
+			label, calls, assemblyline.ExactSemanticLeafCalls,
 		)
 	}
 	return nil
@@ -154,30 +144,26 @@ func validateCandidateSet(set CandidateSet) error {
 	for index, authority := range append(
 		append([]assemblyline.ContextCandidateAuthority(nil), set.Required...), set.Optional...,
 	) {
-		validated, err := assemblyline.NewContextCandidateAuthority(
+		_, err := assemblyline.NewContextCandidateAuthority(
 			authority.Namespace, authority.CandidateID, authority.Content,
 		)
 		if err != nil {
 			return fmt.Errorf("context candidate %d: %w", index, err)
 		}
-		if validated.ContentSHA256 != authority.ContentSHA256 {
-			return fmt.Errorf("context candidate %s content hash does not match", authority.CandidateID)
-		}
 		if _, duplicate := seenIDs[authority.CandidateID]; duplicate {
 			return fmt.Errorf("context candidate ID %q is duplicated across provider sets", authority.CandidateID)
 		}
 		seenIDs[authority.CandidateID] = struct{}{}
-		if _, duplicate := seenContent[authority.ContentSHA256]; duplicate &&
+		if _, duplicate := seenContent[authority.Content]; duplicate &&
 			!(index < len(set.Required) && strings.HasPrefix(authority.Namespace, "session_")) {
 			return fmt.Errorf("context candidate %q duplicates exact provider content", authority.CandidateID)
 		}
-		seenContent[authority.ContentSHA256] = struct{}{}
+		seenContent[authority.Content] = struct{}{}
 		if authority.Namespace == "objective_replan" {
 			if index >= len(set.Required) {
 				return fmt.Errorf("objective replan context must be required")
 			}
-			if set.Replan == nil || authority.Content != set.Replan.Feedback ||
-				authority.ContentSHA256 != set.Replan.FeedbackSHA256 {
+			if set.Replan == nil || authority.Content != set.Replan.Feedback {
 				return fmt.Errorf("objective replan candidate differs from exact replan authority")
 			}
 			replanCandidates++

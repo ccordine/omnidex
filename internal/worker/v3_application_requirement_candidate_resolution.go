@@ -1,10 +1,7 @@
 package worker
 
 import (
-	"fmt"
-
 	"github.com/gryph/omnidex/internal/assemblyline"
-	"github.com/gryph/omnidex/internal/model"
 )
 
 type directCodingApplicationRequirementDisposition uint8
@@ -23,7 +20,6 @@ type directCodingApplicationRequirementCandidateResolution struct {
 	Disposition    directCodingApplicationRequirementDisposition
 	ResultRelation assemblyline.ApplicationRequirementCandidateResultRelationResult
 	Partition      assemblyline.ApplicationRequirementCandidatePartition
-	Annotation     model.CodingPlanAnnotation
 }
 
 func resolveDirectCodingApplicationRequirementCandidate(
@@ -85,42 +81,11 @@ func resolveDirectCodingApplicationRequirementCandidate(
 			return zero, err
 		}
 	}
-	annotation := model.CodingPlanAnnotationGrounded
 	if authorization.Relation == assemblyline.ApplicationRequirementCandidateNotEntailed {
-		scopeInput := assemblyline.ApplicationRequirementCandidateScopeRelationInput{
-			UserRequest:   authority.UserRequest,
-			Context:       authority.Context,
-			Candidate:     candidate,
-			Authorization: authorization,
-			ScopeMode:     authority.ScopeMode,
-		}
-		scopeJob, err := assemblyline.NewApplicationRequirementCandidateScopeRelationJob(scopeInput)
-		if err != nil {
-			return zero, err
-		}
-		scope, err := runDirectCodingSemanticLeafCall(
-			runtime,
-			intentModel,
-			"application_requirement_candidate_scope_relation",
-			scopeJob,
-			identities,
-			func(raw string) (assemblyline.ApplicationRequirementCandidateScopeRelationResult, error) {
-				return assemblyline.DecodeApplicationRequirementCandidateScopeRelationResult(scopeInput, raw)
-			},
-		)
-		if err != nil {
-			return zero, err
-		}
-		switch scope.Relation {
-		case assemblyline.ApplicationRequirementCandidateScopeReasonableDerivation:
-			annotation = model.CodingPlanAnnotationReasonableDerivation
-		case assemblyline.ApplicationRequirementCandidateScopeSpeculativeReview:
-			annotation = model.CodingPlanAnnotationSpeculativeReview
-		case assemblyline.ApplicationRequirementCandidateScopeConcreteConflict:
-			annotation = model.CodingPlanAnnotationConcreteConflict
-		default:
-			return zero, fmt.Errorf("application requirement scope relation %q is not registered", scope.Relation)
-		}
+		return directCodingApplicationRequirementCandidateResolution{
+			Candidate:   candidate,
+			Disposition: directCodingApplicationRequirementUnrequested,
+		}, nil
 	}
 
 	kind, kindResolved, err := classifyDirectCodingApplicationRequirementCandidate(
@@ -243,6 +208,6 @@ func resolveDirectCodingApplicationRequirementCandidate(
 
 	return directCodingApplicationRequirementCandidateResolution{
 		Candidate: candidate, Disposition: directCodingApplicationRequirementRetained,
-		ResultRelation: resultRelation, Annotation: annotation,
+		ResultRelation: resultRelation,
 	}, nil
 }

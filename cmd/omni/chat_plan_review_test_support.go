@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"net/http"
-	"strings"
 	"testing"
 	"time"
 
@@ -73,8 +72,14 @@ func chatPlanReviewSnapshot(
 	}
 	return client.ChatSessionSnapshot{
 		RealtimeCursor: uint64(generation),
-		Revision:       "channel_session_revision_" + strings.Repeat("b", 64),
-		Channel:        session.channel, WorkspaceIdentity: session.workspaceIdentity,
+		State: client.ChatSessionState{
+			ChannelID: session.channel.ID, WorkspaceRoot: session.channel.WorkspaceRoot,
+			WorkspaceIdentity: session.workspaceIdentity, ChannelUpdatedAt: session.channel.UpdatedAt,
+			LatestJob: &client.ChatSessionJobState{
+				ID: details.Job.ID, Generation: generation, Status: status, UpdatedAt: details.Job.UpdatedAt,
+			},
+		},
+		Channel: session.channel, WorkspaceIdentity: session.workspaceIdentity,
 		Messages: []model.ChannelMessage{{
 			ID: 1, ChannelID: session.channel.ID, Role: model.ChannelMessageRoleUser,
 			Content: details.Job.Instruction, CreatedAt: messageTime,
@@ -94,16 +99,15 @@ func singleLeafPlanReviewFixture(
 	t.Helper()
 	now := time.Date(2026, time.September, 1, 15, 0, 0, 0, time.UTC)
 	statement := "The software lets a user confirm the item."
-	id, err := model.NewCodingPlanLeafID(statement)
+	id, err := model.NewCodingPlanLeafID()
 	if err != nil {
 		t.Fatal(err)
 	}
 	return model.CodingPlan{
 		JobID: jobID, Generation: generation, Revision: 1,
-		State: model.CodingPlanStateReview, ScopeMode: model.CodingScopeModeNormal,
-		RequestSHA256: strings.Repeat("a", 64),
+		State: model.CodingPlanStateReview,
 		Leaves: []model.CodingPlanLeaf{{
-			ID: id, Statement: statement, Annotation: model.CodingPlanAnnotationGrounded,
+			ID: id, Statement: statement,
 			Decision: model.CodingPlanDecisionPending,
 		}},
 		CreatedAt: now, UpdatedAt: now,

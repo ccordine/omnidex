@@ -52,7 +52,9 @@ func directCodingJavaTypeChoices(
 ) ([]assemblyline.OpaqueModelChoice, error) {
 	types := javaTaskNeutralAuthorities()
 	for owner := range receiverMethods {
-		types[owner] = struct{}{}
+		if owner != "" {
+			types[owner] = struct{}{}
+		}
 	}
 	candidates := make([]directCodingIdentifierCandidate, 0, len(types))
 	for name := range types {

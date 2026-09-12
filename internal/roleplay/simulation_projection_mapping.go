@@ -1,15 +1,6 @@
 package roleplay
 
-import (
-	"crypto/sha256"
-	"encoding/hex"
-	"slices"
-)
-
-func simulationSHA(payload []byte) string {
-	digest := sha256.Sum256(payload)
-	return hex.EncodeToString(digest[:])
-}
+import "slices"
 
 func reverseSimulationSlice[T any](values []T) []T {
 	slices.Reverse(values)

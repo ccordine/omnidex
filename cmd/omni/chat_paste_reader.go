@@ -12,8 +12,9 @@ var (
 )
 
 // bracketedPasteReader keeps one terminal paste inside one line-editor turn.
-// Terminals commonly encode pasted newlines as CR or CRLF; x/term otherwise
-// treats each CR as submission even while its bracketed-paste state is active.
+// The line editor treats CR and LF as submission even during bracketed paste.
+// It receives a single-line display projection; rawPaste retains the actual
+// user text returned by the console.
 type bracketedPasteReader struct {
 	source           io.Reader
 	maxBytes         int
@@ -209,11 +210,14 @@ func (reader *bracketedPasteReader) consumePasteByte(value byte) {
 		return
 	}
 	if character == '\r' {
-		reader.queued = append(reader.queued, '\n')
+		reader.queued = append(reader.queued, ' ')
 		reader.pasteCR = true
 		return
 	}
-	if character == '\n' && reader.pasteCR {
+	if character == '\n' {
+		if !reader.pasteCR {
+			reader.queued = append(reader.queued, ' ')
+		}
 		reader.pasteCR = false
 		return
 	}

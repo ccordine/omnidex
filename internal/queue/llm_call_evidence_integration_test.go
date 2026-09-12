@@ -2,8 +2,6 @@ package queue
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"strings"
 	"testing"
@@ -12,7 +10,7 @@ import (
 	"github.com/gryph/omnidex/internal/llm"
 )
 
-func TestFreshSchemaLLMCallEvidenceIsExactTerminalAndImmutable(t *testing.T) {
+func TestFreshSchemaLLMCallRecordsResultsWithoutHashReceipts(t *testing.T) {
 	databaseURL := evidenceDatabaseURL(t)
 	pool, repository := freshEvidenceRepository(t, databaseURL)
 	ctx := context.Background()
@@ -29,25 +27,14 @@ func TestFreshSchemaLLMCallEvidenceIsExactTerminalAndImmutable(t *testing.T) {
 		t, assemblyline.WorkApplicationClassify, "Classify one exact value.", "A",
 	)
 	accepted.Authority = claim.Authority
-	accepted.WorkID = strings.Repeat("a", 64)
 	accepted.Prepared.ContextTokens = llm.MaxInferenceContextTokens
-	accepted.Generation.ProviderRequestSHA256, err = llm.ExactPreparedRequestSHA256(
-		accepted.Prepared,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
 	acceptedEvidence, err := recordExactLLMEvidenceFixture(ctx, repository, accepted)
-	if err != nil {
-		t.Fatal(err)
-	}
-	projection, err := assemblyline.NewExactPortableResultProjection(accepted.Generation.Content)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := repository.RecordLLMCallOutcome(ctx, LLMCallOutcomeRecord{
 		Authority: claim.Authority, CallEvidenceID: acceptedEvidence.ID,
-		Candidate: accepted.Generation.Content, Projection: &projection,
+		Candidate: accepted.Generation.Content,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +46,6 @@ func TestFreshSchemaLLMCallEvidenceIsExactTerminalAndImmutable(t *testing.T) {
 		t, assemblyline.WorkFragmentGeneration, "Write one implementation body.", "invalid body (",
 	)
 	rejected.Authority = claim.Authority
-	rejected.WorkID = strings.Repeat("b", 64)
 	rejectedEvidence, err := recordExactLLMEvidenceFixture(ctx, repository, rejected)
 	if err != nil {
 		t.Fatal(err)
@@ -76,11 +62,9 @@ func TestFreshSchemaLLMCallEvidenceIsExactTerminalAndImmutable(t *testing.T) {
 		t, assemblyline.WorkArtifactHandling, "Classify one artifact.", "source",
 	)
 	failed.Authority = claim.Authority
-	failed.WorkID = strings.Repeat("c", 64)
 	failed.Generation.ProviderResponseDisposition = llm.ProviderResponseBodyReadError
 	failed.Generation.ProviderResponseComplete = false
 	failed.Generation.ProviderResponseBytesKnown = false
-	failed.Generation.ProviderResponseSHA256 = ""
 	failed.Generation.ProviderResponseBytes = 0
 	failed.Generation.Content = ""
 	failed.Generation.ProviderDonePresent = false
@@ -95,8 +79,8 @@ func TestFreshSchemaLLMCallEvidenceIsExactTerminalAndImmutable(t *testing.T) {
 	}
 	if failedEvidence.Outcome == nil || failedEvidence.Outcome.Status != LLMCallProviderFailed ||
 		string(failedEvidence.RawResponse) != string(failed.Generation.ProviderResponseCapture) ||
-		failedEvidence.ErrorSHA256 != llmEvidenceSHA256([]byte(failed.CallError)) ||
-		failedEvidence.Outcome.ValidationErrorSHA256 != failedEvidence.ErrorSHA256 {
+		failedEvidence.Error != failed.CallError ||
+		failedEvidence.Outcome.ValidationError != failed.CallError {
 		t.Fatalf("provider failure evidence=%#v", failedEvidence)
 	}
 
@@ -104,15 +88,11 @@ func TestFreshSchemaLLMCallEvidenceIsExactTerminalAndImmutable(t *testing.T) {
 		t, assemblyline.WorkArtifactHandling, "Classify an empty provider response.", "unused",
 	)
 	emptyResponse.Authority = claim.Authority
-	emptyResponse.WorkID = strings.Repeat("d", 64)
-	emptyDigest := sha256.Sum256(nil)
 	emptyResponse.Generation.ProviderHTTPStatus = 500
 	emptyResponse.Generation.ProviderResponseDisposition = llm.ProviderResponseHTTPError
 	emptyResponse.Generation.ProviderResponseCapture = []byte{}
 	emptyResponse.Generation.ProviderResponseCapturedBytes = 0
-	emptyResponse.Generation.ProviderResponseCaptureSHA256 = hex.EncodeToString(emptyDigest[:])
 	emptyResponse.Generation.ProviderResponseBytes = 0
-	emptyResponse.Generation.ProviderResponseSHA256 = hex.EncodeToString(emptyDigest[:])
 	emptyResponse.Generation.Content = ""
 	emptyResponse.Generation.ProviderDonePresent = false
 	emptyResponse.Generation.ProviderDone = false
@@ -137,21 +117,11 @@ func TestFreshSchemaLLMCallEvidenceIsExactTerminalAndImmutable(t *testing.T) {
 	)
 	mismatched.Authority = claim.Authority
 	mismatched.Authority.WorkerID = "different-worker"
-	mismatched.WorkID = strings.Repeat("e", 64)
 	if _, err := recordExactLLMEvidenceFixture(ctx, repository, mismatched); err == nil {
 		t.Fatal("attempt worker mismatch was accepted")
 	}
-	if _, err := pool.Exec(ctx, `UPDATE llm_call_evidence SET system_envelope='tampered' WHERE id=$1`, acceptedEvidence.ID); err == nil {
-		t.Fatal("LLM call opening update was accepted")
-	}
 	if _, err := pool.Exec(ctx, `UPDATE llm_call_receipts SET error='tampered' WHERE call_evidence_id=$1`, acceptedEvidence.ID); err == nil {
-		t.Fatal("LLM call receipt update was accepted")
-	}
-	if _, err := pool.Exec(ctx, `DELETE FROM llm_call_receipts WHERE call_evidence_id=$1`, acceptedEvidence.ID); err == nil {
-		t.Fatal("LLM call receipt delete was accepted")
-	}
-	if _, err := pool.Exec(ctx, `DELETE FROM llm_call_outcomes WHERE call_evidence_id=$1`, acceptedEvidence.ID); err == nil {
-		t.Fatal("LLM call outcome delete was accepted")
+		t.Fatal("successful response accepted a contradictory error")
 	}
 
 	calls, err := listAllLLMCallEvidenceForJob(ctx, repository, job.ID)
@@ -162,10 +132,6 @@ func TestFreshSchemaLLMCallEvidenceIsExactTerminalAndImmutable(t *testing.T) {
 		if !call.ProviderReceiptPresent || call.Outcome == nil {
 			t.Fatalf("call %d is not terminal", call.ID)
 		}
-		if call.Outcome.ValidationError != "" &&
-			call.Outcome.ValidationErrorSHA256 != llmEvidenceSHA256([]byte(call.Outcome.ValidationError)) {
-			t.Fatalf("call %d terminal error hash is not exact: %#v", call.ID, call.Outcome)
-		}
 	}
 	firstPage, err := repository.ListLLMCallEvidenceForJob(ctx, job.ID, 0, 1)
 	if err != nil || len(firstPage) != 1 {
@@ -174,6 +140,36 @@ func TestFreshSchemaLLMCallEvidenceIsExactTerminalAndImmutable(t *testing.T) {
 	secondPage, err := repository.ListLLMCallEvidenceForJob(ctx, job.ID, firstPage[0].ID, 1)
 	if err != nil || len(secondPage) != 1 {
 		t.Fatalf("second station-call page=%#v err=%v", secondPage, err)
+	}
+	completed := exactLLMEvidenceFixture(t, assemblyline.WorkApplicationClassify, "Classify the current value.", "B")
+	completed.Authority = claim.Authority
+	completedCall, err := recordExactLLMEvidenceFixture(ctx, repository, completed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.RecordLLMCallOutcome(ctx, LLMCallOutcomeRecord{
+		Authority: claim.Authority, CallEvidenceID: completedCall.ID, Candidate: "unreturned value",
+	}); err == nil {
+		t.Fatal("outcome accepted a candidate different from the provider result")
+	}
+	if _, err := repository.RecordLLMCallOutcome(ctx, LLMCallOutcomeRecord{
+		Authority: claim.Authority, CallEvidenceID: completedCall.ID, Candidate: completed.Generation.Content,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `
+		UPDATE job_step_attempts SET status='completed',finished_at=clock_timestamp()
+		WHERE job_id=$1 AND generation=$2 AND step_id=$3 AND attempt=$4 AND worker_id=$5
+	`, claim.Authority.JobID, claim.Authority.Generation, claim.Authority.StepID,
+		claim.Authority.Attempt, claim.Authority.WorkerID); err != nil {
+		t.Fatalf("earlier provider failure vetoed later code-owned completion: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `DELETE FROM llm_call_evidence WHERE job_id=$1`, job.ID); err != nil {
+		t.Fatalf("call history could not be discarded: %v", err)
+	}
+	remaining, err := repository.ListLLMCallEvidenceForJob(ctx, job.ID, 0, 1)
+	if err != nil || len(remaining) != 0 {
+		t.Fatalf("discarded history remains: %#v, %v", remaining, err)
 	}
 }
 
@@ -195,7 +191,6 @@ func TestFreshSchemaSourceBodyCorrectionRequiresRejectedSameJobAndModelParent(t 
 		"Write one implementation body.", "return missingValue;",
 	)
 	initial.Authority = claim.Authority
-	initial.WorkID = strings.Repeat("f", 64)
 	initialEvidence, err := recordExactLLMEvidenceFixture(ctx, repository, initial)
 	if err != nil {
 		t.Fatal(err)
@@ -235,7 +230,7 @@ func TestFreshSchemaSourceBodyCorrectionRequiresRejectedSameJobAndModelParent(t 
 		t, assemblyline.WorkFragmentGeneration, correctionPrompt, "7",
 	)
 	correction.Authority = claim.Authority
-	correction.WorkID = initial.WorkID
+	correction.WorkInput = nil
 	correction.Iteration = 2
 	correction.ParentCallEvidenceID = initialEvidence.ID
 	correction.SourceCorrection = &correctionEvidence
@@ -243,23 +238,17 @@ func TestFreshSchemaSourceBodyCorrectionRequiresRejectedSameJobAndModelParent(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	projection, err := assemblyline.NewExactPortableResultProjection(
-		correction.Generation.Content,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if _, err := repository.RecordLLMCallOutcome(ctx, LLMCallOutcomeRecord{
 		Authority: claim.Authority, CallEvidenceID: correctedEvidence.ID,
-		Candidate: correction.Generation.Content, Projection: &projection,
+		Candidate: correction.Generation.Content,
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if correctedEvidence.Iteration != 2 ||
 		correctedEvidence.ParentCallEvidenceID != initialEvidence.ID ||
-		correctedEvidence.WorkID != initialEvidence.WorkID ||
+		correctedEvidence.WorkInput != nil ||
 		correctedEvidence.Model != initialEvidence.Model ||
-		correctedEvidence.SystemEnvelope != correctionPrompt ||
+		correctedEvidence.ModelInput != correctionPrompt ||
 		correctedEvidence.SourceBaseCandidate != initial.Generation.Content ||
 		correctedEvidence.SourceStartByte != startByte ||
 		correctedEvidence.SourceEndByte != startByte+len("missingValue") {
@@ -271,7 +260,6 @@ func TestFreshSchemaSourceBodyCorrectionRequiresRejectedSameJobAndModelParent(t 
 		"Write another implementation body.", "return unknown;",
 	)
 	unrejected.Authority = claim.Authority
-	unrejected.WorkID = strings.Repeat("e", 64)
 	unrejectedEvidence, err := recordExactLLMEvidenceFixture(ctx, repository, unrejected)
 	if err != nil {
 		t.Fatal(err)
@@ -304,7 +292,7 @@ func TestFreshSchemaSourceBodyCorrectionRequiresRejectedSameJobAndModelParent(t 
 		illegalPrompt, "9",
 	)
 	illegal.Authority = claim.Authority
-	illegal.WorkID = unrejected.WorkID
+	illegal.WorkInput = nil
 	illegal.Iteration = 2
 	illegal.ParentCallEvidenceID = unrejectedEvidence.ID
 	illegal.SourceCorrection = &illegalEvidence

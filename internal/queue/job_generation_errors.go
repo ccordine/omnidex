@@ -17,7 +17,3 @@ var ErrInterruptedJobRequiresReplan = errors.New("interrupted job requires expli
 // ErrStaleStepAttempt means a worker write did not carry the exact current,
 // unexpired execution-attempt authority for its job generation and step.
 var ErrStaleStepAttempt = errors.New("stale step attempt")
-
-// ErrContextProjectionBudget means legacy step context exceeded the hard
-// model-visible item or byte ceiling. Context is never silently truncated.
-var ErrContextProjectionBudget = errors.New("context projection budget exceeded")

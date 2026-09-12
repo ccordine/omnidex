@@ -14,10 +14,10 @@ func compileGenericJavaCommandLineBlueprint(
 	workload assemblyline.FrozenApplicationWorkload,
 	capabilities directCodingCapabilityGraph,
 	_ directCodingProjectVersionProfile,
-	target assemblyline.TargetTree,
+	_ assemblyline.TargetTree,
 	coverage assemblyline.ApplicationFileCoveragePlan,
 ) (assemblyline.SourceBlueprint, []directCodingFileTask, error) {
-	if err := validateJavaCommandLineCoverage(target, workload, coverage); err != nil {
+	if err := validateJavaCommandLineCoverage(workload, coverage); err != nil {
 		return assemblyline.SourceBlueprint{}, nil, err
 	}
 	contexts, err := directCodingApplicationTaskContexts(workload)
@@ -35,7 +35,6 @@ func compileGenericJavaCommandLineBlueprint(
 }
 
 func validateJavaCommandLineCoverage(
-	target assemblyline.TargetTree,
 	workload assemblyline.FrozenApplicationWorkload,
 	coverage assemblyline.ApplicationFileCoveragePlan,
 ) error {
@@ -47,7 +46,7 @@ func validateJavaCommandLineCoverage(
 		}
 	}
 	for _, task := range workload.Tasks {
-		if _, err := directCodingTaskSingleImplementationPath(coverage, task.ID); err != nil {
+		if _, err := directCodingTaskSinglePair(coverage, task.ID); err != nil {
 			return fmt.Errorf("validate Java command-line task %s coverage: %w", task.ID, err)
 		}
 	}

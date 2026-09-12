@@ -14,10 +14,8 @@ func (s *directCodingSession) hostVerificationAuthority(
 		return nil, directCodingAssembly{}, false, nil
 	}
 	stackID := s.program.Project.Stack.ID
-	switch stackID {
-	case genericTypeScriptBrowserAdapter, genericGoCommandLineAdapter:
-	default:
-		return nil, directCodingAssembly{}, false, nil
+	if s.program.Project.Stack.VerifyHost == nil {
+		return nil, directCodingAssembly{}, false, fmt.Errorf("project stack %s has no authoritative host verifier", stackID)
 	}
 	complete, err := directCodingProgramHasCompleteGeneratedSet(*s.program)
 	if err != nil {

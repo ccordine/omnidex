@@ -91,14 +91,13 @@ func readCodingPlan(
 	var rawLeaves []byte
 	err := query.QueryRow(ctx, `
 		SELECT plan.job_id,plan.generation,plan.revision,plan.state,
-		       plan.scope_mode,plan.request_sha256,plan.created_at,
+		       plan.created_at,
 		       plan.updated_at,plan.frozen_at,
 		       COALESCE(
 		         jsonb_agg(
 		           jsonb_build_object(
 		             'id',leaf.leaf_id,
 		             'statement',leaf.statement,
-		             'annotation',leaf.annotation,
 		             'decision',leaf.decision
 		           ) ORDER BY leaf.sort_index
 		         ) FILTER (WHERE leaf.leaf_id IS NOT NULL),
@@ -109,11 +108,11 @@ func readCodingPlan(
 		  ON leaf.job_id=plan.job_id AND leaf.generation=plan.generation
 		WHERE plan.job_id=$1 AND plan.generation=$2
 		GROUP BY plan.job_id,plan.generation,plan.revision,plan.state,
-		         plan.scope_mode,plan.request_sha256,plan.created_at,
+		         plan.created_at,
 		         plan.updated_at,plan.frozen_at
 	`, jobID, generation).Scan(
-		&plan.JobID, &plan.Generation, &plan.Revision, &plan.State, &plan.ScopeMode,
-		&plan.RequestSHA256, &plan.CreatedAt, &plan.UpdatedAt, &plan.FrozenAt,
+		&plan.JobID, &plan.Generation, &plan.Revision, &plan.State,
+		&plan.CreatedAt, &plan.UpdatedAt, &plan.FrozenAt,
 		&rawLeaves,
 	)
 	if err != nil {
@@ -192,6 +191,7 @@ func insertCodingPlanOperationResultTx(
 }
 
 type PriorCodingPlanDecision struct {
+	LeafID           model.CodingPlanLeafID
 	Decision         model.CodingPlanDecision
 	OriginGeneration int64
 }
@@ -199,39 +199,39 @@ type PriorCodingPlanDecision struct {
 func (r *Repository) PriorCodingPlanDecisions(
 	ctx context.Context,
 	jobID, beforeGeneration int64,
-) (map[model.CodingPlanLeafID]PriorCodingPlanDecision, error) {
+) (map[string]PriorCodingPlanDecision, error) {
 	if r == nil || r.pool == nil || jobID <= 0 || beforeGeneration <= 1 {
-		return map[model.CodingPlanLeafID]PriorCodingPlanDecision{}, nil
+		return map[string]PriorCodingPlanDecision{}, nil
 	}
 	rows, err := r.pool.Query(ctx, `
-		SELECT DISTINCT ON (leaf.leaf_id)
-		       leaf.leaf_id,leaf.decision,leaf.decision_origin_generation
+		SELECT DISTINCT ON (leaf.statement)
+		       leaf.statement,leaf.leaf_id,leaf.decision,leaf.decision_origin_generation
 		FROM coding_plan_leaves AS leaf
 		JOIN coding_plans AS plan
 		  ON plan.job_id=leaf.job_id AND plan.generation=leaf.generation
 		WHERE leaf.job_id=$1 AND leaf.generation<$2
 		  AND leaf.decision IN ($3,$4)
-		ORDER BY leaf.leaf_id,leaf.generation DESC
+		ORDER BY leaf.statement,leaf.generation DESC
 	`, jobID, beforeGeneration,
 		model.CodingPlanDecisionApproved, model.CodingPlanDecisionRejected)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	result := make(map[model.CodingPlanLeafID]PriorCodingPlanDecision)
+	result := make(map[string]PriorCodingPlanDecision)
 	for rows.Next() {
-		var id model.CodingPlanLeafID
+		var statement string
 		var decision PriorCodingPlanDecision
-		if err := rows.Scan(&id, &decision.Decision, &decision.OriginGeneration); err != nil {
+		if err := rows.Scan(&statement, &decision.LeafID, &decision.Decision, &decision.OriginGeneration); err != nil {
 			return nil, err
 		}
-		if _, err := model.ParseCodingPlanLeafID(string(id)); err != nil {
+		if _, err := model.ParseCodingPlanLeafID(string(decision.LeafID)); err != nil {
 			return nil, err
 		}
 		if err := decision.Decision.Validate(); err != nil {
 			return nil, err
 		}
-		result[id] = decision
+		result[statement] = decision
 	}
 	return result, rows.Err()
 }

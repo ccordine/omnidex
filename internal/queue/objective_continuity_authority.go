@@ -2,8 +2,6 @@ package queue
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
@@ -105,13 +103,13 @@ func (r *Repository) ObjectiveContinuityAuthorities(
 	}
 	authority := ObjectiveContinuityAuthority{}
 	if stored.CurrentGeneration > 1 {
-		var purpose, boundaryAction, feedback, feedbackSHA string
+		var purpose, boundaryAction, feedback string
 		if err := tx.QueryRow(ctx, `
-			SELECT purpose,boundary_action,feedback,feedback_sha256
+			SELECT purpose,boundary_action,feedback
 			FROM job_generations
 			WHERE job_id=$1 AND generation=$2
 		`, stored.ID, stored.CurrentGeneration).Scan(
-			&purpose, &boundaryAction, &feedback, &feedbackSHA,
+			&purpose, &boundaryAction, &feedback,
 		); err != nil {
 			return ObjectiveContinuityAuthority{}, err
 		}
@@ -121,13 +119,9 @@ func (r *Repository) ObjectiveContinuityAuthorities(
 				"current objective generation has invalid or oversized exact replan feedback",
 			)
 		}
-		digest := sha256.Sum256([]byte(feedback))
-		if feedbackSHA != hex.EncodeToString(digest[:]) {
-			return ObjectiveContinuityAuthority{}, fmt.Errorf("current objective generation feedback hash does not match")
-		}
 		authority.Replan = &assemblyline.ObjectiveReplanAuthority{
 			JobID: stored.ID, Generation: stored.CurrentGeneration,
-			Feedback: feedback, FeedbackSHA256: feedbackSHA,
+			Feedback: feedback,
 		}
 		if err := authority.ReplanContext().Validate(); err != nil {
 			return ObjectiveContinuityAuthority{}, err
@@ -135,7 +129,7 @@ func (r *Repository) ObjectiveContinuityAuthorities(
 	} else {
 		var exactInitial bool
 		if err := tx.QueryRow(ctx, `
-			SELECT purpose='initial' AND feedback IS NULL AND feedback_sha256 IS NULL
+			SELECT purpose='initial' AND feedback IS NULL
 			FROM job_generations WHERE job_id=$1 AND generation=1
 		`, stored.ID).Scan(&exactInitial); err != nil {
 			return ObjectiveContinuityAuthority{}, err
@@ -321,7 +315,7 @@ func (session ObjectiveSessionContextAuthority) validate(
 			}
 			expected = "user follow-up:\n" + turn.Text
 		case ObjectiveSessionRedirect:
-			if _, _, err := validateSessionReplanFeedback(turn.Text); err != nil {
+			if _, err := validateSessionReplanFeedback(turn.Text); err != nil {
 				return err
 			}
 			expected = "user redirect:\n" + turn.Text
@@ -332,7 +326,7 @@ func (session ObjectiveSessionContextAuthority) validate(
 				}
 			}
 		case ObjectiveSessionInterruption:
-			if _, _, err := validateInterruptFeedback(turn.Text); err != nil {
+			if _, err := validateInterruptFeedback(turn.Text); err != nil {
 				return err
 			}
 			expected = "user interruption:\n" + turn.Text

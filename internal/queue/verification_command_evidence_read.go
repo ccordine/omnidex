@@ -9,13 +9,10 @@ import (
 const verificationCommandEvidenceColumns = `
 	commands.id,commands.job_id,commands.generation,commands.step_id,
 	commands.step_attempt,commands.worker_id,commands.phase,commands.ordinal,
-	commands.argv,commands.argv_sha256,commands.environment,commands.environment_sha256,
-	commands.stdin_present,commands.stdin,commands.stdin_sha256,
+	commands.argv,commands.environment,commands.stdin_present,commands.stdin,
 	commands.working_directory,commands.started_at,commands.finished_at,
 	commands.duration_nanos,commands.exit_code,commands.launch_error,commands.observation_error,
-	commands.stdout,commands.stdout_complete,commands.stdout_sha256,
-	commands.stderr,commands.stderr_complete,commands.stderr_sha256,
-	commands.workspace_sha256_before,commands.workspace_sha256_after,
+	commands.stdout,commands.stdout_complete,commands.stderr,commands.stderr_complete,
 	commands.status,commands.created_at`
 
 func (r *Repository) ListVerificationCommandEvidenceForJob(
@@ -66,17 +63,15 @@ func scanVerificationCommandEvidence(
 ) error {
 	var argvJSON, environmentJSON []byte
 	var stdin []byte
-	var stdinSHA256, launchError, observationError, workspaceBefore, workspaceAfter *string
+	var launchError, observationError *string
 	if err := scanner.Scan(
 		&item.ID, &item.Authority.JobID, &item.Authority.Generation,
 		&item.Authority.StepID, &item.Authority.Attempt, &item.Authority.WorkerID,
-		&item.Phase, &item.Ordinal, &argvJSON, &item.ArgvSHA256,
-		&environmentJSON, &item.EnvironmentSHA256,
-		&item.StdinPresent, &stdin, &stdinSHA256, &item.WorkingDirectory,
+		&item.Phase, &item.Ordinal, &argvJSON, &environmentJSON,
+		&item.StdinPresent, &stdin, &item.WorkingDirectory,
 		&item.StartedAt, &item.FinishedAt, &item.DurationNanos,
 		&item.ExitCode, &launchError, &observationError, &item.Stdout, &item.StdoutComplete,
-		&item.StdoutSHA256, &item.Stderr, &item.StderrComplete,
-		&item.StderrSHA256, &workspaceBefore, &workspaceAfter,
+		&item.Stderr, &item.StderrComplete,
 		&item.Status, &item.CreatedAt,
 	); err != nil {
 		return err
@@ -91,20 +86,11 @@ func scanVerificationCommandEvidence(
 		item.Stdin = make([]byte, len(stdin))
 		copy(item.Stdin, stdin)
 	}
-	if stdinSHA256 != nil {
-		item.StdinSHA256 = *stdinSHA256
-	}
 	if launchError != nil {
 		item.LaunchError = *launchError
 	}
 	if observationError != nil {
 		item.ObservationError = *observationError
-	}
-	if workspaceBefore != nil {
-		item.WorkspaceSHA256Before = *workspaceBefore
-	}
-	if workspaceAfter != nil {
-		item.WorkspaceSHA256After = *workspaceAfter
 	}
 	exactStdout := make([]byte, len(item.Stdout))
 	copy(exactStdout, item.Stdout)

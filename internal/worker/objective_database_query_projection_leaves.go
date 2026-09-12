@@ -23,7 +23,7 @@ func resolveDatabaseQueryProjections(
 		assemblyline.DatabaseQueryPurposeAuthority{
 			State: state, Collection: assemblyline.DatabaseQueryProjectionPurpose,
 		},
-		maximumPurposes, true, call, total,
+		maximumPurposes, call, total,
 	)
 	total = nextTotal
 	if err != nil {

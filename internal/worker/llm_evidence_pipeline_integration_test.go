@@ -3,7 +3,6 @@ package worker
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -276,7 +275,7 @@ func TestFreshSchemaSourceBodyCorrectionContinuesSamePersistedContextWithoutBloc
 		calls[0].Iteration != 1 || calls[0].Outcome.Status != queue.LLMCallRejected ||
 		calls[1].WorkKind != string(assemblyline.WorkApplicationClassify) ||
 		calls[1].Iteration != 1 || calls[1].Outcome.Status != queue.LLMCallAccepted ||
-		calls[2].WorkID != calls[0].WorkID || calls[2].Model != calls[0].Model ||
+		calls[2].WorkInput != nil || len(calls[0].WorkInput) == 0 || calls[2].Model != calls[0].Model ||
 		calls[2].Iteration != 2 || calls[2].OutputContinuation != 0 ||
 		calls[2].ParentCallEvidenceID != calls[0].ID ||
 		calls[2].OutputLimitReached || calls[2].Outcome.Status != queue.LLMCallAccepted ||
@@ -513,21 +512,14 @@ func exactEvidenceCompletedGeneration(
 	if err != nil {
 		return llm.PreparedGeneration{}, err
 	}
-	requestSHA, err := llm.ExactPreparedRequestSHA256(prepared)
-	if err != nil {
-		return llm.PreparedGeneration{}, err
-	}
-	responseDigest := sha256.Sum256(raw)
 	return llm.PreparedGeneration{
 		Schema: llm.PreparedGenerationSchemaV1, Protocol: prepared.Protocol,
 		ProviderRequestDisposition: llm.ProviderRequestDispatched,
-		Content:                    candidate, ProviderRequestSHA256: requestSHA, ProviderHTTPStatus: 200,
+		Content:                    candidate, ProviderHTTPStatus: 200,
 		ProviderResponseDisposition: decoded.Disposition,
 		ProviderResponseComplete:    true, ProviderResponseBytesKnown: true,
-		ProviderContentEncoding:       llm.NewProviderContentEncodingEvidence(nil, false),
-		ProviderResponseSHA256:        hex.EncodeToString(responseDigest[:]),
+		ProviderContentEncoding:       llm.ClassifyProviderContentEncoding(nil, false),
 		ProviderResponseBytes:         int64(len(raw)),
-		ProviderResponseCaptureSHA256: hex.EncodeToString(responseDigest[:]),
 		ProviderResponseCapturedBytes: len(raw), ProviderResponseCapture: raw,
 		ProviderDonePresent: decoded.DonePresent, ProviderDone: decoded.Done,
 		ProviderDoneReason: decoded.DoneReason,
@@ -539,15 +531,12 @@ func exactEvidencePartialGeneration(
 	prepared llm.PreparedModel,
 	raw []byte,
 ) llm.PreparedGeneration {
-	requestSHA, _ := llm.ExactPreparedRequestSHA256(prepared)
-	digest := sha256.Sum256(raw)
 	return llm.PreparedGeneration{
 		Schema: llm.PreparedGenerationSchemaV1, Protocol: prepared.Protocol,
-		ProviderRequestDisposition: llm.ProviderRequestDispatched,
-		ProviderRequestSHA256:      requestSHA, ProviderHTTPStatus: 200,
+		ProviderRequestDisposition:    llm.ProviderRequestDispatched,
+		ProviderHTTPStatus:            200,
 		ProviderResponseDisposition:   llm.ProviderResponseBodyReadError,
-		ProviderContentEncoding:       llm.NewProviderContentEncodingEvidence(nil, false),
-		ProviderResponseCaptureSHA256: hex.EncodeToString(digest[:]),
+		ProviderContentEncoding:       llm.ClassifyProviderContentEncoding(nil, false),
 		ProviderResponseCapturedBytes: len(raw), ProviderResponseCapture: append([]byte(nil), raw...),
 	}
 }
@@ -582,5 +571,5 @@ func freshWorkerEvidenceRepository(
 	if err != nil {
 		t.Fatal(err)
 	}
-	return pool, queue.New(pool, authority, model.CodingScopeModeNormal)
+	return pool, queue.New(pool, authority)
 }

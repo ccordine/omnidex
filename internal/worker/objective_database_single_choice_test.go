@@ -3,7 +3,6 @@ package worker
 import (
 	"context"
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 
@@ -32,7 +31,7 @@ func TestSelectDatabaseRelationsUsesSoleSnapshotRelationWithoutStation(t *testin
 		t.Fatalf("construct sole-relation snapshot: %v", err)
 	}
 
-	selected, receipt, err := selectObjectiveDatabaseRelations(
+	selected, dispatches, err := selectObjectiveDatabaseRelations(
 		context.Background(),
 		snapshot,
 		"need-1",
@@ -46,13 +45,13 @@ func TestSelectDatabaseRelationsUsesSoleSnapshotRelationWithoutStation(t *testin
 	if len(selected) != 1 || selected[0] != snapshot.Relations[0].ID {
 		t.Fatalf("selected relations = %#v, want sole relation %q", selected, snapshot.Relations[0].ID)
 	}
-	if receipt != (objectiveStationReceipt{}) {
-		t.Fatalf("sole snapshot relation receipt = %+v, want zero model calls", receipt)
+	if dispatches != 0 {
+		t.Fatalf("sole snapshot relation dispatches = %+v, want zero model calls", dispatches)
 	}
 }
 
 func TestSelectDatabaseRelationsKeepsEmptySnapshotFailureBeforeStation(t *testing.T) {
-	_, receipt, err := selectObjectiveDatabaseRelations(
+	_, dispatches, err := selectObjectiveDatabaseRelations(
 		context.Background(),
 		datasource.SchemaSnapshot{},
 		"need-1",
@@ -63,8 +62,8 @@ func TestSelectDatabaseRelationsKeepsEmptySnapshotFailureBeforeStation(t *testin
 	if err == nil || err.Error() != "database schema snapshot has no relations" {
 		t.Fatalf("empty snapshot error = %v", err)
 	}
-	if receipt != (objectiveStationReceipt{}) {
-		t.Fatalf("empty snapshot receipt = %+v, want zero model calls", receipt)
+	if dispatches != 0 {
+		t.Fatalf("empty snapshot dispatches = %+v, want zero model calls", dispatches)
 	}
 }
 
@@ -83,7 +82,7 @@ func TestSelectJoinPathUsesSoleOptionWithoutModelDispatch(t *testing.T) {
 		},
 	}
 
-	decision, receipt, err := (portableObjectiveDatabaseStations{}).SelectJoinPath(
+	decision, dispatches, err := (portableObjectiveDatabaseStations{}).SelectJoinPath(
 		context.Background(), input,
 	)
 	if err != nil {
@@ -92,8 +91,8 @@ func TestSelectJoinPathUsesSoleOptionWithoutModelDispatch(t *testing.T) {
 	if decision.PathID != "customer-orders" {
 		t.Fatalf("selected path = %q, want customer-orders", decision.PathID)
 	}
-	if receipt != (objectiveStationReceipt{}) {
-		t.Fatalf("sole join path receipt = %+v, want zero provider calls", receipt)
+	if dispatches != 0 {
+		t.Fatalf("sole join path dispatches = %+v, want zero provider calls", dispatches)
 	}
 }
 
@@ -150,8 +149,6 @@ func TestProjectionFieldUsesCanonicalSoleOptionWithoutFieldCall(t *testing.T) {
 		providerCalls++
 		var raw string
 		switch subject {
-		case "database_query_purpose_presence":
-			raw = "A"
 		case "database_query_purpose_inventory":
 			raw = "The minimum numeric measurement"
 		case "database_query_purpose_necessity":
@@ -213,8 +210,6 @@ func TestClosedFilterFieldAndValueUseSoleOptionsWithoutTheirCalls(t *testing.T) 
 		providerCalls++
 		var raw string
 		switch subject {
-		case "database_query_purpose_presence":
-			raw = "A"
 		case "database_query_purpose_inventory":
 			raw = "Only enabled metrics"
 		case "database_query_purpose_necessity":
@@ -240,8 +235,8 @@ func TestClosedFilterFieldAndValueUseSoleOptionsWithoutTheirCalls(t *testing.T) 
 	if err != nil {
 		t.Fatalf("resolve filters: %v", err)
 	}
-	if calls != 4 || providerCalls != 4 {
-		t.Fatalf("provider calls = reported %d actual %d, want 4 non-field/value calls", calls, providerCalls)
+	if calls != 3 || providerCalls != 3 {
+		t.Fatalf("provider calls = reported %d actual %d, want 3 non-field/value calls", calls, providerCalls)
 	}
 	if fieldCalls != 0 {
 		t.Fatalf("sole filter field made %d provider calls", fieldCalls)
@@ -260,9 +255,8 @@ func databaseSingleChoiceIntentInput() assemblyline.DatabaseQueryIntentInput {
 		ExactNeed:      "Return the minimum numeric measurement.",
 		Context:        assemblyline.ObjectiveContext{},
 		SchemaProjection: datasource.IntentSchemaProjection{
-			Schema:            datasource.IntentSchemaProjectionV1,
-			SourceID:          "source-1",
-			SchemaFingerprint: strings.Repeat("a", 64),
+			Schema:   datasource.IntentSchemaProjectionV1,
+			SourceID: "source-1",
 			Relations: []datasource.IntentRelationProjection{
 				{
 					ID:         "metrics",

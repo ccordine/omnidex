@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"strings"
-	"time"
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/projectroot"
@@ -15,23 +13,9 @@ import (
 
 const maxChatSessionStateResponseBytes int64 = 64 * 1024
 
-type ChatSessionJobState struct {
-	ID         int64     `json:"id"`
-	Status     string    `json:"status"`
-	Generation int64     `json:"generation"`
-	UpdatedAt  time.Time `json:"updated_at"`
-}
+type ChatSessionJobState = queue.ChannelSessionJobState
 
-type ChatSessionState struct {
-	ChannelID                model.ChannelID             `json:"channel_id"`
-	WorkspaceRoot            string                      `json:"workspace_root"`
-	WorkspaceIdentity        string                      `json:"workspace_identity"`
-	Revision                 string                      `json:"revision"`
-	LatestMessageID          *int64                      `json:"latest_message_id,omitempty"`
-	LatestTurnOperationID    *queue.LifecycleOperationID `json:"latest_turn_operation_id,omitempty"`
-	LatestControlOperationID *queue.LifecycleOperationID `json:"latest_control_operation_id,omitempty"`
-	LatestJob                *ChatSessionJobState        `json:"latest_job,omitempty"`
-}
+type ChatSessionState = queue.ChannelSessionState
 
 func (client *Client) ChatSessionState(
 	ctx context.Context,
@@ -74,8 +58,8 @@ func validateChatSessionState(
 		state.WorkspaceIdentity != workspaceIdentity {
 		return fmt.Errorf("chat session state differs from exact CLI channel authority")
 	}
-	if !canonicalSessionRevision(state.Revision) {
-		return fmt.Errorf("chat session state has an invalid revision")
+	if state.ChannelUpdatedAt.IsZero() {
+		return fmt.Errorf("chat session state has no channel update timestamp")
 	}
 	if state.LatestMessageID != nil && *state.LatestMessageID < 1 {
 		return fmt.Errorf("chat session state has an invalid latest message identity")
@@ -104,18 +88,4 @@ func validateChatSessionState(
 	default:
 		return fmt.Errorf("chat session state has unsupported job status %q", job.Status)
 	}
-}
-
-func canonicalSessionRevision(value string) bool {
-	const prefix = "channel_session_revision_"
-	digest := strings.TrimPrefix(value, prefix)
-	if len(digest) != 64 || len(value) != len(prefix)+64 {
-		return false
-	}
-	for _, character := range []byte(digest) {
-		if !(character >= '0' && character <= '9' || character >= 'a' && character <= 'f') {
-			return false
-		}
-	}
-	return true
 }

@@ -141,20 +141,6 @@ func TestPlanReviewRevisionCannotRewriteImmutableAuthority(t *testing.T) {
 		message string
 	}{
 		{
-			name: "request",
-			mutate: func(plan *model.CodingPlan) {
-				plan.RequestSHA256 = strings.Repeat("b", 64)
-			},
-			message: "request authority",
-		},
-		{
-			name: "scope",
-			mutate: func(plan *model.CodingPlan) {
-				plan.ScopeMode = model.CodingScopeModeStrict
-			},
-			message: "scope mode",
-		},
-		{
 			name: "creation time",
 			mutate: func(plan *model.CodingPlan) {
 				plan.CreatedAt = plan.CreatedAt.Add(time.Second)
@@ -177,9 +163,9 @@ func TestPlanReviewRevisionCannotRewriteImmutableAuthority(t *testing.T) {
 			message: "leaf 0 authority",
 		},
 		{
-			name: "leaf annotation",
+			name: "leaf statement",
 			mutate: func(plan *model.CodingPlan) {
-				plan.Leaves[0].Annotation = model.CodingPlanAnnotationSpeculativeReview
+				plan.Leaves[0].Statement = "A different outcome."
 			},
 			message: "leaf 0 authority",
 		},

@@ -47,18 +47,8 @@ func ResolveApplicationRequirementCandidateResultRelation(
 	default:
 		return zero, fmt.Errorf("application requirement derived-value presence is not registered")
 	}
-	kindSHA256, err := applicationRequirementSemanticReceiptSHA256(input.Kind)
-	if err != nil {
-		return zero, fmt.Errorf("hash application requirement kind receipt: %w", err)
-	}
-	cardinalitySHA256, err := applicationRequirementSemanticReceiptSHA256(input.Cardinality)
-	if err != nil {
-		return zero, fmt.Errorf("hash application requirement cardinality receipt: %w", err)
-	}
 	result := ApplicationRequirementCandidateResultRelationResult{
-		Schema:            ApplicationRequirementCandidateResultRelationSchemaV1,
-		CandidateSHA256:   ExactObjectiveContextSHA(input.Candidate),
-		KindReceiptSHA256: kindSHA256, CardinalityReceiptSHA256: cardinalitySHA256,
+		Schema:   ApplicationRequirementCandidateResultRelationSchemaV1,
 		Relation: relation,
 	}
 	if err := result.ValidateFor(input); err != nil {

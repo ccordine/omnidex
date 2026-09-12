@@ -3,6 +3,7 @@ package webresearch
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/websearch"
 )
@@ -18,8 +19,9 @@ const (
 )
 
 func validateAcquisitionQuery(query string) error {
-	if query == "" || query != strings.TrimSpace(query) || len(query) > 4_096 {
-		return fmt.Errorf("query must be trimmed and contain 1..4096 bytes")
+	if query == "" || query != strings.TrimSpace(query) || len(query) > 4_096 ||
+		!utf8.ValidString(query) || strings.ContainsRune(query, '\x00') {
+		return fmt.Errorf("query must be trimmed and contain 1..4096 valid UTF-8 bytes without NUL")
 	}
 	return nil
 }
@@ -70,8 +72,7 @@ func validateDocumentReportBounds(report websearch.DocumentReport) error {
 	for _, document := range report.Documents {
 		if len(document.ID) > 128 || len(document.CandidateID) > 128 ||
 			len(document.URL) > maxAcquisitionURLBytes || len(document.Title) > maxAcquisitionTextBytes ||
-			len(document.Snippet) > maxAcquisitionTextBytes || len(document.Content) > maxAcquisitionContentBytes ||
-			len(document.ContentSHA256) > 64 {
+			len(document.Snippet) > maxAcquisitionTextBytes || len(document.Content) > maxAcquisitionContentBytes {
 			return fmt.Errorf("document %q exceeds acquisition bounds", document.ID)
 		}
 		totalContentBytes += len(document.Content)

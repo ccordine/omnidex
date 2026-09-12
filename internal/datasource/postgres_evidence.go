@@ -2,8 +2,6 @@ package datasource
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -17,21 +15,24 @@ func ExecuteEvidence(
 	ctx context.Context,
 	pool *pgxpool.Pool,
 	snapshot SchemaSnapshot,
-	compiled CompiledQuery,
+	request RelationalQueryPlan,
 	limits ExecutionLimits,
 ) (EvidenceResult, error) {
-	if err := snapshot.ValidateIntegrity(); err != nil {
-		return EvidenceResult{}, err
+	if ctx == nil || pool == nil {
+		return EvidenceResult{}, fmt.Errorf("execute database evidence requires a context and PostgreSQL pool")
 	}
-	if err := validateCompiledQuery(snapshot, compiled); err != nil {
+	compiled, err := CompilePostgresPlan(snapshot, request)
+	if err != nil {
 		return EvidenceResult{}, err
 	}
 	if err := validateExecutionLimits(compiled, limits); err != nil {
 		return EvidenceResult{}, err
 	}
-	if pool == nil {
-		return EvidenceResult{}, fmt.Errorf("execute database evidence requires a PostgreSQL pool")
+	query, err := compiled.executionEvidence()
+	if err != nil {
+		return EvidenceResult{}, err
 	}
+	started := time.Now()
 	tx, err := pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
 	if err != nil {
 		return EvidenceResult{}, fmt.Errorf("begin read-only evidence transaction: %w", err)
@@ -39,13 +40,6 @@ func ExecuteEvidence(
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	if err := setExecutionTimeouts(ctx, tx, limits); err != nil {
 		return EvidenceResult{}, err
-	}
-	current, err := inspectCatalog(ctx, tx, snapshot.SourceID, snapshot.SourceName, time.Now().UTC())
-	if err != nil {
-		return EvidenceResult{}, fmt.Errorf("reinspect schema before evidence query: %w", err)
-	}
-	if current.Fingerprint != snapshot.Fingerprint {
-		return EvidenceResult{}, fmt.Errorf("schema fingerprint changed before evidence execution")
 	}
 	plan, err := explainCompiledQuery(ctx, tx, compiled)
 	if err != nil {
@@ -64,42 +58,18 @@ func ExecuteEvidence(
 	if err := tx.Commit(ctx); err != nil {
 		return EvidenceResult{}, fmt.Errorf("commit evidence transaction: %w", err)
 	}
-	return EvidenceResult{
+	evidence := EvidenceResult{
 		Schema: EvidenceResultV1,
-		Provenance: EvidenceProvenance{
-			SourceID: snapshot.SourceID, SchemaFingerprint: snapshot.Fingerprint,
-			IntentHash: compiled.IntentHash, QueryHash: compiled.QueryHash, ResultHash: result.Hash,
-			Plan: plan, AcquiredAt: time.Now().UTC(),
+		Execution: EvidenceExecution{
+			SourceID: snapshot.SourceID, Query: query,
+			Plan: plan, AcquiredAt: time.Now().UTC(), DurationMS: time.Since(started).Milliseconds(),
 		},
 		Result: result,
-	}, nil
-}
-
-func validateCompiledQuery(snapshot SchemaSnapshot, query CompiledQuery) error {
-	if query.Schema != CompiledQueryV1 || query.SourceID != snapshot.SourceID || query.SchemaFingerprint != snapshot.Fingerprint {
-		return fmt.Errorf("compiled query authority does not match schema snapshot")
 	}
-	if query.IntentHash == "" || query.QueryHash == "" || query.SQL == "" || query.Limit <= 0 || len(query.Outputs) == 0 {
-		return fmt.Errorf("compiled query is incomplete")
+	if err := evidence.ValidateForPlan(snapshot, request, limits); err != nil {
+		return EvidenceResult{}, err
 	}
-	queryDigest := sha256.Sum256([]byte(query.SQL))
-	if hex.EncodeToString(queryDigest[:]) != query.QueryHash {
-		return fmt.Errorf("compiled query SQL hash does not match")
-	}
-	for index, parameter := range query.Parameters {
-		if parameter.Position != index+1 || parameter.Type == "" || parameter.value == nil {
-			return fmt.Errorf("compiled query parameter %d is invalid", index+1)
-		}
-	}
-	for index, output := range query.Outputs {
-		if output.Name != fmt.Sprintf("c%d", index+1) || !validTypeCategory(output.TypeCategory) {
-			return fmt.Errorf("compiled query output %d is invalid", index+1)
-		}
-	}
-	if query.seal != compiledQuerySeal(query) {
-		return fmt.Errorf("compiled query is not sealed by the relational compiler")
-	}
-	return nil
+	return evidence, nil
 }
 
 func validateExecutionLimits(query CompiledQuery, limits ExecutionLimits) error {
@@ -210,5 +180,5 @@ func executeCompiledQuery(ctx context.Context, tx pgx.Tx, query CompiledQuery, l
 	if err := rows.Err(); err != nil {
 		return TypedEvidenceResult{}, fmt.Errorf("iterate evidence rows: %w", err)
 	}
-	return finalizeTypedResult(columns, resultRows, byteCount)
+	return TypedEvidenceResult{Columns: columns, Rows: resultRows, RowCount: len(resultRows), ByteCount: byteCount}, nil
 }

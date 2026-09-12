@@ -5,7 +5,7 @@ does not define a coordinator model, an agent loop, or a tool protocol.
 
 ## 1. Persisted hierarchy
 
-The authoritative state is nested and durable:
+The authoritative state is nested and persisted for the current service lifecycle:
 
 ```
 JOB
@@ -18,12 +18,17 @@ JOB
 - An objective is one bounded outcome necessary for that job.
 - A task is one bounded unit that can be observed, prepared, executed, and
   verified.
-- The Task Ledger is the authoritative dependency graph and status record.
-- The Working Set contains only the active task's necessary, accepted facts.
+- Code retains the task dependency graph and status in the current job's records.
+- Each active task receives only its necessary, accepted facts.
 
 Code creates, schedules, transitions, and completes all of these records. A
 model never creates nodes, edges, state transitions, scopes, retries, or
 completion claims.
+
+These are responsibilities of the existing queue and coding records, not a
+parallel Task Ledger or Working Set subsystem. Service startup recreates the
+dedicated internal schema; this hierarchy is not a cross-start archive or
+recovery contract.
 
 ## 2. Cognition is a code state machine
 
@@ -64,7 +69,7 @@ artifact leaves, declaration leaves, and verification work.
 ## 4. Investigation is conditional
 
 Code first restores exact project reality: workspace inventory, project stack,
-manifests, accepted decisions, durable memory, current job state, and known
+manifests, accepted decisions, current-service memory, current job state, and known
 repository facts.
 
 If those facts are sufficient, the task proceeds. If they are not, code
@@ -144,7 +149,7 @@ implementation-body text. Code supplies the declaration and owns parsing and
 validation. If code proves one specific defect and its exact mutable byte span,
 only the same persisted source job and immutable model route may continue. The
 model receives one necessary semantic question plus that span alone and returns
-ordinary replacement text. Code digest-checks the retained base, splices only
+ordinary replacement text. Code compares the actual source with its retained base, splices only
 the span, and reruns validation and reality. It never asks inference to preserve
 the surrounding body and never opens guidance, executor, restart, or model-swap
 paths.

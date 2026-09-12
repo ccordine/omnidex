@@ -1,30 +1,17 @@
 package queue
 
 import (
-	"encoding/json"
 	"fmt"
-	"regexp"
 	"sort"
 
-	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/model"
 )
-
-var codingPlanDigestPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 func normalizeStoreCodingPlanReviewCommand(
 	command StoreCodingPlanReviewCommand,
 ) (StoreCodingPlanReviewCommand, error) {
 	if err := validateStepAttemptAuthority(command.Authority); err != nil {
 		return StoreCodingPlanReviewCommand{}, err
-	}
-	if err := command.ScopeMode.Validate(); err != nil {
-		return StoreCodingPlanReviewCommand{}, err
-	}
-	if !codingPlanDigestPattern.MatchString(command.RequestSHA256) {
-		return StoreCodingPlanReviewCommand{}, fmt.Errorf(
-			"coding plan request SHA-256 must be 64 lowercase hex characters",
-		)
 	}
 	if command.Leaves == nil || len(command.Leaves) > model.MaxCodingPlanLeaves {
 		return StoreCodingPlanReviewCommand{}, fmt.Errorf(
@@ -33,6 +20,7 @@ func normalizeStoreCodingPlanReviewCommand(
 		)
 	}
 	seen := make(map[model.CodingPlanLeafID]struct{}, len(command.Leaves))
+	statements := make(map[string]struct{}, len(command.Leaves))
 	for index := range command.Leaves {
 		write := command.Leaves[index]
 		if err := write.Leaf.Validate(); err != nil {
@@ -44,6 +32,10 @@ func normalizeStoreCodingPlanReviewCommand(
 			)
 		}
 		seen[write.Leaf.ID] = struct{}{}
+		if _, duplicate := statements[write.Leaf.Statement]; duplicate {
+			return StoreCodingPlanReviewCommand{}, fmt.Errorf("coding plan repeats the statement of leaf %q", write.Leaf.ID)
+		}
+		statements[write.Leaf.Statement] = struct{}{}
 		if write.DecisionOriginGeneration <= 0 ||
 			write.DecisionOriginGeneration > command.Authority.Generation {
 			return StoreCodingPlanReviewCommand{}, fmt.Errorf(
@@ -72,12 +64,7 @@ func normalizeStoreCodingPlanReviewCommand(
 				"coding plan leaf %q is missing its execution receipt", write.Leaf.ID,
 			)
 		}
-		if err := write.ResultRelation.validateFor(write.Leaf); err != nil {
-			return StoreCodingPlanReviewCommand{}, fmt.Errorf(
-				"coding plan leaf %q result relation: %w", write.Leaf.ID, err,
-			)
-		}
-		if err := write.ResultRelation.assemblyline().ValidateAcceptedFor(write.Leaf.Statement); err != nil {
+		if err := write.ResultRelation.ValidateAcceptedFor(write.Leaf.Statement); err != nil {
 			return StoreCodingPlanReviewCommand{}, fmt.Errorf(
 				"coding plan leaf %q result relation: %w", write.Leaf.ID, err,
 			)
@@ -150,27 +137,4 @@ func normalizeFreezeCodingPlanCommand(
 		return FreezeCodingPlanCommand{}, err
 	}
 	return command, nil
-}
-
-func codingScopeModeFromJob(job model.Job) (model.CodingScopeMode, error) {
-	var metadata struct {
-		CodingScopeMode model.CodingScopeMode `json:"coding_scope_mode"`
-	}
-	if err := json.Unmarshal(job.Metadata, &metadata); err != nil {
-		return "", fmt.Errorf("decode job %d coding scope authority: %w", job.ID, err)
-	}
-	if err := metadata.CodingScopeMode.Validate(); err != nil {
-		return "", fmt.Errorf("job %d coding scope authority: %w", job.ID, err)
-	}
-	return metadata.CodingScopeMode, nil
-}
-
-func (receipt CodingPlanResultRelationReceipt) assemblyline() assemblyline.ApplicationRequirementCandidateResultRelationResult {
-	return assemblyline.ApplicationRequirementCandidateResultRelationResult{
-		Schema:                   receipt.Schema,
-		CandidateSHA256:          receipt.CandidateSHA256,
-		KindReceiptSHA256:        receipt.KindReceiptSHA256,
-		CardinalityReceiptSHA256: receipt.CardinalityReceiptSHA256,
-		Relation:                 receipt.Relation,
-	}
 }

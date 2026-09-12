@@ -24,14 +24,14 @@ func newPortableObjectiveRepositoryGroundingStation(
 func (adapter *portableObjectiveRepositoryGroundingStation) Answer(
 	ctx context.Context,
 	input assemblyline.GroundedAnswerInput,
-) (assemblyline.GroundedAnswerDecision, objectiveStationReceipt, error) {
+) (assemblyline.GroundedAnswerDecision, int, error) {
 	if adapter == nil || adapter.runtime == nil {
-		return assemblyline.GroundedAnswerDecision{}, objectiveStationReceipt{}, fmt.Errorf(
+		return assemblyline.GroundedAnswerDecision{}, 0, fmt.Errorf(
 			"repository grounding answer station requires runtime authority",
 		)
 	}
 	if err := input.Validate(); err != nil {
-		return assemblyline.GroundedAnswerDecision{}, objectiveStationReceipt{}, err
+		return assemblyline.GroundedAnswerDecision{}, 0, err
 	}
 	resolveModel := func() (string, error) {
 		return objectiveStationModel(adapter.runtime, station.GroundedAnswer)
@@ -42,10 +42,10 @@ func (adapter *portableObjectiveRepositoryGroundingStation) Answer(
 		func(
 			ctx context.Context,
 			leafInput assemblyline.GroundedAnswerParagraphInventoryInput,
-		) (assemblyline.GroundedAnswerParagraphInventory, objectiveStationReceipt, error) {
+		) (assemblyline.GroundedAnswerParagraphInventory, int, error) {
 			job, err := assemblyline.NewGroundedAnswerParagraphInventoryJob(leafInput)
 			if err != nil {
-				return assemblyline.GroundedAnswerParagraphInventory{}, objectiveStationReceipt{}, err
+				return assemblyline.GroundedAnswerParagraphInventory{}, 0, err
 			}
 			return runObjectivePortableRawLeafStation(
 				ctx, adapter.runtime, "grounded_answer_paragraph_inventory", job,
@@ -58,10 +58,10 @@ func (adapter *portableObjectiveRepositoryGroundingStation) Answer(
 		func(
 			ctx context.Context,
 			leafInput assemblyline.GroundedAnswerParagraphEvidenceRelationInput,
-		) (assemblyline.GroundedAnswerParagraphEvidenceRelationDecision, objectiveStationReceipt, error) {
+		) (assemblyline.GroundedAnswerParagraphEvidenceRelationDecision, int, error) {
 			job, err := assemblyline.NewGroundedAnswerParagraphEvidenceRelationJob(leafInput)
 			if err != nil {
-				return assemblyline.GroundedAnswerParagraphEvidenceRelationDecision{}, objectiveStationReceipt{}, err
+				return assemblyline.GroundedAnswerParagraphEvidenceRelationDecision{}, 0, err
 			}
 			return runObjectivePortableRawLeafStation(
 				ctx, adapter.runtime, "grounded_answer_paragraph_evidence_relation", job,
@@ -73,18 +73,18 @@ func (adapter *portableObjectiveRepositoryGroundingStation) Answer(
 		},
 		func(
 			ctx context.Context,
-			leafInput assemblyline.GroundedAnswerParagraphAuthorizationInput,
-		) (assemblyline.GroundedAnswerParagraphAuthorizationDecision, objectiveStationReceipt, error) {
-			job, err := assemblyline.NewGroundedAnswerParagraphAuthorizationJob(leafInput)
-			if err != nil {
-				return assemblyline.GroundedAnswerParagraphAuthorizationDecision{}, objectiveStationReceipt{}, err
-			}
-			return runObjectivePortableRawLeafStation(
-				ctx, adapter.runtime, "grounded_answer_paragraph_authorization", job,
-				station.GroundedAnswer, resolveModel,
-				func(raw string) (assemblyline.GroundedAnswerParagraphAuthorizationDecision, error) {
-					return assemblyline.DecodeGroundedAnswerParagraphAuthorizationDecision(leafInput, raw)
-				},
+			leafInput assemblyline.GroundedParagraphRelevanceInput,
+		) (assemblyline.GroundedParagraphRelevance, int, error) {
+			return runGroundedParagraphRelevance(
+				ctx, adapter.runtime, station.GroundedAnswer, resolveModel, leafInput,
+			)
+		},
+		func(
+			ctx context.Context,
+			leafInput assemblyline.GroundedParagraphSupportInput,
+		) (assemblyline.GroundedParagraphSupport, int, error) {
+			return runGroundedParagraphSupport(
+				ctx, adapter.runtime, station.GroundedAnswer, resolveModel, leafInput,
 			)
 		},
 	)

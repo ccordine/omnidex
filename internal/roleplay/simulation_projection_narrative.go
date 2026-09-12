@@ -130,16 +130,10 @@ func projectSimulationNarrativeTx(
 	if err := content.Validate(); err != nil {
 		return emptyContent, emptyAuthority, fmt.Errorf("projected narrative simulation content is invalid: %w", err)
 	}
-	authority.Fingerprint, err = simulationNarrativeDigest(content, authority)
-	if err != nil {
+	if err := validateNarrativeOngoingActions(content, authority); err != nil {
 		return emptyContent, emptyAuthority, err
 	}
 	return content, authority, nil
-}
-
-func simulationNarrativeFingerprintTx(ctx context.Context, tx pgx.Tx, worldID, viewpointID string) (string, error) {
-	_, authority, err := projectSimulationNarrativeTx(ctx, tx, worldID, viewpointID)
-	return authority.Fingerprint, err
 }
 
 func projectCurrentSceneTx(ctx context.Context, tx pgx.Tx, worldID string) (SceneSheet, error) {

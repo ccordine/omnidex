@@ -1,8 +1,6 @@
 package webresearch
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"regexp"
 	"sort"
@@ -17,8 +15,7 @@ var modelCitationSyntax = regexp.MustCompile(`(?i)https?://|\[[0-9]+\]`)
 const maxEvidenceIDsPerParagraph = 4
 
 // ValidateCompletionArtifact proves that a claimed completion is exactly the
-// code-rendered projection of its acquired evidence. A matching self-supplied
-// hash is not sufficient authority.
+// code-rendered projection of its acquired evidence.
 func ValidateCompletionArtifact(artifact Artifact, allEvidence []Evidence) error {
 	if len(artifact.Paragraphs) < 1 || len(artifact.Paragraphs) > maxPortableSynthesisParagraphs ||
 		len(artifact.Sources) < 1 || len(artifact.Sources) > maxPortableEvidence ||
@@ -65,8 +62,7 @@ func ValidateCompletionArtifact(artifact Artifact, allEvidence []Evidence) error
 		numbers[item.ID] = number
 		expectedSources = append(expectedSources, CitationSource{
 			Number: number, EvidenceID: item.ID, CandidateID: item.CandidateID,
-			DocumentID: item.DocumentID, Title: item.Title, URL: item.URL,
-			ContentSHA256: item.ContentSHA256, ObservedAt: item.ObservedAt,
+			Title: item.Title, URL: item.URL, ObservedAt: item.ObservedAt,
 			Truncated: item.Truncated,
 		})
 	}
@@ -79,8 +75,7 @@ func ValidateCompletionArtifact(artifact Artifact, allEvidence []Evidence) error
 		}
 	}
 	rendered := renderArtifact(artifact.Paragraphs, expectedSources, numbers)
-	digest := sha256.Sum256([]byte(rendered))
-	if artifact.Rendered != rendered || artifact.SHA256 != hex.EncodeToString(digest[:]) {
+	if artifact.Rendered != rendered {
 		return fmt.Errorf("%w: completion rendering differs from code-owned citation projection", ErrInvalidSynthesis)
 	}
 	return nil
@@ -88,10 +83,10 @@ func ValidateCompletionArtifact(artifact Artifact, allEvidence []Evidence) error
 
 func validateAcquiredArtifactEvidence(item Evidence) error {
 	return websearch.ValidateDocument(websearch.Document{
-		ID: item.DocumentID, CandidateID: item.CandidateID, URL: item.URL,
+		ID: websearch.DocumentID(item.ID), CandidateID: item.CandidateID, URL: item.URL,
 		Title: item.Title, Snippet: item.Snippet, Content: item.Content,
-		ContentSHA256: item.ContentSHA256, ObservedAt: item.ObservedAt,
-		Truncated: item.Truncated,
+		ObservedAt: item.ObservedAt,
+		Truncated:  item.Truncated,
 	})
 }
 
@@ -117,8 +112,7 @@ func buildArtifact(
 		numbers[item.ID] = number
 		sources = append(sources, CitationSource{
 			Number: number, EvidenceID: item.ID, CandidateID: item.CandidateID,
-			DocumentID: item.DocumentID, Title: item.Title, URL: item.URL,
-			ContentSHA256: item.ContentSHA256, ObservedAt: item.ObservedAt,
+			Title: item.Title, URL: item.URL, ObservedAt: item.ObservedAt,
 			Truncated: item.Truncated,
 		})
 	}
@@ -126,10 +120,9 @@ func buildArtifact(
 		return Artifact{}, fmt.Errorf("%w: cited evidence is absent from authoritative acquisition", ErrInvalidSynthesis)
 	}
 	rendered := renderArtifact(paragraphs, sources, numbers)
-	digest := sha256.Sum256([]byte(rendered))
 	return Artifact{
 		Paragraphs: cloneParagraphs(paragraphs), Sources: append([]CitationSource{}, sources...),
-		Rendered: rendered, SHA256: hex.EncodeToString(digest[:]),
+		Rendered: rendered,
 	}, nil
 }
 

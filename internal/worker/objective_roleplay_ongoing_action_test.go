@@ -8,36 +8,36 @@ import (
 )
 
 type recordingRoleplayOngoingActionStation struct {
-	relation        assemblyline.RoleplayOngoingActionRelation
-	value           string
-	relationCalls   int
-	valueCalls      int
-	relationReceipt objectiveStationReceipt
-	valueReceipt    objectiveStationReceipt
-	valueInput      assemblyline.RoleplayOngoingActionValueInput
+	relation           assemblyline.RoleplayOngoingActionRelation
+	value              string
+	relationCalls      int
+	valueCalls         int
+	relationDispatches int
+	valueDispatches    int
+	valueInput         assemblyline.RoleplayOngoingActionValueInput
 }
 
 func (station *recordingRoleplayOngoingActionStation) ResolveOngoingActionRelation(
 	_ context.Context,
 	_ assemblyline.RoleplayOngoingActionRelationInput,
-) (assemblyline.RoleplayOngoingActionRelation, objectiveStationReceipt, error) {
+) (assemblyline.RoleplayOngoingActionRelation, int, error) {
 	station.relationCalls++
-	return station.relation, station.relationReceipt, nil
+	return station.relation, station.relationDispatches, nil
 }
 
 func (station *recordingRoleplayOngoingActionStation) GenerateOngoingActionValue(
 	_ context.Context,
 	input assemblyline.RoleplayOngoingActionValueInput,
-) (string, objectiveStationReceipt, error) {
+) (string, int, error) {
 	station.valueCalls++
 	station.valueInput = input
-	return station.value, station.valueReceipt, nil
+	return station.value, station.valueDispatches, nil
 }
 
 func TestExtractRoleplayOngoingActionClearsWithoutValueCall(t *testing.T) {
 	station := &recordingRoleplayOngoingActionStation{
-		relation:        assemblyline.RoleplayOngoingActionAbsent,
-		relationReceipt: objectiveStationReceipt{Calls: 1},
+		relation:           assemblyline.RoleplayOngoingActionAbsent,
+		relationDispatches: 1,
 	}
 	previous := "Crossing the bridge."
 	result, calls, err := extractRoleplayOngoingAction(
@@ -58,8 +58,8 @@ func TestExtractRoleplayOngoingActionClearsWithoutValueCall(t *testing.T) {
 
 func TestExtractRoleplayOngoingActionPreservesPreviousInCode(t *testing.T) {
 	station := &recordingRoleplayOngoingActionStation{
-		relation:        assemblyline.RoleplayOngoingActionUnchanged,
-		relationReceipt: objectiveStationReceipt{Calls: 1},
+		relation:           assemblyline.RoleplayOngoingActionUnchanged,
+		relationDispatches: 1,
 	}
 	previous := "Crossing the bridge."
 	result, calls, err := extractRoleplayOngoingAction(
@@ -85,10 +85,10 @@ func TestExtractRoleplayOngoingActionPreservesPreviousInCode(t *testing.T) {
 
 func TestExtractRoleplayOngoingActionGeneratesOnlyForReplacement(t *testing.T) {
 	station := &recordingRoleplayOngoingActionStation{
-		relation:        assemblyline.RoleplayOngoingActionReplacement,
-		value:           "Opening the gate.",
-		relationReceipt: objectiveStationReceipt{Calls: 1},
-		valueReceipt:    objectiveStationReceipt{Calls: 1},
+		relation:           assemblyline.RoleplayOngoingActionReplacement,
+		value:              "Opening the gate.",
+		relationDispatches: 1,
+		valueDispatches:    1,
 	}
 	previous := "Crossing the bridge."
 	const contribution = "Mira steps off the bridge and begins opening the gate."
@@ -117,10 +117,10 @@ func TestExtractRoleplayOngoingActionGeneratesOnlyForReplacement(t *testing.T) {
 func TestExtractRoleplayOngoingActionKeepsIdenticalValueCodeOwned(t *testing.T) {
 	const previous = "Crossing the bridge."
 	station := &recordingRoleplayOngoingActionStation{
-		relation:        assemblyline.RoleplayOngoingActionReplacement,
-		value:           previous,
-		relationReceipt: objectiveStationReceipt{Calls: 1},
-		valueReceipt:    objectiveStationReceipt{Calls: 1},
+		relation:           assemblyline.RoleplayOngoingActionReplacement,
+		value:              previous,
+		relationDispatches: 1,
+		valueDispatches:    1,
 	}
 	result, calls, err := extractRoleplayOngoingAction(
 		context.Background(), station,

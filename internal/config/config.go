@@ -1,10 +1,10 @@
 package config
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/gryph/omnidex/internal/db"
-	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/modelconfig"
 )
 
@@ -31,7 +31,6 @@ type Config struct {
 	HuggingFaceBaseURL      string
 	HuggingFaceAPIKey       string
 	ModelAuthority          modelconfig.Authority
-	CodingScopeMode         model.CodingScopeMode
 	EmbeddingModel          string
 	WorkerPollInterval      string
 	RequestTimeout          string
@@ -46,7 +45,10 @@ type Config struct {
 // Load parses the environment and preserves provider selections and credentials
 // without resolving them; provider validation belongs to the first actual
 // provider operation.
-func Load() Config {
+func Load() (Config, error) {
+	if _, configured := os.LookupEnv("OMNI_CODING_SCOPE_MODE"); configured {
+		return Config{}, fmt.Errorf("OMNI_CODING_SCOPE_MODE was removed; coding requirements come only from the current request and established facts")
+	}
 	provider, embeddingProvider := loadProviderSelection()
 	compatibleProviders := loadCompatibleProviderConfigs()
 	providerModels := loadProviderModelConfigs()
@@ -74,7 +76,6 @@ func Load() Config {
 		HuggingFaceBaseURL:      getenv("HUGGINGFACE_BASE_URL", "https://router.huggingface.co"),
 		HuggingFaceAPIKey:       os.Getenv("HUGGINGFACE_API_KEY"),
 		ModelAuthority:          modelAuthority,
-		CodingScopeMode:         model.CodingScopeMode(getenv("OMNI_CODING_SCOPE_MODE", string(model.CodingScopeModeNormal))),
 		EmbeddingModel:          embeddingModelForProvider(embeddingProvider, providerModels),
 		WorkerPollInterval:      getenv("WORKER_POLL_INTERVAL", "2s"),
 		RequestTimeout:          getenv("REQUEST_TIMEOUT", "30m"),
@@ -86,5 +87,5 @@ func Load() Config {
 		InferenceContextTokens:  getenv("INFERENCE_CONTEXT_TOKENS", "8192"),
 	}
 
-	return cfg
+	return cfg, nil
 }

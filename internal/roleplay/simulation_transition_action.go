@@ -3,6 +3,7 @@ package roleplay
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -103,9 +104,9 @@ func giveSimulationItemTx(
 	if err != pgx.ErrNoRows {
 		return err
 	}
-	inventoryID := "rpv_" + simulationSHA([]byte(
-		"inventory-item.v1\x00" + operationID + "\x00" + worldID + "\x00" + characterID + "\x00" + template.ID,
-	))[:32]
+	// One transition can give one item. Reuse its code-issued nonce so preview,
+	// materialization, and replay refer to the same entry without hashing content.
+	inventoryID := "rpv_" + strings.TrimPrefix(operationID, "rpt_")
 	var remaining any
 	if template.UsePolicy == ItemUseFinite {
 		remaining = template.InitialUses

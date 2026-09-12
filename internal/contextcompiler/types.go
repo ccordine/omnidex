@@ -72,20 +72,17 @@ type CandidateProvider interface {
 	Retrieve(context.Context, []string) (CandidateSet, error)
 }
 
-type StationReceipt struct {
-	Calls  int
-	Reused bool
-}
-
+// Stations return the actual provider dispatch count, including zero when code
+// consumes a retained semantic value. Usage does not authorize that value.
 type RelevanceStation interface {
 	Relate(context.Context, assemblyline.ContextRelevanceRelationInput) (
-		assemblyline.ContextRelevanceRelationResult, StationReceipt, error,
+		assemblyline.ContextRelevanceRelationResult, int, error,
 	)
 }
 
 type MinificationStation interface {
 	Minify(context.Context, assemblyline.ContextMinificationInput) (
-		assemblyline.ContextMinificationDecision, StationReceipt, error,
+		assemblyline.ContextMinificationDecision, int, error,
 	)
 }
 
@@ -95,8 +92,6 @@ type Stations struct {
 }
 
 type Result struct {
-	Context           assemblyline.ObjectiveContext
-	RelevanceCalls    int
-	MinificationCalls int
-	ModelCalls        int
+	Context    assemblyline.ObjectiveContext
+	ModelCalls int
 }

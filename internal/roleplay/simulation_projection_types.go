@@ -64,5 +64,4 @@ type SimulationNarrativeAuthority struct {
 	CanonEventIDs             []string `json:"canon_event_ids"`
 	MemoryIDs                 []string `json:"memory_ids"`
 	TransitionIDs             []string `json:"transition_ids"`
-	Fingerprint               string   `json:"fingerprint"`
 }

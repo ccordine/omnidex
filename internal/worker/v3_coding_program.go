@@ -2,7 +2,6 @@ package worker
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
@@ -21,8 +20,11 @@ type directCodingProgram struct {
 	DeletePaths          []string
 }
 
+// Generated packages are local to one workload workspace. Their technical
+// name is not a product title or an identity derived from the host directory.
+const directCodingPackageName = "workload"
+
 func compileDirectCodingProgram(
-	projectName string,
 	specification assemblyline.ApplicationSpecification,
 	workload assemblyline.FrozenApplicationWorkload,
 	capabilities directCodingCapabilityGraph,
@@ -33,10 +35,6 @@ func compileDirectCodingProgram(
 	required []string,
 	deletions []string,
 ) (directCodingProgram, error) {
-	moduleSegment, err := normalizeDirectCodingModuleSegment(projectName)
-	if err != nil {
-		return directCodingProgram{}, err
-	}
 	stack := project.Stack
 	if stack.CompileSource == nil {
 		return directCodingProgram{}, fmt.Errorf(
@@ -44,7 +42,7 @@ func compileDirectCodingProgram(
 		)
 	}
 	blueprint, staticFiles, err := stack.CompileSource(
-		moduleSegment, specification, workload, capabilities, project.Profile, targetTree, coverage,
+		directCodingPackageName, specification, workload, capabilities, project.Profile, targetTree, coverage,
 	)
 	if err != nil {
 		return directCodingProgram{}, err
@@ -122,31 +120,4 @@ func resolveDirectCodingArtifactPaths(
 		}
 	}
 	return protected, required, deletions, nil
-}
-
-func normalizeDirectCodingModuleSegment(raw string) (string, error) {
-	raw = strings.TrimSpace(raw)
-	digest := directCodingDigest(raw)
-	raw = strings.ToLower(raw)
-	var output strings.Builder
-	lastDash := false
-	for _, char := range raw {
-		if char >= 'a' && char <= 'z' || char >= '0' && char <= '9' {
-			output.WriteRune(char)
-			lastDash = false
-			continue
-		}
-		if !lastDash && output.Len() > 0 {
-			output.WriteByte('-')
-			lastDash = true
-		}
-	}
-	segment := strings.Trim(output.String(), "-")
-	if segment == "" {
-		segment = "workspace-" + digest[:12]
-	}
-	if len(segment) > 64 {
-		segment = strings.Trim(segment[:51], "-") + "-" + digest[:12]
-	}
-	return segment, nil
 }

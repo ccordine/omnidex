@@ -18,7 +18,7 @@ func resolveDatabaseQueryWindows(
 		assemblyline.DatabaseQueryPurposeAuthority{
 			State: state, Collection: assemblyline.DatabaseQueryWindowPurpose,
 		},
-		datasource.MaxIntentFilters-len(state.TemporalWindows), false, call, total,
+		datasource.MaxIntentFilters-len(state.TemporalWindows), call, total,
 	)
 	total = nextTotal
 	if err != nil {
@@ -103,7 +103,7 @@ func resolveDatabaseQueryExistence(
 		assemblyline.DatabaseQueryPurposeAuthority{
 			State: state, Collection: assemblyline.DatabaseQueryExistencePurpose,
 		},
-		datasource.MaxIntentExistenceChecks-len(state.Exists), false, call, total,
+		datasource.MaxIntentExistenceChecks-len(state.Exists), call, total,
 	)
 	total = nextTotal
 	if err != nil {

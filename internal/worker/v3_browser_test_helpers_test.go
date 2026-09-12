@@ -55,19 +55,17 @@ func testBrowserManifest(
 
 func testTypeScriptBrowserProgram(
 	t *testing.T,
-	packageName string,
 	product string,
 	requirement string,
 ) directCodingProgram {
 	t.Helper()
 	return testTypeScriptBrowserProgramAtRoot(
-		t, packageName, product, requirement, "",
+		t, product, requirement, "",
 	)
 }
 
 func testTypeScriptBrowserProgramAtRoot(
 	t *testing.T,
-	packageName string,
 	product string,
 	requirement string,
 	root string,
@@ -102,7 +100,6 @@ func testTypeScriptBrowserProgramAtRoot(
 		t.Fatalf("resolve browser fixture dialect: %v", err)
 	}
 	program, err := compileDirectCodingProgram(
-		packageName,
 		specification,
 		workload,
 		directCodingCapabilityGraph{"requirement_001": nil},
@@ -115,11 +112,6 @@ func testTypeScriptBrowserProgramAtRoot(
 	)
 	if err != nil {
 		t.Fatalf("compile browser fixture program: %v", err)
-	}
-	const request = "Build the supplied browser fixture."
-	requestAuthority, err := newDirectCodingApplicationRequestAuthority(request, request)
-	if err != nil {
-		t.Fatalf("construct browser fixture request authority: %v", err)
 	}
 	relationAuthority := directCodingResultRelationAuthorityFixture(t, requirement)
 	derived, err := assemblyline.DecodeApplicationRequirementCandidateResultPresenceResult(
@@ -143,9 +135,8 @@ func testTypeScriptBrowserProgramAtRoot(
 		workload,
 		[]assemblyline.ApplicationRequirement{{
 			ID: "requirement_001", Statement: requirement,
-			RequestSHA256: requestAuthority.requestSHA256, ResultRelation: receipt,
+			ResultRelation: receipt,
 		}},
-		requestAuthority,
 	)
 	if err != nil {
 		t.Fatalf("construct browser fixture result-relation plan: %v", err)

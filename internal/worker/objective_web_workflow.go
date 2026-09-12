@@ -37,19 +37,19 @@ func runtimeWebPortableRuntime(
 			ctx context.Context,
 			job assemblyline.PortableJob,
 			validate webresearch.PortableCandidateValidator,
-		) (webresearch.SemanticCallReceipt, error) {
+		) (int, error) {
 			if runtime == nil || runtime.svc == nil {
-				return webresearch.SemanticCallReceipt{}, fmt.Errorf("web station %q requires runtime authority", id)
+				return 0, fmt.Errorf("web station %q requires runtime authority", id)
 			}
 			if job.Kind != assemblyline.WorkWebRelevanceRelation {
-				return webresearch.SemanticCallReceipt{}, fmt.Errorf(
+				return 0, fmt.Errorf(
 					"web station %q received unsupported work kind %q", id, job.Kind,
 				)
 			}
 			if validate == nil {
-				return webresearch.SemanticCallReceipt{}, fmt.Errorf("web station %q requires one exact decoder", id)
+				return 0, fmt.Errorf("web station %q requires one exact decoder", id)
 			}
-			_, receipt, err := runObjectivePortableRawLeafStation(
+			_, dispatches, err := runObjectivePortableRawLeafStation(
 				ctx,
 				runtime,
 				"web_"+string(job.Kind),
@@ -65,9 +65,7 @@ func runtimeWebPortableRuntime(
 					return raw, nil
 				},
 			)
-			return webresearch.SemanticCallReceipt{
-				Calls: receipt.Calls, Reused: receipt.Reused,
-			}, err
+			return dispatches, err
 		},
 	}
 }
@@ -78,13 +76,4 @@ func objectiveWebEvidenceConfig() webresearch.EvidenceConfig {
 		MaxProjectionBytes: 8 * 1024, MaxRelevantCandidates: maxObjectiveWebRelevantCandidates,
 		CandidateSummaryBytes: 512,
 	}
-}
-
-func cloneWebParagraphs(items []webresearch.GroundedParagraph) []webresearch.GroundedParagraph {
-	cloned := make([]webresearch.GroundedParagraph, len(items))
-	for index, item := range items {
-		cloned[index] = item
-		cloned[index].EvidenceIDs = append([]webresearch.EvidenceID(nil), item.EvidenceIDs...)
-	}
-	return cloned
 }

@@ -233,18 +233,11 @@ func validatePlanReviewSnapshot(snapshot model.CodingPlan) error {
 func equalPlanReviewSnapshots(left, right model.CodingPlan) bool {
 	return left.JobID == right.JobID && left.Generation == right.Generation &&
 		left.Revision == right.Revision && left.State == right.State &&
-		left.ScopeMode == right.ScopeMode && left.RequestSHA256 == right.RequestSHA256 &&
 		left.CreatedAt.Equal(right.CreatedAt) && left.UpdatedAt.Equal(right.UpdatedAt) &&
 		left.FrozenAt == nil && right.FrozenAt == nil && slices.Equal(left.Leaves, right.Leaves)
 }
 
 func validatePlanReviewRevisionTransition(previous, next model.CodingPlan) error {
-	if previous.RequestSHA256 != next.RequestSHA256 {
-		return fmt.Errorf("plan review request authority changed within one job generation")
-	}
-	if previous.ScopeMode != next.ScopeMode {
-		return fmt.Errorf("plan review scope mode changed within one job generation")
-	}
 	if !previous.CreatedAt.Equal(next.CreatedAt) {
 		return fmt.Errorf("plan review creation authority changed within one job generation")
 	}
@@ -257,8 +250,7 @@ func validatePlanReviewRevisionTransition(previous, next model.CodingPlan) error
 	for index := range previous.Leaves {
 		left := previous.Leaves[index]
 		right := next.Leaves[index]
-		if left.ID != right.ID || left.Statement != right.Statement ||
-			left.Annotation != right.Annotation {
+		if left.ID != right.ID || left.Statement != right.Statement {
 			return fmt.Errorf(
 				"plan review leaf %d authority changed within one job generation",
 				index,

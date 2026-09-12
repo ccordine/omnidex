@@ -24,7 +24,11 @@ There are no model-visible functions such as `give`, `take`, `use_item`,
 calling unavailable functions. Operation catalogs, command schemas, transition
 rules, and mutation controls are not model context.
 
-## Durable authorities
+## Current-service authorities
+
+These records belong to the current service/database lifecycle. Startup recreates
+Omnidex's dedicated schema from `database/setup.sql`; roleplay does not impose
+cross-start preservation or migration requirements.
 
 The roleplay runtime keeps these authorities distinct:
 
@@ -81,21 +85,20 @@ A model response is not a state transition.
    preservation review, or narrative restatement chain.
 8. Separate bounded semantic calls extract newly established canon once from
    the exact fictional user contribution and once from each final response.
-   One binary presence call determines whether the contribution directly
-   establishes any durable fictional fact. On absence, code assembles an empty
-   fact set without opening an inventory. On presence, one positive-only
-   inventory returns between one and the code-owned maximum ordinary
-   source-local fact lines. The inventory is untrusted data. Code owns its
-   queue, removes exact repeats, asks one contribution-bound authorization
-   relation for each candidate, and compares an authorized byte-different
+   One bounded inventory returns either `NO_CANON_FACT_CANDIDATES` or between
+   one and the code-owned maximum ordinary source-local fact lines. Code parses
+   and counts the candidates; there is no separate presence or pre-count call.
+   An empty inventory ends extraction immediately. The inventory is untrusted
+   data. Code owns its queue, removes exact repeats, asks one contribution-bound
+   authorization relation for each candidate, and compares an authorized byte-different
    candidate with one accepted fact at a time only to remove semantic
    duplicates. A rejected or duplicate candidate evaporates; accepted facts
    are never reviewed again. Queue exhaustion ends extraction without a
    coverage or completeness call. Code grants and persists only the surviving
    source-local facts.
 9. At terminal completion, code locks the unchanged base revision, reapplies
-   the transition, and verifies that its result and narrative fingerprint equal
-   the immutable preview.
+   the transition, and compares its actual result, projected narrative values,
+   and contributing record identities with the immutable preview.
 10. Code atomically commits the verified transition, assistant message,
     validated semantic leaves, provenance, and the next turn position.
 
@@ -156,6 +159,19 @@ participation alone never grants knowledge.
 Failure at any step leaves no partial transition and does not fall back to
 free-form interpretation or a second roleplay runtime.
 
+Request replay uses the existing exact user contribution, selected persona,
+channel/message binding, input kind, and turn coordinates. Preparation,
+transition, and advancement tables do not store request hashes. Replaying a
+completed turn compares its retained values and applied result; it does not
+reapply effects or publish another response.
+
+There is one advancement record per prepared turn, keyed directly by that
+preparation. No second hash-derived operation identity is needed. A transition
+can give one inventory item; its existing code-issued nonce also identifies that
+entry through preview, materialization, and replay. Slash-menu DOM identities are
+assigned by the server renderer and are not simulation identities or content
+fingerprints.
+
 ## Dynamic composition boundary
 
 World, scene, cast, persona sheets, responder model selection, and the user's
@@ -212,8 +228,8 @@ new Go branch.
 
 A character may receive real-world research only through an explicit persisted
 capability with an actual code-owned consumer. Code formulates or accepts the
-typed evidence need, invokes the registered resolver, validates provenance, and
-projects the bounded result. The character model never receives a search
+typed evidence need, invokes the registered resolver, records the actual query
+and fetched source text, and projects the bounded result. The character model never receives a search
 operation or resolver catalog and never claims that it performed the search.
 
 The production research sieve has one fixed shape. The explicit typed research
@@ -222,18 +238,33 @@ invokes the configured providers, and fetches the bounded candidate set. One
 relevance relation call receives one bounded excerpt without its code-owned ID.
 One response-inventory call receives only the exact question, minimal character
 identity, compiled context, and selected bounded evidence and returns candidate
-paragraphs. Code owns the paragraph queue. It first asks one candidate-local relation
-whether the complete paragraph is responsive in character and fully supported by the
-complete supplied evidence set. A negative candidate dies before citation work and
-without affecting accepted paragraphs. Only a positive candidate receives one
+paragraphs. Code owns the paragraph queue. One candidate-local relevance relation
+receives only the question, compact meaning context, and paragraph, without evidence
+or character style. Only a relevant candidate reaches a separate factual-support
+relation containing the paragraph and complete bounded evidence set; it asks only
+whether every real-world factual claim is supported, without the question, fictional
+context, or voice. Character voice belongs to generation, not a style-approval gate.
+A negative candidate dies at its own relation without affecting accepted paragraphs.
+Only a candidate with both positive relations receives one
 paragraph-to-evidence attribution relation per capsule so code can bind exact citation
-identities; those calls do not re-authorize or review the paragraph. The full simulation
+identities; those calls do not revisit relevance or complete factual support. The full simulation
 projection remains server authority and is never research-response context.
 Code alone binds evidence IDs, assembles the surviving paragraphs in source
 order, and renders exact citations when the queue is exhausted. At least one
 surviving paragraph is required for a functional grounded response; zero survivors
 fails synthesis without reopening rejected candidates. There is no
 search-term, global review, correction, or completeness station in this path.
+
+Research citations point to a recorded web acquisition belonging to the same
+job. Completion checks the actual URL, fetched text projection, observation time,
+and truncation state. The exact prepared question and persisted assistant message
+are the retained values; question, rendered-answer, and source hashes are not
+authorities. Research publication and exact replay add no fetch or model call.
+Call totals are usage limits, not source or answer authority. A retained semantic
+result requires no positive inference count or duplicate call-proof ledger.
+Response limits account for the inventory, both distinct paragraph relations,
+and each paragraph-to-source attribution; valid work is not rejected because a
+second counter omits an actual required relation.
 
 Do not expose a research checkbox until that end-to-end consumer exists and is
 tested. Write-only capability metadata is forbidden.

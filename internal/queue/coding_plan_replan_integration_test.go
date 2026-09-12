@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/model"
 )
 
@@ -63,26 +62,27 @@ func TestCodingPlanSameJobReplanSupersedesAndCarriesOnlyExactLeafIdentities(t *t
 	if err != nil {
 		t.Fatalf("load prior exact plan decisions: %v", err)
 	}
-	if prior[originalApproved.Leaf.ID].Decision != model.CodingPlanDecisionApproved ||
-		prior[originalApproved.Leaf.ID].OriginGeneration != 1 ||
-		prior[originalRejected.Leaf.ID].Decision != model.CodingPlanDecisionRejected ||
-		prior[originalRejected.Leaf.ID].OriginGeneration != 1 {
+	if prior[originalApproved.Leaf.Statement].Decision != model.CodingPlanDecisionApproved ||
+		prior[originalApproved.Leaf.Statement].OriginGeneration != 1 ||
+		prior[originalRejected.Leaf.Statement].Decision != model.CodingPlanDecisionRejected ||
+		prior[originalRejected.Leaf.Statement].OriginGeneration != 1 {
 		t.Fatalf("prior exact decisions = %#v", prior)
 	}
-	if _, exists := prior[originalPending.Leaf.ID]; exists {
+	if _, exists := prior[originalPending.Leaf.Statement]; exists {
 		t.Fatalf("undecided leaf %q was incorrectly carried as a user decision", originalPending.Leaf.ID)
 	}
 
 	changed := codingPlanExecutableLeaf(
 		t, "The confirmed item displays a confirmation marker.", model.CodingPlanDecisionPending, 2,
 	)
-	if _, exists := prior[changed.Leaf.ID]; exists {
+	if _, exists := prior[changed.Leaf.Statement]; exists {
 		t.Fatalf("changed leaf identity %q inherited an unrelated decision", changed.Leaf.ID)
 	}
 	carried := codingPlanExecutableLeaf(
-		t, originalApproved.Leaf.Statement, prior[originalApproved.Leaf.ID].Decision,
-		prior[originalApproved.Leaf.ID].OriginGeneration,
+		t, originalApproved.Leaf.Statement, prior[originalApproved.Leaf.Statement].Decision,
+		prior[originalApproved.Leaf.Statement].OriginGeneration,
 	)
+	carried.Leaf.ID = prior[originalApproved.Leaf.Statement].LeafID
 	pendingAgain := codingPlanExecutableLeaf(
 		t, originalPending.Leaf.Statement, model.CodingPlanDecisionPending, 2,
 	)
@@ -95,9 +95,9 @@ func TestCodingPlanSameJobReplanSupersedesAndCarriesOnlyExactLeafIdentities(t *t
 		t.Fatalf("replanned review claim = %#v", claim)
 	}
 	plan, err := repository.StoreCodingPlanReview(ctx, StoreCodingPlanReviewCommand{
-		Authority: claim.Authority, ScopeMode: model.CodingScopeModeNormal,
-		RequestSHA256: assemblyline.ExactObjectiveContextSHA(job.Instruction + "\n" + "generation 2"),
-		Leaves:        []CodingPlanLeafWrite{carried, changed, pendingAgain},
+		Authority: claim.Authority,
+
+		Leaves: []CodingPlanLeafWrite{carried, changed, pendingAgain},
 	})
 	if err != nil {
 		t.Fatalf("store generation-two review: %v", err)

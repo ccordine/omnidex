@@ -2,8 +2,6 @@ package roleplay
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -19,22 +17,20 @@ var (
 )
 
 type ResearchTurnAuthority struct {
-	Schema               string              `json:"schema"`
-	PreparationID        string              `json:"preparation_id"`
-	ChannelID            string              `json:"channel_id"`
-	UserMessageID        int64               `json:"user_message_id"`
-	WorldID              string              `json:"world_id"`
-	SceneID              string              `json:"scene_id"`
-	SceneRevision        int64               `json:"scene_revision"`
-	CharacterID          string              `json:"character_id"`
-	Capability           CharacterCapability `json:"capability"`
-	CapabilityGrantID    string              `json:"capability_grant_id"`
-	Question             string              `json:"question"`
-	QuestionSHA256       string              `json:"question_sha256"`
-	NarrativeFingerprint string              `json:"narrative_fingerprint"`
-	Authority            AuthorityNamespace  `json:"authority_namespace"`
-	CapabilityIssuedAt   time.Time           `json:"capability_issued_at"`
-	CreatedAt            time.Time           `json:"created_at"`
+	Schema             string              `json:"schema"`
+	PreparationID      string              `json:"preparation_id"`
+	ChannelID          string              `json:"channel_id"`
+	UserMessageID      int64               `json:"user_message_id"`
+	WorldID            string              `json:"world_id"`
+	SceneID            string              `json:"scene_id"`
+	SceneRevision      int64               `json:"scene_revision"`
+	CharacterID        string              `json:"character_id"`
+	Capability         CharacterCapability `json:"capability"`
+	CapabilityGrantID  string              `json:"capability_grant_id"`
+	Question           string              `json:"question"`
+	Authority          AuthorityNamespace  `json:"authority_namespace"`
+	CapabilityIssuedAt time.Time           `json:"capability_issued_at"`
+	CreatedAt          time.Time           `json:"created_at"`
 }
 
 func (authority ResearchTurnAuthority) Validate() error {
@@ -48,16 +44,12 @@ func (authority ResearchTurnAuthority) Validate() error {
 		validateIdentity(authority.SceneID, sceneIdentity) != nil ||
 		validateIdentity(authority.CharacterID, characterIdentity) != nil ||
 		validateIdentity(authority.CapabilityGrantID, capabilityGrantIdentity) != nil ||
-		authority.SceneRevision < 1 || !validSimulationSHA(authority.NarrativeFingerprint) ||
+		authority.SceneRevision < 1 ||
 		authority.CapabilityIssuedAt.IsZero() || authority.CreatedAt.IsZero() {
-		return fmt.Errorf("roleplay research authority has invalid identity, revision, fingerprint, or time")
+		return fmt.Errorf("roleplay research authority has invalid identity, revision, or time")
 	}
 	if err := validateResearchQuestion(authority.Question); err != nil {
 		return err
-	}
-	digest := sha256.Sum256([]byte(authority.Question))
-	if authority.QuestionSHA256 != hex.EncodeToString(digest[:]) {
-		return fmt.Errorf("roleplay research question differs from its exact SHA-256")
 	}
 	return nil
 }
@@ -87,8 +79,6 @@ func AuthorizeResearchPreparationTx(
 	if parsed != command {
 		return ResearchTurnAuthority{}, fmt.Errorf("roleplay research command differs from its canonical parse")
 	}
-	questionDigest := sha256.Sum256([]byte(command.Question))
-	questionSHA := hex.EncodeToString(questionDigest[:])
 	if existing, found, err := loadResearchPreparationTx(ctx, tx, preparation.PreparationID); err != nil || found {
 		if err != nil {
 			return ResearchTurnAuthority{}, err
@@ -96,9 +86,7 @@ func AuthorizeResearchPreparationTx(
 		if existing.ChannelID != preparation.ChannelID || existing.UserMessageID != preparation.UserMessageID ||
 			existing.WorldID != preparation.WorldID || existing.SceneID != preparation.SceneID ||
 			existing.SceneRevision != preparation.SceneRevision ||
-			existing.CharacterID != preparation.ActiveCharacterID || existing.Question != command.Question ||
-			existing.QuestionSHA256 != questionSHA ||
-			existing.NarrativeFingerprint != preparation.NarrativeFingerprint {
+			existing.CharacterID != preparation.ActiveCharacterID || existing.Question != command.Question {
 			return ResearchTurnAuthority{}, fmt.Errorf("%w: preparation was reused with different research authority", ErrResearchAuthorityConflict)
 		}
 		return existing, nil
@@ -108,13 +96,12 @@ func AuthorizeResearchPreparationTx(
 	err = tx.QueryRow(ctx, `
 		INSERT INTO roleplay_research_turns (
 			preparation_id,channel_id,user_message_id,world_id,scene_id,scene_revision,
-			character_id,capability,capability_grant_id,question,question_sha256,
-			narrative_fingerprint
+			character_id,capability,capability_grant_id,question
 		)
 		SELECT preparation.operation_id,preparation.channel_id,preparation.user_message_id,
 		       preparation.world_id,preparation.scene_id,preparation.scene_revision,
 		       preparation.active_character_id,capability.capability,capability.grant_id,
-		       $2,$3,preparation.result->>'narrative_fingerprint'
+		       $2
 		FROM roleplay_simulation_turn_preparations AS preparation
 		JOIN ai_channel_messages AS message
 		  ON message.channel_id=preparation.channel_id
@@ -125,24 +112,24 @@ func AuthorizeResearchPreparationTx(
 		 AND capability.character_id=preparation.active_character_id
 		 AND capability.capability='web_research'
 		WHERE preparation.operation_id=$1
-		  AND preparation.channel_id=$4 AND preparation.user_message_id=$5
-		  AND preparation.world_id=$6 AND preparation.scene_id=$7
-		  AND preparation.scene_revision=$8 AND preparation.active_character_id=$9
+		  AND preparation.channel_id=$3 AND preparation.user_message_id=$4
+		  AND preparation.world_id=$5 AND preparation.scene_id=$6
+		  AND preparation.scene_revision=$7 AND preparation.active_character_id=$8
 		  AND preparation.input_kind='external_command' AND NOT preparation.explicit_action
-		  AND preparation.result->>'narrative_fingerprint'=$10 AND message.content=$11
-		RETURNING $12,preparation_id,channel_id,user_message_id,world_id,scene_id,
+		  AND message.content=$9
+		RETURNING $10,preparation_id,channel_id,user_message_id,world_id,scene_id,
 		          scene_revision,character_id,capability,capability_grant_id,question,
-		          question_sha256,narrative_fingerprint,authority_namespace,
+		          authority_namespace,
 		          (SELECT created_at FROM roleplay_character_capability_grants
 		           WHERE grant_id=capability_grant_id),created_at
-	`, preparation.PreparationID, command.Question, questionSHA, preparation.ChannelID,
+	`, preparation.PreparationID, command.Question, preparation.ChannelID,
 		preparation.UserMessageID, preparation.WorldID, preparation.SceneID,
-		preparation.SceneRevision, preparation.ActiveCharacterID, preparation.NarrativeFingerprint,
+		preparation.SceneRevision, preparation.ActiveCharacterID,
 		command.Exact, ResearchTurnAuthoritySchemaV1).Scan(
 		&authority.Schema, &authority.PreparationID, &authority.ChannelID, &authority.UserMessageID,
 		&authority.WorldID, &authority.SceneID, &authority.SceneRevision, &authority.CharacterID,
 		&authority.Capability, &authority.CapabilityGrantID, &authority.Question,
-		&authority.QuestionSHA256, &authority.NarrativeFingerprint, &namespace,
+		&namespace,
 		&authority.CapabilityIssuedAt, &authority.CreatedAt,
 	)
 	if err == pgx.ErrNoRows {

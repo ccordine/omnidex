@@ -37,58 +37,36 @@ type Objective struct {
 type EvidenceID string
 
 type Evidence struct {
-	ID            EvidenceID
-	CandidateID   websearch.CandidateID
-	DocumentID    websearch.DocumentID
-	URL           string
-	Title         string
-	Snippet       string
-	Content       string
-	ContentSHA256 string
-	ObservedAt    time.Time
-	Truncated     bool
+	ID          EvidenceID
+	CandidateID websearch.CandidateID
+	URL         string
+	Title       string
+	Snippet     string
+	Content     string
+	ObservedAt  time.Time
+	Truncated   bool
 }
 
-type Step string
-
-const (
-	StepInitialDiscovery   Step = "initial_discovery"
-	StepDocumentsFetched   Step = "documents_fetched"
-	StepRelevanceResolved  Step = "relevance_resolved"
-	StepEvidenceProjected  Step = "evidence_projected"
-)
-
 type CitationSource struct {
-	Number        int
-	EvidenceID    EvidenceID
-	CandidateID   websearch.CandidateID
-	DocumentID    websearch.DocumentID
-	Title         string
-	URL           string
-	ContentSHA256 string
-	ObservedAt    time.Time
-	Truncated     bool
+	Number      int
+	EvidenceID  EvidenceID
+	CandidateID websearch.CandidateID
+	Title       string
+	URL         string
+	ObservedAt  time.Time
+	Truncated   bool
 }
 
 type Artifact struct {
 	Paragraphs []GroundedParagraph
 	Sources    []CitationSource
 	Rendered   string
-	SHA256     string
 }
 
 type evidenceRun struct {
-	Objective               Objective
-	Steps                   []Step
-	Discovery               []websearch.CandidateReport
-	Fetches                 []websearch.DocumentReport
-	Evidence                []Evidence
-	Projected               []ProjectedEvidence
-	AcquisitionAttempts     int
-	AcquisitionAttemptLimit int
-	DiscoveryAttempts       int
-	FetchAttempts           int
-	RelevanceCalls          int
-	SemanticCalls           int
-	CallLedger              SemanticCallLedger
+	Discovery     []websearch.CandidateReport
+	Fetches       []websearch.DocumentReport
+	Evidence      []Evidence
+	Projected     []ProjectedEvidence
+	SemanticCalls int
 }

@@ -2,9 +2,7 @@ package roleplay
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"strconv"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -134,66 +132,4 @@ func loadNarrativeEventsTx(
 		}
 	}
 	return events, ids, nil
-}
-
-func simulationNarrativeDigest(content NarrativeSimulationProjection, authority SimulationNarrativeAuthority) (string, error) {
-	if err := content.Scene.Initiative.Validate(); err != nil {
-		return "", err
-	}
-	if err := validateNarrativeOngoingActions(content, authority); err != nil {
-		return "", err
-	}
-	base, err := simulationNarrativeBaseDigest(content, authority)
-	if err != nil {
-		return "", err
-	}
-	clock := content.Scene.Initiative
-	return simulationSHA([]byte(
-		base + ":" + strconv.FormatInt(clock.Round, 10) + ":" +
-			strconv.FormatInt(clock.Turn, 10) + ":" +
-			strconv.FormatInt(clock.FictionalTimeTick, 10),
-	)), nil
-}
-
-func simulationNarrativeBaseDigest(
-	content NarrativeSimulationProjection,
-	authority SimulationNarrativeAuthority,
-) (string, error) {
-	authority.Fingerprint = ""
-	type fingerprintScene struct {
-		Title               string `json:"title"`
-		Description         string `json:"description"`
-		ActiveCharacterName string `json:"active_character_name"`
-	}
-	type fingerprintContent struct {
-		Schema         string                   `json:"schema"`
-		Scene          fingerprintScene         `json:"scene"`
-		Participants   []string                 `json:"participants"`
-		Viewpoint      NarrativePersona         `json:"viewpoint"`
-		OngoingActions []NarrativeOngoingAction `json:"ongoing_actions,omitempty"`
-		Meters         []NarrativeMeter         `json:"meters"`
-		Inventory      []NarrativeInventoryItem `json:"inventory"`
-		VisibleFacts   []string                 `json:"visible_facts"`
-		Memories       []string                 `json:"memories"`
-		RecentEvents   []string                 `json:"recent_events"`
-	}
-	payload, err := json.Marshal(struct {
-		Content   fingerprintContent           `json:"content"`
-		Authority SimulationNarrativeAuthority `json:"authority"`
-	}{Content: fingerprintContent{
-		Schema: content.Schema,
-		Scene: fingerprintScene{
-			Title: content.Scene.Title, Description: content.Scene.Description,
-			ActiveCharacterName: content.Scene.ActiveCharacterName,
-		},
-		Participants: content.Participants, Viewpoint: content.Viewpoint,
-		OngoingActions: content.OngoingActions,
-		Meters:         content.Meters, Inventory: content.Inventory,
-		VisibleFacts: content.VisibleFacts, Memories: content.Memories,
-		RecentEvents: content.RecentEvents,
-	}, Authority: authority})
-	if err != nil {
-		return "", err
-	}
-	return simulationSHA(payload), nil
 }

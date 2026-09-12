@@ -37,7 +37,6 @@ func listChannelSessionTurnsTx(
 		  JOIN lifecycle_operation_registry AS registry
 		    ON registry.operation_id=operation.operation_id
 		   AND registry.kind=operation.kind
-		   AND registry.command_sha256=operation.command_sha256
 		  WHERE operation.channel_id=$1
 		  UNION ALL
 		  SELECT operation.operation_id,'feedback_submitted'::text,

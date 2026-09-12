@@ -65,8 +65,8 @@ func decodeExactPreparedResponse(status int, body []byte) (ExactPreparedResponse
 	}
 	if status < 200 || status >= 300 {
 		return ExactPreparedResponse{Disposition: ProviderResponseHTTPError}, fmt.Errorf(
-			"exact provider request failed with status %d; body_bytes=%d body_sha256=%s",
-			status, len(body), providerBodySHA256(body),
+			"exact provider request failed with status %d; body_bytes=%d",
+			status, len(body),
 		)
 	}
 	invalid := ExactPreparedResponse{Disposition: ProviderResponseInvalidJSON}

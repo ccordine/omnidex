@@ -55,7 +55,7 @@ func PlanJoinPath(snapshot SchemaSnapshot, fromRelationID, toRelationID string) 
 		return JoinPath{}, err
 	}
 	if fromRelationID == toRelationID {
-		return finalizeJoinPath(snapshot, nil), nil
+		return JoinPath{ID: "path_1"}, nil
 	}
 	graph := buildJoinGraph(snapshot)
 	type searchPath struct {
@@ -92,7 +92,7 @@ func PlanJoinPath(snapshot SchemaSnapshot, fromRelationID, toRelationID string) 
 					foundDepth = depth
 				}
 				if depth == foundDepth {
-					found = append(found, finalizeJoinPath(snapshot, steps))
+					found = append(found, JoinPath{Steps: steps})
 				}
 				continue
 			}
@@ -112,6 +112,9 @@ func PlanJoinPath(snapshot SchemaSnapshot, fromRelationID, toRelationID string) 
 		return JoinPath{}, fmt.Errorf("no foreign-key path connects relation %q to %q within depth %d", fromRelationID, toRelationID, MaxJoinDepth)
 	}
 	sort.Slice(found, func(i, j int) bool { return joinPathSignature(found[i]) < joinPathSignature(found[j]) })
+	for index := range found {
+		found[index].ID = fmt.Sprintf("path_%d", index+1)
+	}
 	if len(found) > 1 {
 		return JoinPath{}, &AmbiguousJoinPathError{FromRelationID: fromRelationID, ToRelationID: toRelationID, Candidates: found}
 	}
@@ -156,14 +159,6 @@ func buildJoinGraph(snapshot SchemaSnapshot) map[string][]joinEdge {
 		})
 	}
 	return graph
-}
-
-func finalizeJoinPath(snapshot SchemaSnapshot, steps []JoinStep) JoinPath {
-	parts := []string{snapshot.SourceID, snapshot.Fingerprint}
-	for _, step := range steps {
-		parts = append(parts, step.FromRelationID, step.ToRelationID, step.ForeignKeyID, string(step.Direction))
-	}
-	return JoinPath{ID: opaqueSchemaID("path", parts...), Steps: steps}
 }
 
 func joinPathSignature(path JoinPath) string {

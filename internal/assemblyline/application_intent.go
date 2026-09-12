@@ -23,13 +23,11 @@ type ApplicationIntentCandidateRequirement struct {
 type ApplicationRequirement struct {
 	ID             string                                              `json:"id"`
 	Statement      string                                              `json:"statement"`
-	RequestSHA256  string                                              `json:"request_sha256"`
 	ResultRelation ApplicationRequirementCandidateResultRelationResult `json:"result_relation"`
 }
 
 type ApplicationIntentResolution struct {
 	ProductContext string                   `json:"product_context"`
-	RequestSHA256  string                   `json:"request_sha256"`
 	Requirements   []ApplicationRequirement `json:"requirements"`
 }
 
@@ -42,9 +40,6 @@ func (input ApplicationIntentInput) validate() error {
 	}
 	if err := input.Context.Validate(); err != nil {
 		return err
-	}
-	if input.Context.RequestSHA256 != ExactObjectiveContextSHA(input.UserRequest) {
-		return fmt.Errorf("application intent request does not match context authority")
 	}
 	return nil
 }

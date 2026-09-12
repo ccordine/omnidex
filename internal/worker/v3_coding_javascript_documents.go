@@ -16,6 +16,7 @@ func genericJavaScriptCommandLineDocuments(
 	coverage assemblyline.ApplicationFileCoveragePlan,
 ) ([]assemblyline.SourceDocument, error) {
 	implementations := make([]assemblyline.SourceDocument, 0, len(specification.Requirements))
+	verifications := make([]assemblyline.SourceDocument, 0, len(specification.Requirements))
 	implementationByPath := make(map[string]int, len(specification.Requirements))
 	applicationDependencies := []string{"runtime.api"}
 	for index, requirement := range specification.Requirements {
@@ -30,14 +31,12 @@ func genericJavaScriptCommandLineDocuments(
 		if err != nil {
 			return nil, err
 		}
-		implementationPath, err := directCodingTaskSingleImplementationPath(
-			coverage, context.Task.TaskID,
-		)
+		pair, err := directCodingTaskSinglePair(coverage, context.Task.TaskID)
 		if err != nil {
 			return nil, err
 		}
 		implementationIndex := sourceDocumentIndexForPath(
-			&implementations, implementationByPath, implementationPath,
+			&implementations, implementationByPath, pair.ImplementationPath,
 			fmt.Sprintf("workload_implementation_%03d", sequence),
 			"import { normalizeTaskResult } from './runtime.mjs';",
 		)
@@ -59,14 +58,15 @@ func genericJavaScriptCommandLineDocuments(
 		}
 		implementations[implementationIndex].Blocks = append(
 			implementations[implementationIndex].Blocks, assemblyline.SourceBlock{
-				ID: featureID, Signature: "function " + featureName + "(input, dependencies)",
+				ID: featureID, Signature: javaScriptCommandLineFeatureSignature(featureName),
 				Contract:  javaScriptCommandLineFeatureContract(requirementBehavior),
-				API:       "function " + featureName + "(input, dependencies)",
+				API:       javaScriptCommandLineFeatureSignature(featureName),
 				DependsOn: dependencies, Capabilities: append([]string(nil), dependencies...),
 				Export: true,
 				TaskID: context.Task.TaskID, Role: assemblyline.SourceBlockTaskImplementation,
 			})
 		applicationDependencies = append(applicationDependencies, featureID)
+		verifications = append(verifications, javaScriptCommandLineAcceptanceDocument(sequence, context.Task.TaskID, requirementBehavior, pair))
 	}
 	order, err := goCommandLineRequirementOrder(specification.Requirements, capabilities)
 	if err != nil {
@@ -78,6 +78,7 @@ func genericJavaScriptCommandLineDocuments(
 	}
 	documents := []assemblyline.SourceDocument{runtime}
 	documents = append(documents, implementations...)
+	documents = append(documents, verifications...)
 	documents = append(documents, javaScriptCommandLineApplicationDocument(
 		specification.Requirements, capabilities, order, coverage, contexts, applicationDependencies,
 	))
@@ -121,8 +122,4 @@ func javaScriptCapabilityProjection(
 	}
 	declaration := strings.Join(lines, "\n")
 	return fmt.Sprintf("feature.capabilities.%03d", ownerSequence), declaration, declaration
-}
-
-func javaScriptCommandLineFeatureContract(behavior string) string {
-	return strings.TrimSpace(behavior)
 }

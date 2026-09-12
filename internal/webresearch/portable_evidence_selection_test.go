@@ -23,7 +23,7 @@ func TestPortableEvidenceSelectionAggregatesIndependentBinaryLeaves(t *testing.T
 			_ context.Context,
 			job assemblyline.PortableJob,
 			validate PortableCandidateValidator,
-		) (SemanticCallReceipt, error) {
+		) (int, error) {
 			if job.Kind != assemblyline.WorkWebRelevanceRelation {
 				t.Fatalf("work kind=%q", job.Kind)
 			}
@@ -32,8 +32,7 @@ func TestPortableEvidenceSelectionAggregatesIndependentBinaryLeaves(t *testing.T
 				t.Fatal(err)
 			}
 			seen = append(seen, input.Candidate.CandidateID)
-			receipt := SemanticCallReceipt{Calls: exactPortableSemanticLeafCalls}
-			return receipt, validate(responses[input.Candidate.CandidateID])
+			return 1, validate(responses[input.Candidate.CandidateID])
 		},
 	})
 	if err != nil {
@@ -50,9 +49,8 @@ func TestPortableEvidenceSelectionAggregatesIndependentBinaryLeaves(t *testing.T
 	if want := []websearch.CandidateID{"candidate-1", "candidate-3"}; !reflect.DeepEqual(decision.CandidateIDs, want) {
 		t.Fatalf("selected IDs=%v, want %v", decision.CandidateIDs, want)
 	}
-	if decision.Outcome != RelevanceSelected || decision.SemanticCalls != 3 ||
-		decision.CallLedger.Count() != 3 {
-		t.Fatalf("decision provenance=%+v", decision)
+	if decision.Outcome != RelevanceSelected || decision.SemanticCalls != 3 {
+		t.Fatalf("decision=%+v", decision)
 	}
 }
 
@@ -70,10 +68,9 @@ func TestPortableEvidenceSelectionRejectsAggregateModelPackets(t *testing.T) {
 					_ context.Context,
 					_ assemblyline.PortableJob,
 					validate PortableCandidateValidator,
-				) (SemanticCallReceipt, error) {
+				) (int, error) {
 					calls++
-					receipt := SemanticCallReceipt{Calls: exactPortableSemanticLeafCalls}
-					return receipt, validate(raw)
+					return 1, validate(raw)
 				},
 			})
 			if err != nil {

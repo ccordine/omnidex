@@ -1,7 +1,6 @@
 package datasource
 
 import (
-	"encoding/hex"
 	"fmt"
 	"reflect"
 	"strings"
@@ -15,10 +14,6 @@ func (snapshot SchemaSnapshot) ValidateIntegrity() error {
 	if snapshot.SourceID == "" || snapshot.SourceName == "" || snapshot.SourceName != strings.TrimSpace(snapshot.SourceName) || snapshot.CapturedAt.IsZero() || snapshot.CapturedAt.Location() != time.UTC {
 		return fmt.Errorf("schema snapshot authority is incomplete")
 	}
-	fingerprint, err := hex.DecodeString(snapshot.Fingerprint)
-	if err != nil || len(fingerprint) != 32 || snapshot.Fingerprint != hex.EncodeToString(fingerprint) {
-		return fmt.Errorf("schema snapshot fingerprint is invalid")
-	}
 	definitions, err := definitionsFromSnapshot(snapshot)
 	if err != nil {
 		return err
@@ -28,7 +23,7 @@ func (snapshot SchemaSnapshot) ValidateIntegrity() error {
 		return fmt.Errorf("rebuild schema snapshot integrity: %w", err)
 	}
 	if !reflect.DeepEqual(snapshot, rebuilt) {
-		return fmt.Errorf("schema snapshot metadata, opaque IDs, or fingerprint are not canonical")
+		return fmt.Errorf("schema snapshot metadata or local references are not canonical")
 	}
 	return nil
 }

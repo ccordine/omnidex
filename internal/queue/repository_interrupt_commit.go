@@ -12,7 +12,6 @@ func createInterruptGenerationTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	command ReplanJobCommand,
-	feedbackSHA string,
 	currentGeneration int64,
 	newGeneration int64,
 	boundary replanBoundary,
@@ -20,10 +19,10 @@ func createInterruptGenerationTx(
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO job_generations (
 			job_id, generation, predecessor_generation, purpose,
-			boundary_action, feedback, feedback_sha256
-		) VALUES ($1, $2, $3, $4, $5, $6, $7)
+			boundary_action, feedback
+		) VALUES ($1, $2, $3, $4, $5, $6)
 	`, command.JobID, newGeneration, currentGeneration, jobGenerationPurposeInterrupt,
-		boundary.action, command.Feedback, feedbackSHA); err != nil {
+		boundary.action, command.Feedback); err != nil {
 		return fmt.Errorf(
 			"create interrupted generation %d for job %d: %w",
 			newGeneration,

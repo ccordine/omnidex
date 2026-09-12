@@ -89,23 +89,17 @@ func (s *directCodingSession) runDirectCodingApplicationTaskLifecycle(
 	if err != nil {
 		return err
 	}
-	verifier, hasVerifier := generator.(directCodingProjectStageVerifier)
-	if stack.RequireStagedVerification && !hasVerifier {
-		return fmt.Errorf("project stack %s requires one staged verifier", stack.ID)
+	if generator == nil {
+		return fmt.Errorf("project stack %s returned no source executor", stack.ID)
 	}
 	hooks := directCodingApplicationTaskLifecycleHooks{
 		BuildBlock: generator.GenerateBlock,
-	}
-	if hasVerifier {
-		hooks.VerifyTask = verifier.VerifyTask
-		hooks.FinalStage = verifier.VerifyFinal
+		VerifyTask: generator.VerifyTask,
+		FinalStage: generator.VerifyFinal,
 	}
 	lifecycleErr := runDirectCodingApplicationTaskLifecycle(
 		frozen, program,
 		hooks,
 	)
-	if !hasVerifier {
-		return lifecycleErr
-	}
-	return errors.Join(lifecycleErr, verifier.Close())
+	return errors.Join(lifecycleErr, generator.Close())
 }

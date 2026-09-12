@@ -2,43 +2,28 @@ package roleplay
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
 )
 
-func simulationRequestHash(schema string, value any) (string, error) {
-	payload, err := json.Marshal(value)
-	if err != nil {
-		return "", err
-	}
-	digest := sha256.Sum256(append([]byte(schema+"\x00"), payload...))
-	return hex.EncodeToString(digest[:]), nil
-}
-
 func loadSimulationTransitionTx(
 	ctx context.Context,
 	tx pgx.Tx,
-	operationID, requestHash string,
+	operationID string,
 ) (SimulationTransitionResult, bool, error) {
-	var storedHash string
 	var payload []byte
 	err := tx.QueryRow(ctx, `
-		SELECT request_sha256,result
+		SELECT result
 		FROM roleplay_simulation_transitions
 		WHERE operation_id=$1
-	`, operationID).Scan(&storedHash, &payload)
+	`, operationID).Scan(&payload)
 	if err == pgx.ErrNoRows {
 		return SimulationTransitionResult{}, false, nil
 	}
 	if err != nil {
 		return SimulationTransitionResult{}, false, err
-	}
-	if storedHash != requestHash {
-		return SimulationTransitionResult{}, false, fmt.Errorf("%w: transition identity was reused", ErrSimulationConflict)
 	}
 	result, err := decodeSimulationTransitionResult(payload)
 	return result, true, err
@@ -47,7 +32,7 @@ func loadSimulationTransitionTx(
 func persistSimulationTransitionTx(
 	ctx context.Context,
 	tx pgx.Tx,
-	requestHash, exactAction string,
+	exactAction string,
 	observerCharacterIDs []string,
 	result SimulationTransitionResult,
 ) error {
@@ -68,11 +53,11 @@ func persistSimulationTransitionTx(
 		INSERT INTO roleplay_simulation_transitions (
 			operation_id,world_id,scene_id,actor_character_id,
 			before_revision,after_revision,exact_action,action_kind,command_key,
-			request_sha256,result,observer_character_ids,created_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13)
+			result,observer_character_ids,created_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,$12)
 	`, result.OperationID, result.WorldID, result.SceneID, result.ActorCharacterID,
 		result.BeforeRevision, result.AfterRevision, exactAction,
-		result.Action.Kind, result.Action.CommandKey, requestHash, string(payload),
+		result.Action.Kind, result.Action.CommandKey, string(payload),
 		string(observerPayload), result.CreatedAt)
 	return simulationDefinitionError("simulation transition", err)
 }

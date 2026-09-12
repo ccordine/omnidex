@@ -2,8 +2,6 @@ package assemblyline
 
 import (
 	"fmt"
-
-	"github.com/gryph/omnidex/internal/exactjson"
 )
 
 const (
@@ -33,9 +31,8 @@ type ApplicationRequirementCandidateContentPresenceInput struct {
 }
 
 type ApplicationRequirementCandidateContentPresenceResult struct {
-	Schema          string                                         `json:"schema"`
-	AuthoritySHA256 string                                         `json:"authority_sha256"`
-	Presence        ApplicationRequirementCandidateContentPresence `json:"presence"`
+	Schema   string                                         `json:"schema"`
+	Presence ApplicationRequirementCandidateContentPresence `json:"presence"`
 }
 
 // ApplicationRequirementCandidateKindInput binds the code-owned final kind
@@ -45,9 +42,8 @@ type ApplicationRequirementCandidateKindInput struct {
 }
 
 type ApplicationRequirementCandidateKindResult struct {
-	Schema          string `json:"schema"`
-	CandidateSHA256 string `json:"candidate_sha256"`
-	Relation        string `json:"relation"`
+	Schema   string `json:"schema"`
+	Relation string `json:"relation"`
 }
 
 func NewApplicationRequirementCandidateContentPresenceJob(
@@ -99,15 +95,6 @@ func (result ApplicationRequirementCandidateContentPresenceResult) ValidateFor(
 			ApplicationRequirementCandidateContentPresenceSchemaV1,
 		)
 	}
-	authoritySHA256, err := applicationRequirementCandidateContentPresenceAuthoritySHA256(input)
-	if err != nil {
-		return err
-	}
-	if result.AuthoritySHA256 != authoritySHA256 {
-		return fmt.Errorf(
-			"application requirement candidate content presence authority hash does not match",
-		)
-	}
 	switch result.Presence {
 	case ApplicationRequirementCandidateContentPresent,
 		ApplicationRequirementCandidateContentAbsent:
@@ -131,9 +118,6 @@ func (result ApplicationRequirementCandidateKindResult) ValidateFor(
 			"application requirement candidate kind schema must be %q",
 			ApplicationRequirementCandidateKindSchemaV1,
 		)
-	}
-	if result.CandidateSHA256 != ExactObjectiveContextSHA(input.Candidate) {
-		return fmt.Errorf("application requirement candidate kind hash does not match")
 	}
 	switch result.Relation {
 	case ApplicationRequirementCandidateTaskLocal,
@@ -193,14 +177,9 @@ func DecodeApplicationRequirementCandidateContentPresenceResult(
 	if err != nil {
 		return zero, err
 	}
-	authoritySHA256, err := applicationRequirementCandidateContentPresenceAuthoritySHA256(input)
-	if err != nil {
-		return zero, err
-	}
 	result := ApplicationRequirementCandidateContentPresenceResult{
-		Schema:          ApplicationRequirementCandidateContentPresenceSchemaV1,
-		AuthoritySHA256: authoritySHA256,
-		Presence:        ApplicationRequirementCandidateContentPresence(leaf),
+		Schema:   ApplicationRequirementCandidateContentPresenceSchemaV1,
+		Presence: ApplicationRequirementCandidateContentPresence(leaf),
 	}
 	if err := result.ValidateFor(input); err != nil {
 		return zero, err
@@ -285,28 +264,11 @@ func ResolveApplicationRequirementCandidateKind(
 		return zero, false, nil
 	}
 	result := ApplicationRequirementCandidateKindResult{
-		Schema:          ApplicationRequirementCandidateKindSchemaV1,
-		CandidateSHA256: ExactObjectiveContextSHA(candidate),
-		Relation:        relation,
+		Schema:   ApplicationRequirementCandidateKindSchemaV1,
+		Relation: relation,
 	}
 	if err := result.ValidateFor(input); err != nil {
 		return zero, false, err
 	}
 	return result, true, nil
-}
-
-func applicationRequirementCandidateContentPresenceAuthoritySHA256(
-	input ApplicationRequirementCandidateContentPresenceInput,
-) (string, error) {
-	if err := input.validate(); err != nil {
-		return "", err
-	}
-	authority, err := exactjson.Canonical(input)
-	if err != nil {
-		return "", fmt.Errorf(
-			"encode application requirement candidate content presence authority: %w",
-			err,
-		)
-	}
-	return ExactObjectiveContextSHA(string(authority)), nil
 }

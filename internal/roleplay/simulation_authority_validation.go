@@ -14,9 +14,8 @@ func (authority SimulationTurnAuthority) Validate() error {
 		validateIdentity(authority.ActiveCharacterID, characterIdentity) != nil ||
 		authority.BaseSceneRevision < 1 || authority.SceneRevision < authority.BaseSceneRevision ||
 		authority.SceneRevision > authority.BaseSceneRevision+1 ||
-		!validSimulationSHA(authority.NarrativeFingerprint) ||
 		authority.CreatedAt.IsZero() {
-		return fmt.Errorf("simulation turn authority contains invalid identity, revision, fingerprint, or time")
+		return fmt.Errorf("simulation turn authority contains invalid identity, revision, or time")
 	}
 	if authority.InputKind != SimulationTurnProse && authority.InputKind != SimulationTurnAction &&
 		authority.InputKind != SimulationTurnExternalCommand {
@@ -78,8 +77,7 @@ func (authority SimulationTurnAuthority) Validate() error {
 		}
 		route := authority.ResponderRoutes[index]
 		if route.Position != responder.Position || route.CharacterID != responder.CharacterID ||
-			route.GenerationConfig != responder.GenerationConfig ||
-			route.NarrativeFingerprint != responder.NarrativeFingerprint {
+			route.GenerationConfig != responder.GenerationConfig {
 			return fmt.Errorf("simulation responder route %d differs from its response authority", index)
 		}
 		if err := responder.NarrativeProjection.Validate(); err != nil {
@@ -91,19 +89,16 @@ func (authority SimulationTurnAuthority) Validate() error {
 		narrative := responder.NarrativeAuthority
 		if narrative.WorldID != authority.WorldID || narrative.SceneID != authority.SceneID ||
 			narrative.SceneRevision != authority.SceneRevision || narrative.ViewpointID != responder.CharacterID ||
-			!slices.Equal(narrative.ParticipantIDs, authority.ParticipantCharacterIDs) ||
-			narrative.Fingerprint != responder.NarrativeFingerprint {
+			!slices.Equal(narrative.ParticipantIDs, authority.ParticipantCharacterIDs) {
 			return fmt.Errorf("simulation responder %d narrative authority differs from turn authority", index)
 		}
-		digest, err := simulationNarrativeDigest(responder.NarrativeProjection, narrative)
-		if err != nil || digest != responder.NarrativeFingerprint {
-			return fmt.Errorf("simulation responder %d narrative projection differs from its fingerprint", index)
+		if err := validateNarrativeOngoingActions(responder.NarrativeProjection, narrative); err != nil {
+			return fmt.Errorf("simulation responder %d narrative action bindings: %w", index, err)
 		}
 	}
 	primary := authority.Responders[0]
 	if authority.GenerationConfig != primary.GenerationConfig ||
-		authority.NarrativeProjection.Schema != primary.NarrativeProjection.Schema ||
-		authority.NarrativeFingerprint != primary.NarrativeFingerprint {
+		authority.NarrativeProjection.Schema != primary.NarrativeProjection.Schema {
 		return fmt.Errorf("simulation primary responder summary differs from its response round")
 	}
 	if err := requirePreparedNarrative(
@@ -149,13 +144,8 @@ func (authority SimulationTurnAuthority) Validate() error {
 	if narrative.WorldID != authority.WorldID || narrative.SceneID != authority.SceneID ||
 		narrative.SceneRevision != authority.SceneRevision ||
 		narrative.ViewpointID != primary.CharacterID ||
-		!slices.Equal(narrative.ParticipantIDs, authority.ParticipantCharacterIDs) ||
-		narrative.Fingerprint != authority.NarrativeFingerprint {
+		!slices.Equal(narrative.ParticipantIDs, authority.ParticipantCharacterIDs) {
 		return fmt.Errorf("simulation narrative authority differs from turn authority")
-	}
-	digest, err := simulationNarrativeDigest(authority.NarrativeProjection, narrative)
-	if err != nil || digest != authority.NarrativeFingerprint {
-		return fmt.Errorf("simulation narrative projection differs from its fingerprint")
 	}
 	return nil
 }

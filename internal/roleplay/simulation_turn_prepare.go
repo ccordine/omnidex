@@ -2,7 +2,6 @@ package roleplay
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -25,22 +24,14 @@ func PrepareSimulationTurnTx(
 	if err != nil {
 		return SimulationTurnAuthority{}, err
 	}
-	requestHash, err := simulationRequestHash("turn-preparation.v2", struct {
-		SimulationTurnPreparationRequest
-		ExactText string            `json:"exact_text"`
-		UserTurn  UserTurnAuthority `json:"user_turn"`
-	}{request, exactText, userTurn})
-	if err != nil {
-		return SimulationTurnAuthority{}, err
-	}
-	if authority, found, err := loadTurnPreparationTx(ctx, tx, request.OperationID, requestHash); err != nil || found {
+	if authority, found, err := loadTurnPreparationTx(ctx, tx, request, userTurn); err != nil || found {
 		return authority, err
 	}
 	locked, err := lockSimulationSceneTx(ctx, tx, worldID, sceneID)
 	if err != nil {
 		return SimulationTurnAuthority{}, err
 	}
-	if authority, found, err := loadTurnPreparationTx(ctx, tx, request.OperationID, requestHash); err != nil || found {
+	if authority, found, err := loadTurnPreparationTx(ctx, tx, request, userTurn); err != nil || found {
 		return authority, err
 	}
 	var action *SimulationAction
@@ -79,7 +70,7 @@ func PrepareSimulationTurnTx(
 		return SimulationTurnAuthority{}, fmt.Errorf("%w: enable at least one character other than the acting persona", ErrSimulationNotConfigured)
 	}
 	transition, responders, err := previewSimulationTurnTx(
-		ctx, tx, locked, request.OperationID, requestHash, exactActionText(action, exactText), action,
+		ctx, tx, locked, request.OperationID, exactActionText(action, exactText), action,
 		responderIDs,
 	)
 	if err != nil {
@@ -94,8 +85,7 @@ func PrepareSimulationTurnTx(
 	for index, responder := range responders {
 		routes[index] = SimulationResponderRoute{
 			Position: responder.Position, CharacterID: responder.CharacterID,
-			GenerationConfig:     responder.GenerationConfig,
-			NarrativeFingerprint: responder.NarrativeFingerprint,
+			GenerationConfig: responder.GenerationConfig,
 		}
 	}
 	authority := SimulationTurnAuthority{
@@ -109,15 +99,14 @@ func PrepareSimulationTurnTx(
 		ParticipantCharacterIDs: participantIDs,
 		GenerationConfig:        primary.GenerationConfig,
 		NarrativeProjection:     primary.NarrativeProjection, NarrativeAuthority: primary.NarrativeAuthority,
-		NarrativeFingerprint: primary.NarrativeFingerprint,
-		Responders:           responders,
-		ResponderRoutes:      routes,
-		CreatedAt:            time.Now().UTC().Truncate(time.Microsecond),
+		Responders:      responders,
+		ResponderRoutes: routes,
+		CreatedAt:       time.Now().UTC().Truncate(time.Microsecond),
 	}
 	if err := authority.Validate(); err != nil {
 		return SimulationTurnAuthority{}, err
 	}
-	if err := persistTurnPreparationTx(ctx, tx, requestHash, authority); err != nil {
+	if err := persistTurnPreparationTx(ctx, tx, authority); err != nil {
 		return SimulationTurnAuthority{}, err
 	}
 	return authority, nil
@@ -212,7 +201,6 @@ func BindSimulationPreparationJobTx(
 		  AND job.metadata->>'roleplay_scene_id'=preparation.scene_id
 		  AND job.metadata->>'roleplay_scene_revision'=preparation.scene_revision::text
 		  AND job.metadata->>'roleplay_input_kind'=preparation.input_kind
-		  AND job.metadata->>'roleplay_narrative_fingerprint'=preparation.result->>'narrative_fingerprint'
 		  AND job.metadata->>'roleplay_viewpoint_character_id'=
 		      preparation.result->'responder_routes'->0->>'character_id'
 		  AND job.metadata->'roleplay_participant_character_ids'=preparation.result->'participant_character_ids'
@@ -290,34 +278,4 @@ func simulationParticipantIDs(participants []SceneParticipantProjection) []strin
 		ids[index] = participant.CharacterID
 	}
 	return ids
-}
-
-func persistTurnPreparationTx(
-	ctx context.Context,
-	tx pgx.Tx,
-	requestHash string,
-	authority SimulationTurnAuthority,
-) error {
-	payload, err := json.Marshal(authority)
-	if err != nil {
-		return err
-	}
-	_, err = tx.Exec(ctx, `
-		INSERT INTO roleplay_simulation_turn_preparations (
-			operation_id,channel_id,user_message_id,world_id,scene_id,
-			request_sha256,base_scene_revision,scene_revision,active_character_id,input_kind,explicit_action,
-			pending_transition_id,result,created_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14)
-	`, authority.PreparationID, authority.ChannelID, authority.UserMessageID,
-		authority.WorldID, authority.SceneID, requestHash, authority.BaseSceneRevision,
-		authority.SceneRevision, authority.ActiveCharacterID, authority.InputKind, authority.ExplicitAction,
-		pendingTransitionID(authority.PendingTransition), string(payload), authority.CreatedAt)
-	return simulationDefinitionError("simulation turn preparation", err)
-}
-
-func pendingTransitionID(transition *SimulationTransitionResult) any {
-	if transition == nil {
-		return nil
-	}
-	return transition.OperationID
 }

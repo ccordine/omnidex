@@ -24,9 +24,8 @@ type DatabaseQueryPurposeNecessityInput struct {
 }
 
 type DatabaseQueryPurposeNecessityResult struct {
-	Schema          string `json:"schema"`
-	AuthoritySHA256 string `json:"authority_sha256"`
-	Relation        string `json:"relation"`
+	Schema   string `json:"schema"`
+	Relation string `json:"relation"`
 }
 
 type DatabaseQueryPurposeRelationInput struct {
@@ -36,9 +35,8 @@ type DatabaseQueryPurposeRelationInput struct {
 }
 
 type DatabaseQueryPurposeRelationResult struct {
-	Schema          string `json:"schema"`
-	AuthoritySHA256 string `json:"authority_sha256"`
-	Relation        string `json:"relation"`
+	Schema   string `json:"schema"`
+	Relation string `json:"relation"`
 }
 
 func NewDatabaseQueryPurposeNecessityJob(
@@ -104,12 +102,8 @@ func DecodeDatabaseQueryPurposeNecessityResult(
 	if err != nil {
 		return zero, err
 	}
-	authoritySHA256, err := databaseQueryPurposeAuthoritySHA256(input)
-	if err != nil {
-		return zero, err
-	}
 	result := DatabaseQueryPurposeNecessityResult{
-		Schema: DatabaseQueryPurposeNecessitySchemaV1, AuthoritySHA256: authoritySHA256, Relation: leaf,
+		Schema: DatabaseQueryPurposeNecessitySchemaV1, Relation: leaf,
 	}
 	if err := result.ValidateFor(input); err != nil {
 		return zero, err
@@ -125,13 +119,6 @@ func (result DatabaseQueryPurposeNecessityResult) ValidateFor(
 	}
 	if result.Schema != DatabaseQueryPurposeNecessitySchemaV1 {
 		return fmt.Errorf("database query purpose necessity schema must be %q", DatabaseQueryPurposeNecessitySchemaV1)
-	}
-	authoritySHA256, err := databaseQueryPurposeAuthoritySHA256(input)
-	if err != nil {
-		return err
-	}
-	if result.AuthoritySHA256 != authoritySHA256 {
-		return fmt.Errorf("database query purpose necessity authority hash does not match")
 	}
 	switch result.Relation {
 	case DatabaseQueryPurposeNecessary, DatabaseQueryPurposeNotNecessary:
@@ -199,12 +186,8 @@ func DecodeDatabaseQueryPurposeRelationResult(
 	if err != nil {
 		return zero, err
 	}
-	authoritySHA256, err := databaseQueryPurposeAuthoritySHA256(input)
-	if err != nil {
-		return zero, err
-	}
 	result := DatabaseQueryPurposeRelationResult{
-		Schema: DatabaseQueryPurposeRelationSchemaV1, AuthoritySHA256: authoritySHA256, Relation: leaf,
+		Schema: DatabaseQueryPurposeRelationSchemaV1, Relation: leaf,
 	}
 	if err := result.ValidateFor(input); err != nil {
 		return zero, err
@@ -240,13 +223,6 @@ func (result DatabaseQueryPurposeRelationResult) ValidateFor(
 	}
 	if result.Schema != DatabaseQueryPurposeRelationSchemaV1 {
 		return fmt.Errorf("database query purpose relation schema must be %q", DatabaseQueryPurposeRelationSchemaV1)
-	}
-	authoritySHA256, err := databaseQueryPurposeAuthoritySHA256(input)
-	if err != nil {
-		return err
-	}
-	if result.AuthoritySHA256 != authoritySHA256 {
-		return fmt.Errorf("database query purpose relation authority hash does not match")
 	}
 	switch result.Relation {
 	case DatabaseQueryPurposesSame, DatabaseQueryPurposesDistinct:
@@ -300,7 +276,7 @@ func renderDatabaseQueryPurposeAuthority(input DatabaseQueryPurposeAuthority) (s
 		sections = append(sections, "ACCEPTED PARENT PURPOSE:\n"+input.ParentPurpose)
 	}
 	if input.FocusedFieldID != "" {
-		focused, err := renderDatabaseQueryFocusedField(input.State, input.FocusedFieldID)
+		focused, err := renderDatabaseQueryFocusedField(input.State, input.FocusedFieldID, true)
 		if err != nil {
 			return "", err
 		}

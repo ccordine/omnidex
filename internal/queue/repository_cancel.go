@@ -70,7 +70,7 @@ func cancelJobTx(ctx context.Context, tx pgx.Tx, command CancelJobCommand) (Life
 	if err := insertLifecycleOperationTx(ctx, tx, descriptor, lifecycleOperationRecord{
 		ID: descriptor.ID, JobID: job.ID,
 		ObservedGeneration: job.CurrentGeneration, ResultGeneration: job.CurrentGeneration,
-		Kind: descriptor.Kind, CommandSHA256: descriptor.SHA256,
+		Kind:            descriptor.Kind,
 		ResultJobStatus: job.Status, ResultJob: job,
 	}); err != nil {
 		return LifecycleJobResult{}, err

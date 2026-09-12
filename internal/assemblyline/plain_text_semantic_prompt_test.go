@@ -12,12 +12,12 @@ func TestApplicationProductContextPromptExposesSemanticContentOnly(t *testing.T)
 	const request = "Build a maintenance tracker for a repair shop."
 	const fact = "The existing service stores work orders in PostgreSQL."
 	context := ApplicationContext{
-		Schema:        ApplicationContextSchemaV1,
-		RequestSHA256: ExactObjectiveContextSHA(request),
+		Schema: ApplicationContextSchemaV1,
+
 		Facts: []ApplicationContextFact{{
 			ID: "fact_001", Kind: ApplicationContextRepositoryFact,
 			Authority: ApplicationContextEvidenceAuthority, NeedID: "need_internal_1",
-			Value: fact, SourceID: "source_internal_1", SourceSHA256: ExactObjectiveContextSHA(fact),
+			Value: fact, SourceID: "source_internal_1",
 		}},
 	}
 
@@ -30,7 +30,6 @@ func TestApplicationProductContextPromptExposesSemanticContentOnly(t *testing.T)
 	assertPromptContains(t, product, request, fact)
 	assertPromptOmitsPacketState(t, product,
 		ApplicationContextSchemaV1,
-		context.RequestSHA256,
 		"fact_001",
 		"need_internal_1",
 		"source_internal_1",
@@ -59,27 +58,33 @@ func TestGroundedAnswerPromptsUsePlainTextAndOpaqueChoices(t *testing.T) {
 	assertPromptContains(t, inventory, requirement, context.Capsules[0].Content, evidence.Text, "List between 1 and 4 paragraphs")
 	assertPromptOmitsPacketState(t, inventory,
 		evidence.ID,
-		context.Capsules[0].ContentSHA256,
 		context.Capsules[0].Sources[0].CandidateID,
 		GroundedAnswerParagraphInventorySchemaV1,
 	)
 
-	authorizationInput := GroundedAnswerParagraphAuthorizationInput{
-		ExactRequirement: requirement,
-		Context:          context,
-		ParagraphText:    paragraph,
-		Evidence:         []GroundedEvidenceCapsule{evidence},
+	relevanceInput := GroundedParagraphRelevanceInput{
+		ExactQuestion: requirement,
+		Context:       context,
+		ParagraphText: paragraph,
 	}
-	authorization, err := BuildGroundedAnswerParagraphAuthorizationPrompt(authorizationInput)
+	relevance, err := BuildGroundedParagraphRelevancePrompt(relevanceInput)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertPromptContains(t, authorization, requirement, paragraph, evidence.Text, "A.", "B.", "Answer with A or B.")
-	assertPromptOmitsPacketState(t, authorization,
-		evidence.ID,
-		string(GroundedParagraphResponsiveAndFullySupported),
-		string(GroundedParagraphNotResponsiveOrUnsupported),
-		context.Capsules[0].ContentSHA256,
+	assertPromptContains(t, relevance, requirement, paragraph, context.Capsules[0].Content, "Answer with A or B.")
+	assertPromptOmitsPacketState(t, relevance,
+		evidence.ID, evidence.Text, string(GroundedParagraphNotRelevant),
+	)
+	support, err := BuildGroundedParagraphSupportPrompt(GroundedParagraphSupportInput{
+		ParagraphText: paragraph, Evidence: []GroundedEvidenceCapsule{evidence}, ClaimDomain: GroundedAllFactualClaims,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertPromptContains(t, support, paragraph, evidence.Text, "Answer with A or B.")
+	assertPromptOmitsPacketState(t, support,
+		requirement, context.Capsules[0].Content, evidence.ID,
+		string(GroundedParagraphFullySupported), string(GroundedParagraphNotFullySupported), string(GroundedAllFactualClaims),
 	)
 
 	relationInput := GroundedAnswerParagraphEvidenceRelationInput{
@@ -129,24 +134,29 @@ func TestRoleplayAndWebPromptsOmitCodeOwnedPackets(t *testing.T) {
 	assertPromptContains(t, inventory, question, identity.CharacterName, identity.Summary, identity.Voice, context.Capsules[0].Content, evidence.Text, "List between 1 and 4 paragraphs")
 	assertPromptOmitsPacketState(t, inventory,
 		evidence.ID,
-		context.Capsules[0].ContentSHA256,
 		context.Capsules[0].Sources[0].CandidateID,
 		RoleplayGroundedParagraphInventorySchemaV1,
 	)
 
-	authorizationInput := RoleplayGroundedParagraphAuthorizationInput{
-		ExactQuestion: question, RoleplayIdentity: identity, Context: context,
-		ParagraphText: paragraph, Evidence: []GroundedEvidenceCapsule{evidence},
+	relevanceInput := GroundedParagraphRelevanceInput{
+		ExactQuestion: question, Context: context, ParagraphText: paragraph,
 	}
-	authorization, err := BuildRoleplayGroundedParagraphAuthorizationPrompt(authorizationInput)
+	relevance, err := BuildGroundedParagraphRelevancePrompt(relevanceInput)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertPromptContains(t, authorization, question, paragraph, evidence.Text, "Answer with A or B.")
-	assertPromptOmitsPacketState(t, authorization,
-		evidence.ID,
-		string(RoleplayGroundedParagraphResponsiveAndSupported),
-		string(RoleplayGroundedParagraphNotAuthorized),
+	assertPromptContains(t, relevance, question, paragraph, context.Capsules[0].Content, "Answer with A or B.")
+	assertPromptOmitsPacketState(t, relevance, evidence.ID, evidence.Text, identity.Voice, identity.Summary)
+	support, err := BuildGroundedParagraphSupportPrompt(GroundedParagraphSupportInput{
+		ParagraphText: paragraph, Evidence: []GroundedEvidenceCapsule{evidence}, ClaimDomain: GroundedRealWorldClaims,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertPromptContains(t, support, paragraph, evidence.Text, "real-world factual claim", "Answer with A or B.")
+	assertPromptOmitsPacketState(t, support,
+		question, context.Capsules[0].Content, identity.CharacterName, identity.Voice, identity.Summary,
+		evidence.ID, string(GroundedRealWorldClaims),
 	)
 
 	evidenceRelationInput := RoleplayGroundedEvidenceRelationInput{
@@ -173,28 +183,13 @@ func TestRoleplayAndWebPromptsOmitCodeOwnedPackets(t *testing.T) {
 		},
 		Context: context,
 	}
-	presence, err := BuildRoleplayCanonFactPresencePrompt(canonInput)
-	if err != nil {
-		t.Fatal(err)
-	}
-	assertPromptContains(t, presence, "Mara", canonInput.Source.ExactContribution, context.Capsules[0].Content, "Answer with A or B.")
-	assertPromptOmitsPacketState(t, presence,
-		string(RoleplayCanonSourceUserContribution),
-		RoleplayCanonContributionEstablishesFact,
-		RoleplayCanonContributionEstablishesNoFact,
-		context.Capsules[0].ContentSHA256,
-		context.Capsules[0].Sources[0].CandidateID,
-		RoleplayCanonFactPresenceSchemaV1,
-	)
-
 	canon, err := BuildRoleplayCanonFactInventoryPrompt(canonInput)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertPromptContains(t, canon, "Mara", canonInput.Source.ExactContribution, context.Capsules[0].Content, "List between 1 and")
+	assertPromptContains(t, canon, "Mara", canonInput.Source.ExactContribution, context.Capsules[0].Content, "List between 1 and", RoleplayNoCanonFactCandidates)
 	assertPromptOmitsPacketState(t, canon,
 		string(RoleplayCanonSourceUserContribution),
-		context.Capsules[0].ContentSHA256,
 		context.Capsules[0].Sources[0].CandidateID,
 		RoleplayCanonFactInventorySchemaV1,
 	)
@@ -217,19 +212,16 @@ func TestRoleplayAndWebPromptsOmitCodeOwnedPackets(t *testing.T) {
 	assertPromptOmitsPacketState(t, webPrompt,
 		webInput.Candidate.CandidateID,
 		string(WebCandidateNotRelevant),
-		context.Capsules[0].ContentSHA256,
 	)
 }
 
 func plainTextPromptObjectiveContext(content string) ObjectiveContext {
 	return ObjectiveContext{Capsules: []ObjectiveContextCapsule{{
 		Sources: []ObjectiveContextSource{{
-			Namespace:     "test.context",
-			CandidateID:   "CTX_1",
-			ContentSHA256: ExactObjectiveContextSHA(content),
+			Namespace:   "test.context",
+			CandidateID: "CTX_1",
 		}},
-		Content:       content,
-		ContentSHA256: ExactObjectiveContextSHA(content),
+		Content: content,
 	}}}
 }
 

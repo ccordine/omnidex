@@ -3,8 +3,6 @@ package assemblyline
 import (
 	"fmt"
 	"strings"
-
-	"github.com/gryph/omnidex/internal/exactjson"
 )
 
 const (
@@ -18,12 +16,10 @@ const (
 
 // RoleplayGroundedParagraphInventory is untrusted candidate data. Code owns
 // its source-order queue. A candidate becomes response state only after its
-// independent evidence relations and paragraph authorization succeed.
+// independent relevance, real-world factual support, and source attribution succeed.
 type RoleplayGroundedParagraphInventory struct {
-	Schema          string   `json:"schema"`
-	AuthoritySHA256 string   `json:"authority_sha256"`
-	RawSHA256       string   `json:"raw_sha256"`
-	Candidates      []string `json:"candidates"`
+	Schema     string   `json:"schema"`
+	Candidates []string `json:"candidates"`
 }
 
 func NewRoleplayGroundedParagraphInventoryJob(
@@ -48,7 +44,6 @@ func BuildRoleplayGroundedParagraphInventoryPrompt(
 		input.ExactQuestion,
 		input.RoleplayIdentity,
 		input.Context,
-		"",
 		evidence,
 	)
 	if err != nil {
@@ -70,7 +65,6 @@ func renderRoleplayGroundedModelContext(
 	exactQuestion string,
 	identity RoleplayResponseIdentity,
 	context ObjectiveContext,
-	paragraph string,
 	evidence []string,
 ) (string, error) {
 	contextText, err := renderObjectiveContextForModel(context)
@@ -86,9 +80,6 @@ func renderRoleplayGroundedModelContext(
 	}
 	if contextText != "" {
 		parts = append(parts, "Relevant fictional context:\n"+contextText)
-	}
-	if paragraph != "" {
-		parts = append(parts, "Paragraph:\n"+paragraph)
 	}
 	for _, item := range evidence {
 		parts = append(parts, "Real-world evidence:\n"+item)
@@ -138,15 +129,9 @@ func DecodeRoleplayGroundedParagraphInventory(
 		}
 		candidates[index] = decoded
 	}
-	authoritySHA256, err := roleplayGroundedParagraphInventoryAuthoritySHA256(input)
-	if err != nil {
-		return zero, err
-	}
 	result := RoleplayGroundedParagraphInventory{
-		Schema:          RoleplayGroundedParagraphInventorySchemaV1,
-		AuthoritySHA256: authoritySHA256,
-		RawSHA256:       ExactObjectiveContextSHA(leaf),
-		Candidates:      append([]string{}, candidates...),
+		Schema:     RoleplayGroundedParagraphInventorySchemaV1,
+		Candidates: append([]string{}, candidates...),
 	}
 	if err := result.ValidateFor(input); err != nil {
 		return zero, err
@@ -166,13 +151,6 @@ func (inventory RoleplayGroundedParagraphInventory) ValidateFor(
 			RoleplayGroundedParagraphInventorySchemaV1,
 		)
 	}
-	authoritySHA256, err := roleplayGroundedParagraphInventoryAuthoritySHA256(input)
-	if err != nil {
-		return err
-	}
-	if inventory.AuthoritySHA256 != authoritySHA256 {
-		return fmt.Errorf("roleplay grounded paragraph inventory authority hash does not match")
-	}
 	if len(inventory.Candidates) < 1 || len(inventory.Candidates) > maxRoleplayGroundedParagraphs {
 		return fmt.Errorf(
 			"roleplay grounded paragraph inventory must contain 1..%d candidates",
@@ -187,22 +165,5 @@ func (inventory RoleplayGroundedParagraphInventory) ValidateFor(
 			return fmt.Errorf("roleplay grounded paragraph candidate %d: %w", index, err)
 		}
 	}
-	raw := strings.Join(inventory.Candidates, "\n")
-	if inventory.RawSHA256 != ExactObjectiveContextSHA(raw) {
-		return fmt.Errorf("roleplay grounded paragraph inventory raw hash does not match")
-	}
 	return nil
-}
-
-func roleplayGroundedParagraphInventoryAuthoritySHA256(
-	input RoleplayGroundedResponseInput,
-) (string, error) {
-	if err := input.validate(); err != nil {
-		return "", err
-	}
-	authority, err := exactjson.Canonical(input)
-	if err != nil {
-		return "", fmt.Errorf("encode roleplay grounded paragraph inventory authority: %w", err)
-	}
-	return ExactObjectiveContextSHA(string(authority)), nil
 }

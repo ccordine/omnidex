@@ -2,32 +2,27 @@ package config
 
 import (
 	"os"
+	"strings"
 	"testing"
-
-	"github.com/gryph/omnidex/internal/model"
 )
 
-func TestLoadCodingScopeMode(t *testing.T) {
-	original, configured := os.LookupEnv("OMNI_CODING_SCOPE_MODE")
+func TestLoadNeedsNoCodingScopeSetting(t *testing.T) {
+	t.Setenv("OMNI_CODING_SCOPE_MODE", "")
 	if err := os.Unsetenv("OMNI_CODING_SCOPE_MODE"); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		if configured {
-			_ = os.Setenv("OMNI_CODING_SCOPE_MODE", original)
-			return
-		}
-		_ = os.Unsetenv("OMNI_CODING_SCOPE_MODE")
-	})
-
-	if got := Load().CodingScopeMode; got != model.CodingScopeModeNormal {
-		t.Fatalf("default coding scope mode=%q, want %q", got, model.CodingScopeModeNormal)
-	}
-
-	if err := os.Setenv("OMNI_CODING_SCOPE_MODE", string(model.CodingScopeModeExpansive)); err != nil {
+	if _, err := Load(); err != nil {
 		t.Fatal(err)
 	}
-	if got := Load().CodingScopeMode; got != model.CodingScopeModeExpansive {
-		t.Fatalf("configured coding scope mode=%q, want %q", got, model.CodingScopeModeExpansive)
+}
+
+func TestLoadRejectsRemovedScopeSetting(t *testing.T) {
+	for _, value := range []string{"strict", "normal", "expansive", ""} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("OMNI_CODING_SCOPE_MODE", value)
+			if _, err := Load(); err == nil || !strings.Contains(err.Error(), "OMNI_CODING_SCOPE_MODE was removed") {
+				t.Fatalf("removed environment setting %q: %v", value, err)
+			}
+		})
 	}
 }

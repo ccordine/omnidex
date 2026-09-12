@@ -54,13 +54,6 @@ func ValidateExactPreparedGenerationForRequest(
 	if err := generation.validateSuccessfulContentEvidence(); err != nil {
 		return err
 	}
-	requestSHA256, err := ExactPreparedRequestSHA256(prepared)
-	if err != nil {
-		return err
-	}
-	if generation.ProviderRequestSHA256 != requestSHA256 {
-		return fmt.Errorf("exact prepared generation differs from its request authority")
-	}
 	if err := ValidateExactPreparedNativeUsage(
 		prepared.ContextTokens,
 		prepared.MaxOutputTokens,

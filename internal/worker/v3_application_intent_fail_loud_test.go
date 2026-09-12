@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
-	"github.com/gryph/omnidex/internal/model"
 )
 
 func TestApplicationIntentValidNegativeDoesNotStopIndependentCandidate(t *testing.T) {
@@ -26,7 +25,7 @@ func TestApplicationIntentValidNegativeDoesNotStopIndependentCandidate(t *testin
 		Context:     applicationContext,
 	}
 	var authorizationSubjects []string
-	var scopeModes []model.CodingScopeMode
+	var classificationSubjects []string
 	runtime := typedWorkerRuntime{
 		Context: context.Background(),
 		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
@@ -44,18 +43,12 @@ func TestApplicationIntentValidNegativeDoesNotStopIndependentCandidate(t *testin
 				if input.Candidate == addedMechanism {
 					candidate = "B"
 				}
-			case assemblyline.WorkApplicationRequirementCandidateScopeRelation:
-				var input assemblyline.ApplicationRequirementCandidateScopeRelationInput
-				if err := json.Unmarshal(job.Payload, &input); err != nil {
-					return assemblyline.PortableResult{}, err
-				}
-				scopeModes = append(scopeModes, input.ScopeMode)
-				candidate = "C"
 			case assemblyline.WorkApplicationRequirementCandidateKind:
 				var input assemblyline.ApplicationRequirementCandidateContentPresenceInput
 				if err := json.Unmarshal(job.Payload, &input); err != nil {
 					return assemblyline.PortableResult{}, err
 				}
+				classificationSubjects = append(classificationSubjects, input.Candidate)
 				candidate = "A"
 				if input.Dimension == assemblyline.ApplicationRequirementCandidateNonRuntimeContentDimension {
 					candidate = "B"
@@ -71,7 +64,7 @@ func TestApplicationIntentValidNegativeDoesNotStopIndependentCandidate(t *testin
 			default:
 				return assemblyline.PortableResult{}, fmt.Errorf("unexpected work kind %q", job.Kind)
 			}
-			return assemblyline.PortableResult{JobID: job.ID, Candidate: candidate}, nil
+			return assemblyline.PortableResult{Candidate: candidate}, nil
 		},
 	}
 
@@ -81,7 +74,6 @@ func TestApplicationIntentValidNegativeDoesNotStopIndependentCandidate(t *testin
 			Requirements: "requirements-model", ResultRelation: "result-model",
 		},
 		authority,
-		model.CodingScopeModeExpansive,
 		nil,
 	)
 	if err != nil {
@@ -90,12 +82,11 @@ func TestApplicationIntentValidNegativeDoesNotStopIndependentCandidate(t *testin
 	if !reflect.DeepEqual(authorizationSubjects, []string{addedMechanism, coreOutcome}) {
 		t.Fatalf("authorization subjects=%q", authorizationSubjects)
 	}
-	if !reflect.DeepEqual(scopeModes, []model.CodingScopeMode{model.CodingScopeModeExpansive}) {
-		t.Fatalf("scope critic modes=%q", scopeModes)
+	if !reflect.DeepEqual(classificationSubjects, []string{coreOutcome, coreOutcome}) {
+		t.Fatalf("classification subjects=%q", classificationSubjects)
 	}
-	if len(proposals) != 2 ||
-		proposals[0].Annotation != model.CodingPlanAnnotationConcreteConflict ||
-		proposals[0].Statement != addedMechanism || proposals[1].Statement != coreOutcome {
+	if len(proposals) != 1 ||
+		proposals[0].Statement != coreOutcome {
 		t.Fatalf("proposals=%+v", proposals)
 	}
 }
@@ -114,7 +105,7 @@ func TestApplicationIntentMalformedCandidateStationFailsLoudly(t *testing.T) {
 			if job.Kind == assemblyline.WorkApplicationRequirementCandidateAuthorization {
 				candidate = "MALFORMED_AUTHORIZATION_RELATION"
 			}
-			return assemblyline.PortableResult{JobID: job.ID, Candidate: candidate}, nil
+			return assemblyline.PortableResult{Candidate: candidate}, nil
 		},
 	}
 	_, err = resolveDirectCodingApplicationPlan(
@@ -126,7 +117,6 @@ func TestApplicationIntentMalformedCandidateStationFailsLoudly(t *testing.T) {
 			UserRequest: request,
 			Context:     applicationContext,
 		},
-		model.CodingScopeModeNormal,
 		nil,
 	)
 	if err == nil || !strings.Contains(
@@ -180,7 +170,7 @@ func malformedSemanticLeafRuntime(candidate string) typedWorkerRuntime {
 	return typedWorkerRuntime{
 		Context: context.Background(),
 		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
-			return assemblyline.PortableResult{JobID: job.ID, Candidate: candidate}, nil
+			return assemblyline.PortableResult{Candidate: candidate}, nil
 		},
 	}
 }

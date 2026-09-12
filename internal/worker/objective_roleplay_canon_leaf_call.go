@@ -14,7 +14,7 @@ type roleplayCanonRawLeafCall func(
 	string,
 	assemblyline.PortableJob,
 	roleplayCanonRawLeafDecoder,
-) (any, objectiveStationReceipt, error)
+) (any, int, error)
 
 func callRoleplayCanonRawLeaf[T any](
 	ctx context.Context,
@@ -22,28 +22,28 @@ func callRoleplayCanonRawLeaf[T any](
 	subject string,
 	job assemblyline.PortableJob,
 	decode func(string) (T, error),
-) (T, objectiveStationReceipt, error) {
+) (T, int, error) {
 	var zero T
 	if call == nil || decode == nil {
-		return zero, objectiveStationReceipt{}, fmt.Errorf(
+		return zero, 0, fmt.Errorf(
 			"roleplay canon raw semantic leaf call is unavailable",
 		)
 	}
-	value, receipt, err := call(
+	value, dispatches, err := call(
 		ctx,
 		subject,
 		job,
 		func(raw string) (any, error) { return decode(raw) },
 	)
 	if err != nil {
-		return zero, receipt, err
+		return zero, dispatches, err
 	}
 	typed, ok := value.(T)
 	if !ok {
-		return zero, receipt, fmt.Errorf(
+		return zero, dispatches, fmt.Errorf(
 			"roleplay canon raw semantic leaf %s returned an invalid code projection",
 			subject,
 		)
 	}
-	return typed, receipt, nil
+	return typed, dispatches, nil
 }

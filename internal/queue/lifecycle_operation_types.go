@@ -1,55 +1,49 @@
 package queue
 
 import (
-	"bytes"
 	"crypto/rand"
-	"crypto/sha256"
-	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"regexp"
-	"strings"
 
 	"github.com/gryph/omnidex/internal/evidence"
 	"github.com/gryph/omnidex/internal/model"
 )
 
-const lifecycleOperationIdentitySchema = "omnidex.lifecycle-operation-identity.v1"
-
 var (
 	ErrLifecycleOperationConflict = errors.New("lifecycle operation identity conflict")
-	lifecycleOperationIDPattern   = regexp.MustCompile(`^lifecycle_operation_[0-9a-f]{64}$`)
+	lifecycleOperationIDPattern   = regexp.MustCompile(`^lifecycle_operation_[a-z0-9_]{1,128}$`)
 )
 
 type LifecycleOperationID string
 
-func NewLifecycleOperationID(parts ...string) (LifecycleOperationID, error) {
-	if len(parts) == 0 {
-		return "", fmt.Errorf("lifecycle operation identity requires at least one part")
-	}
-	for index, part := range parts {
-		if part == "" || part != strings.TrimSpace(part) {
-			return "", fmt.Errorf("lifecycle operation identity part %d must be one nonempty exact value", index)
-		}
-	}
-	return LifecycleOperationID("lifecycle_operation_" + lifecycleIdentityDigest(
-		append([]string{lifecycleOperationIdentitySchema}, parts...)...,
-	)), nil
-}
-
-func NewRandomLifecycleOperationID() (LifecycleOperationID, error) {
+func NewLifecycleOperationID() (LifecycleOperationID, error) {
 	var nonce [32]byte
 	if _, err := rand.Read(nonce[:]); err != nil {
 		return "", fmt.Errorf("generate lifecycle operation identity: %w", err)
 	}
-	return NewLifecycleOperationID("random", hex.EncodeToString(nonce[:]))
+	return LifecycleOperationID("lifecycle_operation_" + hex.EncodeToString(nonce[:])), nil
+}
+
+// A worker retry belongs to the same persisted step attempt. Its ID does not
+// depend on output text or require allocating another operation on retry.
+func NewStepLifecycleOperationID(authority model.StepAttemptAuthority, kind LifecycleOperationKind) (LifecycleOperationID, error) {
+	if err := validateStepAttemptAuthority(authority); err != nil {
+		return "", err
+	}
+	if kind != LifecycleCompleteStep && kind != LifecycleFailStep {
+		return "", fmt.Errorf("step lifecycle operation kind %q is unsupported", kind)
+	}
+	return ParseLifecycleOperationID(fmt.Sprintf(
+		"lifecycle_operation_step_%d_attempt_%d_%s", authority.StepID, authority.Attempt, kind,
+	))
 }
 
 func ParseLifecycleOperationID(value string) (LifecycleOperationID, error) {
 	id := LifecycleOperationID(value)
 	if !lifecycleOperationIDPattern.MatchString(value) {
-		return "", fmt.Errorf("lifecycle operation ID must match lifecycle_operation_ plus 64 lowercase hex characters")
+		return "", fmt.Errorf("lifecycle operation ID requires lifecycle_operation_ plus 1..128 lowercase letters, digits, or underscores")
 	}
 	return id, nil
 }
@@ -145,14 +139,4 @@ type CancelJobCommand struct {
 type LifecycleJobResult struct {
 	Job     model.Job
 	Applied bool
-}
-
-func lifecycleIdentityDigest(parts ...string) string {
-	var canonical bytes.Buffer
-	for _, part := range parts {
-		_ = binary.Write(&canonical, binary.BigEndian, uint64(len(part)))
-		_, _ = canonical.WriteString(part)
-	}
-	digest := sha256.Sum256(canonical.Bytes())
-	return hex.EncodeToString(digest[:])
 }

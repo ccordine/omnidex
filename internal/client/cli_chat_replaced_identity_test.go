@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -15,9 +14,9 @@ func TestCLIChatClientCarriesReplacedIdentityAcrossEverySessionBoundary(t *testi
 	t.Parallel()
 
 	const workspaceRoot = "/tmp/client-replaced-identity"
-	identityB := "directory_identity_v1_" + strings.Repeat("b", 64)
+	identityB := "directory_1_102"
 	channel := testCLIChannel(workspaceRoot)
-	operationID, err := queue.NewLifecycleOperationID("client-replaced-identity")
+	operationID, err := queue.NewLifecycleOperationID()
 	if err != nil {
 		t.Fatalf("create operation ID: %v", err)
 	}

@@ -15,10 +15,10 @@ type portableObjectiveKindStation struct {
 func (adapter portableObjectiveKindStation) Classify(
 	ctx context.Context,
 	input assemblyline.ConversationObjectiveKindInput,
-) (assemblyline.ConversationObjectiveKindDecision, objectiveStationReceipt, error) {
+) (assemblyline.ConversationObjectiveKindDecision, int, error) {
 	job, err := assemblyline.NewConversationObjectiveKindJob(input)
 	if err != nil {
-		return assemblyline.ConversationObjectiveKindDecision{}, objectiveStationReceipt{}, err
+		return assemblyline.ConversationObjectiveKindDecision{}, 0, err
 	}
 	return runObjectivePortableRawLeafStation(
 		ctx, adapter.runtime, "conversation_objective_kind", job,
@@ -43,7 +43,7 @@ type portableObjectiveRoleplayCanonStation struct {
 func (adapter portableObjectiveRoleplayCanonStation) ExtractCanon(
 	ctx context.Context,
 	input assemblyline.RoleplayCanonExtractionInput,
-) (assemblyline.RoleplayCanonExtractionDecision, objectiveStationReceipt, error) {
+) (assemblyline.RoleplayCanonExtractionDecision, int, error) {
 	return resolveRoleplayCanonCandidateQueue(ctx, adapter, input)
 }
 
@@ -51,10 +51,10 @@ func (adapter portableObjectiveConversationStation) Respond(
 	ctx context.Context,
 	input assemblyline.ConversationResponseInput,
 	requestedModel string,
-) (assemblyline.ConversationResponseDecision, objectiveStationReceipt, error) {
+) (assemblyline.ConversationResponseDecision, int, error) {
 	job, err := assemblyline.NewConversationResponseJob(input)
 	if err != nil {
-		return assemblyline.ConversationResponseDecision{}, objectiveStationReceipt{}, err
+		return assemblyline.ConversationResponseDecision{}, 0, err
 	}
 	resolveModel := func() (string, error) {
 		if requestedModel != "" {

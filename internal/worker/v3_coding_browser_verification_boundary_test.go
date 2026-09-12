@@ -284,7 +284,6 @@ func TestTypeScriptInitialCandidateValidatorsReachOnlyImplementationGeneration(t
 func TestTypeScriptVerificationGenerationIsCodeOwnedAndDoesNotRequireASession(t *testing.T) {
 	program := testTypeScriptBrowserProgram(
 		t,
-		"code-owned-verification",
 		"neutral control",
 		"The finished software lets a user confirm the item.",
 	)

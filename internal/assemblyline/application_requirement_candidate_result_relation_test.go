@@ -182,14 +182,14 @@ func TestApplicationRequirementCandidateResultRelationRejectsTamperAndUnderdeter
 	}
 
 	tampered := authority
-	tampered.Kind.CandidateSHA256 = strings.Repeat("0", 64)
+	tampered.Kind.Relation = ApplicationRequirementCandidateNonRuntime
 	if _, err := NewApplicationRequirementCandidateResultPresenceJob(
 		ApplicationRequirementCandidateResultPresenceInput{
 			Candidate: candidate, Kind: tampered.Kind, Cardinality: tampered.Cardinality,
 			Dimension: ApplicationRequirementDerivedValueDimension,
 		},
 	); err == nil {
-		t.Fatal("candidate-drifted kind receipt opened a result-relation question")
+		t.Fatal("non-runtime candidate opened a result-relation question")
 	}
 	tampered = authority
 	tampered.Cardinality.Relation = ApplicationRequirementMultipleRuntimeOutcomes
@@ -203,7 +203,7 @@ func TestApplicationRequirementCandidateResultRelationRejectsTamperAndUnderdeter
 	}
 }
 
-func TestApplicationRequirementOutcomeRelationBindsAcceptedResultReceipt(t *testing.T) {
+func TestApplicationRequirementOutcomeRelationRequiresValidAcceptedResult(t *testing.T) {
 	t.Parallel()
 	const current = "The finished software shows a current records heading."
 	const accepted = "The finished software shows an active records heading."
@@ -237,13 +237,13 @@ func TestApplicationRequirementOutcomeRelationBindsAcceptedResultReceipt(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	result.AcceptedReceiptSHA256 = strings.Repeat("f", 64)
+	result.Relation = "unregistered relation"
 	if err := result.ValidateFor(input); err == nil {
-		t.Fatal("outcome relation accepted a drifted accepted-receipt hash")
+		t.Fatal("outcome relation accepted an unregistered semantic result")
 	}
-	input.AcceptedResultRelation.CandidateSHA256 = strings.Repeat("e", 64)
+	input.AcceptedResultRelation.Relation = ApplicationRequirementMissingResultRelation
 	if _, err := NewApplicationRequirementCandidateOutcomeRelationJob(input); err == nil {
-		t.Fatal("outcome relation opened with a candidate-drifted accepted receipt")
+		t.Fatal("outcome relation opened without an accepted result")
 	}
 }
 

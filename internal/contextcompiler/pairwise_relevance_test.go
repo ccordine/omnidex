@@ -28,12 +28,12 @@ type pairwiseContextStation struct {
 func (station *pairwiseContextStation) Relate(
 	_ context.Context,
 	input assemblyline.ContextRelevanceRelationInput,
-) (assemblyline.ContextRelevanceRelationResult, StationReceipt, error) {
+) (assemblyline.ContextRelevanceRelationResult, int, error) {
 	station.inputs = append(station.inputs, input)
 	result, err := assemblyline.DecodeContextRelevanceRelationResult(
 		input, station.rawByCandidate[input.Candidate.CandidateID],
 	)
-	return result, StationReceipt{Calls: assemblyline.ExactSemanticLeafCalls}, err
+	return result, assemblyline.ExactSemanticLeafCalls, err
 }
 
 func TestCompileExpandsCodeOwnedOptionalGroupAfterPairwiseRelevance(t *testing.T) {
@@ -66,7 +66,7 @@ func TestCompileExpandsCodeOwnedOptionalGroupAfterPairwiseRelevance(t *testing.T
 			t.Fatalf("leaf %d candidate=%q", index, input.Candidate.CandidateID)
 		}
 	}
-	if result.RelevanceCalls != 3 || result.ModelCalls != 3 {
+	if result.ModelCalls != 3 {
 		t.Fatalf("call counts=%+v", result)
 	}
 	if len(result.Context.Capsules) != 1 {

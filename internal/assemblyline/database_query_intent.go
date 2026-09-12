@@ -32,8 +32,8 @@ type DatabaseTemporalWindowDecision struct {
 	Amount  int                   `json:"amount"`
 }
 
-// DatabaseQueryIntentDecision is semantic data only. Source identity and the
-// schema fingerprint remain code-owned and are bound after decoding.
+// DatabaseQueryIntentDecision is assembled from narrow semantic leaves. Code
+// binds source identity and resolves every reference in its retained snapshot.
 type DatabaseQueryIntentDecision struct {
 	Schema          string                            `json:"schema"`
 	EvidenceNeedID  string                            `json:"evidence_need_id"`
@@ -59,8 +59,7 @@ func (input DatabaseQueryIntentInput) validate() error {
 	if err := input.Context.Validate(); err != nil {
 		return err
 	}
-	if input.SchemaProjection.Schema != datasource.IntentSchemaProjectionV1 || input.SchemaProjection.SourceID == "" ||
-		!validObjectiveSHA256Text(input.SchemaProjection.SchemaFingerprint) {
+	if input.SchemaProjection.Schema != datasource.IntentSchemaProjectionV1 || input.SchemaProjection.SourceID == "" {
 		return fmt.Errorf("database query intent requires one exact PostgreSQL schema snapshot authority")
 	}
 	if len(input.SchemaProjection.Relations) < 1 || len(input.SchemaProjection.Relations) > maxDatabaseIntentRelations {
@@ -121,8 +120,8 @@ func (decision DatabaseQueryIntentDecision) Bind(input DatabaseQueryIntentInput)
 	}
 	return datasource.RelationalIntent{
 		Schema: datasource.RelationalIntentV1, SourceID: input.SchemaProjection.SourceID,
-		SchemaFingerprint: input.SchemaProjection.SchemaFingerprint, FromRelationID: decision.FromRelationID,
-		Shape: decision.Shape, Projections: append([]datasource.RelationalProjection(nil), decision.Projections...),
+		FromRelationID: decision.FromRelationID,
+		Shape:          decision.Shape, Projections: append([]datasource.RelationalProjection(nil), decision.Projections...),
 		Filters:         append([]datasource.RelationalPredicate(nil), decision.Filters...),
 		TemporalWindows: windows,
 		Exists:          append([]datasource.ExistencePredicate(nil), decision.Exists...),
@@ -134,7 +133,7 @@ func (decision DatabaseQueryIntentDecision) Bind(input DatabaseQueryIntentInput)
 func databaseIntentValidationSnapshot(projection datasource.IntentSchemaProjection) datasource.SchemaSnapshot {
 	snapshot := datasource.SchemaSnapshot{
 		Schema: datasource.SchemaSnapshotV1, SourceID: projection.SourceID,
-		Driver: datasource.DriverPostgres, Fingerprint: projection.SchemaFingerprint,
+		Driver: datasource.DriverPostgres,
 	}
 	for _, relation := range projection.Relations {
 		resolved := datasource.SchemaRelation{
@@ -176,16 +175,4 @@ func AssembleDatabaseQueryIntentDecision(
 		return DatabaseQueryIntentDecision{}, err
 	}
 	return decision, nil
-}
-
-func validObjectiveSHA256Text(value string) bool {
-	if len(value) != 64 {
-		return false
-	}
-	for _, r := range value {
-		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
-			return false
-		}
-	}
-	return true
 }

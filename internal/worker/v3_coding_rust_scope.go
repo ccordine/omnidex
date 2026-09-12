@@ -119,7 +119,7 @@ func validateRustFragmentAuthority(
 				return
 			}
 			if _, binding := bindings[node.Id()]; binding || rustIdentifierBelongsToPath(node, parent) ||
-				rustIdentifierIsMemberToken(source, node) {
+				rustIdentifierIsMemberToken(node) {
 				return
 			}
 			if !rustFragmentSymbolAllowed(name, locals, catalog.allowed) {

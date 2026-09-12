@@ -32,6 +32,13 @@ func newDirectCodingRustAuthorityCatalog(
 	}
 	for index, symbol := range input.PermittedSymbols {
 		text := strings.TrimSpace(symbol)
+		if text == "assert_eq" {
+			// This explicitly requested standard assertion lives in Rust's
+			// macro namespace; it grants no function or value authority.
+			catalog.allowed[text] = struct{}{}
+			catalog.macros[text] = struct{}{}
+			continue
+		}
 		if rustSimpleIdentifier(text) {
 			// A raw registered symbol proves only direct value availability. It
 			// does not prove that the same spelling is a macro, function, type,

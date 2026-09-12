@@ -2,13 +2,13 @@ package worker
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/datasource"
+	"github.com/gryph/omnidex/internal/queue"
 )
 
 const maxObjectiveDatabaseRows = 50
@@ -17,7 +17,7 @@ type objectiveDatabaseExecutor func(
 	context.Context,
 	datasource.SchemaSnapshot,
 	datasource.RelationalQueryPlan,
-) (datasource.EvidenceResult, error)
+) (queue.DatabaseEvidenceRecord, error)
 
 func objectiveDatabaseExecutionLimits() datasource.ExecutionLimits {
 	limits := datasource.DefaultExecutionLimits()
@@ -35,7 +35,6 @@ func runObjectiveDatabaseEvidenceWorkflow(
 	execute objectiveDatabaseExecutor,
 ) (objectiveEvidenceAcquisition, error) {
 	result := objectiveEvidenceAcquisition{}
-	var ledger objectiveDatabaseAcquisitionCallLedger
 	if ctx == nil || authority.DataSourceID == "" || snapshot.SourceID != string(authority.DataSourceID) {
 		return result, fmt.Errorf("database evidence workflow requires exact turn and schema authority")
 	}
@@ -57,21 +56,19 @@ func runObjectiveDatabaseEvidenceWorkflow(
 		return result, err
 	}
 	exactNeed := authority.ModelInstruction
-	needID := objectiveDatabaseEvidenceNeedID(requirementID, exactNeed)
-	relationIDs, selectionReceipt, err := selectObjectiveDatabaseRelations(
+	needID := objectiveDatabaseEvidenceNeedID(requirementID)
+	relationIDs, selectionCalls, err := selectObjectiveDatabaseRelations(
 		ctx, snapshot, needID, exactNeed,
 		assemblyline.CloneObjectiveContext(authority.Context), stations,
 	)
+	result.ModelCalls += selectionCalls
 	if err != nil {
 		return result, err
 	}
-	if selectionReceipt != (objectiveStationReceipt{}) {
-		if err := ledger.record(
-			"schema selection", selectionReceipt,
-			maxDatabaseSchemaSelectionModelCalls,
-		); err != nil {
-			return result, err
-		}
+	if err := validateObjectiveCallCount(
+		"schema selection", selectionCalls, maxDatabaseSchemaSelectionModelCalls,
+	); err != nil {
+		return result, err
 	}
 	projection, err := datasource.ProjectSchemaForIntent(snapshot, relationIDs)
 	if err != nil {
@@ -84,12 +81,13 @@ func runObjectiveDatabaseEvidenceWorkflow(
 		TemporalAsOf:     snapshot.CapturedAt.UTC().Format(time.RFC3339Nano),
 		MaxRows:          maxObjectiveDatabaseRows,
 	}
-	decision, receipt, err := stations.BuildIntent(ctx, intentInput)
+	decision, dispatches, err := stations.BuildIntent(ctx, intentInput)
+	result.ModelCalls += dispatches
 	if err != nil {
 		return result, err
 	}
-	if err := ledger.record(
-		"query intent", receipt, maxObjectiveDatabaseQueryIntentCalls,
+	if err := validateObjectiveCallCount(
+		"query intent", dispatches, maxObjectiveDatabaseQueryIntentCalls,
 	); err != nil {
 		return result, err
 	}
@@ -100,29 +98,31 @@ func runObjectiveDatabaseEvidenceWorkflow(
 	if err := intent.Validate(snapshot); err != nil {
 		return result, fmt.Errorf("database query intent failed full schema validation: %w", err)
 	}
-	plan, planningReceipt, err := prepareObjectiveDatabaseQueryPlan(
+	plan, planningCalls, err := prepareObjectiveDatabaseQueryPlan(
 		ctx, snapshot, intent, needID, exactNeed,
 		assemblyline.CloneObjectiveContext(authority.Context), stations,
 	)
+	result.ModelCalls += planningCalls
 	if err != nil {
 		return result, err
 	}
-	if planningReceipt != (objectiveStationReceipt{}) {
-		if err := ledger.record(
-			"join-path selection", planningReceipt,
-			datasource.MaxProjectedRelations*exactSemanticLeafCalls,
-		); err != nil {
-			return result, err
-		}
+	if err := validateObjectiveCallCount(
+		"join-path selection", planningCalls, datasource.MaxProjectedRelations*exactSemanticLeafCalls,
+	); err != nil {
+		return result, err
 	}
 	executed, err := execute(ctx, snapshot, plan)
 	if err != nil {
 		return result, err
 	}
-	if err := executed.ValidateForPlan(snapshot, plan, objectiveDatabaseExecutionLimits()); err != nil {
+	if executed.ID < 1 || executed.JobID != authority.JobID ||
+		!reflect.DeepEqual(executed.Snapshot, snapshot) || !reflect.DeepEqual(executed.Plan, plan) {
+		return result, fmt.Errorf("database executor returned a record for a different job, schema, or query")
+	}
+	if err := executed.Evidence.ValidateForPlan(snapshot, plan, objectiveDatabaseExecutionLimits()); err != nil {
 		return result, fmt.Errorf("database executor returned invalid evidence: %w", err)
 	}
-	evidence, err := projectObjectiveDatabaseEvidence(snapshot, intent, executed)
+	evidence, err := projectObjectiveDatabaseEvidence(executed)
 	if err != nil {
 		return result, err
 	}
@@ -130,23 +130,9 @@ func runObjectiveDatabaseEvidenceWorkflow(
 	if len(result.Evidence) > maxDatabaseEvidenceCapsules {
 		return result, fmt.Errorf("database cognition exceeded %d evidence capsules", maxDatabaseEvidenceCapsules)
 	}
-	return completeObjectiveDatabaseEvidenceAcquisition(result, ledger)
-}
-
-func completeObjectiveDatabaseEvidenceAcquisition(
-	result objectiveEvidenceAcquisition,
-	ledger objectiveDatabaseAcquisitionCallLedger,
-) (objectiveEvidenceAcquisition, error) {
-	receipt, err := ledger.totalForSuccess()
-	if err != nil {
-		return objectiveEvidenceAcquisition{}, err
-	}
-	result.ModelCalls = receipt.Calls
-	result.DatabaseCallLedger = ledger
 	return result, nil
 }
 
-func objectiveDatabaseEvidenceNeedID(requirementID string, exactNeed string) string {
-	digest := sha256.Sum256([]byte(requirementID + "\x00" + exactNeed))
-	return "database-need-" + hex.EncodeToString(digest[:])
+func objectiveDatabaseEvidenceNeedID(requirementID string) string {
+	return requirementID + "-database-need"
 }

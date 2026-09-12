@@ -2,7 +2,6 @@ package queue
 
 import (
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -68,10 +67,6 @@ func normalizeObjectiveCompletionEvidence(record evidence.Record, jobID, stepID 
 	if record.ToolName != "" || record.Command != "" || len(record.FilePaths) != 0 || len(record.Warnings) != 0 {
 		return nil, fmt.Errorf("objective citation contains unrelated operation evidence fields")
 	}
-	decodedHash, err := hex.DecodeString(record.Hash)
-	if err != nil || len(decodedHash) != 32 || record.Hash != strings.ToLower(record.Hash) {
-		return nil, fmt.Errorf("objective citation requires an exact lowercase SHA-256")
-	}
 	if record.Confidence < 0 || record.Confidence > 1 {
 		return nil, fmt.Errorf("objective citation confidence must be between 0 and 1")
 	}
@@ -135,6 +130,15 @@ func insertObjectiveCompletionEvidenceTx(
 		var record evidence.Record
 		if err := json.Unmarshal(payload, &record); err != nil {
 			return fmt.Errorf("decode objective evidence record %d: %w", index, err)
+		}
+		if record.SourceType == "postgres_query" {
+			if err := validateRecordedDatabaseCitation(ctx, tx, record); err != nil {
+				return err
+			}
+		} else if record.SourceType == "web_document" {
+			if err := validateRecordedWebCitation(ctx, tx, record); err != nil {
+				return err
+			}
 		}
 		result, err := tx.Exec(ctx, `
 			INSERT INTO evidence (

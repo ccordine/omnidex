@@ -2,7 +2,6 @@ package worker
 
 import (
 	"fmt"
-	"path/filepath"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/queue"
@@ -21,7 +20,7 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 		return directCodingAssembly{}, err
 	}
 	approvedRequirements, err := approvedApplicationRequirementsFromFrozenPlan(
-		frozenPlan, inputs.RequestAuthority.requestSHA256,
+		frozenPlan,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err
@@ -66,7 +65,7 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 		return directCodingAssembly{}, err
 	}
 	requirementRelations, err := newDirectCodingApplicationTaskResultRelationPlan(
-		workload, interpretation.AcceptedRequirements, inputs.RequestAuthority,
+		workload, interpretation.AcceptedRequirements,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err
@@ -90,7 +89,7 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	}
 	inputs.Runtime.PathProvenance = s.pathProvenance
 	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_workload_frozen", fmt.Sprintf(
-		"tasks=%d sha256=%s", len(workload.Tasks), workload.SHA256,
+		"tasks=%d", len(workload.Tasks),
 	))
 	capabilities, err := s.deriveRequirementCapabilities(
 		specification.ProductQuote, specification.Requirements,
@@ -99,7 +98,7 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 		return directCodingAssembly{}, err
 	}
 	program, err := compileDirectCodingProgram(
-		filepath.Base(s.root), specification, workload, capabilities,
+		specification, workload, capabilities,
 		selection, targetTree, coverage, protected, required, deletions,
 	)
 	if err != nil {
@@ -144,24 +143,20 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 
 func approvedApplicationRequirementsFromFrozenPlan(
 	plan queue.FrozenCodingPlan,
-	requestSHA256 string,
 ) ([]assemblyline.ApplicationRequirement, error) {
 	requirements := make([]assemblyline.ApplicationRequirement, len(plan.Leaves))
 	for index, leaf := range plan.Leaves {
 		relation := assemblyline.ApplicationRequirementCandidateResultRelationResult{
-			Schema:                   leaf.ResultRelation.Schema,
-			CandidateSHA256:          leaf.ResultRelation.CandidateSHA256,
-			KindReceiptSHA256:        leaf.ResultRelation.KindReceiptSHA256,
-			CardinalityReceiptSHA256: leaf.ResultRelation.CardinalityReceiptSHA256,
-			Relation:                 leaf.ResultRelation.Relation,
+			Schema:   leaf.ResultRelation.Schema,
+			Relation: leaf.ResultRelation.Relation,
 		}
 		if err := relation.ValidateAcceptedFor(leaf.Leaf.Statement); err != nil {
 			return nil, fmt.Errorf("frozen coding plan leaf %q: %w", leaf.Leaf.ID, err)
 		}
 		requirements[index] = assemblyline.ApplicationRequirement{
-			ID:             fmt.Sprintf("requirement_%03d", index+1),
-			Statement:      leaf.Leaf.Statement,
-			RequestSHA256:  requestSHA256,
+			ID:        fmt.Sprintf("requirement_%03d", index+1),
+			Statement: leaf.Leaf.Statement,
+
 			ResultRelation: relation,
 		}
 	}

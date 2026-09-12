@@ -111,31 +111,6 @@ func validateDirectCodingApplicationSourceOwnership(
 	return nil
 }
 
-func validateDirectCodingSingleImplementationSourceOwnership(
-	workload assemblyline.FrozenApplicationWorkload,
-	blueprint assemblyline.SourceBlueprint,
-) error {
-	implementation := make(map[string]int, len(workload.Tasks))
-	for _, document := range blueprint.Documents {
-		for _, block := range document.Blocks {
-			switch block.Role {
-			case assemblyline.SourceBlockTaskImplementation:
-				implementation[block.TaskID]++
-			case assemblyline.SourceBlockTaskVerification:
-				return fmt.Errorf("source block %s is verification but stack requires implementation-only ownership", block.ID)
-			}
-		}
-	}
-	for _, task := range workload.Tasks {
-		if implementation[task.ID] != 1 {
-			return fmt.Errorf(
-				"task %s requires exactly one generated implementation source node", task.ID,
-			)
-		}
-	}
-	return nil
-}
-
 func validateDirectCodingSinglePairSourceOwnership(
 	workload assemblyline.FrozenApplicationWorkload,
 	blueprint assemblyline.SourceBlueprint,

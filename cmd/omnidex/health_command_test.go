@@ -27,7 +27,7 @@ func TestVerifyRunningCoreHealth(t *testing.T) {
 		wantErr      string
 	}{
 		{
-			name:         "fully operational exact release",
+			name:         "fully operational service",
 			status:       http.StatusOK,
 			dependencies: healthyDependenciesJSON,
 		},
@@ -39,29 +39,44 @@ func TestVerifyRunningCoreHealth(t *testing.T) {
 			wantErr:      "not fully operational",
 		},
 		{
-			name:         "missing redis dependency",
+			name:         "postgres-only service",
 			status:       http.StatusOK,
 			dependencies: `{"postgres":{"configured":true,"reachable":true,"required":true,"status":"ok"}}`,
-			wantErr:      "dependency redis",
 		},
 		{
-			name:         "redis is not configured",
+			name:         "missing postgres",
+			status:       http.StatusOK,
+			dependencies: `{}`,
+			wantErr:      "dependency postgres",
+		},
+		{
+			name:         "unreachable postgres",
+			status:       http.StatusOK,
+			dependencies: `{"postgres":{"configured":true,"reachable":false,"required":true,"status":"error"}}`,
+			wantErr:      "dependency postgres",
+		},
+		{
+			name:         "optional redis is not configured",
 			status:       http.StatusOK,
 			dependencies: `{"postgres":{"configured":true,"reachable":true,"required":true,"status":"ok"},"redis":{"configured":false,"reachable":false,"required":false,"status":"not_configured"}}`,
-			wantErr:      "dependency redis",
 		},
 		{
 			name:         "redis is unreachable",
+			wantErr:      "dependency redis",
 			status:       http.StatusOK,
 			dependencies: `{"postgres":{"configured":true,"reachable":true,"required":true,"status":"ok"},"redis":{"configured":true,"reachable":false,"required":false,"status":"error"}}`,
-			wantErr:      "dependency redis",
 		},
 		{
-			name:         "different running release",
+			name:         "unconfigured dependency claims to be reachable",
+			status:       http.StatusOK,
+			dependencies: `{"postgres":{"configured":true,"reachable":true,"required":true,"status":"ok"},"redis":{"configured":false,"reachable":true,"required":false,"status":"not_configured"}}`,
+			wantErr:      "contradictory unconfigured state",
+		},
+		{
+			name:         "release metadata does not control health",
 			status:       http.StatusOK,
 			dependencies: healthyDependenciesJSON,
 			body:         healthResponseJSON("ok", strings.Repeat("a", 40), healthyDependenciesJSON, ""),
-			wantErr:      "reports release commit",
 		},
 		{
 			name:         "unknown response authority",
@@ -103,18 +118,14 @@ func TestVerifyRunningCoreHealth(t *testing.T) {
 					Request:    request,
 				}, nil
 			})}
-			commit, err := verifyRunningCoreHealth(
+			err := verifyRunningCoreHealth(
 				context.Background(),
 				client,
 				localCoreHealthURL,
-				testBuildCommit,
 			)
 			if test.wantErr == "" {
 				if err != nil {
 					t.Fatalf("verify health: %v", err)
-				}
-				if commit != testBuildCommit {
-					t.Fatalf("commit = %q", commit)
 				}
 				return
 			}
@@ -130,26 +141,25 @@ func TestRunHealthCommand(t *testing.T) {
 	var output bytes.Buffer
 	called := false
 	err := runCommandWithVerifier(
-		[]string{"health", "--expect-commit", testBuildCommit},
+		[]string{"health"},
 		nil,
 		&output,
 		func(
 			_ context.Context,
 			_ *http.Client,
 			endpoint string,
-			expectedCommit string,
-		) (string, error) {
+		) error {
 			called = true
-			if endpoint != localCoreHealthURL || expectedCommit != testBuildCommit {
-				t.Fatalf("verifier authority = %q, %q", endpoint, expectedCommit)
+			if endpoint != localCoreHealthURL {
+				t.Fatalf("verifier endpoint = %q", endpoint)
 			}
-			return expectedCommit, nil
+			return nil
 		},
 	)
 	if err != nil {
 		t.Fatalf("run health command: %v", err)
 	}
-	if !called || output.String() != testBuildCommit+"\n" {
+	if !called || output.String() != "ok\n" {
 		t.Fatalf("called = %t, output = %q", called, output.String())
 	}
 }
@@ -158,18 +168,18 @@ func TestRunHealthCommandReadsDocumentFromStdin(t *testing.T) {
 	t.Parallel()
 	var output bytes.Buffer
 	err := runCommandWithVerifier(
-		[]string{"health", "--expect-commit", testBuildCommit, "--stdin"},
+		[]string{"health", "--stdin"},
 		strings.NewReader(healthResponseJSON("ok", testBuildCommit, healthyDependenciesJSON, "")),
 		&output,
-		func(context.Context, *http.Client, string, string) (string, error) {
+		func(context.Context, *http.Client, string) error {
 			t.Fatal("HTTP verifier was called for stdin health document")
-			return "", nil
+			return nil
 		},
 	)
 	if err != nil {
 		t.Fatalf("run stdin health command: %v", err)
 	}
-	if output.String() != testBuildCommit+"\n" {
+	if output.String() != "ok\n" {
 		t.Fatalf("output = %q", output.String())
 	}
 }
@@ -177,9 +187,12 @@ func TestRunHealthCommandReadsDocumentFromStdin(t *testing.T) {
 func TestRunHealthCommandRejectsInvalidInterface(t *testing.T) {
 	t.Parallel()
 	for _, args := range [][]string{
-		{"health"},
+		nil,
+		{},
+		{"health", "--unknown"},
 		{"health", "--expect-commit", "not-a-commit"},
-		{"health", "--expect-commit", testBuildCommit, "--stdin"},
+		{"health", "--stdin"},
+		{"health", "--stdin", "extra"},
 		{"version", "--json"},
 	} {
 		if err := runCommandWithVerifier(args, nil, io.Discard, verifyRunningCoreHealth); err == nil {
@@ -189,6 +202,15 @@ func TestRunHealthCommandRejectsInvalidInterface(t *testing.T) {
 }
 
 const healthyDependenciesJSON = `{"postgres":{"configured":true,"reachable":true,"required":true,"status":"ok"},"redis":{"configured":true,"reachable":true,"required":false,"status":"ok"}}`
+
+func TestHealthDocumentDoesNotRequireReleaseMetadata(t *testing.T) {
+	t.Parallel()
+	body := `{"dependencies":` + healthyDependenciesJSON +
+		`,"listen_addr":":8090","queue_enabled":true,"status":"ok","time":"2026-09-08T12:00:00Z"}`
+	if err := verifyRunningCoreHealthDocument(strings.NewReader(body)); err != nil {
+		t.Fatalf("healthy service without release metadata was rejected: %v", err)
+	}
+}
 
 func healthResponseJSON(status, commit, dependencies, suffix string) string {
 	return `{"dependencies":` + dependencies + `,` +

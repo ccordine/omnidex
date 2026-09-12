@@ -2,13 +2,10 @@ package queue
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/gryph/omnidex/internal/evidence"
 	"github.com/gryph/omnidex/internal/model"
@@ -20,10 +17,6 @@ type roleplayResearchCitationReceipt struct {
 	EvidenceID       int64
 	CompletionIndex  int
 	CapsuleID        string
-	SourceRef        string
-	SourceSHA256     string
-	ObservedAt       time.Time
-	Truncated        bool
 	ParagraphIndexes []int
 }
 
@@ -66,13 +59,11 @@ func MaterializeRoleplayResearchCompletionTx(
 	if err != nil {
 		return true, err
 	}
-	digest := sha256.Sum256([]byte(command.Output))
-	renderedSHA := hex.EncodeToString(digest[:])
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO roleplay_research_completions (
-			operation_id,preparation_id,job_id,source_message_id,rendered_sha256
-		) VALUES ($1,$2,$3,$4,$5)
-	`, command.OperationID, research.PreparationID, job.ID, assistantMessageID, renderedSHA); err != nil {
+			operation_id,preparation_id,job_id,source_message_id
+		) VALUES ($1,$2,$3,$4)
+	`, command.OperationID, research.PreparationID, job.ID, assistantMessageID); err != nil {
 		return true, fmt.Errorf("insert roleplay research completion: %w", err)
 	}
 	for _, citation := range citations {
@@ -82,12 +73,10 @@ func MaterializeRoleplayResearchCompletionTx(
 		}
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO roleplay_research_completion_citations (
-				operation_id,completion_index,evidence_id,capsule_id,source_ref,
-				source_sha256,observed_at,truncated,paragraph_indexes
-			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)
+				operation_id,completion_index,evidence_id,capsule_id,paragraph_indexes
+			) VALUES ($1,$2,$3,$4,$5::jsonb)
 		`, command.OperationID, citation.CompletionIndex, citation.EvidenceID,
-			citation.CapsuleID, citation.SourceRef, citation.SourceSHA256,
-			citation.ObservedAt, citation.Truncated, string(paragraphJSON)); err != nil {
+			citation.CapsuleID, string(paragraphJSON)); err != nil {
 			return true, fmt.Errorf("insert roleplay research citation %d: %w", citation.CompletionIndex, err)
 		}
 	}
@@ -149,17 +138,18 @@ func roleplayResearchCitationReceiptFromRecord(
 	research roleplay.ResearchTurnAuthority,
 ) (roleplayResearchCitationReceipt, error) {
 	if record.Kind != evidence.KindObjectiveCitation || record.SourceType != "web_document" ||
-		record.SourceRef == "" || !validObjectiveEvidenceSHA(record.Hash) {
+		record.SourceRef == "" {
 		return roleplayResearchCitationReceipt{}, fmt.Errorf("roleplay research citation %d is not exact web evidence", index)
+	}
+	if _, _, err := webCitationPosition(record.Metadata); err != nil {
+		return roleplayResearchCitationReceipt{}, err
 	}
 	wantStrings := map[string]string{
 		"authority_namespace":                   string(roleplay.AuthorityRealWorld),
 		"roleplay_research_preparation_id":      research.PreparationID,
 		"roleplay_research_world_id":            research.WorldID,
 		"roleplay_research_character_id":        research.CharacterID,
-		"roleplay_research_question_sha256":     research.QuestionSHA256,
 		"roleplay_research_capability_grant_id": research.CapabilityGrantID,
-		"source_sha256":                         record.Hash,
 	}
 	for key, want := range wantStrings {
 		value, ok := record.Metadata[key].(string)
@@ -173,26 +163,13 @@ func roleplayResearchCitationReceiptFromRecord(
 	if !ok || capsuleID == "" || len(capsuleID) > 128 {
 		return roleplayResearchCitationReceipt{}, fmt.Errorf("roleplay research citation %d has invalid capsule identity", index)
 	}
-	observedRaw, ok := record.Metadata["source_observed_at"].(string)
-	if !ok {
-		return roleplayResearchCitationReceipt{}, fmt.Errorf("roleplay research citation %d lacks observation authority", index)
-	}
-	observed, err := time.Parse(time.RFC3339Nano, observedRaw)
-	if err != nil || observed.Location() != time.UTC || observed.Format(time.RFC3339Nano) != observedRaw {
-		return roleplayResearchCitationReceipt{}, fmt.Errorf("roleplay research citation %d observation is not canonical UTC", index)
-	}
-	truncated, ok := record.Metadata["source_truncated"].(bool)
-	if !ok {
-		return roleplayResearchCitationReceipt{}, fmt.Errorf("roleplay research citation %d lacks truncation authority", index)
-	}
 	paragraphIndexes, err := objectiveIntegerIndexes(record.Metadata["paragraph_indexes"])
 	if err != nil {
 		return roleplayResearchCitationReceipt{}, fmt.Errorf("roleplay research citation %d: %w", index, err)
 	}
 	return roleplayResearchCitationReceipt{
 		EvidenceID: evidenceID, CompletionIndex: index, CapsuleID: capsuleID,
-		SourceRef: record.SourceRef, SourceSHA256: record.Hash,
-		ObservedAt: observed, Truncated: truncated, ParagraphIndexes: paragraphIndexes,
+		ParagraphIndexes: paragraphIndexes,
 	}, nil
 }
 
@@ -218,9 +195,4 @@ func objectiveIntegerIndexes(raw any) ([]int, error) {
 		}
 	}
 	return result, nil
-}
-
-func validObjectiveEvidenceSHA(value string) bool {
-	decoded, err := hex.DecodeString(value)
-	return err == nil && len(decoded) == sha256.Size && value == strings.ToLower(value)
 }

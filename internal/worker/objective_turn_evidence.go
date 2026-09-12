@@ -1,8 +1,6 @@
 package worker
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"sort"
 	"strconv"
@@ -11,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/datasource"
 	"github.com/gryph/omnidex/internal/evidence"
 	"github.com/gryph/omnidex/internal/queue"
 	"github.com/gryph/omnidex/internal/roleplay"
@@ -68,31 +67,38 @@ func selectObjectiveCitations(
 }
 
 func validateObjectiveEvidence(item objectiveEvidence) error {
-	validated, err := newObjectiveEvidence(
+	_, err := newObjectiveEvidence(
 		item.Capsule.ID, item.Capsule.Text, item.SourceType, item.SourceRef,
 	)
 	if err != nil {
 		return err
 	}
-	if item.SHA256 != validated.SHA256 {
-		return fmt.Errorf("objective evidence %q projection hash does not match exact text", item.Capsule.ID)
-	}
-	if !validObjectiveSHA256(item.SourceSHA256) {
-		return fmt.Errorf("objective evidence %q requires an exact authoritative source SHA-256", item.Capsule.ID)
-	}
 	if item.ParagraphMask&^uint8(0x0f) != 0 {
 		return fmt.Errorf("objective evidence %q exceeds paragraph binding bounds", item.Capsule.ID)
 	}
 	if item.SourceType == "web_document" {
+		if item.WebEvidenceID < 1 || item.WebEvidenceIndex < 0 || item.WebEvidenceIndex >= 32 {
+			return fmt.Errorf("objective web evidence %q requires a recorded acquisition and source index", item.Capsule.ID)
+		}
 		if item.ObservedAt.IsZero() || item.ObservedAt.Location() != time.UTC {
 			return fmt.Errorf("objective web evidence %q requires exact UTC observation authority", item.Capsule.ID)
 		}
 	} else if item.SourceType == "postgres_query" {
+		if item.DatabaseEvidenceID < 1 || item.DatabaseRowStart < 0 ||
+			item.DatabaseRowEnd < item.DatabaseRowStart || item.DatabaseRowEnd > datasource.MaxIntentRows {
+			return fmt.Errorf("objective database evidence %q requires a recorded execution and row range, not a source hash", item.Capsule.ID)
+		}
 		if item.ObservedAt.IsZero() || item.ObservedAt.Location() != time.UTC || item.Truncated {
 			return fmt.Errorf("objective database evidence %q requires exact UTC acquisition authority without truncation", item.Capsule.ID)
 		}
 	} else if !item.ObservedAt.IsZero() || item.Truncated {
 		return fmt.Errorf("objective evidence %q carries unsupported freshness authority", item.Capsule.ID)
+	}
+	if item.SourceType != "postgres_query" && (item.DatabaseEvidenceID != 0 || item.DatabaseRowStart != 0 || item.DatabaseRowEnd != 0) {
+		return fmt.Errorf("objective evidence %q carries unrelated database fields", item.Capsule.ID)
+	}
+	if item.SourceType != "web_document" && (item.WebEvidenceID != 0 || item.WebEvidenceIndex != 0) {
+		return fmt.Errorf("objective evidence %q carries unrelated web fields", item.Capsule.ID)
 	}
 	return nil
 }
@@ -142,15 +148,16 @@ func objectiveCitationRecord(
 		sort.Strings(requirementAuthorityBindings)
 	}
 	metadata := map[string]any{
-		"capsule_id": citation.Capsule.ID, "instruction_sha256": result.InstructionSHA256,
+		"capsule_id":   citation.Capsule.ID,
 		"objective_id": result.ObjectiveID, "objective_kind": string(result.Kind),
-		"requirement_id": result.RequirementID, "projection_sha256": citation.SHA256,
-		"source_sha256": citation.SourceSHA256,
+		"requirement_id": result.RequirementID,
 	}
 	if len(paragraphIndexes) > 0 {
 		metadata["paragraph_indexes"] = paragraphIndexes
 	}
 	if citation.SourceType == "web_document" {
+		metadata["web_evidence_id"] = strconv.FormatInt(citation.WebEvidenceID, 10)
+		metadata["web_evidence_index"] = strconv.Itoa(citation.WebEvidenceIndex)
 		metadata["source_observed_at"] = citation.ObservedAt.Format(time.RFC3339Nano)
 		metadata["source_truncated"] = citation.Truncated
 		if result.RoleplayResearch != nil {
@@ -159,11 +166,13 @@ func objectiveCitationRecord(
 			metadata["roleplay_research_preparation_id"] = research.PreparationID
 			metadata["roleplay_research_world_id"] = research.WorldID
 			metadata["roleplay_research_character_id"] = research.CharacterID
-			metadata["roleplay_research_question_sha256"] = research.QuestionSHA256
 			metadata["roleplay_research_capability_grant_id"] = research.CapabilityGrantID
 		}
 	} else if citation.SourceType == "postgres_query" {
 		metadata["source_acquired_at"] = citation.ObservedAt.Format(time.RFC3339Nano)
+		metadata["database_evidence_id"] = strconv.FormatInt(citation.DatabaseEvidenceID, 10)
+		metadata["database_row_start"] = strconv.Itoa(citation.DatabaseRowStart)
+		metadata["database_row_end"] = strconv.Itoa(citation.DatabaseRowEnd)
 	}
 	return evidence.Record{
 		Kind: evidence.KindObjectiveCitation, SourceType: citation.SourceType,
@@ -171,7 +180,7 @@ func objectiveCitationRecord(
 		Summary: fmt.Sprintf(
 			"Objective %s cited evidence capsule %s.", result.ObjectiveID, citation.Capsule.ID,
 		),
-		Hash: citation.SourceSHA256, Confidence: 1,
+		Confidence:                   1,
 		RequirementAuthorityBindings: requirementAuthorityBindings,
 		Metadata:                     metadata,
 	}, nil
@@ -193,8 +202,8 @@ func renderObjectiveTurnOutput(result objectiveTurnResult) (string, error) {
 			return "", err
 		}
 		lines = append(lines, fmt.Sprintf(
-			"- [%s] %s:%s (source_sha256:%s)", citation.Capsule.ID,
-			citation.SourceType, citation.SourceRef, citation.SourceSHA256,
+			"- [%s] %s:%s", citation.Capsule.ID,
+			citation.SourceType, citation.SourceRef,
 		))
 	}
 	output := strings.Join(lines, "\n")
@@ -226,21 +235,12 @@ func validateObjectiveTurnResult(result objectiveTurnResult) error {
 		result.RequirementID == "" || result.RequirementID != strings.TrimSpace(result.RequirementID) {
 		return fmt.Errorf("objective result requires exact objective and requirement IDs")
 	}
-	decoded, err := hex.DecodeString(result.InstructionSHA256)
-	if err != nil || len(decoded) != sha256.Size || result.InstructionSHA256 != strings.ToLower(result.InstructionSHA256) {
-		return fmt.Errorf("objective result requires an exact instruction SHA-256")
-	}
 	if result.RoleplayResearch != nil {
 		if err := result.RoleplayResearch.Validate(); err != nil {
 			return fmt.Errorf("objective roleplay research authority: %w", err)
 		}
-		exactInstruction := "/research " + strconv.Quote(result.RoleplayResearch.Question)
-		digest := sha256.Sum256([]byte(exactInstruction))
 		if result.Kind != assemblyline.ObjectiveKindExternalAnswer {
 			return fmt.Errorf("roleplay research result has objective kind %q", result.Kind)
-		}
-		if result.InstructionSHA256 != hex.EncodeToString(digest[:]) {
-			return fmt.Errorf("roleplay research result differs from its exact instruction authority")
 		}
 		if result.ModelCalls < 0 {
 			return fmt.Errorf(

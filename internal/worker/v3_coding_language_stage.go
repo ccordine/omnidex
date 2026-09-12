@@ -9,9 +9,10 @@ import (
 )
 
 type directCodingLanguageSourceConfig struct {
-	Language         string
-	AdapterID        string
-	ValidateFragment directCodingLanguageFragmentValidator
+	Language           string
+	AdapterID          string
+	ValidateFragment   directCodingLanguageFragmentValidator
+	ValidateAcceptance func(assemblyline.SourceBlockRef, string) error
 }
 
 type directCodingLanguageSourceGenerator struct {
@@ -22,7 +23,7 @@ type directCodingLanguageSourceGenerator struct {
 func newDirectCodingLanguageSourceGenerator(
 	session *directCodingSession,
 	config directCodingLanguageSourceConfig,
-) (directCodingProjectSourceGenerator, error) {
+) (*directCodingLanguageSourceGenerator, error) {
 	if session == nil {
 		return nil, fmt.Errorf("%s source generation requires one coding session", config.Language)
 	}
@@ -37,7 +38,7 @@ func newDirectCodingLanguageSourceGenerator(
 func newDirectCodingLanguageSourceGeneratorForProgram(
 	session *directCodingSession,
 	program directCodingProgram,
-) (directCodingProjectSourceGenerator, error) {
+) (*directCodingLanguageSourceGenerator, error) {
 	var selected directCodingArtifactAdapter
 	for _, document := range program.Source.Documents {
 		hasGeneratedBlock := false
@@ -71,9 +72,10 @@ func newDirectCodingLanguageSourceGeneratorForProgram(
 		return nil, fmt.Errorf("source generation requires one generated artifact adapter")
 	}
 	return newDirectCodingLanguageSourceGenerator(session, directCodingLanguageSourceConfig{
-		Language:         selected.SourceLanguage,
-		AdapterID:        selected.ID,
-		ValidateFragment: selected.ValidateFragment,
+		Language:           selected.SourceLanguage,
+		AdapterID:          selected.ID,
+		ValidateFragment:   selected.ValidateFragment,
+		ValidateAcceptance: selected.ValidateAcceptance,
 	})
 }
 
@@ -106,9 +108,6 @@ func (executor *directCodingLanguageSourceGenerator) GenerateBlock(
 	}
 	runtime := directCodingWorkerRuntime(executor.session)
 	runtime.MaxAttempts = assemblyline.MaxSourceBodyAttempts
-	if ref.Block.Role == assemblyline.SourceBlockTaskVerification {
-		return "", fmt.Errorf("generated verification block %s is obsolete", ref.Block.ID)
-	}
 	return executor.generateBlockWithRuntime(runtime, modelName, ref, input)
 }
 
@@ -118,11 +117,27 @@ func (executor *directCodingLanguageSourceGenerator) generateBlockWithRuntime(
 	ref assemblyline.SourceBlockRef,
 	input assemblyline.FragmentGenerationInput,
 ) (string, error) {
+	validate := executor.config.ValidateFragment
+	if ref.Block.Role == assemblyline.SourceBlockTaskVerification {
+		if executor.config.ValidateAcceptance == nil {
+			return "", fmt.Errorf("adapter %s has no generated verification-body validator", executor.config.AdapterID)
+		}
+		validate = func(input assemblyline.FragmentGenerationInput, body string) (string, error) {
+			declaration, err := executor.config.ValidateFragment(input, body)
+			if err != nil {
+				return "", err
+			}
+			if err := executor.config.ValidateAcceptance(ref, declaration); err != nil {
+				return "", err
+			}
+			return declaration, nil
+		}
+	}
 	return runDirectCodingLanguageFragmentWorker(
 		runtime, modelName,
 		directCodingLanguageGenerationJob{
 			Subject: ref.Block.ID, Input: input,
-			Validate: executor.config.ValidateFragment,
+			Validate: validate,
 		},
 	)
 }

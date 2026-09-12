@@ -68,7 +68,7 @@ func submitJobFeedbackTx(
 	if err := insertLifecycleOperationTx(ctx, tx, descriptor, lifecycleOperationRecord{
 		ID: descriptor.ID, JobID: command.JobID, ObservedGeneration: job.CurrentGeneration,
 		ResultGeneration: job.CurrentGeneration, StepID: &stepID,
-		Kind: descriptor.Kind, CommandSHA256: descriptor.SHA256,
+		Kind:            descriptor.Kind,
 		ResultJobStatus: job.Status, ResultStepStatus: &stepStatus, ResultJob: job,
 	}); err != nil {
 		return LifecycleJobResult{}, err

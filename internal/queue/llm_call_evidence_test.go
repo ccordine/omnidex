@@ -1,8 +1,6 @@
 package queue
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -47,8 +45,7 @@ func TestNormalizeLLMCallEvidencePreservesUnrelatedStationEnvelopes(t *testing.T
 				!normalized.rawResponsePresent {
 				t.Fatalf("raw provider capture was not preserved: %#v", normalized)
 			}
-			if normalized.status != LLMCallSucceeded ||
-				normalized.candidateSHA256 != llmEvidenceSHA256([]byte(fixture.candidate)) {
+			if normalized.status != LLMCallSucceeded {
 				t.Fatalf("terminal evidence identity is wrong: %#v", normalized)
 			}
 		})
@@ -63,7 +60,6 @@ func TestNormalizeLLMCallEvidencePreservesFailedPartialProviderCapture(t *testin
 	record.Generation.ProviderResponseDisposition = llm.ProviderResponseBodyReadError
 	record.Generation.ProviderResponseComplete = false
 	record.Generation.ProviderResponseBytesKnown = false
-	record.Generation.ProviderResponseSHA256 = ""
 	record.Generation.ProviderResponseBytes = 0
 	record.Generation.Content = ""
 	record.Generation.ProviderDonePresent = false
@@ -98,11 +94,8 @@ func TestNormalizeLLMCallEvidenceClassifiesOnlyValidatedOutputLimit(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	responseDigest := sha256.Sum256(raw)
 	record.Generation.ProviderResponseDisposition = decoded.Disposition
-	record.Generation.ProviderResponseSHA256 = hex.EncodeToString(responseDigest[:])
 	record.Generation.ProviderResponseBytes = int64(len(raw))
-	record.Generation.ProviderResponseCaptureSHA256 = hex.EncodeToString(responseDigest[:])
 	record.Generation.ProviderResponseCapturedBytes = len(raw)
 	record.Generation.ProviderResponseCapture = raw
 	record.Generation.ProviderDonePresent = decoded.DonePresent
@@ -159,8 +152,7 @@ func TestCompactLLMCallGenerationReceiptDoesNotDuplicateLargeModelContent(t *tes
 	if err := json.Unmarshal(receipt, &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if decoded.ContentBytes != len(content) ||
-		decoded.ContentSHA256 != llmEvidenceSHA256([]byte(content)) {
+	if decoded.ContentBytes != len(content) {
 		t.Fatalf("compact content identity=%#v", decoded)
 	}
 }
@@ -172,7 +164,7 @@ func TestNormalizeLLMCallEvidenceRejectsUnboundOrInexactRecords(t *testing.T) {
 	)
 	for name, mutate := range map[string]func(*exactLLMEvidenceFixtureRecord){
 		"wrong scope":    func(record *exactLLMEvidenceFixtureRecord) { record.Scope = assemblyline.PortableFragmentWorkerScope },
-		"forged work":    func(record *exactLLMEvidenceFixtureRecord) { record.WorkID = "forged" },
+		"forged work":    func(record *exactLLMEvidenceFixtureRecord) { record.WorkInput = []byte("invalid-json") },
 		"model mismatch": func(record *exactLLMEvidenceFixtureRecord) { record.RequestedModel = "other" },
 		"zero iteration": func(record *exactLLMEvidenceFixtureRecord) { record.Iteration = 0 },
 		"parent on initial": func(record *exactLLMEvidenceFixtureRecord) {
@@ -233,38 +225,16 @@ func TestNormalizeLLMCallOpeningRejectsOutputContinuation(t *testing.T) {
 	}
 }
 
-func TestEncodeLLMCallProjectionStoresOnlyExactSpanIdentity(t *testing.T) {
-	t.Parallel()
-	candidate := strings.Repeat("declaration-byte-", 4096)
-	projection, err := assemblyline.NewExactPortableResultProjection(candidate)
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, err := encodeLLMCallProjection(candidate, &projection)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(raw) >= 8192 || strings.Contains(string(raw), candidate[:128]) {
-		t.Fatalf("accepted projection duplicated source bytes: encoded=%d", len(raw))
-	}
-	var evidence LLMCallProjectionEvidence
-	if err := json.Unmarshal(raw, &evidence); err != nil {
-		t.Fatal(err)
-	}
-	if evidence.SourceResponseSHA256 != projection.SourceResponseSHA256 ||
-		evidence.SourceSHA256 != projection.SourceSHA256 ||
-		evidence.StartByte != 0 || evidence.EndByte != len(candidate) ||
-		evidence.RawBytes != len(candidate) {
-		t.Fatalf("projection identity=%#v", evidence)
-	}
-}
-
 func exactLLMEvidenceFixture(
 	t *testing.T,
 	kind assemblyline.WorkKind,
 	prompt, candidate string,
 ) exactLLMEvidenceFixtureRecord {
 	t.Helper()
+	workInput, err := json.Marshal(prompt)
+	if err != nil {
+		t.Fatal(err)
+	}
 	temperature := llm.ExactPreparedTemperature(0)
 	prepared := llm.PreparedModel{
 		Protocol:  llm.ExactPreparedProtocolPlainCompletionV4,
@@ -281,17 +251,11 @@ func exactLLMEvidenceFixture(
 	if err != nil {
 		t.Fatal(err)
 	}
-	request, err := llm.ExactPreparedRequestBytes(prepared)
-	if err != nil {
-		t.Fatal(err)
-	}
-	requestDigest := sha256.Sum256(request)
-	responseDigest := sha256.Sum256(raw)
 	return exactLLMEvidenceFixtureRecord{
 		LLMCallOpeningRecord: LLMCallOpeningRecord{Authority: model.StepAttemptAuthority{
 			JobID: 1, Generation: 1, StepID: 1, Attempt: 1, WorkerID: "fixture-worker",
 		},
-			Scope: mustLLMEvidenceScope(t, kind), WorkID: strings.Repeat("a", 64),
+			Scope: mustLLMEvidenceScope(t, kind), WorkInput: workInput,
 			WorkKind: kind, Iteration: 1, DispatchAttempt: 1,
 			RequestedModel: prepared.BaseModel, Prepared: prepared,
 		},
@@ -299,14 +263,11 @@ func exactLLMEvidenceFixture(
 			Schema: llm.PreparedGenerationSchemaV1, Protocol: prepared.Protocol,
 			ProviderRequestDisposition:  llm.ProviderRequestDispatched,
 			Content:                     candidate,
-			ProviderRequestSHA256:       hex.EncodeToString(requestDigest[:]),
 			ProviderHTTPStatus:          200,
 			ProviderResponseDisposition: decoded.Disposition,
 			ProviderResponseComplete:    true, ProviderResponseBytesKnown: true,
-			ProviderContentEncoding:       llm.NewProviderContentEncodingEvidence(nil, false),
-			ProviderResponseSHA256:        hex.EncodeToString(responseDigest[:]),
+			ProviderContentEncoding:       llm.ClassifyProviderContentEncoding(nil, false),
 			ProviderResponseBytes:         int64(len(raw)),
-			ProviderResponseCaptureSHA256: hex.EncodeToString(responseDigest[:]),
 			ProviderResponseCapturedBytes: len(raw), ProviderResponseCapture: raw,
 			ProviderDonePresent: decoded.DonePresent, ProviderDone: decoded.Done,
 			ProviderDoneReason: decoded.DoneReason,

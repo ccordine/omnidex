@@ -9,7 +9,10 @@ import (
 )
 
 const (
-	javaRuntimeFeatureResultBlock      = "runtime.feature.result"
+	javaRuntimeInputBlock              = "runtime.input"
+	javaRuntimeResultBlock             = "runtime.result"
+	javaRuntimeNormalizeBlock          = "runtime.normalize"
+	javaRuntimeDependencyBlock         = "runtime.dependency"
 	javaRuntimeApplicationInspectBlock = "runtime.application.inspect"
 )
 
@@ -23,20 +26,40 @@ func javaCommandLineRuntimeDocument() assemblyline.SourceDocument {
 		Postamble: "}",
 		Blocks: []assemblyline.SourceBlock{
 			{
-				ID: javaRuntimeFeatureResultBlock, Static: javaCommandLineRuntimeFeatureResultSource(),
-				API: javaCommandLineRuntimeFeatureResultAPI(),
+				ID: javaRuntimeInputBlock, Static: javaCommandLineRuntimeInputSource(),
+				API: "static Map<String, Object> input(String[] arguments, String standardInput)",
+			},
+			{
+				ID: javaRuntimeResultBlock, Static: javaCommandLineRuntimeResultSource(),
+				API: javaCommandLineRuntimeResultAPI(),
+			},
+			{
+				ID: javaRuntimeNormalizeBlock, Static: javaCommandLineRuntimeNormalizeSource(),
+				API:       "static Map<String, Object> normalizeResult(Map<String, Object> candidate)",
+				DependsOn: []string{javaRuntimeResultBlock},
+			},
+			{
+				ID: javaRuntimeDependencyBlock, Static: javaCommandLineRuntimeDependencySource(),
+				API: javaCommandLineRuntimeDependencyAPI(), DependsOn: []string{javaRuntimeNormalizeBlock},
 			},
 			{
 				ID: javaRuntimeApplicationInspectBlock, Static: javaCommandLineRuntimeApplicationInspectSource(),
-				API: javaCommandLineRuntimeApplicationInspectAPI(),
+				API:       javaCommandLineRuntimeApplicationInspectAPI(),
+				DependsOn: []string{javaRuntimeNormalizeBlock},
 			},
 		},
 	}
 }
 
-func javaCommandLineRuntimeFeatureResultAPI() string {
+func javaCommandLineRuntimeResultAPI() string {
 	return `final class Runtime {
   static native Map<String, Object> result(String output, String error, int exitCode, Map<String, Object> state);
+}`
+}
+
+func javaCommandLineRuntimeDependencyAPI() string {
+	return `final class Runtime {
+  /** Result: output: String; error: String; exitCode: Integer; state: Map<String, Object>. */
   static native Map<String, Object> dependency(Map<String, Object> dependencies, String capabilityID);
 }`
 }
@@ -50,15 +73,20 @@ func javaCommandLineRuntimeApplicationInspectAPI() string {
 }`
 }
 
-func javaCommandLineRuntimeFeatureResultSource() string {
+func javaCommandLineRuntimeInputSource() string {
 	return `static Map<String, Object> input(String[] arguments, String standardInput) {
+  if (arguments == null || standardInput == null) {
+    throw new IllegalArgumentException("application input requires arguments and standardInput");
+  }
   Map<String, Object> input = new LinkedHashMap<>();
   input.put("arguments", new ArrayList<>(List.of(arguments)));
-  input.put("standardInput", standardInput == null ? "" : standardInput);
+  input.put("standardInput", standardInput);
   return input;
+}`
 }
 
-static Map<String, Object> result(
+func javaCommandLineRuntimeResultSource() string {
+	return `static Map<String, Object> result(
     String output, String error, int exitCode, Map<String, Object> state) {
   if (output == null) throw new IllegalArgumentException("feature result output must be a string");
   if (error == null) throw new IllegalArgumentException("feature result error must be a string");
@@ -69,9 +97,11 @@ static Map<String, Object> result(
   result.put("exitCode", exitCode);
   result.put("state", new LinkedHashMap<>(state));
   return result;
+}`
 }
 
-static Map<String, Object> normalizeResult(Map<String, Object> candidate) {
+func javaCommandLineRuntimeNormalizeSource() string {
+	return `static Map<String, Object> normalizeResult(Map<String, Object> candidate) {
   if (candidate == null) throw new IllegalArgumentException("feature result must be a map");
   if (candidate.size() != 4 || !candidate.containsKey("output") ||
       !candidate.containsKey("error") || !candidate.containsKey("exitCode") ||
@@ -98,7 +128,23 @@ static Map<String, Object> normalizeResult(Map<String, Object> candidate) {
       (String) output, (String) error, (Integer) exitCode, copyStringMap(state));
 }
 
-static Map<String, Object> dependency(
+private static Map<String, Object> copyStringMap(Object value) {
+  if (!(value instanceof Map<?, ?> source)) {
+    throw new IllegalArgumentException("map value is required");
+  }
+  Map<String, Object> copy = new LinkedHashMap<>();
+  for (Map.Entry<?, ?> entry : source.entrySet()) {
+    if (!(entry.getKey() instanceof String key)) {
+      throw new IllegalArgumentException("map keys must be strings");
+    }
+    copy.put(key, entry.getValue());
+  }
+  return copy;
+}`
+}
+
+func javaCommandLineRuntimeDependencySource() string {
+	return `static Map<String, Object> dependency(
     Map<String, Object> dependencies, String capabilityID) {
   if (dependencies == null || !dependencies.containsKey(capabilityID)) {
     throw new IllegalArgumentException("missing direct capability " + capabilityID);
@@ -143,20 +189,6 @@ static void mergeInto(Map<String, Object> combined, Map<String, Object> candidat
     combined.put("error", error(part));
     if (exitCode(combined) == 0) combined.put("exitCode", 1);
   }
-}
-
-private static Map<String, Object> copyStringMap(Object value) {
-  if (!(value instanceof Map<?, ?> source)) {
-    throw new IllegalArgumentException("map value is required");
-  }
-  Map<String, Object> copy = new LinkedHashMap<>();
-  for (Map.Entry<?, ?> entry : source.entrySet()) {
-    if (!(entry.getKey() instanceof String key)) {
-      throw new IllegalArgumentException("map keys must be strings");
-    }
-    copy.put(key, entry.getValue());
-  }
-  return copy;
 }`
 }
 

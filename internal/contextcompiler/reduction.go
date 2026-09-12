@@ -36,16 +36,16 @@ func selectRelevantAuthorities(
 				"context relevance candidate %d: %w", candidateIndex+1, err,
 			)
 		}
-		relation, receipt, err := station.Relate(ctx, input)
+		relation, leafCalls, err := station.Relate(ctx, input)
+		calls += leafCalls
 		if err != nil {
 			return nil, calls, fmt.Errorf(
 				"context relevance candidate %d: %w", candidateIndex+1, err,
 			)
 		}
-		if err := validateReceipt("context relevance relation", receipt); err != nil {
+		if err := validateCallCount("context relevance relation", leafCalls); err != nil {
 			return nil, calls, err
 		}
-		calls += receipt.Calls
 		if err := relation.ValidateFor(input); err != nil {
 			return nil, calls, err
 		}
@@ -87,6 +87,13 @@ func reduceSelectedAuthorities(
 		next := make([]assemblyline.ContextCandidateAuthority, 0, len(groups))
 		seenContent := make(map[string]struct{}, len(groups))
 		for groupIndex, group := range groups {
+			pending := append([]assemblyline.ContextCandidateAuthority(nil), next...)
+			for _, remaining := range groups[groupIndex:] {
+				pending = append(pending, remaining...)
+			}
+			if content := joinAuthorityContent(pending); len(content) <= assemblyline.MaxContextMinifiedBytes {
+				return content, totalCalls, nil
+			}
 			content := joinAuthorityContent(group)
 			if len(group) > 1 {
 				input := assemblyline.ContextMinificationInput{
@@ -98,24 +105,23 @@ func reduceSelectedAuthorities(
 				if _, err := assemblyline.NewContextMinificationJob(input); err != nil {
 					return "", totalCalls, fmt.Errorf("context minification group %d: %w", groupIndex+1, err)
 				}
-				decision, receipt, err := station.Minify(ctx, input)
+				decision, leafCalls, err := station.Minify(ctx, input)
+				totalCalls += leafCalls
 				if err != nil {
 					return "", totalCalls, fmt.Errorf("context minification group %d: %w", groupIndex+1, err)
 				}
-				if err := validateReceipt("context minification", receipt); err != nil {
+				if err := validateCallCount("context minification", leafCalls); err != nil {
 					return "", totalCalls, err
 				}
-				totalCalls += receipt.Calls
 				if err := decision.ValidateFor(input); err != nil {
 					return "", totalCalls, err
 				}
 				content = decision.MinimalContext
 			}
-			hash := assemblyline.ExactObjectiveContextSHA(content)
-			if _, duplicate := seenContent[hash]; duplicate {
+			if _, duplicate := seenContent[content]; duplicate {
 				continue
 			}
-			seenContent[hash] = struct{}{}
+			seenContent[content] = struct{}{}
 			authority, err := assemblyline.NewContextCandidateAuthority(
 				"context_reduction", fmt.Sprintf("CTX_%d", len(next)+1), content,
 			)
@@ -175,7 +181,7 @@ func partitionContextAuthorities(
 
 func contextAuthorityProjectionBytes(authority assemblyline.ContextCandidateAuthority) int {
 	return len(authority.Namespace) + len(authority.CandidateID) +
-		len(authority.Content) + len(authority.ContentSHA256)
+		len(authority.Content)
 }
 
 func joinAuthorityContent(authorities []assemblyline.ContextCandidateAuthority) string {

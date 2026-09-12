@@ -15,13 +15,9 @@ func newDirectCodingGoSourceGenerator(
 	session *directCodingSession,
 	program directCodingProgram,
 ) (_ directCodingProjectSourceGenerator, resultErr error) {
-	generated, err := newDirectCodingLanguageSourceGeneratorForProgram(session, program)
+	generator, err := newDirectCodingLanguageSourceGeneratorForProgram(session, program)
 	if err != nil {
 		return nil, err
-	}
-	generator, ok := generated.(*directCodingLanguageSourceGenerator)
-	if !ok {
-		return nil, fmt.Errorf("Go source generation requires the bounded language generator")
 	}
 	workspace, err := newDirectCodingGoStageWorkspace(session, program)
 	if err != nil {

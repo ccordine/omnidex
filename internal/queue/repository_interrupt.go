@@ -13,7 +13,7 @@ import (
 // waiting boundary on the same job. Only an explicit replan may replace that
 // boundary with runnable work.
 func (r *Repository) InterruptJob(ctx context.Context, command ReplanJobCommand) (LifecycleJobResult, error) {
-	command, feedbackSHA, err := normalizeInterruptJobCommand(command)
+	command, err := normalizeInterruptJobCommand(command)
 	if err != nil {
 		return LifecycleJobResult{}, err
 	}
@@ -27,7 +27,7 @@ func (r *Repository) InterruptJob(ctx context.Context, command ReplanJobCommand)
 	}
 	defer tx.Rollback(ctx)
 
-	result, err := interruptJobTx(ctx, tx, command, feedbackSHA, descriptor)
+	result, err := interruptJobTx(ctx, tx, command, descriptor)
 	if err != nil {
 		return LifecycleJobResult{}, err
 	}
@@ -46,7 +46,6 @@ func interruptJobTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	command ReplanJobCommand,
-	feedbackSHA string,
 	descriptor lifecycleOperationDescriptor,
 ) (LifecycleJobResult, error) {
 	if err := lockLifecycleOperationIdentityTx(ctx, tx, command.OperationID); err != nil {
@@ -66,7 +65,7 @@ func interruptJobTx(
 	if existing, found, err := loadLifecycleOperationTx(ctx, tx, descriptor, command.JobID); err != nil {
 		return LifecycleJobResult{}, err
 	} else if found {
-		if err := requireInterruptReplayTx(ctx, tx, existing, command, feedbackSHA); err != nil {
+		if err := requireInterruptReplayTx(ctx, tx, existing, command); err != nil {
 			return LifecycleJobResult{}, err
 		}
 		return LifecycleJobResult{Job: existing.ResultJob}, nil
@@ -140,7 +139,6 @@ func interruptJobTx(
 		ctx,
 		tx,
 		command,
-		feedbackSHA,
 		currentGeneration,
 		newGeneration,
 		boundary,
@@ -159,7 +157,7 @@ func interruptJobTx(
 	}
 	if err := insertLifecycleOperationTx(ctx, tx, descriptor, lifecycleOperationRecord{
 		ID: descriptor.ID, JobID: command.JobID, ObservedGeneration: currentGeneration,
-		ResultGeneration: newGeneration, Kind: descriptor.Kind, CommandSHA256: descriptor.SHA256,
+		ResultGeneration: newGeneration, Kind: descriptor.Kind,
 		ResultJobStatus: job.Status, ResultJob: job,
 	}); err != nil {
 		return LifecycleJobResult{}, err

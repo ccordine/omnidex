@@ -2,7 +2,6 @@ package worker
 
 import (
 	"fmt"
-	"strconv"
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
@@ -43,13 +42,5 @@ func claimedStepLifecycleOperationID(
 		claim.Authority.WorkerID == "" {
 		return "", fmt.Errorf("claimed step lifecycle identity requires exact current attempt authority")
 	}
-	return queue.NewLifecycleOperationID(
-		"worker-step-v1",
-		strconv.FormatInt(claim.Job.ID, 10),
-		strconv.FormatInt(claim.Step.Generation, 10),
-		strconv.FormatInt(claim.Step.ID, 10),
-		strconv.FormatInt(claim.Authority.Attempt, 10),
-		claim.Authority.WorkerID,
-		string(kind),
-	)
+	return queue.NewStepLifecycleOperationID(claim.Authority, kind)
 }

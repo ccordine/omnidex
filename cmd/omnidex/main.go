@@ -27,7 +27,10 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 }
 
 func runServer() error {
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	runtime, err := omnidexruntime.New(ctx, cfg, log.Default())

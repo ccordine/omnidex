@@ -1,13 +1,10 @@
 package worker
 
 import (
-	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"testing"
-
-	workspacefacts "github.com/gryph/omnidex/internal/workspace"
 )
 
 type failingAssemblyWorkflowDriver struct {
@@ -70,22 +67,8 @@ func TestBrowserConstructionFailureLeavesLiteralWorkspaceReusable(t *testing.T) 
 	if err := os.WriteFile(userPath, []byte("user-owned"), 0o600); err != nil {
 		t.Fatalf("write initial workspace: %v", err)
 	}
-	fence, err := workspacefacts.AcquireMutationFence(context.Background(), root)
-	if err != nil {
-		t.Fatalf("acquire reusable-workspace fence: %v", err)
-	}
-	defer func() {
-		if err := fence.Release(); err != nil {
-			t.Errorf("release reusable-workspace fence: %v", err)
-		}
-	}()
-	before, err := directCodingAuthoritativeWorkspaceSHA256(fence, root)
-	if err != nil {
-		t.Fatalf("hash initial workspace: %v", err)
-	}
 	program := testTypeScriptBrowserProgramAtRoot(
 		t,
-		"redirectable fixture",
 		"A neutral browser utility",
 		"Expose one observable state.",
 		root,
@@ -101,14 +84,14 @@ func TestBrowserConstructionFailureLeavesLiteralWorkspaceReusable(t *testing.T) 
 	if _, err := runDirectCodingWorkflow(driver); err == nil {
 		t.Fatal("browser construction failure unexpectedly completed")
 	}
-	after, err := directCodingAuthoritativeWorkspaceSHA256(fence, root)
+	entries, err := os.ReadDir(root)
 	if err != nil {
-		t.Fatalf("hash workspace after failure: %v", err)
+		t.Fatalf("inspect workspace after failure: %v", err)
 	}
-	if after != before || driver.prepareCalls != 0 || driver.applyCalls != 0 {
+	if len(entries) != 1 || entries[0].Name() != "notes.txt" || driver.prepareCalls != 0 || driver.applyCalls != 0 {
 		t.Fatalf(
-			"failed browser construction changed literal cwd: before=%s after=%s prepare=%d apply=%d",
-			before, after, driver.prepareCalls, driver.applyCalls,
+			"failed browser construction changed cwd: entries=%v prepare=%d apply=%d",
+			entries, driver.prepareCalls, driver.applyCalls,
 		)
 	}
 	if err := validateDirectCodingTypeScriptGreenfieldProgramRoot(root, program); err != nil {

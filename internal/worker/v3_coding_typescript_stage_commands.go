@@ -28,8 +28,8 @@ func directCodingApplicationTaskStageCommands(
 	program directCodingProgram,
 	context assemblyline.ApplicationTaskContext,
 ) ([]directCodingVerificationCommand, error) {
-	if context.WorkloadSHA256 != program.Workload.SHA256 {
-		return nil, fmt.Errorf("task verification workload authority differs from the compiled program")
+	if err := context.ValidateFor(program.Workload); err != nil {
+		return nil, err
 	}
 	pair, err := directCodingTaskSinglePair(program.Coverage, context.Task.TaskID)
 	if err != nil {

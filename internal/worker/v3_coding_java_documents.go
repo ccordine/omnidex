@@ -15,8 +15,11 @@ func genericJavaCommandLineDocuments(
 	coverage assemblyline.ApplicationFileCoveragePlan,
 ) ([]assemblyline.SourceDocument, error) {
 	implementations := make([]assemblyline.SourceDocument, 0, len(specification.Requirements))
+	verifications := make([]assemblyline.SourceDocument, 0, len(specification.Requirements))
 	applicationDependencies := []string{
-		javaRuntimeFeatureResultBlock,
+		javaRuntimeInputBlock,
+		javaRuntimeResultBlock,
+		javaRuntimeNormalizeBlock,
 		javaRuntimeApplicationInspectBlock,
 	}
 	for index, requirement := range specification.Requirements {
@@ -31,7 +34,7 @@ func genericJavaCommandLineDocuments(
 		if err != nil {
 			return nil, err
 		}
-		implementationPath, err := directCodingTaskSingleImplementationPath(
+		pair, err := directCodingTaskSinglePair(
 			coverage, context.Task.TaskID,
 		)
 		if err != nil {
@@ -43,18 +46,18 @@ func genericJavaCommandLineDocuments(
 		supportID, supportSource, supportAPI := javaCommandLineCapabilityProjection(
 			sequence, specification.Requirements, capabilities[requirement.ID],
 		)
-		dependencies := []string{javaRuntimeFeatureResultBlock}
+		dependencies := []string{javaRuntimeResultBlock}
 		implementationBlocks := make([]assemblyline.SourceBlock, 0, 2)
 		if supportID != "" {
 			implementationBlocks = append(implementationBlocks, assemblyline.SourceBlock{
 				ID: supportID, Static: supportSource, API: supportAPI,
 				TaskID: context.Task.TaskID, Role: assemblyline.SourceBlockTaskSupport,
 			})
-			dependencies = append(dependencies, supportID)
+			dependencies = append(dependencies, javaRuntimeDependencyBlock, supportID)
 			applicationDependencies = append(applicationDependencies, supportID)
 		}
 		featureSignature := fmt.Sprintf(
-			"static Map<String, Object> %s(Map<String, Object> input, Map<String, Object> dependencies)",
+			"static Map<String, Object> %s(Map<String, Object> /* arguments: List<String>; standardInput: String */ input, Map<String, Object> dependencies)",
 			featureMethod,
 		)
 		implementationBlocks = append(implementationBlocks, assemblyline.SourceBlock{
@@ -68,10 +71,15 @@ func genericJavaCommandLineDocuments(
 			Role:         assemblyline.SourceBlockTaskImplementation,
 		})
 		implementations = append(implementations, assemblyline.SourceDocument{
-			ID: fmt.Sprintf("workload_implementation_%03d", sequence), Path: implementationPath,
+			ID: fmt.Sprintf("workload_implementation_%03d", sequence), Path: pair.ImplementationPath,
 			Preamble: javaCommandLineClassPreamble(featureClass), Postamble: "}",
 			Blocks: implementationBlocks,
 		})
+		verification, err := javaCommandLineAcceptanceDocument(sequence, context.Task.TaskID, requirementBehavior, pair)
+		if err != nil {
+			return nil, err
+		}
+		verifications = append(verifications, verification)
 		applicationDependencies = append(applicationDependencies, featureID)
 	}
 	order, err := goCommandLineRequirementOrder(specification.Requirements, capabilities)
@@ -80,6 +88,7 @@ func genericJavaCommandLineDocuments(
 	}
 	documents := []assemblyline.SourceDocument{javaCommandLineRuntimeDocument()}
 	documents = append(documents, implementations...)
+	documents = append(documents, verifications...)
 	documents = append(documents, javaCommandLineApplicationDocument(
 		specification.Requirements, capabilities, order, applicationDependencies,
 	))

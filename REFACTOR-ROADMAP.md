@@ -527,7 +527,7 @@ Process boot configuration	One explicit decoded config object
 Mutable runtime settings	One database-backed settings authority, if needed
 UI/session state	Server-authoritative store; Redis may cache but not override
 Secrets	One explicit secret resolver configured at boot
-Schema version	Embedded migration manifest/database ledger
+Internal schema	One current database/setup.sql; recreated on each startup
 Provider result	Exact persisted station receipt
 
 Do not merge:
@@ -742,17 +742,17 @@ It should:
 
 decode structural boot configuration
 construct authoritative stores
-apply or verify migrations
+recreate the dedicated internal schema from database/setup.sql
 construct one runtime/server
 start requested surface
 
 It must not globally validate every future capability.
 
-Embed or directly own migrations
+Embed the one current database setup
 
 The executable must have one production path that applies the authoritative schema.
 
-Use an embedded migration manifest or one explicit migration package.
+Embed database/setup.sql directly. Each startup discards the preceding internal schema and rows. There is no migration manifest, upgrade ledger, or in-place preservation path.
 
 Do not rely on Docker initialization scripts, missing shell scripts, or README instructions.
 
@@ -938,7 +938,7 @@ Use commits that correspond to architectural demolition, not individual audit fi
 5. collapse duplicate authorities and silent fallbacks
 6. remove dormant/product-hardcoded subsystems
 7. remove retired schemas/routes/orphan packages
-8. restore one entrypoint and migration path
+8. restore one entrypoint and fresh schema setup path
 9. compile-only audit and direct-path proof
 10. user-authorized runtime proof
 
@@ -967,7 +967,7 @@ Rules:
 9. Existing repositories may be broken and mixed-language.
 10. One state class has one authority. Remove hidden fallbacks and silent default repair.
 11. Remove dormant skills, global embeddings prerequisites, audio hardcoding, browser product layout rules, retired routes/tables, stale binaries, and orphan packages from the active core.
-12. Restore one executable entrypoint, one runtime constructor, and one authoritative schema migration path.
+12. Restore one executable entrypoint, one runtime constructor, and one authoritative fresh schema setup path.
 13. Use compile-only checks while cleaning production code.
 14. Do not declare completion based on internal tests or semantic receipts. The eventual acceptance condition is real host-visible files and functional output, but no runtime proof may begin until explicitly authorized.
 Work through these phases in order:

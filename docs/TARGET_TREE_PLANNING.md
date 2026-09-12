@@ -2,8 +2,9 @@
 
 ## Status
 
-This is the sole tree-visible model boundary in the coding assembly line, and
-it is never a normalized-path-visible boundary. It answers one structural
+This specifies the sole permitted tree-visible model boundary, not an available
+station in the current registry. Current stacks resolve their trees mechanically.
+A future tree station is never normalized-path-visible: it answers one structural
 semantic question and has no filesystem or workflow authority. Every source,
 source-body correction, verification, and other semantic model remains path- and
 tree-blind. Code alone supplies source declarations.
@@ -79,15 +80,19 @@ completion state.
 ## Mechanical stacks
 
 Inference is forbidden when a registered stack has one exact structural answer.
-Code projects implementation/verification pairs mechanically. TypeScript browser applications
-allocate one neutral numbered source/test pair for the complete frozen
-workload and bind every task to that pair. A valid existing TypeScript pair is
-reused exactly; a partial, ambiguous, or over-complete managed tree fails
-loudly. The other registered stacks perform per-task allocation. Code checks
-current files, existing directories, reserved/static files, and already
-allocated leaves, advances an entire pair when either half is occupied, records
-the exact task-to-pair provenance, and returns one sorted union. These stacks
-make zero target-tree model calls.
+TypeScript browser applications allocate one neutral numbered source/test pair
+for the complete frozen workload and bind every task to that pair. Occupied
+filenames do not establish managed ownership: either occupied half advances the
+whole allocation to a free pair. Browser collisions with fixed source, static,
+manifest, or generated-tool paths fail before source dispatch or mutation.
+
+Go allocates a task-local implementation/test pair. JavaScript, Rust, and Java
+allocate one task-local implementation path; code owns their verification
+declarations and runtime support. Allocation consumes code-held occupation and
+reserved-path facts, retains exact task-to-path coverage, and returns one sorted
+union. These stacks make zero target-tree model calls. The current filesystem
+occupation snapshot is implemented for the browser stack; this document does
+not claim broader existing-repository reconciliation support.
 
 A mechanical projection failure is terminal. There is no inference fallback.
 
@@ -99,7 +104,7 @@ frozen task to both returned leaves. This all-to-all coverage and the neutral
 pair allocation are mechanically forced by the registered stack; neither is
 model planning nor filename inference.
 
-Mechanical stacks retain the task-to-pair mapping code created during
+Mechanical stacks retain the task-to-path mapping code created during
 allocation. In both cases the coverage plan proves:
 
 * every target file appears exactly once;
@@ -134,13 +139,12 @@ The same closure check runs inside the inferred candidate validator before any
 future raw-tree result can be persisted as accepted, and again at the final
 tree boundary.
 
-The target-tree diff supports scoped delete transitions. The coding driver
-mechanically filters the current snapshot through the selected stack's artifact
-adapters to form the managed workload set, then separately grants exactly that
-deterministic set as deletion eligibility. The standalone plain-text creation
-path grants none. The semantic relation that makes this path applicable is resolved
-by its own raw-leaf station and cannot also classify repository-artifact absence.
-Neither path derives eligibility from model output or omission.
+Current target-tree resolution constructs paths and coverage; it does not grant
+deletion eligibility. The coding driver receives deletion paths from separately
+accepted artifact directives. An adapter's ability to recognize a file is not
+ownership or permission to delete it. The retired standalone plain-text creation
+workflow is not another source of deletion authority. No current or future path
+may derive that authority from tree omission alone.
 
 ## Validation correction
 

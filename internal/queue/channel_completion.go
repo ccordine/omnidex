@@ -2,7 +2,6 @@ package queue
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -207,9 +206,7 @@ func materializeChannelCompletionTx(
 		}
 	}
 	if binding.Mode == model.ChannelModeRoleplay {
-		advanceOperationID := roleplayTurnAdvanceOperationID(command.OperationID)
 		if _, err := roleplay.AdvanceTurnTx(ctx, tx, roleplay.SimulationTurnAdvanceRequest{
-			OperationID:   advanceOperationID,
 			PreparationID: binding.RoleplaySimulationPreparationID,
 			ChannelID:     binding.ChannelID, UserMessageID: binding.UserMessageID,
 			JobID: job.ID, ExpectedRevision: binding.RoleplaySceneRevision,
@@ -237,11 +234,6 @@ func validateChannelCompletionOutput(command CompleteStepCommand) error {
 		return fmt.Errorf("channel completion output: %w", err)
 	}
 	return nil
-}
-
-func roleplayTurnAdvanceOperationID(operationID LifecycleOperationID) string {
-	digest := sha256.Sum256([]byte("roleplay-turn-advance.v1\x00" + string(operationID)))
-	return fmt.Sprintf("rpt_%x", digest[:16])
 }
 
 func roleplayKnowledgeRecipientStrings(ids []model.RoleplayCharacterID) []string {

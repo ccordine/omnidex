@@ -3,8 +3,6 @@ package db
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/binary"
 	"fmt"
 	"regexp"
 	"strings"
@@ -17,6 +15,10 @@ import (
 const DefaultRuntimeSchema = "omnidex_runtime"
 
 const databaseSetupRuntimeSchemaSlot = "__OMNIDEX_RUNTIME_SCHEMA__"
+
+// Serialize schema setup within this database. Startup is infrequent and does
+// not need a separate content-derived lock identity for each schema.
+const runtimeSchemaBootstrapLock = 1869442665
 
 var runtimeSchemaNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
 
@@ -135,7 +137,7 @@ func installRuntimeSchema(
 	}
 	defer tx.Rollback(context.Background())
 	if _, err := tx.Exec(
-		ctx, `SELECT pg_advisory_xact_lock($1)`, runtimeSchemaBootstrapLockKey(runtimeSchema),
+		ctx, `SELECT pg_advisory_xact_lock($1)`, runtimeSchemaBootstrapLock,
 	); err != nil {
 		return fmt.Errorf("lock runtime schema bootstrap: %w", err)
 	}
@@ -192,11 +194,6 @@ func renderRuntimeDatabaseSetup(body []byte, runtimeSchema string) ([]byte, erro
 		[]byte(databaseSetupRuntimeSchemaSlot),
 		[]byte(runtimeSchema),
 	), nil
-}
-
-func runtimeSchemaBootstrapLockKey(runtimeSchema string) int64 {
-	digest := sha256.Sum256([]byte("omnidex.runtime-schema-bootstrap.v1\x00" + runtimeSchema))
-	return int64(binary.BigEndian.Uint64(digest[:8]))
 }
 
 func databaseOptionsSetSearchPath(options string) bool {

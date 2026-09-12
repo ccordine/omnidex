@@ -144,7 +144,7 @@ operation/property result-relation boundary that Qwen does not, while Qwen satis
 the strict multiline inventory and authorization boundary that Phi does not. The system
 uses `nomic-embed-text` for local embeddings.
 The complete route list is in
-[`default.env`](default.env).
+[.env.example](.env.example).
 
 The following values are capacity-planning estimates, not universal performance
 guarantees. Model-file sizes come from the exact local Ollama inventory and agree
@@ -345,8 +345,7 @@ Upstream capacity references: the
 [Ollama concurrency and memory FAQ](https://docs.ollama.com/faq), and
 [Ollama GPU support matrix](https://docs.ollama.com/gpu).
 
-Before intent interpretation, code hashes the immutable request and records the exact
-workspace state as a typed fact. Repository, runtime, and external facts are acquired by
+Before intent interpretation, code records the current workspace state as a typed fact. Repository, runtime, and external facts are acquired by
 registered deterministic providers when authoritative state requires them. There is no
 application-context-question model station or model-authored context-completeness claim.
 
@@ -380,12 +379,12 @@ a derived aggregate summary that can supply sibling requirements. Delivery surfa
 technical and structural format, generic tests/builds, and deployment never become fake
 application features. A functional verified result satisfying the current accepted objective
 is a successful iteration; speculative enhancements require a later explicit user objective.
-Requirements are bound to the immutable request digest; exact substrings, quote intervals,
-source order, punctuation, disjointness, and overlap are not authority gates.
+Requirements belong to the current code-owned job and generation. Exact substrings, quote
+intervals, source order, punctuation, disjointness, and overlap are not authority gates.
 
 For each accepted task-local runtime implementation requirement, code creates exactly one frozen task containing the
 code-owned task identity, requirement identity, and unchanged accepted requirement.
-Code assigns source order and freezes the workload hash. There are no model-authored
+Code assigns source order and retains the accepted workload values. There are no model-authored
 objectives, behaviors, acceptance criteria, dependencies, schedules, tools, paths, or
 completion state. Artifact handling remains a separate token-blind classification job.
 Code may bind one independently accepted
@@ -474,7 +473,7 @@ The integration packages and the delegated-data security boundary are documented
 Requirements: Docker with Compose and an Ollama endpoint reachable from the core service.
 
 ```bash
-cp default.env .env
+cp .env.example .env
 # Set HOST_UID=$(id -u), HOST_GID=$(id -g), and
 # DOCKER_GID=$(stat -c '%g' /var/run/docker.sock) in .env.
 ./up.sh --build
@@ -518,15 +517,15 @@ lockfile with `npm ci`, and fails if the production bundle is incomplete.
 Run the installer from a clean Git checkout with an `origin` remote:
 
 ```bash
-cp default.env deployment.env
-# Edit deployment.env explicitly for this host before installing.
-./install.sh --env-file deployment.env --yes
+cp .env.example ../omnidex-deployment.env
+# Edit ../omnidex-deployment.env explicitly for this host before installing.
+./install.sh --env-file ../omnidex-deployment.env --yes
 ```
 
 The installer stages a complete checkout, builds the GUI and the authoritative
-`bin/omnidex` server and `bin/omni` CLI, verifies their build identity, requires the
+`bin/omnidex` server and `bin/omni` CLI, checks the executable layout, requires the
 explicit deployment environment to be a regular file, and then swaps the finished
-checkout into `~/.omnidex`. `default.env` is a template and is never silently
+checkout into `~/.omnidex`. `.env.example` is a template and is never silently
 promoted to active authority. An existing install's regular `.env` is preserved
 byte-for-byte; supplying `--env-file` during replacement is rejected. This
 environment-file rule does not preserve database state: when the installed server
@@ -544,12 +543,19 @@ the configured Compose service. Updates fast-forward a sibling staged checkout a
 do not replace the active install when fetching, GUI compilation, Go compilation,
 or staged-layout validation fails.
 
+To package the current workspace into a native binary release, run
+`scripts/build-release.sh --dist /path/to/releases`. This builds only `omnidex`
+and `omni`, requires a native CGO toolchain, and refuses to overwrite an existing
+version directory. Local and release builds do not require a Git checkout or
+embed commit/source-hash receipts. Runtime health checks verify service and
+dependency health, not release metadata.
+
 A native binary release archive uses the same environment rule but does not
 contain a Git checkout. After extracting it, prepare and review a deployment file,
 then install it atomically:
 
 ```bash
-cp default.env ../omnidex-deployment.env
+cp .env.example ../omnidex-deployment.env
 # Edit ../omnidex-deployment.env explicitly for this host.
 ./install-release.sh --env-file ../omnidex-deployment.env --yes
 ```
@@ -577,7 +583,7 @@ through the ordinary production request boundary.
 
 ## Configuration
 
-Start with [default.env](default.env) or [.env.example](.env.example). Important groups are:
+Start with [.env.example](.env.example). Important groups are:
 
 - fresh-database setup, Redis, and listener settings;
 - generation and embedding provider selection;

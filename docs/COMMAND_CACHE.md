@@ -1,31 +1,14 @@
-# Command Cache
+# Command execution evidence
 
-The command cache stores command observations by:
+Omnidex records commands that actually ran, including their output, exit status,
+timing, and workspace association. See [EVIDENCE_LEDGER.md](EVIDENCE_LEDGER.md).
 
-- workspace path
-- command text
-- indexed file hashes
+There is no hash-keyed command-result cache and no `.omni/command-cache`
+directory maintained by the runtime. `OMNI_ENABLE_COMMAND_CACHE`,
+`--enable-command-cache`, and `command_cache_hit` are retired controls/events,
+not current interfaces.
 
-This lets Omnidex reuse evidence when the command and relevant workspace state have not changed.
-
-Runtime reuse is opt-in:
-
-```bash
-OMNI_ENABLE_COMMAND_CACHE=1 omni
-omni --enable-command-cache
-```
-
-Eligible verification/read commands are cached only when the command succeeds and the workspace index proves the inputs are unchanged. The first successful run stores the observation under `.omni/command-cache`; later matching runs emit `command_cache_hit` and reuse the prior exit code/stdout/stderr.
-
-Failed commands are not cached. This prevents a transient missing file, missing dependency, or broken environment from poisoning later runs after the workspace changes.
-
-Initial eligible command families:
-
-- `go test ...`
-- `npm test`
-- `npm run test`
-- `npm run build`
-- `git status ...`
-- `git diff ...`
-- `git branch ...`
-- `test -f PATH`
+A retained command observation describes its original execution. It must not be
+presented as a newly executed verification because a file hash or command string
+matches. Code may retain accepted job state and its existing evidence; changed
+obligations are verified through the authoritative execution path.

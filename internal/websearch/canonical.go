@@ -1,8 +1,6 @@
 package websearch
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"net"
 	"net/url"
@@ -78,28 +76,4 @@ func stableQuery(values url.Values) string {
 		sort.Strings(values[key])
 	}
 	return values.Encode()
-}
-
-func candidateID(canonicalURL string) CandidateID {
-	digest := sha256.Sum256([]byte("web-candidate.v1\x00" + canonicalURL))
-	return CandidateID("candidate_" + hex.EncodeToString(digest[:]))
-}
-
-func documentID(canonicalURL, contentSHA string) DocumentID {
-	digest := sha256.Sum256([]byte("web-document.v1\x00" + canonicalURL + "\x00" + contentSHA))
-	return DocumentID("document_" + hex.EncodeToString(digest[:]))
-}
-
-// CandidateIDForURL returns the stable opaque identity for an already
-// canonical URL. Non-canonical input is rejected instead of being silently
-// rewritten at an authority boundary.
-func CandidateIDForURL(canonicalURL string) (CandidateID, error) {
-	normalized, err := CanonicalizeURL(canonicalURL)
-	if err != nil {
-		return "", err
-	}
-	if normalized != canonicalURL {
-		return "", fmt.Errorf("candidate URL is not canonical")
-	}
-	return candidateID(canonicalURL), nil
 }

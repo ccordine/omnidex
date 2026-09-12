@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"path"
 	"strings"
-
-	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
 var rustCommandLineReservedModules = map[string]struct{}{
@@ -29,20 +27,6 @@ func validateRustCommandLineModuleName(value string) error {
 		return fmt.Errorf("module %q conflicts with code-owned or reserved Rust authority", value)
 	}
 	return nil
-}
-
-func rustCommandLineTaskImplementationPath(
-	coverage assemblyline.ApplicationFileCoveragePlan,
-	taskID string,
-) (string, error) {
-	implementationPath, err := directCodingTaskSingleImplementationPath(coverage, taskID)
-	if err != nil {
-		return "", err
-	}
-	if _, err := rustCommandLineModuleForPath(implementationPath); err != nil {
-		return "", fmt.Errorf("task %s Rust file coverage: %w", taskID, err)
-	}
-	return implementationPath, nil
 }
 
 func rustCommandLineModuleForPath(artifactPath string) (string, error) {

@@ -133,7 +133,7 @@ func (r *Repository) ApplyCodingPlanDecisions(
 	if err := insertLifecycleOperationTx(ctx, tx, descriptor, lifecycleOperationRecord{
 		ID: descriptor.ID, JobID: job.ID,
 		ObservedGeneration: command.Generation, ResultGeneration: command.Generation,
-		StepID: &planStepID, Kind: descriptor.Kind, CommandSHA256: descriptor.SHA256,
+		StepID: &planStepID, Kind: descriptor.Kind,
 		ResultJobStatus: job.Status, ResultStepStatus: &stepStatus, ResultJob: job,
 	}); err != nil {
 		return CodingPlanMutationResult{}, err
@@ -274,7 +274,7 @@ func (r *Repository) FreezeCodingPlan(
 	if err := insertLifecycleOperationTx(ctx, tx, descriptor, lifecycleOperationRecord{
 		ID: descriptor.ID, JobID: job.ID,
 		ObservedGeneration: command.Generation, ResultGeneration: command.Generation,
-		StepID: &planStepID, Kind: descriptor.Kind, CommandSHA256: descriptor.SHA256,
+		StepID: &planStepID, Kind: descriptor.Kind,
 		ResultJobStatus: job.Status, ResultStepStatus: &stepStatus, ResultJob: job,
 	}); err != nil {
 		return CodingPlanMutationResult{}, err

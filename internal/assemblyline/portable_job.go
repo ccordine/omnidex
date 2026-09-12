@@ -1,8 +1,6 @@
 package assemblyline
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 )
@@ -30,7 +28,6 @@ type WorkKind string
 
 type PortableJob struct {
 	Schema  string          `json:"schema"`
-	ID      string          `json:"id"`
 	Kind    WorkKind        `json:"kind"`
 	Payload json.RawMessage `json:"payload"`
 }
@@ -43,9 +40,6 @@ func (job PortableJob) Validate() error {
 		!json.Valid(job.Payload) {
 		return fmt.Errorf("portable job payload is not one bounded JSON value")
 	}
-	if job.ID != portableJobDigest(job.Schema, job.Kind, job.Payload) {
-		return fmt.Errorf("portable job ID differs from its code-owned content")
-	}
 	return nil
 }
 
@@ -54,17 +48,16 @@ func newPortableJob(kind WorkKind, input any) (PortableJob, error) {
 	if err != nil {
 		return PortableJob{}, fmt.Errorf("encode portable %s input: %w", kind, err)
 	}
-	job := PortableJob{Schema: PortableJobSchemaV2, Kind: kind, Payload: payload}
-	job.ID = portableJobDigest(job.Schema, job.Kind, job.Payload)
-	return job, nil
+	return PortableJob{Schema: PortableJobSchemaV2, Kind: kind, Payload: payload}, nil
 }
 
-func portableJobDigest(schema string, kind WorkKind, payload []byte) string {
-	hash := sha256.New()
-	_, _ = hash.Write([]byte(schema))
-	_, _ = hash.Write([]byte{0})
-	_, _ = hash.Write([]byte(kind))
-	_, _ = hash.Write([]byte{0})
-	_, _ = hash.Write(payload)
-	return hex.EncodeToString(hash.Sum(nil))
+// PortableJobKey compares actual code-owned inputs. It is an in-process map
+// key, not an identity, receipt, model field, or claim about a result's validity.
+type PortableJobKey struct {
+	Kind  WorkKind
+	Input string
+}
+
+func (job PortableJob) Key() PortableJobKey {
+	return PortableJobKey{Kind: job.Kind, Input: string(job.Payload)}
 }

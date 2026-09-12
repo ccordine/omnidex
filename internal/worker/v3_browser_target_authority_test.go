@@ -115,7 +115,7 @@ func TestTypeScriptBrowserGreenfieldAuthorityPreservesOrdinaryExistingFiles(t *t
 				}
 			}
 			program := testTypeScriptBrowserProgramAtRoot(
-				t, fixture.name, fixture.product, fixture.requirement, root,
+				t, fixture.product, fixture.requirement, root,
 			)
 			if !sameExactStrings(program.TargetTree.Paths, fixture.wantTarget) {
 				t.Fatalf("target=%v; want %v", program.TargetTree.Paths, fixture.wantTarget)
@@ -147,7 +147,6 @@ func TestTypeScriptBrowserGreenfieldAuthorityRejectsUnownedCollisions(t *testing
 			}
 			program := testTypeScriptBrowserProgramAtRoot(
 				t,
-				"greenfield collision",
 				"A neutral browser utility",
 				"Expose one observable status.",
 				root,

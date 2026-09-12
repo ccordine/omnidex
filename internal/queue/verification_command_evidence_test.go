@@ -1,6 +1,7 @@
 package queue
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -31,9 +32,7 @@ func TestNormalizeVerificationCommandEvidenceClassifiesTerminalReceipts(t *testi
 			if err != nil {
 				t.Fatal(err)
 			}
-			if normalized.Status != fixture.status || normalized.DurationNanos != 125000000 ||
-				normalized.ArgvSHA256 == "" || normalized.StdoutSHA256 == "" ||
-				normalized.StderrSHA256 == "" {
+			if normalized.Status != fixture.status || normalized.DurationNanos != 125000000 {
 				t.Fatalf("normalized receipt=%#v", normalized)
 			}
 		})
@@ -49,7 +48,7 @@ func TestNormalizeVerificationCommandEvidencePreservesNilAndEmptyStdin(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if normalized.StdinPresent || normalized.StdinSHA256 != "" {
+	if normalized.StdinPresent || normalized.Stdin != nil {
 		t.Fatalf("nil stdin gained evidence: %#v", normalized)
 	}
 	withEmpty := verificationCommandFixture()
@@ -59,7 +58,7 @@ func TestNormalizeVerificationCommandEvidencePreservesNilAndEmptyStdin(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !normalized.StdinPresent || normalized.StdinSHA256 != llmEvidenceSHA256(nil) {
+	if !normalized.StdinPresent || normalized.Stdin == nil || len(normalized.Stdin) != 0 {
 		t.Fatalf("empty stdin identity was lost: %#v", normalized)
 	}
 }
@@ -83,32 +82,26 @@ func TestNormalizeVerificationCommandEvidenceMarksBoundedOverflowIncomplete(t *t
 func TestNormalizeVerificationCommandEvidenceClassifiesHostObservationFailures(t *testing.T) {
 	t.Parallel()
 	zero := 0
-	before := strings.Repeat("a", 64)
-	after := strings.Repeat("b", 64)
-	changed := verificationCommandFixture()
-	changed.Phase = VerificationHostFinal
-	changed.ExitCode = &zero
-	changed.WorkspaceSHA256Before = before
-	changed.WorkspaceSHA256After = after
-	normalized, err := normalizeVerificationCommandEvidence(changed)
+	host := verificationCommandFixture()
+	host.Phase = VerificationHostFinal
+	host.ExitCode = &zero
+	normalized, err := normalizeVerificationCommandEvidence(host)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if normalized.Status != VerificationCommandWorkspaceChanged {
-		t.Fatalf("workspace change receipt=%#v", normalized)
+	if normalized.Status != VerificationCommandSucceeded {
+		t.Fatalf("host verification requires more than its execution result: %#v", normalized)
 	}
 
 	observation := verificationCommandFixture()
-	observation.Phase = VerificationIsolatedFinal
+	observation.Phase = VerificationHostFinal
 	observation.ExitCode = &zero
-	observation.WorkspaceSHA256Before = before
-	observation.ObservationError = "hash authoritative workspace after command: file changed while reading"
+	observation.ObservationError = "host working directory was removed"
 	normalized, err = normalizeVerificationCommandEvidence(observation)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if normalized.Status != VerificationCommandObservationFailed ||
-		normalized.WorkspaceSHA256After != "" {
+	if normalized.Status != VerificationCommandObservationFailed {
 		t.Fatalf("observation failure receipt=%#v", normalized)
 	}
 }
@@ -123,9 +116,8 @@ func TestNormalizeVerificationCommandEvidenceRejectsInexactAuthority(t *testing.
 		"unsorted environment": func(record *VerificationCommandEvidence) {
 			record.Environment = []string{"Z=1", "A=2"}
 		},
-		"shell string":           func(record *VerificationCommandEvidence) { record.Argv = []string{""} },
-		"missing host workspace": func(record *VerificationCommandEvidence) { record.Phase = VerificationHostFinal },
-		"dual result":            func(record *VerificationCommandEvidence) { record.LaunchError = "failed" },
+		"shell string": func(record *VerificationCommandEvidence) { record.Argv = []string{""} },
+		"dual result":  func(record *VerificationCommandEvidence) { record.LaunchError = "failed" },
 		"oversized stdout": func(record *VerificationCommandEvidence) {
 			record.Stdout = []byte(strings.Repeat("x", maxVerificationCommandStreamBytes+1))
 		},
@@ -139,6 +131,23 @@ func TestNormalizeVerificationCommandEvidenceRejectsInexactAuthority(t *testing.
 				t.Fatalf("accepted invalid verification receipt: %#v", record)
 			}
 		})
+	}
+}
+
+func TestVerificationCommandEvidenceContainsResultsWithoutHashReceipts(t *testing.T) {
+	record := verificationCommandFixture()
+	zero := 0
+	record.ExitCode = &zero
+	normalized, err := normalizeVerificationCommandEvidence(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(normalized)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "sha256") || strings.Contains(string(raw), "digest") {
+		t.Fatalf("command result carries redundant hash receipts: %s", raw)
 	}
 }
 

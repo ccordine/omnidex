@@ -1,7 +1,7 @@
 package model
 
 import (
-	"crypto/sha256"
+	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"regexp"
@@ -19,23 +19,16 @@ const (
 	CodingPlanStateSuperseded CodingPlanState = "superseded"
 	CodingPlanStateCanceled   CodingPlanState = "canceled"
 
-	CodingPlanAnnotationGrounded             CodingPlanAnnotation = "grounded"
-	CodingPlanAnnotationReasonableDerivation CodingPlanAnnotation = "reasonable_derivation"
-	CodingPlanAnnotationSpeculativeReview    CodingPlanAnnotation = "speculative_review"
-	CodingPlanAnnotationConcreteConflict     CodingPlanAnnotation = "concrete_scope_conflict"
-
 	CodingPlanDecisionPending  CodingPlanDecision = "pending"
 	CodingPlanDecisionApproved CodingPlanDecision = "approved"
 	CodingPlanDecisionRejected CodingPlanDecision = "rejected"
 )
 
 var (
-	codingPlanSHA256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
-	codingPlanLeafIDPattern = regexp.MustCompile(`^coding_plan_leaf_[0-9a-f]{64}$`)
+	codingPlanLeafIDPattern = regexp.MustCompile(`^coding_plan_leaf_[0-9a-f]{32}$`)
 )
 
 type CodingPlanState string
-type CodingPlanAnnotation string
 type CodingPlanDecision string
 type CodingPlanLeafID string
 
@@ -43,36 +36,33 @@ type CodingPlanLeafID string
 // exact job generation. Semantic receipts used by execution remain in the
 // repository record and are intentionally absent from this projection.
 type CodingPlan struct {
-	JobID         int64            `json:"job_id"`
-	Generation    int64            `json:"generation"`
-	Revision      int64            `json:"revision"`
-	State         CodingPlanState  `json:"state"`
-	ScopeMode     CodingScopeMode  `json:"scope_mode"`
-	RequestSHA256 string           `json:"request_sha256"`
-	Leaves        []CodingPlanLeaf `json:"leaves"`
-	CreatedAt     time.Time        `json:"created_at"`
-	UpdatedAt     time.Time        `json:"updated_at"`
-	FrozenAt      *time.Time       `json:"frozen_at,omitempty"`
+	JobID      int64            `json:"job_id"`
+	Generation int64            `json:"generation"`
+	Revision   int64            `json:"revision"`
+	State      CodingPlanState  `json:"state"`
+	Leaves     []CodingPlanLeaf `json:"leaves"`
+	CreatedAt  time.Time        `json:"created_at"`
+	UpdatedAt  time.Time        `json:"updated_at"`
+	FrozenAt   *time.Time       `json:"frozen_at,omitempty"`
 }
 
 type CodingPlanLeaf struct {
-	ID         CodingPlanLeafID     `json:"id"`
-	Statement  string               `json:"statement"`
-	Annotation CodingPlanAnnotation `json:"annotation"`
-	Decision   CodingPlanDecision   `json:"decision"`
+	ID        CodingPlanLeafID   `json:"id"`
+	Statement string             `json:"statement"`
+	Decision  CodingPlanDecision `json:"decision"`
 }
 
-func NewCodingPlanLeafID(statement string) (CodingPlanLeafID, error) {
-	if err := validateCodingPlanStatement(statement); err != nil {
-		return "", err
+func NewCodingPlanLeafID() (CodingPlanLeafID, error) {
+	var identity [16]byte
+	if _, err := rand.Read(identity[:]); err != nil {
+		return "", fmt.Errorf("allocate coding plan leaf identity: %w", err)
 	}
-	digest := sha256.Sum256([]byte(statement))
-	return CodingPlanLeafID("coding_plan_leaf_" + hex.EncodeToString(digest[:])), nil
+	return CodingPlanLeafID("coding_plan_leaf_" + hex.EncodeToString(identity[:])), nil
 }
 
 func ParseCodingPlanLeafID(value string) (CodingPlanLeafID, error) {
 	if !codingPlanLeafIDPattern.MatchString(value) {
-		return "", fmt.Errorf("coding plan leaf ID must match coding_plan_leaf_ plus 64 lowercase hex characters")
+		return "", fmt.Errorf("coding plan leaf ID must match coding_plan_leaf_ plus 32 lowercase hex characters")
 	}
 	return CodingPlanLeafID(value), nil
 }
@@ -84,16 +74,6 @@ func (state CodingPlanState) Validate() error {
 		return nil
 	default:
 		return fmt.Errorf("coding plan state %q is unsupported", state)
-	}
-}
-
-func (annotation CodingPlanAnnotation) Validate() error {
-	switch annotation {
-	case CodingPlanAnnotationGrounded, CodingPlanAnnotationReasonableDerivation,
-		CodingPlanAnnotationSpeculativeReview, CodingPlanAnnotationConcreteConflict:
-		return nil
-	default:
-		return fmt.Errorf("coding plan annotation %q is unsupported", annotation)
 	}
 }
 
@@ -113,13 +93,6 @@ func (leaf CodingPlanLeaf) Validate() error {
 	if err := validateCodingPlanStatement(leaf.Statement); err != nil {
 		return err
 	}
-	expected, _ := NewCodingPlanLeafID(leaf.Statement)
-	if leaf.ID != expected {
-		return fmt.Errorf("coding plan leaf ID does not match its exact statement")
-	}
-	if err := leaf.Annotation.Validate(); err != nil {
-		return err
-	}
 	if err := leaf.Decision.Validate(); err != nil {
 		return err
 	}
@@ -133,16 +106,11 @@ func (plan CodingPlan) Validate() error {
 	if err := plan.State.Validate(); err != nil {
 		return err
 	}
-	if err := plan.ScopeMode.Validate(); err != nil {
-		return err
-	}
-	if !codingPlanSHA256Pattern.MatchString(plan.RequestSHA256) {
-		return fmt.Errorf("coding plan request SHA-256 must be 64 lowercase hex characters")
-	}
 	if plan.Leaves == nil || len(plan.Leaves) > MaxCodingPlanLeaves {
 		return fmt.Errorf("coding plan leaves must be an array of at most %d entries", MaxCodingPlanLeaves)
 	}
 	seen := make(map[CodingPlanLeafID]struct{}, len(plan.Leaves))
+	statements := make(map[string]struct{}, len(plan.Leaves))
 	approved := 0
 	for index, leaf := range plan.Leaves {
 		if err := leaf.Validate(); err != nil {
@@ -152,6 +120,10 @@ func (plan CodingPlan) Validate() error {
 			return fmt.Errorf("coding plan contains duplicate leaf %q", leaf.ID)
 		}
 		seen[leaf.ID] = struct{}{}
+		if _, duplicate := statements[leaf.Statement]; duplicate {
+			return fmt.Errorf("coding plan repeats the statement of leaf %q", leaf.ID)
+		}
+		statements[leaf.Statement] = struct{}{}
 		if leaf.Decision == CodingPlanDecisionApproved {
 			approved++
 		}

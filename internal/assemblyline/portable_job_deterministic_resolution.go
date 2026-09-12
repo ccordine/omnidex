@@ -15,7 +15,7 @@ func ResolvePortableJobWithoutInference(
 	if err != nil || !handled || !resolved {
 		return PortableResult{}, false, err
 	}
-	result := PortableResult{JobID: job.ID, Candidate: opaqueModelChoiceID(0)}
+	result := PortableResult{Candidate: opaqueModelChoiceID(0)}
 	if err := result.ValidateFor(job); err != nil {
 		return PortableResult{}, false, err
 	}

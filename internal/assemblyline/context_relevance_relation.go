@@ -2,8 +2,6 @@ package assemblyline
 
 import (
 	"fmt"
-
-	"github.com/gryph/omnidex/internal/exactjson"
 )
 
 const (
@@ -26,9 +24,8 @@ type ContextRelevanceRelationInput struct {
 }
 
 type ContextRelevanceRelationResult struct {
-	Schema          string `json:"schema"`
-	AuthoritySHA256 string `json:"authority_sha256"`
-	Relation        string `json:"relation"`
+	Schema   string `json:"schema"`
+	Relation string `json:"relation"`
 }
 
 func NewContextRelevanceRelationJob(
@@ -125,14 +122,9 @@ func DecodeContextRelevanceRelationResult(
 	if err != nil {
 		return zero, err
 	}
-	authoritySHA256, err := contextRelevanceRelationAuthoritySHA256(input)
-	if err != nil {
-		return zero, err
-	}
 	result := ContextRelevanceRelationResult{
-		Schema:          ContextRelevanceRelationSchemaV1,
-		AuthoritySHA256: authoritySHA256,
-		Relation:        leaf,
+		Schema:   ContextRelevanceRelationSchemaV1,
+		Relation: leaf,
 	}
 	if err := result.ValidateFor(input); err != nil {
 		return zero, err
@@ -170,13 +162,6 @@ func (result ContextRelevanceRelationResult) ValidateFor(
 			ContextRelevanceRelationSchemaV1,
 		)
 	}
-	authoritySHA256, err := contextRelevanceRelationAuthoritySHA256(input)
-	if err != nil {
-		return err
-	}
-	if result.AuthoritySHA256 != authoritySHA256 {
-		return fmt.Errorf("context relevance relation authority hash does not match")
-	}
 	switch result.Relation {
 	case ContextCandidateDirectlyRelevant, ContextCandidateNotDirectlyRelevant:
 		return nil
@@ -186,17 +171,4 @@ func (result ContextRelevanceRelationResult) ValidateFor(
 			result.Relation,
 		)
 	}
-}
-
-func contextRelevanceRelationAuthoritySHA256(
-	input ContextRelevanceRelationInput,
-) (string, error) {
-	if err := input.validate(); err != nil {
-		return "", err
-	}
-	authority, err := exactjson.Canonical(input)
-	if err != nil {
-		return "", fmt.Errorf("encode context relevance relation authority: %w", err)
-	}
-	return ExactObjectiveContextSHA(string(authority)), nil
 }

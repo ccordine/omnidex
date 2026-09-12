@@ -1,47 +1,29 @@
 # Codebase Map
 
-The codebase map is Omnidex's durable, incrementally updated model of a workspace: what exists, what it does, how pieces relate, and where future tasks should start.
+The project-map API builds a fresh, bounded display of the current workspace.
+It is not a durable repository model, an incremental cache, or proof that a
+requested change has been implemented.
 
-It complements the workspace index. The workspace index is deterministic file state: paths, hashes, manifests, and package probes. The codebase map adds routing meaning on top: modules, files, symbols, entrypoints, tests, commands, risks, and task routes.
+The [workspace index](WORKSPACE_INDEX.md) supplies current paths, file sizes,
+recognized manifests, and package probes. The map groups files by language and
+directory and supplies entrypoint, test, command, and symbol display data. Some
+labels are path-based heuristics; they are not verified semantic understanding
+or execution evidence.
 
-## Commands
+## Current interface
 
-```sh
-omni map build
-omni map update
-omni map query "where is scope drift handled?"
-omni map route "fix repeated command loop recovery"
-```
+The [project-map service](../internal/api/project_map_service.go) handles map reads
+and explicit scans for a registered project. It scans locally when the project
+is accessible there, or uses the configured host bridge for a host-only project.
+Scan errors are reported, and the response identifies truncation.
 
-By default the map is written to:
+The API limits scans to 1,200 files and returns bounded display previews. Its
+workspace association is the actual root path and the enclosing project, not a
+hashed workspace ID.
 
-```text
-.omni/codebase-map.json
-```
+There is no saved `.omni/codebase-map.json`, per-file summary hash, or stale-hash
+invalidation path. The old `omni map build`, `update`, `query`, and `route` commands
+are not current CLI interfaces.
 
-Use `--workspace PATH`, `--out PATH`, `--max-files N`, and `--json` as needed.
-
-## Design
-
-The map is advisory routing context, not execution permission.
-
-Execution still requires worksite survey, command policy, objective ledger, progression gate, and evidence verification. A stale or incorrect map can suggest where to inspect first, but it cannot authorize scope drift or completion.
-
-## Incrementality
-
-`omni map update` reuses the workspace index update path. File summaries carry `sha256`, `summary_generated_for_hash`, and `stale`. If a file hash changes from the previous map, the summary is marked stale so downstream code-owned workflows know to inspect or regenerate before trusting it.
-
-## Task Routes
-
-Task routing returns:
-
-- likely files
-- relevant modules
-- verification commands
-- known risks
-- reasons
-- confidence
-
-The code-owned repository workflow may load `.omni/codebase-map.json` and validate a
-compact `task_route` before using it as advisory evidence. The map never chooses an
-operation, grants mutation authority, or enters model context as a project plan.
+Implementation: [map construction](../internal/omni/codebase_map.go) and
+[host-bridge projection](../internal/api/project_map_bridge.go).

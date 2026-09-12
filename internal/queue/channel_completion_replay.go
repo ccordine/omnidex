@@ -220,7 +220,6 @@ func requireRoleplayCompletionReplayTx(
 		}
 	}
 	if _, err := roleplay.AdvanceTurnTx(ctx, tx, roleplay.SimulationTurnAdvanceRequest{
-		OperationID:   roleplayTurnAdvanceOperationID(command.OperationID),
 		PreparationID: binding.RoleplaySimulationPreparationID,
 		ChannelID:     binding.ChannelID, UserMessageID: binding.UserMessageID,
 		JobID: job.ID, ExpectedRevision: binding.RoleplaySceneRevision,

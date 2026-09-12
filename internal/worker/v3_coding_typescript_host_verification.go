@@ -50,7 +50,7 @@ func (s *directCodingSession) verifyAuthoritativeTypeScriptWorkspace(
 			directCodingGeneratedHostPathsCreatedByAttempt(generatedRoots),
 		)
 		_, cleanupErr := s.runRecordedVerificationCommand(
-			s.root, queue.VerificationHostCleanup, cleanupCommand, true,
+			s.root, queue.VerificationHostCleanup, cleanupCommand,
 		)
 		if cleanupErr != nil {
 			cleanupErr = fmt.Errorf("clean generated host verification outputs: %w", cleanupErr)
@@ -74,7 +74,6 @@ func (s *directCodingSession) verifyAuthoritativeTypeScriptWorkspace(
 			s.root,
 			queue.VerificationHostInstall,
 			directCodingToolchainVersionCommand(component),
-			true,
 		)
 		if err != nil {
 			return fmt.Errorf("observe authoritative %s toolchain version: %w", component, err)
@@ -93,13 +92,13 @@ func (s *directCodingSession) verifyAuthoritativeTypeScriptWorkspace(
 		return err
 	}
 	if _, err := s.runRecordedVerificationCommand(
-		s.root, queue.VerificationHostInstall, install, true,
+		s.root, queue.VerificationHostInstall, install,
 	); err != nil {
 		return fmt.Errorf("authoritative TypeScript dependency installation failed: %w", err)
 	}
 	for _, command := range directCodingFullTypeScriptStageCommands() {
 		if _, err := s.runRecordedVerificationCommand(
-			s.root, queue.VerificationHostFinal, command, true,
+			s.root, queue.VerificationHostFinal, command,
 		); err != nil {
 			return err
 		}

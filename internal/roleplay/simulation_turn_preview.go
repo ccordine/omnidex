@@ -17,12 +17,12 @@ func previewSimulationTurnTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	locked lockedSimulationScene,
-	operationID, requestHash, exactAction string,
+	operationID, exactAction string,
 	action *SimulationAction,
 	responderIDs []string,
 ) (*SimulationTransitionResult, []SimulationResponderAuthority, error) {
 	return previewSimulationTurnAtTx(
-		ctx, tx, locked, operationID, requestHash, exactAction, action,
+		ctx, tx, locked, operationID, exactAction, action,
 		time.Now().UTC().Truncate(time.Microsecond), responderIDs,
 	)
 }
@@ -31,7 +31,7 @@ func previewSimulationTurnAtTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	locked lockedSimulationScene,
-	operationID, requestHash, exactAction string,
+	operationID, exactAction string,
 	action *SimulationAction,
 	createdAt time.Time,
 	responderIDs []string,
@@ -48,7 +48,7 @@ func previewSimulationTurnAtTx(
 		}
 	}()
 	transition, _, err := applySimulationStateTx(
-		ctx, preview, locked, operationID, requestHash, exactAction, action, createdAt,
+		ctx, preview, locked, operationID, exactAction, action, createdAt,
 	)
 	if err != nil {
 		return nil, nil, err
@@ -70,7 +70,6 @@ func previewSimulationTurnAtTx(
 		responders[index] = SimulationResponderAuthority{
 			Position: index, CharacterID: characterID, GenerationConfig: generation.Config,
 			NarrativeProjection: content, NarrativeAuthority: authority,
-			NarrativeFingerprint: authority.Fingerprint,
 		}
 	}
 	if err := preview.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {

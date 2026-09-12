@@ -51,8 +51,8 @@ func runObjectiveRoleplayTurn(
 		return objectiveTurnResult{}, err
 	}
 	result := objectiveTurnResult{
-		ObjectiveID: objectiveTurnID(authority, assemblyline.ObjectiveKindStory),
-		Kind:        assemblyline.ObjectiveKindStory, InstructionSHA256: authority.SHA256,
+		ObjectiveID: objectiveTurnID(authority),
+		Kind:        assemblyline.ObjectiveKindStory,
 	}
 	result.RequirementID = objectiveRequirementID(result.ObjectiveID)
 	if canonStation == nil {
@@ -134,7 +134,7 @@ func runObjectiveRoleplayTurn(
 		modelAuthority.RoleplayUserTurn = &modelUserTurn
 		responseResult := objectiveTurnResult{
 			ObjectiveID: result.ObjectiveID, RequirementID: result.RequirementID,
-			InstructionSHA256: result.InstructionSHA256, Kind: result.Kind,
+			Kind: result.Kind,
 		}
 		responseResult, err = runObjectiveConversationResponse(
 			ctx, modelAuthority, responseResult, conversationStation,
@@ -240,7 +240,6 @@ func roleplayResponderTurnAuthority(
 	responderAuthority.RoleplayViewpointCharacterID = model.RoleplayCharacterID(responder.CharacterID)
 	generation := responder.GenerationConfig
 	responderAuthority.RoleplayGenerationConfig = &generation
-	responderAuthority.RoleplayNarrativeFingerprint = responder.NarrativeFingerprint
 	responderAuthority.RoleplayIdentity = &assemblyline.RoleplayResponseIdentity{
 		CharacterName: projection.Viewpoint.Name,
 		Summary:       projection.Viewpoint.Summary,
@@ -296,7 +295,6 @@ func requireObjectiveRoleplayPreparation(
 		preparation.ChannelID != string(authority.ChannelID) || preparation.WorldID != authority.RoleplayWorldID ||
 		preparation.SceneID != authority.RoleplaySceneID || preparation.SceneRevision != authority.RoleplaySceneRevision ||
 		preparation.InputKind != authority.RoleplayInputKind ||
-		preparation.NarrativeFingerprint != authority.RoleplayNarrativeFingerprint ||
 		authority.RoleplayGenerationConfig == nil ||
 		preparation.GenerationConfig != *authority.RoleplayGenerationConfig ||
 		authority.RoleplayUserTurn == nil || !authority.RoleplayUserTurn.Equal(preparation.UserTurn) ||
@@ -350,20 +348,20 @@ func runObjectiveConversationResponse(
 	if _, err := assemblyline.NewConversationResponseJob(input); err != nil {
 		return result, err
 	}
-	decision, receipt, err := station.Respond(ctx, input, requestedModel)
+	decision, dispatches, err := station.Respond(ctx, input, requestedModel)
+	result.ModelCalls += dispatches
 	if err != nil {
 		return result, err
 	}
 	if err := ctx.Err(); err != nil {
 		return result, err
 	}
-	if err := validateObjectiveStationReceipt("conversation response station", receipt); err != nil {
+	if err := validateObjectiveLeafCallCount("conversation response station", dispatches); err != nil {
 		return result, err
 	}
 	if err := decision.ValidateFor(input); err != nil {
 		return result, err
 	}
-	result.ModelCalls += receipt.Calls
 	if authority.RoleplayIdentity != nil {
 		result.Output = decision.Text
 	} else {

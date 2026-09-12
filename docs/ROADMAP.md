@@ -1,37 +1,38 @@
 # Roadmap
 
-This roadmap tracks the work needed to make Omnidex faster, more deterministic, and easier to measure.
+The target is functional, verified completion of the user's current objective
+through code-owned workflow and narrowly bounded semantic calls. Hash receipts,
+review activity, and preserved internal history are not completion measures.
 
-## Status Key
+## Verified framework foundations
 
-- `done`: implemented and covered by tests
-- `active`: current implementation target
-- `planned`: not started
+- One current internal database setup; service startup recreates its dedicated
+  schema rather than migrating or preserving earlier internal state.
+- Records of actual model calls, verification commands, database reads, and web
+  acquisitions, with job-owned retrieval and citation checks.
+- Exact-value simulation preparation, narrative freshness, atomic publication,
+  and replay without repeated effects or content fingerprints.
+- Fresh bounded workspace/map displays without persistent index files or hashed
+  workspace identities.
+- Workspace-local technical package names independent of host directory names,
+  with product titles preserved separately.
 
-## Optimization Track
+The scope and limitations of these tests are recorded in
+[EVIDENCE_LEDGER.md](EVIDENCE_LEDGER.md) and
+[CHARMANDER_PROOF.md](CHARMANDER_PROOF.md). Passing framework tests does not
+establish autonomous construction of an unfamiliar application.
 
-| Status | Item | Target |
-| --- | --- | --- |
-| done | Evidence ledger | Export objectives, commands, rejected commands, failures, and summary counts. |
-| done | Run trace | Summarize model calls, command counts, rejections, loop exhaustion, and completion pressure from session events. |
-| done | Benchmark run foundation | Run benchmark manifests into isolated workspaces and emit reports. |
-| done | Deterministic fast-path resolver | Execute safe, structured, non-LLM actions when intent is already explicit. |
-| done | Workspace index foundation | Persist file hashes, manifests, and deterministic package probes. |
-| done | Patch mode | Apply and dry-run workspace-bounded unified diffs as the constrained source-editing path. |
-| done | Failure fingerprint foundation | Classify command failures into known categories with deterministic remediation hints. |
-| done | Command/result cache reuse | Opt-in runtime reuse for eligible verification/read commands when indexed inputs are unchanged. |
-| done | Exact station authority | Remove general summarizer, done-check, and planner roles; deterministic closure opens only one named semantic gap at a time. |
-| done | Ollama prewarm/stability profile | `omni ollama prewarm` reports model load/profile timings and deterministic failure diagnosis. |
-| done | Incremental index updates | Update an existing workspace index by rehashing changed files only. |
-| done | Roadmap foundation | Current optimization track has concrete CLI surfaces, docs, and tests for each listed item. |
+## Remaining work
 
-## Completion Criteria
+- Finish auditing current semantic calls and their actual model-visible inputs
+  against the one-unresolved-question boundary.
+- Finish reconciling architectural documents with the actual current-value
+  runtime contracts and measured implementation limits.
+- Demonstrate the ordinary production request boundary through a fresh,
+  unsteered build and evaluate its resulting user-visible behavior only after
+  the build stops.
 
-The track is complete when Omnidex can:
-
-- run and report benchmark tasks reproducibly
-- show where time and retries went
-- avoid model calls for explicit deterministic actions
-- resume from observed state instead of restarting tasks
-- verify code-owned objectives with deterministic evidence where possible
-- classify common failures before asking a model to guess
+The former hash-backed index, command cache, failure-fingerprint, and local
+ledger/trace CLI tracks are retired, not features to restore. Current CLI
+entrypoints are `omni chat` and `omni version --json`; explicit API transports
+own other supported operations.

@@ -20,13 +20,14 @@ func TestLanguageFragmentCorrectionSendsOnlyProvenSpanAndSplicesInSameJob(t *tes
 	}
 	initialBody := "const total = left - right;\nreturn total;"
 	wantedQuestion := "Fix this expression so it adds left and right."
-	var originalJobID, correctedJobID, correctedModel, correctionInput string
+	var originalWork, correctedWork assemblyline.PortableJobKey
+	var correctedModel, correctionInput string
 	rejected, accepted, released := 0, 0, 0
 	runtime := typedWorkerRuntime{
 		Context:     context.Background(),
 		MaxAttempts: assemblyline.MaxSourceBodyAttempts,
 		Execute: func(job assemblyline.PortableJob, model string) (assemblyline.PortableResult, error) {
-			originalJobID = job.ID
+			originalWork = job.Key()
 			if model != "fixture-model" {
 				return assemblyline.PortableResult{}, fmt.Errorf("unexpected model %q", model)
 			}
@@ -37,7 +38,7 @@ func TestLanguageFragmentCorrectionSendsOnlyProvenSpanAndSplicesInSameJob(t *tes
 			model string,
 			correction assemblyline.SourceBodyCorrection,
 		) (assemblyline.PortableResult, error) {
-			correctedJobID, correctedModel = job.ID, model
+			correctedWork, correctedModel = job.Key(), model
 			var err error
 			correctionInput, err = correction.ModelInput()
 			if err != nil {
@@ -88,10 +89,10 @@ func TestLanguageFragmentCorrectionSendsOnlyProvenSpanAndSplicesInSameJob(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if originalJobID == "" || correctedJobID != originalJobID || correctedModel != "fixture-model" {
+	if originalWork == (assemblyline.PortableJobKey{}) || correctedWork != originalWork || correctedModel != "fixture-model" {
 		t.Fatalf(
 			"correction identity=(job %q model %q), want original job %q and model",
-			correctedJobID, correctedModel, originalJobID,
+			correctedWork, correctedModel, originalWork,
 		)
 	}
 	if correctionInput != wantedQuestion+"\n\nleft - right" {
@@ -228,11 +229,11 @@ func TestLanguageFragmentSpanCorrectionExhaustionReleasesOnlyItsJob(t *testing.T
 		Signature: "function Value()", Behavior: "Return one value.",
 	}
 	corrections, rejections, releases := 0, 0, 0
-	var jobID string
+	var workKey assemblyline.PortableJobKey
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: assemblyline.MaxSourceBodyAttempts,
 		Execute: func(job assemblyline.PortableJob, model string) (assemblyline.PortableResult, error) {
-			jobID = job.ID
+			workKey = job.Key()
 			if model != "fixture-model" {
 				return assemblyline.PortableResult{}, fmt.Errorf("initial model=%q", model)
 			}
@@ -244,9 +245,9 @@ func TestLanguageFragmentSpanCorrectionExhaustionReleasesOnlyItsJob(t *testing.T
 			correction assemblyline.SourceBodyCorrection,
 		) (assemblyline.PortableResult, error) {
 			corrections++
-			if job.ID != jobID || model != "fixture-model" {
+			if job.Key() != workKey || model != "fixture-model" {
 				return assemblyline.PortableResult{}, fmt.Errorf(
-					"correction route job=%q model=%q", job.ID, model,
+					"correction route job=%q model=%q", job.Key(), model,
 				)
 			}
 			wantMutable := []string{"wrong", "stillWrong"}[corrections-1]
@@ -319,11 +320,11 @@ func TestLanguageFragmentSucceedsOnSecondExactSpanCorrection(t *testing.T) {
 		Signature: "function Value()", Behavior: "Return one value.",
 	}
 	corrections := 0
-	var jobID string
+	var workKey assemblyline.PortableJobKey
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: assemblyline.MaxSourceBodyAttempts,
 		Execute: func(job assemblyline.PortableJob, model string) (assemblyline.PortableResult, error) {
-			jobID = job.ID
+			workKey = job.Key()
 			if model != "fixture-model" {
 				return assemblyline.PortableResult{}, fmt.Errorf("initial model=%q", model)
 			}
@@ -335,9 +336,9 @@ func TestLanguageFragmentSucceedsOnSecondExactSpanCorrection(t *testing.T) {
 			correction assemblyline.SourceBodyCorrection,
 		) (assemblyline.PortableResult, error) {
 			corrections++
-			if job.ID != jobID || model != "fixture-model" {
+			if job.Key() != workKey || model != "fixture-model" {
 				return assemblyline.PortableResult{}, fmt.Errorf(
-					"correction route job=%q model=%q", job.ID, model,
+					"correction route job=%q model=%q", job.Key(), model,
 				)
 			}
 			wantMutable := []string{"firstWrong", "secondWrong"}[corrections-1]
@@ -457,11 +458,7 @@ func exactSourceBodyTestResult(
 	response string,
 ) assemblyline.PortableResult {
 	t.Helper()
-	projection, err := assemblyline.NewExactPortableResultProjection(response)
-	if err != nil {
-		t.Fatal(err)
-	}
 	return assemblyline.PortableResult{
-		JobID: job.ID, Candidate: response, Projection: &projection,
+		Candidate: response,
 	}
 }

@@ -12,37 +12,46 @@ func runPortableSemanticLeaf[T any](
 	stations *PortableStations,
 	job assemblyline.PortableJob,
 	decode func(string) (T, error),
-) (T, SemanticCallReceipt, error) {
+) (T, int, error) {
 	var zero T
 	if stations == nil || stations.runtime.Resolve == nil {
-		return zero, SemanticCallReceipt{}, fmt.Errorf("portable web stations are uninitialized")
+		return zero, 0, fmt.Errorf("portable web stations are uninitialized")
 	}
 	if ctx == nil {
-		return zero, SemanticCallReceipt{}, fmt.Errorf("portable web station context is nil")
+		return zero, 0, fmt.Errorf("portable web station context is nil")
 	}
 	if err := ctx.Err(); err != nil {
-		return zero, SemanticCallReceipt{}, err
+		return zero, 0, err
 	}
 	if decode == nil {
-		return zero, SemanticCallReceipt{}, fmt.Errorf("portable web semantic leaf requires one exact decoder")
+		return zero, 0, fmt.Errorf("portable web semantic leaf requires one exact decoder")
 	}
 	var value T
-	receipt, err := stations.runtime.Resolve(
+	var decodeErr error
+	decoded := 0
+	calls, err := stations.runtime.Resolve(
 		ctx,
 		job,
 		func(raw string) error {
-			var decodeErr error
+			decoded++
+			if decoded != 1 {
+				return fmt.Errorf("portable web semantic leaf received more than one candidate")
+			}
 			value, decodeErr = decode(raw)
 			return decodeErr
 		},
 	)
 	if err != nil {
-		return zero, receipt, err
+		return zero, calls, err
 	}
-	if err := ValidateSemanticCallReceipt(
-		"portable web semantic leaf", receipt, exactPortableSemanticLeafCalls,
-	); err != nil {
-		return zero, receipt, err
+	if decoded != 1 {
+		return zero, calls, fmt.Errorf("portable web semantic leaf decoded %d candidates; expected exactly one", decoded)
 	}
-	return value, receipt, nil
+	if decodeErr != nil {
+		return zero, calls, decodeErr
+	}
+	if calls < 0 || calls > 1 {
+		return zero, calls, fmt.Errorf("portable web semantic leaf reported %d calls outside 0..1", calls)
+	}
+	return value, calls, nil
 }

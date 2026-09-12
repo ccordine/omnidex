@@ -28,7 +28,7 @@ func (stations *PortableStations) Select(
 		Candidates:    candidates, MaxSelections: call.MaxSelections,
 	}
 	selected := make([]string, 0, call.MaxSelections)
-	var ledger SemanticCallLedger
+	result := RelevanceDecision{}
 	for _, candidate := range candidates {
 		if len(selected) == call.MaxSelections {
 			break
@@ -40,23 +40,17 @@ func (stations *PortableStations) Select(
 		}
 		job, err := assemblyline.NewWebRelevanceRelationJob(input)
 		if err != nil {
-			return RelevanceDecision{}, fmt.Errorf("build web relevance relation job: %w", err)
+			return result, fmt.Errorf("build web relevance relation job: %w", err)
 		}
-		relation, receipt, err := runPortableSemanticLeaf(
+		relation, calls, err := runPortableSemanticLeaf(
 			ctx, stations, job,
 			func(raw string) (assemblyline.WebRelevanceRelationDecision, error) {
 				return assemblyline.DecodeWebRelevanceRelationLeaf(input, raw)
 			},
 		)
+		result.SemanticCalls += calls
 		if err != nil {
-			return RelevanceDecision{}, err
-		}
-		if err := ledger.Record(
-			"web relevance candidate "+candidate.CandidateID,
-			receipt,
-			exactPortableSemanticLeafCalls,
-		); err != nil {
-			return RelevanceDecision{}, err
+			return result, err
 		}
 		if relation.Relation == assemblyline.WebCandidateRelevant {
 			selected = append(selected, candidate.CandidateID)
@@ -64,7 +58,7 @@ func (stations *PortableStations) Select(
 	}
 	decision, err := assemblyline.AssembleWebRelevanceDecision(base, selected)
 	if err != nil {
-		return RelevanceDecision{}, err
+		return result, err
 	}
 	ids := make([]websearch.CandidateID, len(decision.CandidateIDs))
 	for index, id := range decision.CandidateIDs {
@@ -74,14 +68,6 @@ func (stations *PortableStations) Select(
 	if len(ids) > 0 {
 		outcome = RelevanceSelected
 	}
-	receipt, err := ledger.ValidateForMaximum(
-		"web relevance station", len(candidates)*exactPortableSemanticLeafCalls,
-	)
-	if err != nil {
-		return RelevanceDecision{}, err
-	}
-	return RelevanceDecision{
-		Outcome: outcome, CandidateIDs: ids, SemanticCalls: receipt.Calls,
-		CallLedger: ledger.Clone(),
-	}, nil
+	result.Outcome, result.CandidateIDs = outcome, ids
+	return result, nil
 }

@@ -61,7 +61,7 @@ func newDirectCodingTypeScriptStageWorkspace(
 			return nil, err
 		}
 	}
-	if err := workspace.verifyToolchain(queue.VerificationIsolatedInstall, true); err != nil {
+	if err := workspace.verifyToolchain(queue.VerificationIsolatedInstall); err != nil {
 		return nil, err
 	}
 	install, err := directCodingNPMInstallCommand(cacheRoot)
@@ -69,7 +69,7 @@ func newDirectCodingTypeScriptStageWorkspace(
 		return nil, err
 	}
 	if _, err := session.runRecordedVerificationCommand(
-		root, queue.VerificationIsolatedInstall, install, true,
+		root, queue.VerificationIsolatedInstall, install,
 	); err != nil {
 		return nil, fmt.Errorf("isolated TypeScript dependency installation failed: %w", err)
 	}
@@ -144,7 +144,7 @@ func (workspace *directCodingTypeScriptStageWorkspace) Verify(
 	}
 	for _, command := range commands {
 		if _, err := workspace.session.runRecordedVerificationCommand(
-			workspace.root, phase, command, true,
+			workspace.root, phase, command,
 		); err != nil {
 			return err
 		}
@@ -164,11 +164,10 @@ func (workspace *directCodingTypeScriptStageWorkspace) Verify(
 
 func (workspace *directCodingTypeScriptStageWorkspace) verifyToolchain(
 	phase queue.VerificationCommandPhase,
-	trackWorkspace bool,
 ) error {
 	for _, component := range []string{"node", "npm"} {
 		result, err := workspace.session.runRecordedVerificationCommand(
-			workspace.root, phase, directCodingToolchainVersionCommand(component), trackWorkspace,
+			workspace.root, phase, directCodingToolchainVersionCommand(component),
 		)
 		if err != nil {
 			return fmt.Errorf("observe %s toolchain version: %w", component, err)

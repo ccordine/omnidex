@@ -1,7 +1,6 @@
 package assemblyline
 
 import (
-	"encoding/json"
 	"fmt"
 )
 
@@ -28,10 +27,8 @@ type ApplicationRequirementCandidateResultPresence string
 
 // ApplicationRequirementCandidateResultPresenceInput is code-owned authority
 // for one binary semantic question. Its renderer exposes only the candidate
-// and the exact question semantics; kind, cardinality, dimension, receipts,
-// schemas, and hashes remain deterministic state. The determining-relation
-// question is legal only after a candidate-bound positive derived-value
-// receipt.
+// and the exact question semantics. Code retains the classification and only
+// asks about a determining relation after a positive derived-value result.
 type ApplicationRequirementCandidateResultPresenceInput struct {
 	Candidate            string                                               `json:"candidate"`
 	Kind                 ApplicationRequirementCandidateKindResult            `json:"kind"`
@@ -41,9 +38,8 @@ type ApplicationRequirementCandidateResultPresenceInput struct {
 }
 
 type ApplicationRequirementCandidateResultPresenceResult struct {
-	Schema          string                                        `json:"schema"`
-	AuthoritySHA256 string                                        `json:"authority_sha256"`
-	Presence        ApplicationRequirementCandidateResultPresence `json:"presence"`
+	Schema   string                                        `json:"schema"`
+	Presence ApplicationRequirementCandidateResultPresence `json:"presence"`
 }
 
 // ApplicationRequirementCandidateResultRelationInput binds the code-owned
@@ -55,11 +51,8 @@ type ApplicationRequirementCandidateResultRelationInput struct {
 }
 
 type ApplicationRequirementCandidateResultRelationResult struct {
-	Schema                   string `json:"schema"`
-	CandidateSHA256          string `json:"candidate_sha256"`
-	KindReceiptSHA256        string `json:"kind_receipt_sha256"`
-	CardinalityReceiptSHA256 string `json:"cardinality_receipt_sha256"`
-	Relation                 string `json:"relation"`
+	Schema   string `json:"schema"`
+	Relation string `json:"relation"`
 }
 
 func NewApplicationRequirementCandidateResultPresenceJob(
@@ -153,13 +146,6 @@ func (result ApplicationRequirementCandidateResultPresenceResult) ValidateFor(
 			ApplicationRequirementCandidateResultPresenceSchemaV1,
 		)
 	}
-	authoritySHA256, err := applicationRequirementCandidateResultPresenceAuthoritySHA256(input)
-	if err != nil {
-		return err
-	}
-	if result.AuthoritySHA256 != authoritySHA256 {
-		return fmt.Errorf("application requirement candidate result presence authority hash does not match")
-	}
 	switch result.Presence {
 	case ApplicationRequirementCandidateResultPresent, ApplicationRequirementCandidateResultAbsent:
 		return nil
@@ -177,9 +163,6 @@ func (result ApplicationRequirementCandidateResultRelationResult) ValidateFor(
 	if err := result.validateCandidateIdentity(input.Candidate); err != nil {
 		return err
 	}
-	if err := result.validateReceiptAuthority(input.Kind, input.Cardinality); err != nil {
-		return err
-	}
 	switch result.Relation {
 	case ApplicationRequirementNoDerivedResult,
 		ApplicationRequirementExplicitResultRelation,
@@ -190,8 +173,8 @@ func (result ApplicationRequirementCandidateResultRelationResult) ValidateFor(
 	}
 }
 
-// ValidateAcceptedFor reconstructs the only kind and cardinality receipts that
-// may enter accepted authority. A missing relation is never retainable.
+// ValidateAcceptedFor checks the accepted semantic value and candidate shape.
+// A missing relation is never retainable.
 func (result ApplicationRequirementCandidateResultRelationResult) ValidateAcceptedFor(candidate string) error {
 	if err := validateApplicationIntentText(
 		"application requirement candidate", candidate, maxRequirementQuoteBytes,
@@ -199,10 +182,6 @@ func (result ApplicationRequirementCandidateResultRelationResult) ValidateAccept
 		return err
 	}
 	if err := result.validateCandidateIdentity(candidate); err != nil {
-		return err
-	}
-	canonical := canonicalAcceptedApplicationRequirementResultRelationInput(candidate)
-	if err := result.validateReceiptAuthority(canonical.Kind, canonical.Cardinality); err != nil {
 		return err
 	}
 	switch result.Relation {
@@ -222,54 +201,5 @@ func (result ApplicationRequirementCandidateResultRelationResult) validateCandid
 			ApplicationRequirementCandidateResultRelationSchemaV1,
 		)
 	}
-	if result.CandidateSHA256 != ExactObjectiveContextSHA(candidate) {
-		return fmt.Errorf("application requirement candidate result-relation hash does not match")
-	}
 	return nil
-}
-
-func (result ApplicationRequirementCandidateResultRelationResult) validateReceiptAuthority(
-	kind ApplicationRequirementCandidateKindResult,
-	cardinality ApplicationRequirementCandidateCardinalityResult,
-) error {
-	kindSHA256, err := applicationRequirementSemanticReceiptSHA256(kind)
-	if err != nil {
-		return fmt.Errorf("hash application requirement kind receipt: %w", err)
-	}
-	if result.KindReceiptSHA256 != kindSHA256 {
-		return fmt.Errorf("application requirement result-relation kind receipt hash does not match")
-	}
-	cardinalitySHA256, err := applicationRequirementSemanticReceiptSHA256(cardinality)
-	if err != nil {
-		return fmt.Errorf("hash application requirement cardinality receipt: %w", err)
-	}
-	if result.CardinalityReceiptSHA256 != cardinalitySHA256 {
-		return fmt.Errorf("application requirement result-relation cardinality receipt hash does not match")
-	}
-	return nil
-}
-
-func canonicalAcceptedApplicationRequirementResultRelationInput(
-	candidate string,
-) ApplicationRequirementCandidateResultRelationInput {
-	candidateSHA256 := ExactObjectiveContextSHA(candidate)
-	return ApplicationRequirementCandidateResultRelationInput{
-		Candidate: candidate,
-		Kind: ApplicationRequirementCandidateKindResult{
-			Schema:          ApplicationRequirementCandidateKindSchemaV1,
-			CandidateSHA256: candidateSHA256, Relation: ApplicationRequirementCandidateTaskLocal,
-		},
-		Cardinality: ApplicationRequirementCandidateCardinalityResult{
-			Schema:          ApplicationRequirementCandidateCardinalitySchemaV1,
-			CandidateSHA256: candidateSHA256, Relation: ApplicationRequirementOneRuntimeOutcome,
-		},
-	}
-}
-
-func applicationRequirementSemanticReceiptSHA256(receipt any) (string, error) {
-	encoded, err := json.Marshal(receipt)
-	if err != nil {
-		return "", err
-	}
-	return ExactObjectiveContextSHA(string(encoded)), nil
 }

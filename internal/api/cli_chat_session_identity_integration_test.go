@@ -18,7 +18,6 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/gryph/omnidex/database"
 	"github.com/gryph/omnidex/internal/db"
-	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/modelconfig"
 	"github.com/gryph/omnidex/internal/projectroot"
 	"github.com/gryph/omnidex/internal/queue"
@@ -39,7 +38,7 @@ func TestCLIChatAPIsRejectReplacedWorkspaceIdentityWithoutHistory(t *testing.T) 
 	}
 	identityA, err := projectroot.DirectoryIdentity(workspaceRoot)
 	if err != nil {
-		t.Skipf("filesystem cannot attest directory identity: %v", err)
+		t.Fatalf("read directory identity: %v", err)
 	}
 	retiredRoot := filepath.Join(workspaceParent, "retired-workspace")
 	if err := os.Rename(workspaceRoot, retiredRoot); err != nil {
@@ -50,7 +49,7 @@ func TestCLIChatAPIsRejectReplacedWorkspaceIdentityWithoutHistory(t *testing.T) 
 	}
 	identityB, err := projectroot.DirectoryIdentity(workspaceRoot)
 	if err != nil {
-		t.Skipf("filesystem cannot attest replacement directory identity: %v", err)
+		t.Fatalf("read replacement directory identity: %v", err)
 	}
 	if identityA == identityB {
 		t.Fatal("replacement directory retained the original physical identity")
@@ -100,7 +99,7 @@ func TestCLIChatAPIsRejectReplacedWorkspaceIdentityWithoutHistory(t *testing.T) 
 		nil,
 		http.StatusConflict,
 	)
-	operationID, err := queue.NewLifecycleOperationID("api-replaced-workspace")
+	operationID, err := queue.NewLifecycleOperationID()
 	if err != nil {
 		t.Fatalf("create turn operation ID: %v", err)
 	}
@@ -220,5 +219,5 @@ func freshCLIChatAPIRepository(t *testing.T, databaseURL string) *queue.Reposito
 	if err != nil {
 		t.Fatalf("freeze empty model authority: %v", err)
 	}
-	return queue.New(pool, authority, model.CodingScopeModeNormal)
+	return queue.New(pool, authority)
 }

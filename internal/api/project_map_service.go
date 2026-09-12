@@ -223,7 +223,6 @@ func codebaseMapPayload(cm omni.CodebaseMap, exists bool) map[string]any {
 	return map[string]any{
 		"exists":         exists,
 		"generated_at":   cm.GeneratedAt,
-		"workspace_id":   cm.WorkspaceID,
 		"root":           cm.Root,
 		"file_count":     len(cm.Files),
 		"module_count":   len(cm.Modules),

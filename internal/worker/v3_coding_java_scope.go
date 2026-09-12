@@ -35,6 +35,7 @@ func validateDirectCodingJavaScope(
 	}
 	bindings := make(map[string]string)
 	javaCollectFragmentBindings(root, content, bindings, methods)
+	javaResolveInferredBindings(root, content, authorities, receiverMethods, bindings)
 	replaceableExternal, err := directCodingJavaPermittedValueAuthorities(input)
 	if err != nil {
 		return err
@@ -86,6 +87,9 @@ func javaInspectFragmentScope(
 		return fmt.Errorf("Java fragment cannot introduce method-reference authority")
 	case "type_identifier":
 		name := javaNodeText(node, source)
+		if parent := node.Parent(); name == "var" && parent != nil && parent.Kind() == "local_variable_declaration" {
+			break
+		}
 		if _, forbidden := javaForbiddenAuthority[name]; forbidden {
 			choices, err := directCodingJavaTypeChoices(
 				input, body, node, source, receiverMethods,

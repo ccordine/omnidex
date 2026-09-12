@@ -70,7 +70,6 @@ func (r *Repository) ProjectRoleplaySimulationContext(
 	if authority.WorldID != preparation.WorldID || authority.SceneID != preparation.SceneID ||
 		authority.SceneRevision != preparation.SceneRevision ||
 		authority.ViewpointID != primary.CharacterID ||
-		authority.Fingerprint != preparation.NarrativeFingerprint ||
 		len(authority.ParticipantIDs) != len(preparation.ParticipantCharacterIDs) {
 		return roleplay.SimulationTurnAuthority{}, roleplay.NarrativeSimulationProjection{},
 			fmt.Errorf("roleplay narrative projection differs from prepared turn authority")

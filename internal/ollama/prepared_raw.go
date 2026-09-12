@@ -3,8 +3,6 @@ package ollama
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -20,12 +18,10 @@ func (c *Client) generatePreparedRaw(
 	if err != nil {
 		return llm.PreparedGeneration{}, err
 	}
-	digest := sha256.Sum256(payload)
 	result := llm.PreparedGeneration{
 		Schema:                     llm.PreparedGenerationSchemaV1,
 		Protocol:                   prepared.Protocol,
 		ProviderRequestDisposition: llm.ProviderRequestNotDispatched,
-		ProviderRequestSHA256:      hex.EncodeToString(digest[:]),
 	}
 	request, err := http.NewRequestWithContext(
 		ctx, http.MethodPost, c.baseURL+"/api/generate", bytes.NewReader(payload),
@@ -42,14 +38,12 @@ func (c *Client) generatePreparedRaw(
 	}
 	defer response.Body.Close()
 	result.ProviderHTTPStatus = response.StatusCode
-	result.ProviderContentEncoding = exactProviderContentEncodingEvidence(response)
+	result.ProviderContentEncoding = exactProviderContentEncoding(response)
 	body, readErr := io.ReadAll(io.LimitReader(
 		response.Body, llm.MaxExactPreparedProviderResponseBytes+1,
 	))
 	result.ProviderResponseCapturedBytes = len(body)
 	result.ProviderResponseCapture = append([]byte{}, body...)
-	captureDigest := sha256.Sum256(body)
-	result.ProviderResponseCaptureSHA256 = hex.EncodeToString(captureDigest[:])
 	if readErr != nil {
 		result.ProviderResponseDisposition = llm.ProviderResponseBodyReadError
 		return result, readErr
@@ -64,13 +58,10 @@ func (c *Client) generatePreparedRaw(
 	result.ProviderResponseComplete = true
 	result.ProviderResponseBytesKnown = true
 	result.ProviderResponseBytes = int64(len(body))
-	result.ProviderResponseSHA256 = result.ProviderResponseCaptureSHA256
-	if !exactProviderContentEncoding(response) {
+	if !result.ProviderContentEncoding.IsIdentity() {
 		result.ProviderResponseDisposition = llm.ProviderResponseInvalidJSON
 		return result, fmt.Errorf(
-			"exact Ollama response used unsupported content encoding: values=%d bytes=%d sha256=%s uncompressed=%t",
-			result.ProviderContentEncoding.Values, result.ProviderContentEncoding.Bytes,
-			result.ProviderContentEncoding.SHA256, result.ProviderContentEncoding.Uncompressed,
+			"exact Ollama response used unsupported content encoding",
 		)
 	}
 	decoded, decodeErr := llm.DecodeExactPreparedResponseForProtocol(

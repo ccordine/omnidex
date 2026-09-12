@@ -155,11 +155,11 @@ func insertChannelSessionTurnOperationTx(
 	}
 	insert, err := tx.Exec(ctx, `
 		INSERT INTO channel_session_turn_operations (
-			operation_id, kind, command_sha256, channel_id, job_id,
+			operation_id, kind, channel_id, job_id,
 			result_generation, disposition, user_message_id, result_step_id,
 			result_job
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)
-	`, descriptor.ID, descriptor.Kind, descriptor.SHA256, result.ChannelID, result.Job.ID,
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)
+	`, descriptor.ID, descriptor.Kind, result.ChannelID, result.Job.ID,
 		result.Job.CurrentGeneration, result.Disposition, messageID, stepID,
 		string(resultJobJSON))
 	if err != nil {

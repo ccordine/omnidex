@@ -137,17 +137,16 @@ type ExistencePredicate struct {
 }
 
 type RelationalIntent struct {
-	Schema            string                 `json:"schema"`
-	SourceID          string                 `json:"source_id"`
-	SchemaFingerprint string                 `json:"schema_fingerprint"`
-	FromRelationID    string                 `json:"from_relation_id"`
-	Shape             ResultShape            `json:"shape"`
-	Projections       []RelationalProjection `json:"projections"`
-	Filters           []RelationalPredicate  `json:"filters"`
-	TemporalWindows   []TemporalWindow       `json:"temporal_windows"`
-	Exists            []ExistencePredicate   `json:"exists"`
-	GroupBy           []int                  `json:"group_by"`
-	Having            []AggregatePredicate   `json:"having"`
-	OrderBy           []OrderTerm            `json:"order_by"`
-	Limit             int                    `json:"limit"`
+	Schema          string                 `json:"schema"`
+	SourceID        string                 `json:"source_id"`
+	FromRelationID  string                 `json:"from_relation_id"`
+	Shape           ResultShape            `json:"shape"`
+	Projections     []RelationalProjection `json:"projections"`
+	Filters         []RelationalPredicate  `json:"filters"`
+	TemporalWindows []TemporalWindow       `json:"temporal_windows"`
+	Exists          []ExistencePredicate   `json:"exists"`
+	GroupBy         []int                  `json:"group_by"`
+	Having          []AggregatePredicate   `json:"having"`
+	OrderBy         []OrderTerm            `json:"order_by"`
+	Limit           int                    `json:"limit"`
 }

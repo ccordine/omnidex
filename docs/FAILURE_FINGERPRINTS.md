@@ -1,29 +1,13 @@
-# Failure Fingerprints
+# Command failures
 
-Failure fingerprints classify command output before asking a model to guess.
+The generic failure-fingerprint classifier and `omni fingerprint` command are
+retired. They are not another remediation or model-routing path to restore.
 
-Classify stdin:
+Code records the command that actually ran, its arguments, output, exit status,
+and duration. Registered validators interpret their own parser, compiler, or
+runtime results. A failure opens inference only when code can identify one
+necessary semantic question and its exact owning mutable span; a category name
+or generic remediation hint does not supply that authority.
 
-```bash
-some-command 2>&1 | omni fingerprint
-```
-
-Classify explicit text:
-
-```bash
-omni fingerprint --text "webpack: command not found"
-```
-
-Current fingerprint kinds:
-
-- `missing_command`
-- `permission_denied`
-- `port_in_use`
-- `network_failure`
-- `missing_file`
-- `syntax_error`
-- `test_failure`
-- `dependency_unavailable`
-- `unknown`
-
-Fingerprints include a concise summary and, where possible, a deterministic remediation hint.
+See [execution evidence](EVIDENCE_LEDGER.md) and
+[the source-correction boundary](CHARMANDER_ASSEMBLY_LINE.md).

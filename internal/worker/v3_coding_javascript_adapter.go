@@ -48,6 +48,7 @@ func genericJavaScriptCommandLineStaticFiles(
 		"engines": map[string]string{"node": node},
 		"scripts": map[string]string{
 			"build": "node --check main.mjs",
+			"test":  "node --test --test-concurrency=1",
 		},
 	}
 	encoded, err := json.MarshalIndent(manifest, "", "  ")

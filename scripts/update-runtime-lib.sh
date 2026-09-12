@@ -55,11 +55,6 @@ runtime_require_rootful_docker_daemon() {
     die "the default Docker daemon reported rootless execution authority"
 }
 
-runtime_validate_build_commit() {
-  local commit="$1"
-  [[ "${commit}" =~ ^[0123456789abcdef]{40}([0123456789abcdef]{24})?$ ]] ||
-    die "OMNIDEX_COMMIT must be exactly 40 or 64 lowercase hexadecimal characters"
-}
 
 runtime_validate_host_id() {
   local label="$1" value="$2"
@@ -125,8 +120,7 @@ needs_compose_work() {
 }
 
 compose_build() {
-  local repo_dir="$1" compose_cmd="$2" compose_file="$3" service="$4" commit="$5"
-  runtime_validate_build_commit "${commit}"
+  local repo_dir="$1" compose_cmd="$2" compose_file="$3" service="$4"
   if ((NO_BUILD)); then
     log "skipping docker compose build (--no-build)"
     return 0
@@ -140,15 +134,13 @@ compose_build() {
   log "rebuilding image for service ${service}"
   (
     cd "${repo_dir}"
-    export OMNIDEX_COMMIT="${commit}"
     runtime_export_compose_identity
     "${cmd[@]}"
   )
 }
 
 compose_restart() {
-  local repo_dir="$1" compose_cmd="$2" compose_file="$3" service="$4" commit="$5"
-  runtime_validate_build_commit "${commit}"
+  local repo_dir="$1" compose_cmd="$2" compose_file="$3" service="$4"
   if ((NO_RESTART)); then
     log "skipping docker compose up (--no-restart)"
     return 0
@@ -160,15 +152,13 @@ compose_restart() {
   log "restarting service ${service} and waiting for health"
   (
     cd "${repo_dir}"
-    export OMNIDEX_COMMIT="${commit}"
     runtime_export_compose_identity
     "${cmd[@]}"
   )
 }
 
 compose_image_id() {
-  local repo_dir="$1" compose_cmd="$2" compose_file="$3" service="$4" commit="$5"
-  runtime_validate_build_commit "${commit}"
+  local repo_dir="$1" compose_cmd="$2" compose_file="$3" service="$4"
   [[ "${service}" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] ||
     die "compose service name is invalid: ${service}"
   local -a cmd=()
@@ -178,7 +168,6 @@ compose_image_id() {
   local image_refs_raw image_ref image_id image_project image_service known_ref duplicate_ref
   image_refs_raw="$(
     cd "${repo_dir}"
-    export OMNIDEX_COMMIT="${commit}"
     runtime_export_compose_identity
     "${cmd[@]}"
   )" || die "compose service ${service} configured image references are unavailable"
@@ -225,33 +214,27 @@ compose_image_id() {
   done
 }
 
-compose_require_image_commit() {
-  local image_id="$1" expected_commit="$2" expected_user="$3" image_commit image_user
-  runtime_validate_build_commit "${expected_commit}"
+compose_require_image_user() {
+  local image_id="$1" expected_user="$2" image_user
   runtime_validate_user_identity "${expected_user}"
   [[ "${image_id}" =~ ^sha256:[0-9a-f]{64}$ ]] ||
-    die "release verification requires one exact image identity"
-  image_commit="$(context_docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "${image_id}")"
-  [[ "${image_commit}" == "${expected_commit}" ]] ||
-    die "image ${image_id} has release commit ${image_commit:-<missing>}, expected ${expected_commit}"
+    die "image verification requires one exact image identity"
   image_user="$(context_docker image inspect --format '{{.Config.User}}' "${image_id}")"
   [[ "${image_user}" == "${expected_user}" ]] ||
     die "image ${image_id} has runtime user ${image_user:-<missing>}, expected ${expected_user}"
-  log "verified image ${image_id} release commit ${image_commit} runtime user ${image_user}"
+  log "verified image ${image_id} runtime user ${image_user}"
 }
 
 compose_require_running_image() {
-  local repo_dir="$1" compose_cmd="$2" compose_file="$3" service="$4" expected_image="$5" expected_commit="$6" expected_user="$7"
-  runtime_validate_build_commit "${expected_commit}"
+  local repo_dir="$1" compose_cmd="$2" compose_file="$3" service="$4" expected_image="$5" expected_user="$6"
   runtime_validate_user_identity "${expected_user}"
   local -a cmd=()
   compose_command_array "${compose_cmd}" cmd
   [[ -z "${compose_file}" ]] || cmd+=(-f "${compose_file}")
   cmd+=(ps -q "${service}")
-  local container_id running_image running_commit running_user running_health health_commit
+  local container_id running_image running_user running_health health_status
   container_id="$(
     cd "${repo_dir}"
-    export OMNIDEX_COMMIT="${expected_commit}"
     runtime_export_compose_identity
     "${cmd[@]}"
   )"
@@ -260,20 +243,17 @@ compose_require_running_image() {
   running_image="$(context_docker inspect --type container --format '{{.Image}}' "${container_id}")"
   [[ "${running_image}" == "${expected_image}" ]] ||
     die "compose service ${service} is running image ${running_image}, expected ${expected_image}"
-  running_commit="$(context_docker inspect --type container --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "${container_id}")"
-  [[ "${running_commit}" == "${expected_commit}" ]] ||
-    die "compose service ${service} is running release commit ${running_commit:-<missing>}, expected ${expected_commit}"
   running_user="$(context_docker inspect --type container --format '{{.Config.User}}' "${container_id}")"
   [[ "${running_user}" == "${expected_user}" ]] ||
     die "compose service ${service} is running as ${running_user:-<missing>}, expected ${expected_user}"
   running_health="$(context_docker inspect --type container --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "${container_id}")"
   [[ "${running_health}" == "healthy" ]] ||
     die "compose service ${service} health is ${running_health:-<missing>}, expected healthy"
-  health_commit="$(context_docker exec "${container_id}" /usr/local/bin/omnidex health --expect-commit "${expected_commit}")" ||
+  health_status="$(context_docker exec "${container_id}" /usr/local/bin/omnidex health)" ||
     die "compose service ${service} typed health verification failed"
-  [[ "${health_commit}" == "${expected_commit}" ]] ||
-    die "compose service ${service} health reports release commit ${health_commit:-<missing>}, expected ${expected_commit}"
-  log "verified running service ${service} image ${running_image} release commit ${running_commit} runtime user ${running_user}"
+  [[ "${health_status}" == "ok" ]] ||
+    die "compose service ${service} health reports ${health_status:-<missing>}, expected ok"
+  log "verified running service ${service} image ${running_image} runtime user ${running_user}"
 }
 
 compose_require_healthy_service() {
@@ -339,11 +319,10 @@ runtime_validate_core_url() {
 }
 
 compose_require_public_health() (
-  local container_id="$1" expected_commit="$2" core_url="$3"
-  local body_file http_status health_commit
+  local container_id="$1" core_url="$2"
+  local body_file http_status health_status
   [[ "${container_id}" =~ ^[0-9a-f]{12,64}$ ]] ||
     die "public health verification requires one exact core container"
-  runtime_validate_build_commit "${expected_commit}"
   runtime_validate_core_url "${core_url}"
   command -v curl >/dev/null 2>&1 || die "curl is required for public core health verification"
 
@@ -359,12 +338,12 @@ compose_require_public_health() (
   )" || die "configured public core health endpoint is unreachable or unhealthy"
   [[ "${http_status}" == "200" ]] ||
     die "configured public core health endpoint returned HTTP ${http_status:-<missing>}, expected 200"
-  health_commit="$(
+  health_status="$(
     context_docker exec -i "${container_id}" \
-      /usr/local/bin/omnidex health --expect-commit "${expected_commit}" --stdin \
+      /usr/local/bin/omnidex health --stdin \
       < "${body_file}"
   )" || die "configured public core endpoint failed typed health verification"
-  [[ "${health_commit}" == "${expected_commit}" ]] ||
-    die "configured public core endpoint does not expose the expected running release"
-  log "verified configured public core endpoint release commit ${health_commit}"
+  [[ "${health_status}" == "ok" ]] ||
+    die "configured public core endpoint does not report healthy runtime state"
+  log "verified configured public core endpoint health ${health_status}"
 )

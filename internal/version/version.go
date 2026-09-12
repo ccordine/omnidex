@@ -6,11 +6,9 @@ import (
 )
 
 var (
-	Version      = "v0.5.0"
-	Codename     = "Charmeleon"
-	Commit       = ""
-	SourceSHA256 = ""
-	Date         = ""
+	Version  = "v0.5.0"
+	Codename = "Charmeleon"
+	Date     = ""
 )
 
 type PrideRelease struct {
@@ -49,11 +47,9 @@ func JSON() map[string]string {
 	return map[string]string{
 		"version":            strings.TrimSpace(Version),
 		"codename":           strings.TrimSpace(Codename),
-		"commit":             strings.TrimSpace(Commit),
 		"release_scheme":     "pride-national-dex",
 		"national_dex_id":    fmt.Sprintf("%d", NationalDexID(Codename)),
 		"next_maturity_name": "Charizard",
-		"source_sha256":      strings.TrimSpace(SourceSHA256),
 		"date":               strings.TrimSpace(Date),
 	}
 }

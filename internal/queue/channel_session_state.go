@@ -3,15 +3,12 @@ package queue
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/projectroot"
 	"github.com/jackc/pgx/v5"
 )
-
-const channelSessionRevisionSchema = "omnidex.channel-session-revision.v2"
 
 type ChannelSessionJobState struct {
 	ID         int64     `json:"id"`
@@ -24,7 +21,7 @@ type ChannelSessionState struct {
 	ChannelID                model.ChannelID         `json:"channel_id"`
 	WorkspaceRoot            string                  `json:"workspace_root"`
 	WorkspaceIdentity        string                  `json:"workspace_identity"`
-	Revision                 string                  `json:"revision"`
+	ChannelUpdatedAt         time.Time               `json:"channel_updated_at"`
 	LatestMessageID          *int64                  `json:"latest_message_id,omitempty"`
 	LatestTurnOperationID    *LifecycleOperationID   `json:"latest_turn_operation_id,omitempty"`
 	LatestControlOperationID *LifecycleOperationID   `json:"latest_control_operation_id,omitempty"`
@@ -81,6 +78,7 @@ func channelSessionStateTx(
 	var scope model.ChannelScope
 	var mode model.ChannelMode
 	var channelUpdatedAt time.Time
+	var cliWorkspaceIdentity *string
 	var latestTurnID, latestControlID *string
 	var latestJobID, latestJobGeneration *int64
 	var latestJobStatus *string
@@ -89,7 +87,7 @@ func channelSessionStateTx(
 	var activeJobMetadata []byte
 	var duplicateActiveJob bool
 	err := tx.QueryRow(ctx, `
-		SELECT channel.id,channel.scope,channel.mode,channel.workspace_root,
+		SELECT channel.id,channel.scope,channel.mode,channel.workspace_root,channel.cli_workspace_identity,
 		       channel.updated_at,message.id,turn.operation_id,
 		       control.operation_id,job.id,job.status,
 		       job.current_generation,job.updated_at,active_job.id,
@@ -150,6 +148,7 @@ func channelSessionStateTx(
 		&scope,
 		&mode,
 		&state.WorkspaceRoot,
+		&cliWorkspaceIdentity,
 		&channelUpdatedAt,
 		&state.LatestMessageID,
 		&latestTurnID,
@@ -173,7 +172,7 @@ func channelSessionStateTx(
 	}
 	if err := requireCLIChatSessionWorkspaceBinding(
 		state.ChannelID,
-		state.WorkspaceRoot,
+		cliWorkspaceIdentity,
 		workspaceIdentity,
 	); err != nil {
 		return ChannelSessionState{}, err
@@ -229,40 +228,6 @@ func channelSessionStateTx(
 			Generation: *latestJobGeneration, UpdatedAt: *latestJobUpdatedAt,
 		}
 	}
-	state.Revision = channelSessionRevision(state, channelUpdatedAt)
+	state.ChannelUpdatedAt = channelUpdatedAt
 	return state, nil
-}
-
-func channelSessionRevision(state ChannelSessionState, channelUpdatedAt time.Time) string {
-	messageID := "none"
-	if state.LatestMessageID != nil {
-		messageID = strconv.FormatInt(*state.LatestMessageID, 10)
-	}
-	job := []string{"none", "none", "none", "none"}
-	if state.LatestJob != nil {
-		job = []string{
-			strconv.FormatInt(state.LatestJob.ID, 10),
-			state.LatestJob.Status,
-			strconv.FormatInt(state.LatestJob.Generation, 10),
-			state.LatestJob.UpdatedAt.UTC().Format(time.RFC3339Nano),
-		}
-	}
-	return "channel_session_revision_" + lifecycleIdentityDigest(
-		channelSessionRevisionSchema,
-		string(state.ChannelID),
-		state.WorkspaceRoot,
-		state.WorkspaceIdentity,
-		channelUpdatedAt.UTC().Format(time.RFC3339Nano),
-		messageID,
-		lifecycleOperationIDOrNone(state.LatestTurnOperationID),
-		lifecycleOperationIDOrNone(state.LatestControlOperationID),
-		job[0], job[1], job[2], job[3],
-	)
-}
-
-func lifecycleOperationIDOrNone(id *LifecycleOperationID) string {
-	if id == nil {
-		return "none"
-	}
-	return string(*id)
 }

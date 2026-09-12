@@ -3,13 +3,11 @@ package worker
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"sync/atomic"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/queue"
-	"github.com/gryph/omnidex/internal/station"
 )
 
 func directCodingWorkerRuntime(session *directCodingSession) typedWorkerRuntime {
@@ -52,21 +50,21 @@ func portableWorkerRuntimeWithIdentityGuard(
 	continuations := &sync.Map{}
 	var providerCalls atomic.Int64
 	reservePending := func(job assemblyline.PortableJob) (func(), error) {
-		if _, loaded := pending.LoadOrStore(job.ID, struct{}{}); loaded {
+		if _, loaded := pending.LoadOrStore(job.Key(), struct{}{}); loaded {
 			return nil, fmt.Errorf(
-				"portable work %s already has an active or unvalidated exact result", job.ID,
+				"portable work %s already has an active or unvalidated exact result", job.Kind,
 			)
 		}
-		return func() { pending.Delete(job.ID) }, nil
+		return func() { pending.Delete(job.Key()) }, nil
 	}
 	execute := func(
 		job assemblyline.PortableJob,
 		model string,
 	) (assemblyline.PortableResult, error) {
-		if _, exists := continuations.Load(job.ID); exists {
+		if _, exists := continuations.Load(job.Key()); exists {
 			return assemblyline.PortableResult{}, fmt.Errorf(
 				"portable work %s has a persisted rejected result and must continue that context",
-				job.ID,
+				job.Kind,
 			)
 		}
 		deterministic, resolved, err := assemblyline.ResolvePortableJobWithoutInference(job)
@@ -79,7 +77,7 @@ func portableWorkerRuntimeWithIdentityGuard(
 				return assemblyline.PortableResult{}, err
 			}
 			execution := exactStationExecution{
-				WorkID: job.ID, WorkKind: job.Kind, InferenceFree: true,
+				WorkInput: string(job.Payload), WorkKind: job.Kind, InferenceFree: true,
 				Candidate: deterministic.Candidate,
 			}
 			if identityGuard != nil {
@@ -88,7 +86,7 @@ func portableWorkerRuntimeWithIdentityGuard(
 					return assemblyline.PortableResult{}, guardErr
 				}
 			}
-			pending.Store(job.ID, execution)
+			pending.Store(job.Key(), execution)
 			return deterministic, nil
 		}
 		recovered, err := runtime.svc.recoverExactPortableStation(
@@ -105,7 +103,7 @@ func portableWorkerRuntimeWithIdentityGuard(
 			if reserveErr != nil {
 				return assemblyline.PortableResult{}, reserveErr
 			}
-			pending.Store(job.ID, recovered.Execution)
+			pending.Store(job.Key(), recovered.Execution)
 			return recovered.Result, nil
 		}
 		releasePending, err := reservePending(job)
@@ -121,7 +119,7 @@ func portableWorkerRuntimeWithIdentityGuard(
 		runtime.svc.emitStepEvent(
 			runtime.claim.Authority,
 			eventNamespace+"_portable_dispatched",
-			fmt.Sprintf("kind=%s work=%s payload=%dB model=%s", job.Kind, job.ID[:12], len(job.Payload), safeEventToken(model, "unknown")),
+			fmt.Sprintf("kind=%s payload=%dB model=%s", job.Kind, len(job.Payload), safeEventToken(model, "unknown")),
 		)
 		// Persisted rehydration returns above without spending inference.
 		result, execution, err := runtime.svc.executeExactPortableStation(
@@ -150,7 +148,7 @@ func portableWorkerRuntimeWithIdentityGuard(
 				execution.SourceState = sourceState
 			}
 		}
-		pending.Store(job.ID, execution)
+		pending.Store(job.Key(), execution)
 		keepPending = true
 		return result, nil
 	}
@@ -159,22 +157,22 @@ func portableWorkerRuntimeWithIdentityGuard(
 		model string,
 		correction assemblyline.SourceBodyCorrection,
 	) (assemblyline.PortableResult, error) {
-		stored, exists := continuations.Load(job.ID)
+		stored, exists := continuations.Load(job.Key())
 		if !exists {
 			return assemblyline.PortableResult{}, fmt.Errorf(
-				"portable work %s has no persisted rejected result to correct", job.ID,
+				"portable work %s has no persisted rejected result to correct", job.Kind,
 			)
 		}
 		previous, ok := stored.(exactStationExecution)
 		if !ok {
 			return assemblyline.PortableResult{}, fmt.Errorf(
-				"portable work %s has an invalid persisted correction context", job.ID,
+				"portable work %s has an invalid persisted correction context", job.Kind,
 			)
 		}
 		if previous.Model != model {
 			return assemblyline.PortableResult{}, fmt.Errorf(
 				"portable work %s correction model %q differs from persisted model %q",
-				job.ID, model, previous.Model,
+				job.Kind, model, previous.Model,
 			)
 		}
 		if err := correction.Validate(); err != nil {
@@ -189,7 +187,7 @@ func portableWorkerRuntimeWithIdentityGuard(
 			if stateErr != nil {
 				return assemblyline.PortableResult{}, fmt.Errorf(
 					"portable work %s rejected response has no correctable source state: %w",
-					job.ID, stateErr,
+					job.Kind, stateErr,
 				)
 			}
 		}
@@ -200,7 +198,7 @@ func portableWorkerRuntimeWithIdentityGuard(
 		if evidence.BaseCandidate != previousState {
 			return assemblyline.PortableResult{}, fmt.Errorf(
 				"portable work %s correction does not bind to its persisted current source",
-				job.ID,
+				job.Kind,
 			)
 		}
 		modelInput, err := correction.ModelInput()
@@ -224,12 +222,10 @@ func portableWorkerRuntimeWithIdentityGuard(
 		}
 		if recovered != nil {
 			persistedCorrection := assemblyline.SourceBodyCorrectionEvidence{
-				BaseCandidate:  recovered.Evidence.SourceBaseCandidate,
-				BaseSHA256:     recovered.Evidence.SourceBaseSHA256,
-				StartByte:      recovered.Evidence.SourceStartByte,
-				EndByte:        recovered.Evidence.SourceEndByte,
-				Question:       recovered.Evidence.SourceQuestion,
-				QuestionSHA256: recovered.Evidence.SourceQuestionSHA256,
+				BaseCandidate: recovered.Evidence.SourceBaseCandidate,
+				StartByte:     recovered.Evidence.SourceStartByte,
+				EndByte:       recovered.Evidence.SourceEndByte,
+				Question:      recovered.Evidence.SourceQuestion,
 			}
 			if recovered.Execution.Iteration != previous.Iteration+1 ||
 				recovered.SemanticParentCallEvidenceID != previous.CallEvidenceID ||
@@ -237,13 +233,13 @@ func portableWorkerRuntimeWithIdentityGuard(
 				persistedCorrection != evidence {
 				return assemblyline.PortableResult{}, fmt.Errorf(
 					"portable work %s recreated correction differs from its persisted child",
-					job.ID,
+					job.Kind,
 				)
 			}
 			if err := persistedCorrection.Validate(recovered.Evidence.ModelInput); err != nil {
 				return assemblyline.PortableResult{}, fmt.Errorf(
 					"portable work %s persisted child correction is invalid: %w",
-					job.ID, err,
+					job.Kind, err,
 				)
 			}
 			_, reserveErr := reservePending(job)
@@ -254,7 +250,7 @@ func portableWorkerRuntimeWithIdentityGuard(
 			if sourceState, stateErr := correction.Apply(recovered.Result.Candidate); stateErr == nil {
 				execution.SourceState = sourceState
 			}
-			pending.Store(job.ID, execution)
+			pending.Store(job.Key(), execution)
 			return recovered.Result, nil
 		}
 		releasePending, err := reservePending(job)
@@ -271,8 +267,8 @@ func portableWorkerRuntimeWithIdentityGuard(
 			runtime.claim.Authority,
 			eventNamespace+"_portable_correction_dispatched",
 			fmt.Sprintf(
-				"kind=%s work=%s iteration=%d model=%s mutable=%dB",
-				job.Kind, job.ID[:12], previous.Iteration+1,
+				"kind=%s iteration=%d model=%s mutable=%dB",
+				job.Kind, previous.Iteration+1,
 				safeEventToken(model, "unknown"), len(correction.Mutable()),
 			),
 		)
@@ -292,14 +288,14 @@ func portableWorkerRuntimeWithIdentityGuard(
 				); persistErr != nil {
 					return assemblyline.PortableResult{}, persistErr
 				}
-				continuations.Delete(job.ID)
+				continuations.Delete(job.Key())
 				return assemblyline.PortableResult{}, guardErr
 			}
 		}
 		if sourceState, stateErr := correction.Apply(result.Candidate); stateErr == nil {
 			execution.SourceState = sourceState
 		}
-		pending.Store(job.ID, execution)
+		pending.Store(job.Key(), execution)
 		keepPending = true
 		return result, nil
 	}
@@ -319,10 +315,10 @@ func portableWorkerRuntimeWithIdentityGuard(
 			expectedBase string,
 			updatedBase string,
 		) error {
-			stored, exists := continuations.Load(job.ID)
+			stored, exists := continuations.Load(job.Key())
 			if !exists {
 				return fmt.Errorf(
-					"portable work %s has no persisted rejected source to advance", job.ID,
+					"portable work %s has no persisted rejected source to advance", job.Kind,
 				)
 			}
 			execution, ok := stored.(exactStationExecution)
@@ -330,50 +326,50 @@ func portableWorkerRuntimeWithIdentityGuard(
 				execution.Model != model || execution.SourceState != expectedBase {
 				return fmt.Errorf(
 					"portable work %s deterministic source advance differs from its persisted context",
-					job.ID,
+					job.Kind,
 				)
 			}
 			normalized, err := assemblyline.NormalizeSourceBodyResponse(updatedBase)
 			if err != nil {
 				return fmt.Errorf(
-					"portable work %s deterministic source advance: %w", job.ID, err,
+					"portable work %s deterministic source advance: %w", job.Kind, err,
 				)
 			}
 			if normalized != updatedBase {
 				return fmt.Errorf(
 					"portable work %s deterministic source advance must already be normalized",
-					job.ID,
+					job.Kind,
 				)
 			}
 			if normalized == expectedBase {
 				return fmt.Errorf(
-					"portable work %s deterministic source advance has zero delta", job.ID,
+					"portable work %s deterministic source advance has zero delta", job.Kind,
 				)
 			}
 			execution.SourceState = normalized
-			continuations.Store(job.ID, execution)
+			continuations.Store(job.Key(), execution)
 			return nil
 		},
 		ProviderCalls: func() int {
 			return int(providerCalls.Load())
 		},
 		Release: func(job assemblyline.PortableJob) error {
-			if _, active := pending.Load(job.ID); active {
+			if _, active := pending.Load(job.Key()); active {
 				return fmt.Errorf(
-					"portable work %s cannot release an unvalidated exact result", job.ID,
+					"portable work %s cannot release an unvalidated exact result", job.Kind,
 				)
 			}
-			continuations.Delete(job.ID)
+			continuations.Delete(job.Key())
 			return nil
 		},
 		Finalize: func(job assemblyline.PortableJob, result assemblyline.PortableResult, validationErr error) error {
-			stored, exists := pending.LoadAndDelete(job.ID)
+			stored, exists := pending.LoadAndDelete(job.Key())
 			if !exists {
-				return fmt.Errorf("portable work %s has no pending exact station result", job.ID)
+				return fmt.Errorf("portable work %s has no pending exact station result", job.Kind)
 			}
 			execution, ok := stored.(exactStationExecution)
 			if !ok {
-				return fmt.Errorf("portable work %s has an invalid exact station receipt", job.ID)
+				return fmt.Errorf("portable work %s has an invalid exact station receipt", job.Kind)
 			}
 			if handled, deterministicErr := finalizeInferenceFreePortableResult(
 				job, result, execution,
@@ -381,42 +377,35 @@ func portableWorkerRuntimeWithIdentityGuard(
 				return deterministicErr
 			}
 			providedValidationErr := validationErr
-			if validationErr == nil && (execution.WorkID != job.ID || result.JobID != job.ID ||
+			if validationErr == nil && (execution.WorkInput != string(job.Payload) || execution.WorkKind != job.Kind ||
 				execution.Candidate != result.Candidate) {
-				validationErr = fmt.Errorf("portable work %s result differs from its exact station receipt", job.ID)
+				validationErr = fmt.Errorf("portable work %s result differs from its exact station receipt", job.Kind)
 			}
 			if validationErr == nil {
 				if err := result.ValidateFor(job); err != nil {
-					validationErr = fmt.Errorf("portable work %s result projection is invalid: %w", job.ID, err)
+					validationErr = fmt.Errorf("portable work %s result projection is invalid: %w", job.Kind, err)
 				}
-			}
-			if validationErr == nil && result.Projection == nil {
-				validationErr = fmt.Errorf("portable work %s accepted result lacks its exact response receipt", job.ID)
-			}
-			if validationErr == nil &&
-				result.Projection.SourceResponseSHA256 != execution.CandidateResponseSHA256 {
-				validationErr = fmt.Errorf("portable work %s projection differs from its exact response", job.ID)
 			}
 			if execution.Replayed {
 				expectedAccepted := execution.PersistedOutcome == queue.LLMCallAccepted
 				if expectedAccepted != (validationErr == nil) {
 					return fmt.Errorf(
 						"portable work %s deterministic replay differs from its persisted semantic outcome",
-						job.ID,
+						job.Kind,
 					)
 				}
 				if validationErr != nil &&
 					execution.PersistedValidationError != exactStationEvidenceError(validationErr) {
 					return fmt.Errorf(
 						"portable work %s deterministic replay differs from its persisted rejection",
-						job.ID,
+						job.Kind,
 					)
 				}
 				if validationErr == nil {
-					continuations.Delete(job.ID)
+					continuations.Delete(job.Key())
 				} else if providedValidationErr != nil &&
 					execution.WorkKind == assemblyline.WorkFragmentGeneration {
-					continuations.Store(job.ID, execution)
+					continuations.Store(job.Key(), execution)
 				}
 				if providedValidationErr != nil {
 					return nil
@@ -429,9 +418,9 @@ func portableWorkerRuntimeWithIdentityGuard(
 				return persistErr
 			}
 			if validationErr == nil {
-				continuations.Delete(job.ID)
+				continuations.Delete(job.Key())
 			} else if providedValidationErr != nil {
-				continuations.Store(job.ID, execution)
+				continuations.Store(job.Key(), execution)
 			}
 			if providedValidationErr != nil {
 				return nil
@@ -446,74 +435,4 @@ func portableWorkerRuntimeWithIdentityGuard(
 			)
 		},
 	}
-}
-
-func finalizeInferenceFreePortableResult(
-	job assemblyline.PortableJob,
-	result assemblyline.PortableResult,
-	execution exactStationExecution,
-) (bool, error) {
-	if !execution.InferenceFree {
-		return false, nil
-	}
-	if execution.CallEvidenceID != 0 || execution.Model != "" || execution.Iteration != 0 ||
-		execution.ProviderCalls != 0 ||
-		execution.CandidateResponseSHA256 != "" || execution.SourceState != "" || execution.Replayed ||
-		execution.PersistedOutcome != "" || execution.PersistedValidationError != "" {
-		return true, fmt.Errorf("portable work %s deterministic result carries provider authority", job.ID)
-	}
-	if execution.WorkID != job.ID || execution.WorkKind != job.Kind ||
-		execution.Candidate != result.Candidate || result.Projection != nil {
-		return true, fmt.Errorf("portable work %s deterministic result differs from its code-owned receipt", job.ID)
-	}
-	return true, result.ValidateFor(job)
-}
-
-func portableModelScope(kind assemblyline.WorkKind) (string, error) {
-	return assemblyline.PortableWorkerScopeForWorkKind(kind)
-}
-
-func (s *directCodingSession) workerModel(id station.ID) (string, error) {
-	if s == nil || s.runtime == nil || s.runtime.svc == nil || s.runtime.claim == nil {
-		return "", fmt.Errorf("direct coding worker model routing is unavailable")
-	}
-	routing, err := s.runtime.modelRouting()
-	if err != nil {
-		return "", err
-	}
-	return stationModel(routing, id)
-}
-
-func renderDirectCodingWorkerEvent(event typedWorkerEvent) string {
-	parts := []string{
-		"kind=" + safeLine(string(event.Kind), "unknown"),
-		"subject=" + safeEventToken(event.Subject, "unknown"),
-		"model=" + safeEventToken(event.Model, "unknown"),
-	}
-	if event.MaxAttempts > 0 {
-		parts = append(parts, fmt.Sprintf("attempt=%d/%d", event.Attempt, event.MaxAttempts))
-	} else if event.Attempt > 0 {
-		parts = append(parts, fmt.Sprintf("attempt=%d", event.Attempt))
-	}
-	if event.PromptBytes > 0 {
-		parts = append(parts, fmt.Sprintf(
-			"context=prompt:%dB,capabilities:%dB,current:%dB,correction:%dB",
-			event.PromptBytes, event.CapabilityBytes, event.CurrentBytes, event.CorrectionBytes,
-		))
-	}
-	if detail := strings.TrimSpace(event.Detail); detail != "" {
-		parts = append(parts, "error="+safeLine(detail, "unknown"))
-	}
-	if warning := strings.TrimSpace(event.Warning); warning != "" {
-		parts = append(parts, "warning="+safeLine(warning, "unknown"))
-	}
-	return strings.Join(parts, " ")
-}
-
-func safeEventToken(value, fallback string) string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return fallback
-	}
-	return strings.NewReplacer(" ", "_", "\t", "_", "\n", "_").Replace(value)
 }

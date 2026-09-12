@@ -16,16 +16,12 @@ type CompiledOutput struct {
 }
 
 type CompiledQuery struct {
-	Schema            string              `json:"schema"`
-	SourceID          string              `json:"source_id"`
-	SchemaFingerprint string              `json:"schema_fingerprint"`
-	IntentHash        string              `json:"intent_hash"`
-	QueryHash         string              `json:"query_hash"`
-	SQL               string              `json:"-"`
-	Parameters        []CompiledParameter `json:"parameters"`
-	Outputs           []CompiledOutput    `json:"outputs"`
-	Limit             int                 `json:"limit"`
-	seal              [32]byte
+	Schema     string              `json:"schema"`
+	SourceID   string              `json:"source_id"`
+	SQL        string              `json:"-"`
+	Parameters []CompiledParameter `json:"parameters"`
+	Outputs    []CompiledOutput    `json:"outputs"`
+	Limit      int                 `json:"limit"`
 }
 
 func (query CompiledQuery) Arguments() []any {

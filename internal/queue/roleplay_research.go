@@ -77,8 +77,7 @@ func (r *Repository) ProjectRoleplayResearchNarrative(
 		return roleplay.NarrativeSimulationProjection{}, roleplay.SimulationNarrativeAuthority{}, err
 	}
 	if authority.WorldID != research.WorldID || authority.SceneID != research.SceneID ||
-		authority.SceneRevision != research.SceneRevision || authority.ViewpointID != research.CharacterID ||
-		authority.Fingerprint != research.NarrativeFingerprint {
+		authority.SceneRevision != research.SceneRevision || authority.ViewpointID != research.CharacterID {
 		return roleplay.NarrativeSimulationProjection{}, roleplay.SimulationNarrativeAuthority{},
 			fmt.Errorf("roleplay research narrative differs from prepared active-character authority")
 	}

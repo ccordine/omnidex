@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/datasource"
-	"github.com/gryph/omnidex/internal/model"
 )
 
 func TestContextMinificationAcceptsMarkdownAsOrdinarySemanticText(t *testing.T) {
@@ -80,7 +79,6 @@ func TestCanonicalAndInventoryLeavesRemainStrict(t *testing.T) {
 	inventoryInput := ApplicationRequirementInventoryInput{
 		UserRequest: request,
 		Context:     context,
-		ScopeMode:   model.CodingScopeModeNormal,
 	}
 	if _, err := DecodeApplicationRequirementInventory(
 		inventoryInput, `{"requirements":["Schedule repairs"]}`,
@@ -90,14 +88,12 @@ func TestCanonicalAndInventoryLeavesRemainStrict(t *testing.T) {
 }
 
 func openTextDatabaseFilterInput() DatabaseQueryFilterLeafInput {
-	const fingerprint = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	authority := DatabaseQueryIntentInput{
 		EvidenceNeedID: "need_1",
 		ExactNeed:      "Find records whose payload exactly matches the requested text.",
 		Context:        ObjectiveContext{},
 		SchemaProjection: datasource.IntentSchemaProjection{
 			Schema: datasource.IntentSchemaProjectionV1, SourceID: "source_1",
-			SchemaFingerprint: fingerprint,
 			Relations: []datasource.IntentRelationProjection{{
 				ID: "relation_1", SchemaName: "public", Name: "events",
 				Kind: datasource.RelationTable,

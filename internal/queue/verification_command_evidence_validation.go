@@ -26,9 +26,7 @@ func normalizeVerificationCommandEvidence(
 		return VerificationCommandEvidence{}, err
 	}
 	if record.ID != 0 || record.Status != "" || record.DurationNanos != 0 ||
-		record.ArgvSHA256 != "" || record.EnvironmentSHA256 != "" ||
-		record.StdinSHA256 != "" || record.StdoutSHA256 != "" ||
-		record.StderrSHA256 != "" || !record.CreatedAt.IsZero() {
+		!record.CreatedAt.IsZero() {
 		return VerificationCommandEvidence{}, fmt.Errorf("new verification command evidence contains database-derived fields")
 	}
 	if !registeredVerificationCommandPhase(record.Phase) || record.Ordinal < 1 {
@@ -70,27 +68,9 @@ func normalizeVerificationCommandEvidence(
 	if record.ExitCode != nil && (*record.ExitCode < 0 || *record.ExitCode > 255) {
 		return VerificationCommandEvidence{}, fmt.Errorf("verification command exit code is outside the portable process range")
 	}
-	if !optionalVerificationWorkspaceSHA(record.WorkspaceSHA256Before) ||
-		!optionalVerificationWorkspaceSHA(record.WorkspaceSHA256After) ||
-		(record.WorkspaceSHA256After != "" && record.WorkspaceSHA256Before == "") {
-		return VerificationCommandEvidence{}, fmt.Errorf("verification workspace identities must be one optional exact before/after pair")
-	}
-	if verificationHostPhase(record.Phase) && record.WorkspaceSHA256Before == "" {
-		return VerificationCommandEvidence{}, fmt.Errorf("host verification command requires authoritative before/after workspace identities")
-	}
-	if record.ObservationError != "" {
-		if record.WorkspaceSHA256Before == "" || record.WorkspaceSHA256After != "" {
-			return VerificationCommandEvidence{}, fmt.Errorf("verification observation failure requires one before identity and no unobserved after identity")
-		}
-	} else if (record.WorkspaceSHA256Before == "") != (record.WorkspaceSHA256After == "") {
-		return VerificationCommandEvidence{}, fmt.Errorf("verification workspace identities must be one exact pair")
-	}
-
 	if record.Environment == nil {
 		record.Environment = []string{}
 	}
-	argvJSON, _ := json.Marshal(record.Argv)
-	environmentJSON, _ := json.Marshal(record.Environment)
 	record.Argv = append([]string(nil), record.Argv...)
 	record.Environment = append([]string{}, record.Environment...)
 	record.StdinPresent = record.Stdin != nil
@@ -106,19 +86,9 @@ func normalizeVerificationCommandEvidence(
 	copy(exactStderr, record.Stderr)
 	record.Stderr = exactStderr
 	record.DurationNanos = record.FinishedAt.Sub(record.StartedAt).Nanoseconds()
-	record.ArgvSHA256 = llmEvidenceSHA256(argvJSON)
-	record.EnvironmentSHA256 = llmEvidenceSHA256(environmentJSON)
-	if record.StdinPresent {
-		record.StdinSHA256 = llmEvidenceSHA256(record.Stdin)
-	}
-	record.StdoutSHA256 = llmEvidenceSHA256(record.Stdout)
-	record.StderrSHA256 = llmEvidenceSHA256(record.Stderr)
 	switch {
 	case record.ObservationError != "":
 		record.Status = VerificationCommandObservationFailed
-	case record.WorkspaceSHA256Before != "" &&
-		record.WorkspaceSHA256Before != record.WorkspaceSHA256After:
-		record.Status = VerificationCommandWorkspaceChanged
 	case record.LaunchError != "":
 		record.Status = VerificationCommandLaunchFailed
 	case *record.ExitCode == 0:
@@ -174,15 +144,6 @@ func registeredVerificationCommandPhase(phase VerificationCommandPhase) bool {
 	default:
 		return false
 	}
-}
-
-func verificationHostPhase(phase VerificationCommandPhase) bool {
-	return phase == VerificationHostInstall || phase == VerificationHostFinal ||
-		phase == VerificationHostCleanup
-}
-
-func optionalVerificationWorkspaceSHA(value string) bool {
-	return value == "" || exactLowerSHA256(value)
 }
 
 func validVerificationText(value string) bool {

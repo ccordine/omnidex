@@ -16,10 +16,11 @@ func genericRustCommandLineDocuments(
 	coverage assemblyline.ApplicationFileCoveragePlan,
 ) ([]assemblyline.SourceDocument, error) {
 	implementations := make([]assemblyline.SourceDocument, 0, len(specification.Requirements))
+	verifications := make([]assemblyline.SourceDocument, 0, len(specification.Requirements))
 	moduleBlocks := make([]assemblyline.SourceBlock, 0, len(specification.Requirements))
 	modules := make(map[string]string, len(specification.Requirements))
 	claimedPaths := make(map[string]string, len(specification.Requirements))
-	applicationDependencies := []string{"runtime.api"}
+	applicationDependencies := rustCommandLineRuntimeBlockIDs()
 	for index, requirement := range specification.Requirements {
 		sequence := index + 1
 		context, exists := contexts[requirement.ID]
@@ -32,12 +33,11 @@ func genericRustCommandLineDocuments(
 		if err != nil {
 			return nil, err
 		}
-		implementationPath, err := rustCommandLineTaskImplementationPath(
-			coverage, context.Task.TaskID,
-		)
+		pair, err := directCodingTaskSinglePair(coverage, context.Task.TaskID)
 		if err != nil {
 			return nil, err
 		}
+		implementationPath := pair.ImplementationPath
 		if owner, duplicate := claimedPaths[implementationPath]; duplicate {
 			return nil, fmt.Errorf(
 				"Rust path %s is shared by tasks %s and %s; this stack requires isolated modules",
@@ -49,10 +49,19 @@ func genericRustCommandLineDocuments(
 		if err != nil {
 			return nil, err
 		}
+		verificationModule, err := rustCommandLineModuleForPath(pair.VerificationPath)
+		if err != nil {
+			return nil, err
+		}
 		modules[requirement.ID] = module
 		moduleBlocks = append(moduleBlocks, assemblyline.SourceBlock{
 			ID:     fmt.Sprintf("library.module.%03d", sequence),
 			Static: "pub mod " + module + ";", API: "pub mod " + module + ";",
+			TaskID: context.Task.TaskID, Role: assemblyline.SourceBlockTaskSupport,
+		})
+		moduleBlocks = append(moduleBlocks, assemblyline.SourceBlock{
+			ID:     fmt.Sprintf("library.verification_module.%03d", sequence),
+			Static: "#[cfg(test)]\nmod " + verificationModule + ";", API: "mod " + verificationModule + ";",
 			TaskID: context.Task.TaskID, Role: assemblyline.SourceBlockTaskSupport,
 		})
 		featureID := fmt.Sprintf("feature.%03d", sequence)
@@ -60,13 +69,13 @@ func genericRustCommandLineDocuments(
 		supportID, supportSource, supportAPI := rustCommandLineCapabilityProjection(
 			sequence, specification.Requirements, capabilities[requirement.ID],
 		)
-		dependencies := []string{"runtime.api"}
+		dependencies := rustCommandLineRuntimeBlockIDs()
 		blocks := make([]assemblyline.SourceBlock, 0, 2)
 		if supportID != "" {
 			blocks = append(blocks, assemblyline.SourceBlock{
 				ID: supportID, Static: supportSource, API: supportAPI,
-				DependsOn: []string{"runtime.api"}, TaskID: context.Task.TaskID,
-				Role: assemblyline.SourceBlockTaskSupport,
+				TaskID: context.Task.TaskID,
+				Role:   assemblyline.SourceBlockTaskSupport,
 			})
 			dependencies = append(dependencies, supportID)
 			applicationDependencies = append(applicationDependencies, supportID)
@@ -91,6 +100,7 @@ func genericRustCommandLineDocuments(
 			Blocks:   blocks,
 		})
 		applicationDependencies = append(applicationDependencies, featureID)
+		verifications = append(verifications, rustCommandLineAcceptanceDocument(sequence, context.Task.TaskID, requirementBehavior, module, pair))
 	}
 	order, err := goCommandLineRequirementOrder(specification.Requirements, capabilities)
 	if err != nil {
@@ -98,6 +108,7 @@ func genericRustCommandLineDocuments(
 	}
 	documents := []assemblyline.SourceDocument{rustCommandLineRuntimeDocument()}
 	documents = append(documents, implementations...)
+	documents = append(documents, verifications...)
 	documents = append(documents, rustCommandLineLibraryDocument(
 		specification.Requirements, capabilities, order, modules,
 		moduleBlocks, applicationDependencies,

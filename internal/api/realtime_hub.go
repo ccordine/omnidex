@@ -1,7 +1,7 @@
 package api
 
 import (
-	"crypto/sha256"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -38,26 +38,26 @@ type RealtimeClient struct {
 }
 
 type realtimeFrame struct {
-	id             uint64
-	fingerprintKey string
-	topics         map[string]struct{}
-	data           []byte
+	id       uint64
+	stateKey string
+	topics   map[string]struct{}
+	data     []byte
 }
 
-type realtimeFingerprint struct {
-	digest    [sha256.Size]byte
+type realtimeState struct {
+	content   []byte
 	messageID uint64
 }
 
 type RealtimeHub struct {
-	mu              sync.Mutex
-	nextClientID    uint64
-	nextMessageID   uint64
-	clientBuffer    int
-	replayCapacity  int
-	clients         map[uint64]*RealtimeClient
-	history         []realtimeFrame
-	lastFingerprint map[string]realtimeFingerprint
+	mu             sync.Mutex
+	nextClientID   uint64
+	nextMessageID  uint64
+	clientBuffer   int
+	replayCapacity int
+	clients        map[uint64]*RealtimeClient
+	history        []realtimeFrame
+	lastState      map[string]realtimeState
 }
 
 type RealtimeSubscription struct {
@@ -80,11 +80,11 @@ func NewRealtimeHub() *RealtimeHub {
 	const clientBuffer = 64
 	const replayCapacity = 256
 	return &RealtimeHub{
-		clientBuffer:    clientBuffer,
-		replayCapacity:  replayCapacity,
-		clients:         make(map[uint64]*RealtimeClient),
-		history:         make([]realtimeFrame, 0, replayCapacity),
-		lastFingerprint: make(map[string]realtimeFingerprint),
+		clientBuffer:   clientBuffer,
+		replayCapacity: replayCapacity,
+		clients:        make(map[uint64]*RealtimeClient),
+		history:        make([]realtimeFrame, 0, replayCapacity),
+		lastState:      make(map[string]realtimeState),
 	}
 }
 
@@ -164,16 +164,16 @@ func (h *RealtimeHub) Broadcast(topics []string, message realtimeMessage) (Realt
 	if err != nil {
 		return RealtimeBroadcastResult{}, err
 	}
-	fingerprint, err := fingerprintRealtimeMessage(message)
+	content, err := realtimeMessageContent(message)
 	if err != nil {
-		return RealtimeBroadcastResult{}, fmt.Errorf("fingerprint realtime message: %w", err)
+		return RealtimeBroadcastResult{}, fmt.Errorf("marshal realtime content: %w", err)
 	}
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	stateKey := strings.TrimSpace(message.StateKey)
-	fingerprintKey := realtimeFingerprintKey(stateKey, topicSet)
-	if previous, ok := h.lastFingerprint[fingerprintKey]; fingerprintKey != "" && ok && previous.digest == fingerprint {
+	key := realtimeStateKey(stateKey, topicSet)
+	if previous, ok := h.lastState[key]; key != "" && ok && bytes.Equal(previous.content, content) {
 		return RealtimeBroadcastResult{MessageID: previous.messageID, Duplicate: true}, nil
 	}
 	h.nextMessageID++
@@ -186,10 +186,10 @@ func (h *RealtimeHub) Broadcast(topics []string, message realtimeMessage) (Realt
 		h.nextMessageID--
 		return RealtimeBroadcastResult{}, fmt.Errorf("marshal realtime message: %w", err)
 	}
-	if fingerprintKey != "" && h.replayCapacity > 0 {
-		h.lastFingerprint[fingerprintKey] = realtimeFingerprint{digest: fingerprint, messageID: message.ID}
+	if key != "" && h.replayCapacity > 0 {
+		h.lastState[key] = realtimeState{content: content, messageID: message.ID}
 	}
-	h.appendHistory(realtimeFrame{id: message.ID, fingerprintKey: fingerprintKey, topics: topicSet, data: data})
+	h.appendHistory(realtimeFrame{id: message.ID, stateKey: key, topics: topicSet, data: data})
 
 	result := RealtimeBroadcastResult{MessageID: message.ID}
 	for id, client := range h.clients {
@@ -214,8 +214,8 @@ func (h *RealtimeHub) appendHistory(frame realtimeFrame) {
 	}
 	if len(h.history) == h.replayCapacity {
 		evicted := h.history[0]
-		if fingerprint, ok := h.lastFingerprint[evicted.fingerprintKey]; evicted.fingerprintKey != "" && ok && fingerprint.messageID == evicted.id {
-			delete(h.lastFingerprint, evicted.fingerprintKey)
+		if previous, ok := h.lastState[evicted.stateKey]; evicted.stateKey != "" && ok && previous.messageID == evicted.id {
+			delete(h.lastState, evicted.stateKey)
 		}
 		copy(h.history, h.history[1:])
 		h.history[len(h.history)-1] = frame
@@ -224,7 +224,7 @@ func (h *RealtimeHub) appendHistory(frame realtimeFrame) {
 	h.history = append(h.history, frame)
 }
 
-func realtimeFingerprintKey(stateKey string, topics map[string]struct{}) string {
+func realtimeStateKey(stateKey string, topics map[string]struct{}) string {
 	if stateKey == "" {
 		return ""
 	}
@@ -236,14 +236,10 @@ func realtimeFingerprintKey(stateKey string, topics map[string]struct{}) string 
 	return stateKey + "\x00" + strings.Join(names, ",")
 }
 
-func fingerprintRealtimeMessage(message realtimeMessage) ([sha256.Size]byte, error) {
+func realtimeMessageContent(message realtimeMessage) ([]byte, error) {
 	message.ID = 0
 	message.OccurredAt = ""
-	raw, err := json.Marshal(message)
-	if err != nil {
-		return [sha256.Size]byte{}, err
-	}
-	return sha256.Sum256(raw), nil
+	return json.Marshal(message)
 }
 
 func realtimePayloadID(raw []byte) uint64 {

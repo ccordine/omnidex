@@ -1,9 +1,6 @@
 package datasource
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"sort"
@@ -26,13 +23,10 @@ type PlannedJoinPath struct {
 type RelationalQueryPlan struct {
 	Schema             string              `json:"schema"`
 	SourceID           string              `json:"source_id"`
-	SchemaFingerprint  string              `json:"schema_fingerprint"`
 	Intent             RelationalIntent    `json:"intent"`
 	JoinPathSelections []JoinPathSelection `json:"join_path_selections"`
 	JoinPaths          []PlannedJoinPath   `json:"join_paths"`
 	Outputs            []CompiledOutput    `json:"outputs"`
-	IntentHash         string              `json:"intent_hash"`
-	PlanHash           string              `json:"plan_hash"`
 }
 
 func BuildRelationalQueryPlan(
@@ -69,21 +63,15 @@ func BuildRelationalQueryPlan(
 	}
 	plan := RelationalQueryPlan{
 		Schema: RelationalQueryPlanV1, SourceID: snapshot.SourceID,
-		SchemaFingerprint: snapshot.Fingerprint, Intent: intent,
+		Intent:             intent,
 		JoinPathSelections: selections, JoinPaths: paths,
-		Outputs: append([]CompiledOutput(nil), compiled.Outputs...), IntentHash: compiled.IntentHash,
+		Outputs: append([]CompiledOutput(nil), compiled.Outputs...),
 	}
-	planHash, err := relationalQueryPlanHash(plan)
-	if err != nil {
-		return RelationalQueryPlan{}, err
-	}
-	plan.PlanHash = planHash
 	return plan, nil
 }
 
 func (plan RelationalQueryPlan) Validate(snapshot SchemaSnapshot) error {
-	if plan.Schema != RelationalQueryPlanV1 || plan.SourceID != snapshot.SourceID ||
-		plan.SchemaFingerprint != snapshot.Fingerprint {
+	if plan.Schema != RelationalQueryPlanV1 || plan.SourceID != snapshot.SourceID {
 		return fmt.Errorf("relational query plan authority does not match schema snapshot")
 	}
 	selected := make(map[string]string, len(plan.JoinPathSelections))
@@ -101,7 +89,7 @@ func (plan RelationalQueryPlan) Validate(snapshot SchemaSnapshot) error {
 		return fmt.Errorf("rebuild relational query plan: %w", err)
 	}
 	if !reflect.DeepEqual(plan, rebuilt) {
-		return fmt.Errorf("relational query plan fields or hashes are not canonical")
+		return fmt.Errorf("relational query plan does not match its intent, selected joins, or outputs")
 	}
 	return nil
 }
@@ -118,7 +106,7 @@ func CompilePostgresPlan(snapshot SchemaSnapshot, plan RelationalQueryPlan) (Com
 	if err != nil {
 		return CompiledQuery{}, err
 	}
-	if compiled.IntentHash != plan.IntentHash || !reflect.DeepEqual(compiled.Outputs, plan.Outputs) {
+	if !reflect.DeepEqual(compiled.Outputs, plan.Outputs) {
 		return CompiledQuery{}, fmt.Errorf("compiled PostgreSQL query diverged from relational plan")
 	}
 	return compiled, nil
@@ -144,14 +132,4 @@ func relationalPlanJoinTargets(snapshot SchemaSnapshot, intent RelationalIntent)
 	}
 	sort.Strings(targets)
 	return targets, nil
-}
-
-func relationalQueryPlanHash(plan RelationalQueryPlan) (string, error) {
-	plan.PlanHash = ""
-	encoded, err := json.Marshal(plan)
-	if err != nil {
-		return "", fmt.Errorf("encode relational query plan: %w", err)
-	}
-	digest := sha256.Sum256(encoded)
-	return hex.EncodeToString(digest[:]), nil
 }

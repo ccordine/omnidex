@@ -18,9 +18,8 @@ type ApplicationRequirementCandidateCardinalityInput struct {
 }
 
 type ApplicationRequirementCandidateCardinalityResult struct {
-	Schema          string `json:"schema"`
-	CandidateSHA256 string `json:"candidate_sha256"`
-	Relation        string `json:"relation"`
+	Schema   string `json:"schema"`
+	Relation string `json:"relation"`
 }
 
 func NewApplicationRequirementCandidateCardinalityJob(
@@ -48,9 +47,6 @@ func (result ApplicationRequirementCandidateCardinalityResult) ValidateFor(
 			"application requirement candidate cardinality schema must be %q",
 			ApplicationRequirementCandidateCardinalitySchemaV1,
 		)
-	}
-	if result.CandidateSHA256 != ExactObjectiveContextSHA(input.Candidate) {
-		return fmt.Errorf("application requirement candidate cardinality hash does not match")
 	}
 	switch result.Relation {
 	case ApplicationRequirementOneRuntimeOutcome,
@@ -98,9 +94,8 @@ func DecodeApplicationRequirementCandidateCardinalityResult(
 		return zero, err
 	}
 	result := ApplicationRequirementCandidateCardinalityResult{
-		Schema:          ApplicationRequirementCandidateCardinalitySchemaV1,
-		CandidateSHA256: ExactObjectiveContextSHA(input.Candidate),
-		Relation:        leaf,
+		Schema:   ApplicationRequirementCandidateCardinalitySchemaV1,
+		Relation: leaf,
 	}
 	if err := result.ValidateFor(input); err != nil {
 		return zero, err

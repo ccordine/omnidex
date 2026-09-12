@@ -11,7 +11,7 @@ func resolveRoleplayCanonCandidateQueue(
 	ctx context.Context,
 	adapter portableObjectiveRoleplayCanonStation,
 	input assemblyline.RoleplayCanonExtractionInput,
-) (assemblyline.RoleplayCanonExtractionDecision, objectiveStationReceipt, error) {
+) (assemblyline.RoleplayCanonExtractionDecision, int, error) {
 	resolveModel := func() (string, error) {
 		return objectiveRoleplaySemanticModel(adapter.runtime)
 	}
@@ -20,7 +20,7 @@ func resolveRoleplayCanonCandidateQueue(
 		subject string,
 		job assemblyline.PortableJob,
 		decode roleplayCanonRawLeafDecoder,
-	) (any, objectiveStationReceipt, error) {
+	) (any, int, error) {
 		return runObjectivePortableRawLeafStation(
 			ctx, adapter.runtime, subject, job,
 			station.RoleplayCanonExtraction, resolveModel,
@@ -34,39 +34,20 @@ func resolveRoleplayCanonCandidateQueueWithCall(
 	ctx context.Context,
 	input assemblyline.RoleplayCanonExtractionInput,
 	call roleplayCanonRawLeafCall,
-) (assemblyline.RoleplayCanonExtractionDecision, objectiveStationReceipt, error) {
-	presenceJob, err := assemblyline.NewRoleplayCanonFactPresenceJob(input)
-	if err != nil {
-		return assemblyline.RoleplayCanonExtractionDecision{}, objectiveStationReceipt{}, err
-	}
-	presence, receipt, err := callRoleplayCanonRawLeaf(
-		ctx, call, "roleplay_canon_fact_presence", presenceJob,
-		func(raw string) (assemblyline.RoleplayCanonFactPresenceResult, error) {
-			return assemblyline.DecodeRoleplayCanonFactPresenceResult(input, raw)
-		},
-	)
-	totalCalls, allReused := receipt.Calls, receipt.Reused
-	if err != nil {
-		return assemblyline.RoleplayCanonExtractionDecision{}, objectiveStationReceipt{Calls: totalCalls}, err
-	}
-	if presence.Relation == assemblyline.RoleplayCanonContributionEstablishesNoFact {
-		decision, err := assemblyline.AssembleRoleplayCanonExtractionDecision(input, []string{})
-		return decision, objectiveStationReceipt{Calls: totalCalls, Reused: allReused}, err
-	}
+) (assemblyline.RoleplayCanonExtractionDecision, int, error) {
 	inventoryJob, err := assemblyline.NewRoleplayCanonFactInventoryJob(input)
 	if err != nil {
-		return assemblyline.RoleplayCanonExtractionDecision{}, objectiveStationReceipt{Calls: totalCalls}, err
+		return assemblyline.RoleplayCanonExtractionDecision{}, 0, err
 	}
-	inventory, inventoryReceipt, err := callRoleplayCanonRawLeaf(
+	inventory, inventoryCalls, err := callRoleplayCanonRawLeaf(
 		ctx, call, "roleplay_canon_fact_inventory", inventoryJob,
 		func(raw string) (assemblyline.RoleplayCanonFactInventory, error) {
 			return assemblyline.DecodeRoleplayCanonFactInventory(input, raw)
 		},
 	)
-	totalCalls += inventoryReceipt.Calls
-	allReused = allReused && inventoryReceipt.Reused
+	totalCalls := inventoryCalls
 	if err != nil {
-		return assemblyline.RoleplayCanonExtractionDecision{}, objectiveStationReceipt{Calls: totalCalls}, err
+		return assemblyline.RoleplayCanonExtractionDecision{}, totalCalls, err
 	}
 
 	accepted := make([]string, 0, len(inventory.Candidates))
@@ -84,9 +65,9 @@ func resolveRoleplayCanonCandidateQueueWithCall(
 			authorizationInput,
 		)
 		if err != nil {
-			return assemblyline.RoleplayCanonExtractionDecision{}, objectiveStationReceipt{Calls: totalCalls}, err
+			return assemblyline.RoleplayCanonExtractionDecision{}, totalCalls, err
 		}
-		authorization, leafReceipt, err := callRoleplayCanonRawLeaf(
+		authorization, leafCalls, err := callRoleplayCanonRawLeaf(
 			ctx, call, "roleplay_canon_fact_candidate_authorization",
 			authorizationJob,
 			func(raw string) (assemblyline.RoleplayCanonFactCandidateAuthorization, error) {
@@ -95,10 +76,9 @@ func resolveRoleplayCanonCandidateQueueWithCall(
 				)
 			},
 		)
-		totalCalls += leafReceipt.Calls
-		allReused = allReused && leafReceipt.Reused
+		totalCalls += leafCalls
 		if err != nil {
-			return assemblyline.RoleplayCanonExtractionDecision{}, objectiveStationReceipt{Calls: totalCalls}, err
+			return assemblyline.RoleplayCanonExtractionDecision{}, totalCalls, err
 		}
 		if authorization.Relation == assemblyline.RoleplayCanonFactNotEstablished {
 			continue
@@ -111,19 +91,18 @@ func resolveRoleplayCanonCandidateQueueWithCall(
 			}
 			relationJob, err := assemblyline.NewRoleplayCanonFactCandidateRelationJob(relationInput)
 			if err != nil {
-				return assemblyline.RoleplayCanonExtractionDecision{}, objectiveStationReceipt{Calls: totalCalls}, err
+				return assemblyline.RoleplayCanonExtractionDecision{}, totalCalls, err
 			}
-			relation, relationReceipt, err := callRoleplayCanonRawLeaf(
+			relation, relationDispatches, err := callRoleplayCanonRawLeaf(
 				ctx, call, "roleplay_canon_fact_candidate_relation",
 				relationJob,
 				func(raw string) (assemblyline.RoleplayCanonFactCandidateRelation, error) {
 					return assemblyline.DecodeRoleplayCanonFactCandidateRelation(relationInput, raw)
 				},
 			)
-			totalCalls += relationReceipt.Calls
-			allReused = allReused && relationReceipt.Reused
+			totalCalls += relationDispatches
 			if err != nil {
-				return assemblyline.RoleplayCanonExtractionDecision{}, objectiveStationReceipt{Calls: totalCalls}, err
+				return assemblyline.RoleplayCanonExtractionDecision{}, totalCalls, err
 			}
 			if relation.Relation == assemblyline.RoleplayCanonFactsEquivalent {
 				duplicate = true
@@ -136,5 +115,5 @@ func resolveRoleplayCanonCandidateQueueWithCall(
 	}
 
 	decision, err := assemblyline.AssembleRoleplayCanonExtractionDecision(input, accepted)
-	return decision, objectiveStationReceipt{Calls: totalCalls, Reused: allReused}, err
+	return decision, totalCalls, err
 }

@@ -91,14 +91,3 @@ func databaseQueryWindowUnitDescription(unit datasource.WindowUnit) (string, err
 	}
 	return description, nil
 }
-
-func databaseQueryOrderDirectionDescription(direction datasource.OrderDirection) (string, error) {
-	switch direction {
-	case datasource.OrderAscending:
-		return "ascending, with smaller or earlier values first", nil
-	case datasource.OrderDescending:
-		return "descending, with larger or later values first", nil
-	default:
-		return "", fmt.Errorf("database query order direction %q has no semantic description", direction)
-	}
-}

@@ -23,11 +23,13 @@ const (
 
 type PortableCandidateValidator func(string) error
 
+// PortableResolver supplies one candidate to code's decoder and reports the
+// actual provider dispatch count. Consuming a retained result makes zero calls.
 type PortableResolver func(
 	context.Context,
 	assemblyline.PortableJob,
 	PortableCandidateValidator,
-) (SemanticCallReceipt, error)
+) (int, error)
 
 type PortableRuntime struct {
 	Resolve PortableResolver

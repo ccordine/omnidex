@@ -61,13 +61,11 @@ func TestProviderBodyLimitReceiptUsesRawJSONBoundAndOneByteBoundary(t *testing.T
 		Schema:                      PreparedGenerationSchemaV1,
 		Protocol:                    ExactPreparedProtocolPlainCompletionV4,
 		ProviderRequestDisposition:  ProviderRequestDispatched,
-		ProviderRequestSHA256:       strings.Repeat("a", 64),
 		ProviderHTTPStatus:          200,
 		ProviderResponseDisposition: ProviderResponseBodyLimit,
-		ProviderContentEncoding: NewProviderContentEncodingEvidence(
+		ProviderContentEncoding: ClassifyProviderContentEncoding(
 			nil, false,
 		),
-		ProviderResponseCaptureSHA256: strings.Repeat("b", 64),
 		ProviderResponseCapturedBytes: MaxExactPreparedProviderResponseBytes + 1,
 	}
 	if err := receipt.ValidateProviderResponseReceipt(); err != nil {

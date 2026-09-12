@@ -62,9 +62,8 @@ func (r *Repository) LoadFrozenCodingPlan(
 		return FrozenCodingPlan{}, fmt.Errorf("coding execution requires a frozen plan, received %q", plan.State)
 	}
 	rows, err := tx.Query(ctx, `
-		SELECT leaf_id,statement,annotation,decision,
-		       result_schema,candidate_sha256,kind_receipt_sha256,
-		       cardinality_receipt_sha256,result_relation
+		SELECT leaf_id,statement,decision,
+		       result_schema,result_relation
 		FROM coding_plan_leaves
 		WHERE job_id=$1 AND generation=$2 AND decision=$3
 		ORDER BY sort_index
@@ -77,11 +76,9 @@ func (r *Repository) LoadFrozenCodingPlan(
 	for rows.Next() {
 		var leaf FrozenCodingPlanLeaf
 		if err := rows.Scan(
-			&leaf.Leaf.ID, &leaf.Leaf.Statement, &leaf.Leaf.Annotation,
+			&leaf.Leaf.ID, &leaf.Leaf.Statement,
 			&leaf.Leaf.Decision,
-			&leaf.ResultRelation.Schema, &leaf.ResultRelation.CandidateSHA256,
-			&leaf.ResultRelation.KindReceiptSHA256,
-			&leaf.ResultRelation.CardinalityReceiptSHA256,
+			&leaf.ResultRelation.Schema,
 			&leaf.ResultRelation.Relation,
 		); err != nil {
 			return FrozenCodingPlan{}, err
@@ -89,10 +86,7 @@ func (r *Repository) LoadFrozenCodingPlan(
 		if err := leaf.Leaf.Validate(); err != nil {
 			return FrozenCodingPlan{}, err
 		}
-		if err := leaf.ResultRelation.validateFor(leaf.Leaf); err != nil {
-			return FrozenCodingPlan{}, err
-		}
-		if err := leaf.ResultRelation.assemblyline().ValidateAcceptedFor(leaf.Leaf.Statement); err != nil {
+		if err := leaf.ResultRelation.ValidateAcceptedFor(leaf.Leaf.Statement); err != nil {
 			return FrozenCodingPlan{}, err
 		}
 		leaves = append(leaves, leaf)

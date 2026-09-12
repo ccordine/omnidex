@@ -3,8 +3,6 @@ package assemblyline
 import (
 	"fmt"
 	"strings"
-
-	"github.com/gryph/omnidex/internal/exactjson"
 )
 
 const WorkDatabaseSchemaRelationChoice WorkKind = "database_schema_relation_choice"
@@ -82,18 +80,4 @@ func renderDatabaseSchemaObjective(exactNeed string, context ObjectiveContext) (
 		rendered.WriteString(capsule.Content)
 	}
 	return rendered.String(), nil
-}
-
-func databaseSchemaSemanticAuthoritySHA256(
-	input any,
-	validate func() error,
-) (string, error) {
-	if err := validate(); err != nil {
-		return "", err
-	}
-	authority, err := exactjson.Canonical(input)
-	if err != nil {
-		return "", fmt.Errorf("encode database schema semantic authority: %w", err)
-	}
-	return ExactObjectiveContextSHA(string(authority)), nil
 }

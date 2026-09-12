@@ -7,7 +7,7 @@ import (
 	"github.com/gryph/omnidex/internal/model"
 )
 
-func TestRenderPlanReviewShowsLeavesLegendDecisionsAndGuidance(t *testing.T) {
+func TestRenderPlanReviewShowsDecisionsWithoutModelScopeAnnotations(t *testing.T) {
 	t.Parallel()
 
 	state := mustPlanReviewState(t, planReviewFixture(t))
@@ -16,12 +16,11 @@ func TestRenderPlanReviewShowsLeavesLegendDecisionsAndGuidance(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "PLAN REVIEW\n" +
-		"job 42 · generation 3 · state review · scope normal · revision 1\n\n" +
-		"> 1. [approved] ✓ Create the grounded behavior\n" +
-		"  2. [pending] ~ Include the reasonable derivation\n" +
-		"  3. [rejected] ? Consider the speculative detail\n" +
-		"  4. [rejected] ! Do the conflicting thing\n\n" +
-		"Annotations: ✓ grounded · ~ reasonable derivation · ? speculative review · ! concrete scope conflict\n" +
+		"job 42 · generation 3 · state review · revision 1\n\n" +
+		"> 1. [approved] Confirm the selected item\n" +
+		"  2. [pending] Display the item's status\n" +
+		"  3. [rejected] Archive the selected item\n" +
+		"  4. [rejected] Restore an archived item\n\n" +
 		"Controls: ↑/↓ move · Space approve/reject · N note and replan this same job · Enter open freeze confirmation · Ctrl-D exit client\n" +
 		"Freeze unavailable: decide 1 pending leaf.\n"
 	if rendered != want {
@@ -44,7 +43,7 @@ func TestRenderPlanReviewZeroLeafStateOffersOnlyGuidanceAndExit(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "PLAN REVIEW\n" +
-		"job 42 · generation 3 · state review · scope normal · revision 1\n\n" +
+		"job 42 · generation 3 · state review · revision 1\n\n" +
 		"No proposed coding leaves were produced for this objective.\n\n" +
 		"Guidance is required before coding can start.\n" +
 		"Controls: N note and replan this same job · Ctrl-D exit client\n"
@@ -135,7 +134,6 @@ func TestRenderPlanReviewEscapesTerminalControlText(t *testing.T) {
 	plan.Leaves[0] = planReviewFixtureLeaf(
 		t,
 		"first line\nsecond\t\x1b[2J\u009b31m\u202ereversed",
-		model.CodingPlanAnnotationGrounded,
 		model.CodingPlanDecisionApproved,
 	)
 	state := mustPlanReviewState(t, plan)
@@ -149,27 +147,6 @@ func TestRenderPlanReviewEscapesTerminalControlText(t *testing.T) {
 	}
 	if escaped := `first line\nsecond\t\x1b[2J\u009b31m\u202ereversed`; !strings.Contains(rendered, escaped) {
 		t.Errorf("safe render lacks %q: %q", escaped, rendered)
-	}
-}
-
-func TestPlanReviewAnnotationPresentationIsComplete(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		annotation model.CodingPlanAnnotation
-		symbol     string
-		label      string
-	}{
-		{model.CodingPlanAnnotationGrounded, "✓", "grounded"},
-		{model.CodingPlanAnnotationReasonableDerivation, "~", "reasonable derivation"},
-		{model.CodingPlanAnnotationSpeculativeReview, "?", "speculative review"},
-		{model.CodingPlanAnnotationConcreteConflict, "!", "concrete scope conflict"},
-	}
-	for _, test := range tests {
-		symbol, label := planReviewAnnotationPresentation(test.annotation)
-		if symbol != test.symbol || label != test.label {
-			t.Errorf("presentation(%q) = (%q, %q)", test.annotation, symbol, label)
-		}
 	}
 }
 

@@ -50,7 +50,7 @@ func DecodeDatabaseQueryHavingAggregateLeaf(
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	choices, err := databaseQueryHavingAggregateChoices()
+	choices, err := databaseQueryHavingAggregateChoices(input)
 	if err != nil {
 		return "", err
 	}

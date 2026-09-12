@@ -25,7 +25,7 @@ func parseChatCommand(line string) (name, text string, command bool) {
 }
 
 func newOperationID() (queue.LifecycleOperationID, error) {
-	return queue.NewRandomLifecycleOperationID()
+	return queue.NewLifecycleOperationID()
 }
 
 type pendingControl struct {

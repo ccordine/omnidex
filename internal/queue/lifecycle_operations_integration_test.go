@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -25,7 +26,7 @@ func TestFreshRuntimeSchemaCommitsIndependentTerminalLifecycleOperations(t *test
 	}
 
 	t.Run("claimed step failure", func(t *testing.T) {
-		pool, repository := freshLifecycleRepository(t, databaseURL)
+		_, repository := freshLifecycleRepository(t, databaseURL)
 		ctx := context.Background()
 		job, err := repository.EnqueueCodingJob(ctx, "exercise a terminal step failure", t.TempDir())
 		if err != nil {
@@ -38,18 +39,26 @@ func TestFreshRuntimeSchemaCommitsIndependentTerminalLifecycleOperations(t *test
 		if claim == nil || claim.Job.ID != job.ID {
 			t.Fatalf("claimed job = %#v, want job %d", claim, job.ID)
 		}
-		operationID, err := queue.NewLifecycleOperationID("integration", "fail", pool.Config().ConnConfig.Database, lifecycleNonce(t))
+		operationID, err := queue.NewLifecycleOperationID()
 		if err != nil {
 			t.Fatalf("construct failure operation identity: %v", err)
 		}
 		const failure = "fixture processing failure"
-		if err := repository.FailStep(ctx, queue.FailStepCommand{
+		command := queue.FailStepCommand{
 			OperationID: operationID,
 			Authority:   claim.Authority,
 			StepID:      claim.Step.ID,
 			Error:       failure,
-		}); err != nil {
+		}
+		if err := repository.FailStep(ctx, command); err != nil {
 			t.Fatalf("commit failed-step lifecycle operation: %v", err)
+		}
+		if err := repository.FailStep(ctx, command); err != nil {
+			t.Fatalf("replay identical failure command: %v", err)
+		}
+		command.Error = "different failure text"
+		if err := repository.FailStep(ctx, command); !errors.Is(err, queue.ErrLifecycleOperationConflict) {
+			t.Fatalf("changed command did not conflict: %v", err)
 		}
 		details, err := repository.CurrentJobDetails(ctx, job.ID)
 		if err != nil {
@@ -67,7 +76,7 @@ func TestFreshRuntimeSchemaCommitsIndependentTerminalLifecycleOperations(t *test
 	})
 
 	t.Run("pending job cancellation", func(t *testing.T) {
-		pool, repository := freshLifecycleRepository(t, databaseURL)
+		_, repository := freshLifecycleRepository(t, databaseURL)
 		ctx := context.Background()
 		workspaceRoot := t.TempDir()
 		job, err := repository.EnqueueCodingJob(ctx, "exercise terminal cancellation", workspaceRoot)
@@ -78,22 +87,31 @@ func TestFreshRuntimeSchemaCommitsIndependentTerminalLifecycleOperations(t *test
 		if err != nil {
 			t.Fatalf("attest cancellation workspace: %v", err)
 		}
-		operationID, err := queue.NewLifecycleOperationID("integration", "cancel", pool.Config().ConnConfig.Database, lifecycleNonce(t))
+		operationID, err := queue.NewLifecycleOperationID()
 		if err != nil {
 			t.Fatalf("construct cancellation operation identity: %v", err)
 		}
 		const reason = "fixture cancellation"
-		result, err := repository.CancelJob(ctx, queue.CancelJobCommand{
+		command := queue.CancelJobCommand{
 			OperationID:   operationID,
 			JobID:         job.ID,
 			Reason:        reason,
 			WorkspaceRoot: workspaceRoot, WorkspaceIdentity: workspaceIdentity,
-		})
+		}
+		result, err := repository.CancelJob(ctx, command)
 		if err != nil {
 			t.Fatalf("commit cancel-job lifecycle operation: %v", err)
 		}
 		if !result.Applied || result.Job.Status != model.JobStatusCanceled || result.Job.Error != reason {
 			t.Fatalf("cancellation result = %#v", result)
+		}
+		replay, err := repository.CancelJob(ctx, command)
+		if err != nil || replay.Applied || replay.Job.ID != result.Job.ID || replay.Job.Error != reason {
+			t.Fatalf("identical cancellation replay = %+v, %v", replay, err)
+		}
+		command.Reason = "different cancellation reason"
+		if _, err := repository.CancelJob(ctx, command); !errors.Is(err, queue.ErrLifecycleOperationConflict) {
+			t.Fatalf("changed cancellation did not conflict: %v", err)
 		}
 		details, err := repository.CurrentJobDetails(ctx, job.ID)
 		if err != nil {
@@ -124,11 +142,24 @@ func freshLifecycleRepository(t *testing.T, databaseURL string) (*pgxpool.Pool, 
 		}
 		pool.Close()
 	})
+	var hashColumns int
+	if err := pool.QueryRow(ctx, `
+		SELECT count(*) FROM information_schema.columns
+		WHERE table_schema=$1 AND table_name IN (
+			'job_generations','job_lifecycle_operations','lifecycle_operation_registry',
+			'channel_session_turn_operations'
+		) AND column_name LIKE '%sha256%'
+	`, schema).Scan(&hashColumns); err != nil {
+		t.Fatal(err)
+	}
+	if hashColumns != 0 {
+		t.Fatalf("fresh lifecycle schema retained %d hash columns", hashColumns)
+	}
 	authority, err := modelconfig.Freeze(modelconfig.Config{})
 	if err != nil {
 		t.Fatalf("freeze empty model authority: %v", err)
 	}
-	return pool, queue.New(pool, authority, model.CodingScopeModeNormal)
+	return pool, queue.New(pool, authority)
 }
 
 func lifecycleNonce(t *testing.T) string {

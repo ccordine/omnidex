@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 
@@ -32,58 +33,11 @@ func (s *Service) recoverExactPortableStation(
 	if err := job.Validate(); err != nil {
 		return nil, err
 	}
-	evidence, found, err := s.repo.LatestReusableLLMCallEvidence(
-		ctx, authority, job.ID,
-	)
+	evidence, found, err := s.repo.ReusableLLMCallRootEvidence(ctx, authority, job)
 	if err != nil || !found {
 		return nil, err
 	}
-	for links := 0; evidence.Iteration > 1; links++ {
-		if links >= 2*assemblyline.MaxSourceBodyAttempts {
-			return nil, fmt.Errorf(
-				"persisted portable work %s correction lineage exceeds its bound",
-				job.ID,
-			)
-		}
-		child := evidence
-		if child.OutputContinuation != 0 || child.DispatchAttempt != 1 ||
-			child.ReplacesCallEvidenceID != 0 {
-			return nil, fmt.Errorf(
-				"persisted portable work %s contains unsupported continuation or replacement dispatch state",
-				job.ID,
-			)
-		}
-		parent, parentErr := s.repo.GetLLMCallEvidence(
-			ctx, child.ParentCallEvidenceID,
-		)
-		if parentErr != nil {
-			return nil, fmt.Errorf(
-				"read persisted portable work %s parent: %w", job.ID, parentErr,
-			)
-		}
-		if parent.Iteration != child.Iteration-1 {
-			return nil, fmt.Errorf(
-				"persisted portable work %s semantic correction lineage is invalid",
-				job.ID,
-			)
-		}
-		evidence = parent
-	}
-	if evidence.Iteration != 1 {
-		return nil, fmt.Errorf(
-			"persisted portable work %s has no initial lineage root", job.ID,
-		)
-	}
-	if evidence.OutputContinuation != 0 || evidence.DispatchAttempt != 1 ||
-		evidence.ReplacesCallEvidenceID != 0 {
-		return nil, fmt.Errorf(
-			"persisted portable work %s contains unsupported continuation or replacement dispatch state",
-			job.ID,
-		)
-	}
-	return s.recoverExactPortableStationEvidence(
-		job, modelName, authority, evidence,
-	)
+	return s.recoverExactPortableStationEvidence(job, modelName, authority, evidence, evidence)
 }
 
 func (s *Service) recoverExactPortableStationChild(
@@ -107,9 +61,11 @@ func (s *Service) recoverExactPortableStationChild(
 	if evidence.ParentCallEvidenceID != parentCallID {
 		return nil, fmt.Errorf("persisted correction child differs from its parent")
 	}
-	recovery, err := s.recoverExactPortableStationEvidence(
-		job, modelName, authority, evidence,
-	)
+	root, err := s.exactStationLineageRoot(ctx, evidence)
+	if err != nil {
+		return nil, err
+	}
+	recovery, err := s.recoverExactPortableStationEvidence(job, modelName, authority, evidence, root)
 	if recovery != nil {
 		recovery.SemanticParentCallEvidenceID = parentCallID
 	}
@@ -121,7 +77,12 @@ func (s *Service) recoverExactPortableStationEvidence(
 	modelName string,
 	authority model.StepAttemptAuthority,
 	evidence queue.LLMCallEvidence,
+	root queue.LLMCallEvidence,
 ) (*exactStationRecovery, error) {
+	if root.ID < 1 || root.Iteration != 1 || !bytes.Equal(root.WorkInput, job.Payload) ||
+		root.WorkKind != string(job.Kind) {
+		return nil, fmt.Errorf("persisted station input differs from the current semantic work")
+	}
 	wantedScope, err := portableModelScope(job.Kind)
 	if err != nil {
 		return nil, err
@@ -130,29 +91,30 @@ func (s *Service) recoverExactPortableStationEvidence(
 		evidence.ReplacesCallEvidenceID != 0 {
 		return nil, fmt.Errorf(
 			"persisted portable work %s contains unsupported continuation or replacement dispatch state",
-			job.ID,
+			job.Kind,
 		)
 	}
 	if evidence.JobID != authority.JobID || evidence.Generation != authority.Generation ||
-		evidence.StepID != authority.StepID || evidence.WorkID != job.ID ||
+		evidence.StepID != authority.StepID ||
 		evidence.WorkKind != string(job.Kind) || evidence.Scope != wantedScope ||
 		evidence.RequestedModel != modelName || evidence.Model != modelName ||
 		evidence.Protocol != string(llm.ExactPreparedProtocolPlainCompletionV4) {
 		return nil, fmt.Errorf(
 			"persisted portable work %s differs from its current job, kind, scope, immutable model route, or raw provider protocol",
-			job.ID,
+			job.Kind,
 		)
 	}
 	if !evidence.ProviderReceiptPresent && evidence.Outcome != nil &&
 		evidence.Outcome.Status == queue.LLMCallInterrupted {
 		return nil, fmt.Errorf(
 			"persisted portable work %s was interrupted before one complete provider response and is terminal",
-			job.ID,
+			job.Kind,
 		)
 	}
 	if evidence.OutputLimitReached {
 		execution := exactStationExecution{
-			CallEvidenceID: evidence.ID, WorkID: job.ID, WorkKind: job.Kind,
+			CallEvidenceID: evidence.ID, RootCallEvidenceID: root.ID,
+			WorkInput: string(job.Payload), WorkKind: job.Kind,
 			Model: modelName, Iteration: evidence.Iteration,
 			Candidate:                evidence.Candidate,
 			Replayed:                 true,
@@ -168,7 +130,7 @@ func (s *Service) recoverExactPortableStationEvidence(
 		evidence.Candidate == "" {
 		return nil, fmt.Errorf(
 			"persisted portable work %s has no reusable successful provider result",
-			job.ID,
+			job.Kind,
 		)
 	}
 	accepted := false
@@ -180,24 +142,12 @@ func (s *Service) recoverExactPortableStationEvidence(
 		default:
 			return nil, fmt.Errorf(
 				"persisted portable work %s ended as %s and cannot be replayed",
-				job.ID, evidence.Outcome.Status,
+				job.Kind, evidence.Outcome.Status,
 			)
 		}
 	}
-	projection, err := assemblyline.NewExactPortableResultProjection(evidence.Candidate)
-	if err != nil {
-		return nil, fmt.Errorf("rehydrate exact portable result: %w", err)
-	}
-	if evidence.CandidateSHA256 != projection.SourceResponseSHA256 ||
-		(evidence.Outcome != nil &&
-			evidence.Outcome.CandidateSHA256 != projection.SourceResponseSHA256) {
-		return nil, fmt.Errorf(
-			"persisted portable work %s candidate identity is inconsistent",
-			job.ID,
-		)
-	}
 	result := assemblyline.PortableResult{
-		JobID: job.ID, Candidate: evidence.Candidate, Projection: &projection,
+		Candidate: evidence.Candidate,
 	}
 	if accepted {
 		if err := result.ValidateFor(job); err != nil {
@@ -205,10 +155,10 @@ func (s *Service) recoverExactPortableStationEvidence(
 		}
 	}
 	execution := exactStationExecution{
-		CallEvidenceID: evidence.ID, WorkID: job.ID, WorkKind: job.Kind,
+		CallEvidenceID: evidence.ID, RootCallEvidenceID: root.ID,
+		WorkInput: string(job.Payload), WorkKind: job.Kind,
 		Model: modelName, Iteration: evidence.Iteration,
-		Candidate:               evidence.Candidate,
-		CandidateResponseSHA256: projection.SourceResponseSHA256,
+		Candidate: evidence.Candidate,
 	}
 	if evidence.Outcome != nil {
 		execution.Replayed = true
@@ -222,7 +172,7 @@ func (s *Service) recoverExactPortableStationEvidence(
 			)
 			if err != nil && accepted {
 				return nil, fmt.Errorf(
-					"rehydrate accepted portable work %s initial source state: %w", job.ID, err,
+					"rehydrate accepted portable work %s initial source state: %w", job.Kind, err,
 				)
 			}
 			if err == nil {
@@ -230,7 +180,7 @@ func (s *Service) recoverExactPortableStationEvidence(
 			}
 		} else if evidence.ParentCallEvidenceID < 1 {
 			return nil, fmt.Errorf(
-				"rehydrate portable work %s correction lineage is incomplete", job.ID,
+				"rehydrate portable work %s correction lineage is incomplete", job.Kind,
 			)
 		}
 	}
@@ -245,11 +195,9 @@ func sourceCorrectionEvidenceFromCall(
 	evidence queue.LLMCallEvidence,
 ) assemblyline.SourceBodyCorrectionEvidence {
 	return assemblyline.SourceBodyCorrectionEvidence{
-		BaseCandidate:  evidence.SourceBaseCandidate,
-		BaseSHA256:     evidence.SourceBaseSHA256,
-		StartByte:      evidence.SourceStartByte,
-		EndByte:        evidence.SourceEndByte,
-		Question:       evidence.SourceQuestion,
-		QuestionSHA256: evidence.SourceQuestionSHA256,
+		BaseCandidate: evidence.SourceBaseCandidate,
+		StartByte:     evidence.SourceStartByte,
+		EndByte:       evidence.SourceEndByte,
+		Question:      evidence.SourceQuestion,
 	}
 }

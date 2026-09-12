@@ -19,7 +19,7 @@ func resolveDatabaseQueryHaving(
 		assemblyline.DatabaseQueryPurposeAuthority{
 			State: state, Collection: assemblyline.DatabaseQueryHavingPurpose,
 		},
-		datasource.MaxIntentGroups-len(state.Having), false, call, total,
+		datasource.MaxIntentGroups-len(state.Having), call, total,
 	)
 	total = nextTotal
 	if err != nil {
@@ -114,7 +114,6 @@ func resolveDatabaseQueryOrder(
 			State: state, Collection: assemblyline.DatabaseQueryOrderPurpose,
 		},
 		datasource.MaxIntentOrderTerms-len(state.OrderBy),
-		state.Shape == datasource.ResultRanking && len(state.OrderBy) == 0,
 		call, total,
 	)
 	total = nextTotal

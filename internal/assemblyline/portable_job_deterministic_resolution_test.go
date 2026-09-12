@@ -25,7 +25,7 @@ func TestPortableSoleClosedChoiceIsConsumedWithoutModelRendering(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !resolved || result.Candidate != "A" || result.Projection != nil {
+	if !resolved || result.Candidate != "A" {
 		t.Fatalf("deterministic result = %#v resolved=%t", result, resolved)
 	}
 	decision, err := DecodeDatabaseJoinPathSelectionDecision(input, result.Candidate)

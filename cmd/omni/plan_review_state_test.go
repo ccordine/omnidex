@@ -69,7 +69,7 @@ func TestPlanReviewStateClonesAuthoritativeLeaves(t *testing.T) {
 	plan := planReviewFixture(t)
 	state := mustPlanReviewState(t, plan)
 	plan.Leaves[0].Statement = "mutated by caller"
-	if state.snapshot.Leaves[0].Statement != "Create the grounded behavior" {
+	if state.snapshot.Leaves[0].Statement != "Confirm the selected item" {
 		t.Fatalf("retained statement = %q", state.snapshot.Leaves[0].Statement)
 	}
 }
@@ -160,7 +160,7 @@ func TestPlanReviewConflictAnnotationRemainsUserDecidable(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := planReviewEffect{
-		Kind: planReviewEffectDecisionRequested,
+		Kind:   planReviewEffectDecisionRequested,
 		LeafID: state.snapshot.Leaves[3].ID, Decision: model.CodingPlanDecisionApproved,
 	}
 	if effect != want || next.snapshot.Leaves[3].Decision != model.CodingPlanDecisionRejected {

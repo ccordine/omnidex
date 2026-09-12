@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
-	"github.com/gryph/omnidex/internal/model"
 )
 
 func TestDirectCodingResultRelationUsesSecondQuestionOnlyForDerivedValues(t *testing.T) {
@@ -87,7 +86,7 @@ func TestDirectCodingResultRelationUsesSecondQuestionOnlyForDerivedValues(t *tes
 					if fixture.relation == assemblyline.ApplicationRequirementExplicitResultRelation {
 						candidate = "A"
 					}
-					return assemblyline.PortableResult{JobID: job.ID, Candidate: candidate}, nil
+					return assemblyline.PortableResult{Candidate: candidate}, nil
 				},
 			}
 			result, err := classifyDirectCodingApplicationRequirementCandidateResultRelation(
@@ -113,7 +112,7 @@ func TestDirectCodingUnderdeterminedResultIsDiscardedWithoutAnotherModelCall(t *
 		t.Fatal(err)
 	}
 	authority := assemblyline.ApplicationRequirementInventoryInput{
-		UserRequest: request, Context: applicationContext, ScopeMode: model.CodingScopeModeNormal,
+		UserRequest: request, Context: applicationContext,
 	}
 	entry := directCodingApplicationRequirementCandidateQueueEntry{Candidate: candidate}
 	var calls []assemblyline.WorkKind
@@ -160,7 +159,7 @@ func TestDirectCodingUnderdeterminedResultIsDiscardedWithoutAnotherModelCall(t *
 			default:
 				return assemblyline.PortableResult{}, fmt.Errorf("unexpected work kind %q", job.Kind)
 			}
-			return assemblyline.PortableResult{JobID: job.ID, Candidate: response}, nil
+			return assemblyline.PortableResult{Candidate: response}, nil
 		},
 	}
 	resolved, err := resolveDirectCodingApplicationRequirementCandidate(
@@ -236,7 +235,7 @@ func TestApplicationIntentMissingResultRelationDoesNotStopIndependentCandidate(t
 			default:
 				return assemblyline.PortableResult{}, fmt.Errorf("unexpected work kind %q", job.Kind)
 			}
-			return assemblyline.PortableResult{JobID: job.ID, Candidate: response}, nil
+			return assemblyline.PortableResult{Candidate: response}, nil
 		},
 	}
 	proposals, err := resolveDirectCodingApplicationPlan(
@@ -245,7 +244,6 @@ func TestApplicationIntentMissingResultRelationDoesNotStopIndependentCandidate(t
 			Requirements: "intent-model", ResultRelation: "result-model",
 		},
 		assemblyline.ApplicationIntentInput{UserRequest: request, Context: applicationContext},
-		model.CodingScopeModeNormal,
 		nil,
 	)
 	if err != nil {

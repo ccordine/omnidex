@@ -128,30 +128,6 @@ parse_args() {
   done
 }
 
-build_staged_checkout() {
-  local repo_dir="$1"
-
-  if ! command_exists go; then
-    die "go is required to build Omnidex binaries"
-  fi
-
-  managed_checkout_export_build_commit "${repo_dir}"
-  log "building staged GUI and host binaries"
-  "${repo_dir}/scripts/build-ui.sh"
-  (
-    cd "${repo_dir}"
-    ldflags="-X github.com/gryph/omnidex/internal/version.Commit=${OMNIDEX_COMMIT}"
-    mkdir -p bin
-    build_dir="$(mktemp -d "${repo_dir}/bin/.omnidex-build.XXXXXX")"
-    trap 'rm -f "${build_dir}/omnidex" "${build_dir}/omni"; rmdir "${build_dir}" 2>/dev/null || true' EXIT
-    go build -trimpath -ldflags "${ldflags}" -o "${build_dir}/omnidex" ./cmd/omnidex
-    go build -trimpath -ldflags "${ldflags}" -o "${build_dir}/omni" ./cmd/omni
-    managed_checkout_verify_binary_commit "${build_dir}/omnidex" "${OMNIDEX_COMMIT}" metadata
-    managed_checkout_verify_binary_commit "${build_dir}/omni" "${OMNIDEX_COMMIT}" json
-    mv -f "${build_dir}/omnidex" bin/omnidex
-    mv -f "${build_dir}/omni" bin/omni
-  )
-}
 
 main() {
   parse_args "$@"
@@ -209,18 +185,18 @@ main() {
     managed_checkout_fast_forward "${stage}" "${update_branch}"
   fi
   managed_checkout_stage_env "${PREFIX}" "${stage}" ""
-  build_staged_checkout "${stage}"
+  managed_checkout_build_binaries "${stage}"
   managed_checkout_validate_stage "${stage}"
   managed_checkout_publish "${stage}" "${PREFIX}"
   stage=""
   trap - EXIT
   if needs_compose_work; then
-    compose_build "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" core "${OMNIDEX_COMMIT}"
-    expected_image="$(compose_image_id "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" core "${OMNIDEX_COMMIT}")"
-    compose_require_image_commit "${expected_image}" "${OMNIDEX_COMMIT}" "${expected_runtime_user}"
-    compose_restart "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" core "${OMNIDEX_COMMIT}"
+    compose_build "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" core
+    expected_image="$(compose_image_id "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" core)"
+    compose_require_image_user "${expected_image}" "${expected_runtime_user}"
+    compose_restart "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" core
     if ((NO_RESTART == 0)); then
-      compose_require_running_image "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" core "${expected_image}" "${OMNIDEX_COMMIT}" "${expected_runtime_user}"
+      compose_require_running_image "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" core "${expected_image}" "${expected_runtime_user}"
     fi
   fi
 

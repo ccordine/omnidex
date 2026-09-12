@@ -10,18 +10,12 @@ import (
 const (
 	WorkGroundedAnswerParagraphInventory        WorkKind = "grounded_answer_paragraph_inventory"
 	WorkGroundedAnswerParagraphEvidenceRelation WorkKind = "grounded_answer_paragraph_evidence_relation"
-	WorkGroundedAnswerParagraphAuthorization    WorkKind = "grounded_answer_paragraph_authorization"
 
 	GroundedEvidenceSupportsParagraph GroundedAnswerParagraphEvidenceRelation = "SUPPORTS_PARAGRAPH"
 	GroundedEvidenceDoesNotSupport    GroundedAnswerParagraphEvidenceRelation = "DOES_NOT_SUPPORT_PARAGRAPH"
-
-	GroundedParagraphResponsiveAndFullySupported GroundedAnswerParagraphAuthorization = "RESPONSIVE_AND_FULLY_SUPPORTED"
-	GroundedParagraphNotResponsiveOrUnsupported  GroundedAnswerParagraphAuthorization = "NOT_RESPONSIVE_OR_NOT_FULLY_SUPPORTED"
 )
 
 type GroundedAnswerParagraphEvidenceRelation string
-
-type GroundedAnswerParagraphAuthorization string
 
 type GroundedAnswerParagraphInventoryInput struct {
 	ExactRequirement   string                    `json:"exact_requirement"`
@@ -40,18 +34,6 @@ type GroundedAnswerParagraphEvidenceRelationDecision struct {
 	Relation GroundedAnswerParagraphEvidenceRelation `json:"relation"`
 }
 
-type GroundedAnswerParagraphAuthorizationInput struct {
-	ExactRequirement   string                    `json:"exact_requirement"`
-	Context            ObjectiveContext          `json:"objective_context"`
-	ParagraphText      string                    `json:"paragraph_text"`
-	Evidence           []GroundedEvidenceCapsule `json:"evidence"`
-	KnownArtifactPaths []string                  `json:"known_artifact_paths"`
-}
-
-type GroundedAnswerParagraphAuthorizationDecision struct {
-	Relation GroundedAnswerParagraphAuthorization `json:"relation"`
-}
-
 func (input GroundedAnswerParagraphInventoryInput) validate() error {
 	return validateGroundedAnswerAuthority(
 		input.ExactRequirement, input.Context, input.Evidence,
@@ -61,16 +43,6 @@ func (input GroundedAnswerParagraphInventoryInput) validate() error {
 
 func (input GroundedAnswerParagraphEvidenceRelationInput) validate() error {
 	if err := validateGroundedEvidenceCapsules([]GroundedEvidenceCapsule{input.Evidence}); err != nil {
-		return err
-	}
-	return validateGroundedAnswerParagraphText(input.ParagraphText, input.KnownArtifactPaths)
-}
-
-func (input GroundedAnswerParagraphAuthorizationInput) validate() error {
-	if err := validateGroundedAnswerAuthority(
-		input.ExactRequirement, input.Context, input.Evidence,
-		input.KnownArtifactPaths,
-	); err != nil {
 		return err
 	}
 	return validateGroundedAnswerParagraphText(input.ParagraphText, input.KnownArtifactPaths)

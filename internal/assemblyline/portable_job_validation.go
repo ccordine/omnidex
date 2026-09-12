@@ -2,11 +2,8 @@ package assemblyline
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 )
-
-var portableWorkDigestPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 func validateRequirementQuote(label, quote string) error {
 	if quote == "" || quote != strings.TrimSpace(quote) {

@@ -178,12 +178,8 @@ func TestSourceBodyExtractionAppliesBodyLimitAfterGrossResponseProjection(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	projection, err := NewExactPortableResultProjection(response)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if err := (PortableResult{
-		JobID: job.ID, Candidate: response, Projection: &projection,
+		Candidate: response,
 	}).ValidateFor(job); err != nil {
 		t.Fatalf("gross ordinary response was rejected before extraction: %v", err)
 	}
@@ -262,12 +258,10 @@ func TestSourceBodyCorrectionEvidenceRejectsCompletePreviousBody(t *testing.T) {
 	const body = "unsafe { 1 }"
 	question := "What safe expression belongs here?"
 	evidence := SourceBodyCorrectionEvidence{
-		BaseCandidate:  body,
-		BaseSHA256:     sourceBodySHA256(body),
-		StartByte:      0,
-		EndByte:        len(body),
-		Question:       question,
-		QuestionSHA256: sourceBodySHA256(question),
+		BaseCandidate: body,
+		StartByte:     0,
+		EndByte:       len(body),
+		Question:      question,
 	}
 	if err := evidence.Validate(question + "\n\n" + body); err == nil ||
 		!strings.Contains(err.Error(), "complete previously returned body") {

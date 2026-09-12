@@ -1,17 +1,10 @@
 package worker
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 
 	workspacefacts "github.com/gryph/omnidex/internal/workspace"
 )
-
-func directCodingDigest(value string) string {
-	digest := sha256.Sum256([]byte(value))
-	return hex.EncodeToString(digest[:])
-}
 
 type directCodingPreparedMutation struct {
 	reconciliation           *workspacefacts.PreparedReconciliation

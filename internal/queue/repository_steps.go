@@ -171,7 +171,7 @@ func (r *Repository) completeStep(
 		if err := insertLifecycleOperationTx(ctx, tx, *descriptor, lifecycleOperationRecord{
 			ID: descriptor.ID, JobID: jobID, ObservedGeneration: generation,
 			ResultGeneration: job.CurrentGeneration, StepID: &command.StepID,
-			Kind: descriptor.Kind, CommandSHA256: descriptor.SHA256,
+			Kind:            descriptor.Kind,
 			ResultJobStatus: job.Status, ResultStepStatus: &stepStatus, ResultJob: job,
 		}); err != nil {
 			return err
@@ -261,7 +261,7 @@ func (r *Repository) FailStep(ctx context.Context, command FailStepCommand) erro
 	if err := insertLifecycleOperationTx(ctx, tx, descriptor, lifecycleOperationRecord{
 		ID: descriptor.ID, JobID: jobID, ObservedGeneration: generation,
 		ResultGeneration: job.CurrentGeneration, StepID: &command.StepID,
-		Kind: descriptor.Kind, CommandSHA256: descriptor.SHA256,
+		Kind:            descriptor.Kind,
 		ResultJobStatus: job.Status, ResultStepStatus: &stepStatus, ResultJob: job,
 	}); err != nil {
 		return err

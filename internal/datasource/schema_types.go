@@ -152,13 +152,12 @@ type SchemaRelation struct {
 }
 
 type SchemaSnapshot struct {
-	Schema      string           `json:"schema"`
-	SourceID    string           `json:"source_id"`
-	SourceName  string           `json:"source_name"`
-	Driver      string           `json:"driver"`
-	Fingerprint string           `json:"fingerprint"`
-	CapturedAt  time.Time        `json:"captured_at"`
-	Relations   []SchemaRelation `json:"relations"`
+	Schema     string           `json:"schema"`
+	SourceID   string           `json:"source_id"`
+	SourceName string           `json:"source_name"`
+	Driver     string           `json:"driver"`
+	CapturedAt time.Time        `json:"captured_at"`
+	Relations  []SchemaRelation `json:"relations"`
 }
 
 func (snapshot SchemaSnapshot) Relation(id string) (SchemaRelation, error) {
@@ -167,7 +166,7 @@ func (snapshot SchemaSnapshot) Relation(id string) (SchemaRelation, error) {
 			return relation, nil
 		}
 	}
-	return SchemaRelation{}, fmt.Errorf("unknown relation ID %q for schema fingerprint %q", id, snapshot.Fingerprint)
+	return SchemaRelation{}, fmt.Errorf("unknown relation ID %q for data source %q", id, snapshot.SourceID)
 }
 
 func (snapshot SchemaSnapshot) Column(id string) (SchemaRelation, SchemaColumn, error) {
@@ -178,7 +177,7 @@ func (snapshot SchemaSnapshot) Column(id string) (SchemaRelation, SchemaColumn, 
 			}
 		}
 	}
-	return SchemaRelation{}, SchemaColumn{}, fmt.Errorf("unknown column ID %q for schema fingerprint %q", id, snapshot.Fingerprint)
+	return SchemaRelation{}, SchemaColumn{}, fmt.Errorf("unknown column ID %q for data source %q", id, snapshot.SourceID)
 }
 
 func relationDefinitionKey(schema, name string) string {

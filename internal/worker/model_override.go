@@ -6,7 +6,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/modelconfig"
 	"github.com/gryph/omnidex/internal/station"
 )
@@ -15,36 +14,21 @@ func modelRoutingFromJobMetadata(metadata json.RawMessage) (ModelRouting, error)
 	if len(metadata) == 0 {
 		return ModelRouting{}, fmt.Errorf("job model routing metadata is required")
 	}
-	var payload struct {
-		ModelConfig json.RawMessage `json:"model_config"`
-	}
+	var payload map[string]json.RawMessage
 	if err := json.Unmarshal(metadata, &payload); err != nil {
 		return ModelRouting{}, fmt.Errorf("parse job model routing metadata: %w", err)
 	}
-	if len(payload.ModelConfig) == 0 {
+	if _, removed := payload["coding_scope_mode"]; removed {
+		return ModelRouting{}, fmt.Errorf("job metadata field coding_scope_mode was removed; the current request alone determines coding scope")
+	}
+	if len(payload["model_config"]) == 0 {
 		return ModelRouting{}, fmt.Errorf("job model routing metadata requires model_config")
 	}
-	cfg, err := modelconfig.FromJSON(payload.ModelConfig)
+	cfg, err := modelconfig.FromJSON(payload["model_config"])
 	if err != nil {
 		return ModelRouting{}, fmt.Errorf("parse job model config: %w", err)
 	}
 	return cfg.Routing(), nil
-}
-
-func codingScopeModeFromJobMetadata(metadata json.RawMessage) (model.CodingScopeMode, error) {
-	if len(metadata) == 0 {
-		return "", fmt.Errorf("job coding scope metadata is required")
-	}
-	var payload struct {
-		CodingScopeMode model.CodingScopeMode `json:"coding_scope_mode"`
-	}
-	if err := json.Unmarshal(metadata, &payload); err != nil {
-		return "", fmt.Errorf("parse job coding scope metadata: %w", err)
-	}
-	if err := payload.CodingScopeMode.Validate(); err != nil {
-		return "", fmt.Errorf("parse job coding scope mode: %w", err)
-	}
-	return payload.CodingScopeMode, nil
 }
 
 func stationModel(routing ModelRouting, id station.ID) (string, error) {

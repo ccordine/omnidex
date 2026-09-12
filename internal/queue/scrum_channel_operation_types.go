@@ -9,8 +9,6 @@ import (
 	"github.com/gryph/omnidex/internal/model"
 )
 
-const scrumChannelOperationSchema = "omnidex.scrum-channel-operation.v1"
-
 type ScrumChannelEffectKind string
 
 const (
@@ -40,11 +38,11 @@ type ScrumChannelOperationCommand struct {
 }
 
 type ScrumChannelCardUpdate struct {
-	Messages          []ScrumCardMessageAppend
-	Column            string
-	JobID             string
-	PlayState         string
-	QueueOrder        int
+	Messages   []ScrumCardMessageAppend
+	Column     string
+	JobID      string
+	PlayState  string
+	QueueOrder int
 }
 
 type ScrumChannelCardBuilder func(DBScrumCard, model.Job) (ScrumChannelCardUpdate, error)
@@ -63,7 +61,6 @@ type ScrumChannelOperationResult struct {
 
 type scrumChannelOperationDescriptor struct {
 	Request ScrumChannelOperationRequest
-	SHA256  string
 	Payload []byte
 }
 
@@ -86,7 +83,6 @@ func describeScrumChannelOperation(request ScrumChannelOperationRequest) (scrumC
 	}
 	return scrumChannelOperationDescriptor{
 		Request: request,
-		SHA256:  lifecycleIdentityDigest(scrumChannelOperationSchema, string(payload)),
 		Payload: payload,
 	}, nil
 }

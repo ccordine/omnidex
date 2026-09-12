@@ -31,8 +31,8 @@ const (
 )
 
 // DatabaseQueryIntentLeafState is code-owned partial intent state. Every
-// slice contains only complete leaves already accepted by code. A model sees
-// this state only to answer the next named semantic question.
+// slice contains only complete leaves already accepted by code. A model receives
+// the station-specific text projection, never this state structure.
 type DatabaseQueryIntentLeafState struct {
 	Authority       DatabaseQueryIntentInput          `json:"authority"`
 	FromRelationID  string                            `json:"from_relation_id"`

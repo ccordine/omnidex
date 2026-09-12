@@ -41,33 +41,26 @@ func repositorySemanticUncertaintyContract(
 			"One bounded positive raw candidate-paragraph inventory.",
 			"DecodeRoleplayGroundedParagraphInventory validates the inventory before code sieves each candidate independently.")
 	case WorkRoleplayGroundedResponseEvidenceRelation:
-		contract = semanticUncertaintyContractV2(kind,
+		contract = semanticUncertaintyContract(kind,
 			"Does one real-world evidence capsule support a factual claim in the focused candidate paragraph?",
 			"Claim-level semantic support cannot be proven by lexical overlap.",
-			"The exact question, focused candidate paragraph, and one bounded evidence-capsule text.",
+			"Only the focused candidate paragraph and one bounded evidence-capsule text; question, character identity, and continuity remain absent.",
 			"One registered roleplay paragraph-support relation.",
 			"DecodeRoleplayGroundedResponseEvidenceRelationLeaf validates the relation before code attaches that evidence identity to the already authorized candidate.")
-	case WorkRoleplayGroundedResponseParagraphAuthorization:
-		contract = semanticUncertaintyContractV2(kind,
-			"Is this complete candidate paragraph responsive in character and fully supported by the supplied evidence?",
-			"Narrative responsiveness, viewpoint consistency, and complete factual entailment cannot be proven mechanically.",
-			"The exact question, roleplay identity, compact fictional context, exact candidate paragraph, and the complete bounded evidence text supplied for the answer.",
-			"One registered paragraph-admissibility relation.",
-			"DecodeRoleplayGroundedParagraphAuthorizationDecision validates the relation before code discards a negative candidate immediately or performs pairwise evidence attribution for only that positive candidate.")
-	case WorkRoleplayCanonFactPresence:
+	case WorkGroundedParagraphSupport:
 		contract = semanticUncertaintyContract(kind,
-			"Does the current contribution directly establish any durable fictional fact?",
-			"Durable fictional meaning cannot be determined from contribution shape alone.",
-			"The exact attributed contribution, reference context, and typed antecedent when present.",
-			"One opaque binary choice identifying presence or absence.",
-			"DecodeRoleplayCanonFactPresenceResult validates the relation before code either assembles an empty fact set or opens the positive-only inventory.")
+			"Is every factual claim in this exact paragraph within the selected claim domain supported by the supplied evidence?",
+			"Text structure and source identifiers cannot establish complete semantic support for a paragraph's factual claims.",
+			"Only one paragraph, bounded evidence text, and the code-selected factual or real-world factual claim scope; question, continuity, and voice are absent.",
+			"One opaque letter representing fully supported or not fully supported claims.",
+			"DecodeGroundedParagraphSupport maps the letter to a semantic relation; code discards an unsupported candidate or independently binds its source citations.")
 	case WorkRoleplayCanonFactInventory:
 		contract = semanticUncertaintyContract(kind,
 			"What bounded source-ordered durable fictional facts does the exact current contribution directly establish?",
 			"Attribution and durable narrative meaning require semantic interpretation beyond structural validation.",
 			"The exact attributed contribution, reference context, and typed antecedent when present.",
-			"One bounded positive raw inventory containing between one and the code-owned maximum ordinary candidate-fact lines.",
-			"DecodeRoleplayCanonFactInventory validates the inventory before code sieves each candidate independently.")
+			"One bounded raw inventory of ordinary candidate-fact lines, or the exact absence value when no fact is established.",
+			"DecodeRoleplayCanonFactInventory parses and counts the candidates; code ends an empty queue or sieves each candidate independently.")
 	case WorkRoleplayCanonFactCandidateAuthorization:
 		contract = semanticUncertaintyContract(kind,
 			"Is this exact candidate fact directly established by the exact current contribution?",
@@ -104,19 +97,19 @@ func repositorySemanticUncertaintyContract(
 			"One bounded raw inventory of candidate paragraph text leaves.",
 			"DecodeGroundedAnswerParagraphInventory validates the untrusted candidates before code queues exact-unique paragraphs.")
 	case WorkGroundedAnswerParagraphEvidenceRelation:
-		contract = semanticUncertaintyContractV2(kind,
+		contract = semanticUncertaintyContract(kind,
 			"Does one evidence capsule support a factual claim in the exact candidate paragraph?",
 			"Factual claim support cannot be determined exactly from token overlap or evidence identity.",
 			"The exact candidate paragraph and one bounded evidence-capsule text.",
 			"One registered paragraph-support relation.",
 			"DecodeGroundedAnswerParagraphEvidenceRelationDecision validates the relation before code attaches that evidence identity to the already authorized candidate.")
-	case WorkGroundedAnswerParagraphAuthorization:
-		contract = semanticUncertaintyContractV2(kind,
-			"Does the complete exact candidate paragraph directly answer the exact requirement with every factual claim supported?",
-			"Responsiveness and complete factual entailment cannot be determined exactly from text shape.",
-			"The exact requirement, compact context, exact candidate paragraph, and the complete bounded evidence text supplied for the answer.",
-			"One registered complete-paragraph authorization relation.",
-			"DecodeGroundedAnswerParagraphAuthorizationDecision validates the relation before code discards a negative candidate immediately or performs pairwise evidence attribution for only that positive candidate.")
+	case WorkGroundedParagraphRelevance:
+		contract = semanticUncertaintyContract(kind,
+			"Does this exact candidate paragraph address the meaning of the user's question?",
+			"Paragraph structure and literal overlap cannot establish semantic relevance to a natural-language question.",
+			"Only the exact question, compact context needed to resolve its meaning, and one candidate paragraph; evidence and character-style instructions are absent.",
+			"One opaque letter representing relevant or not relevant to the question.",
+			"DecodeGroundedParagraphRelevance maps the letter to a semantic relation; code discards an unrelated candidate before asking any factual-support question.")
 	default:
 		return SemanticUncertaintyContract{}, false
 	}

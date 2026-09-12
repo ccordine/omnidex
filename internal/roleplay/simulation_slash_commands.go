@@ -25,7 +25,6 @@ const (
 )
 
 type SimulationSlashCommand struct {
-	ID           string
 	Kind         SimulationSlashCommandKind
 	Key          string
 	Insertion    string
@@ -192,17 +191,12 @@ func projectSimulationSlashCommandsTx(
 		}
 		return commands[left].Insertion < commands[right].Insertion
 	})
-	seenIDs := make(map[string]struct{}, len(commands))
 	seenExact := make(map[string]struct{}, len(commands))
 	for index := range commands {
 		commands[index].DisplayOrder = index
-		if _, duplicate := seenIDs[commands[index].ID]; duplicate {
-			return SimulationSlashCommandProjection{}, fmt.Errorf("projected slash command identity is duplicated")
-		}
 		if _, duplicate := seenExact[commands[index].Insertion]; duplicate {
 			return SimulationSlashCommandProjection{}, fmt.Errorf("projected slash command syntax is duplicated")
 		}
-		seenIDs[commands[index].ID] = struct{}{}
 		seenExact[commands[index].Insertion] = struct{}{}
 	}
 	if len(commands) > MaxSimulationSlashCommands {
@@ -223,9 +217,8 @@ func newSimulationSlashCommand(
 	key, exact, display, label, description string,
 	cursorUTF16 int,
 ) SimulationSlashCommand {
-	fingerprint := simulationSHA([]byte("slash-command.v1\x00" + string(kind) + "\x00" + key + "\x00" + exact))
 	return SimulationSlashCommand{
-		ID: "slash-command-option-" + fingerprint[:16], Kind: kind, Key: key,
+		Kind: kind, Key: key,
 		Insertion: exact, Display: display, Label: label, Description: description,
 		CursorUTF16: cursorUTF16,
 	}

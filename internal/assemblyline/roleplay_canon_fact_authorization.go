@@ -12,9 +12,8 @@ type RoleplayCanonFactCandidateAuthorizationInput struct {
 }
 
 type RoleplayCanonFactCandidateAuthorization struct {
-	Schema          string `json:"schema"`
-	AuthoritySHA256 string `json:"authority_sha256"`
-	Relation        string `json:"relation"`
+	Schema   string `json:"schema"`
+	Relation string `json:"relation"`
 }
 
 func NewRoleplayCanonFactCandidateAuthorizationJob(
@@ -73,12 +72,8 @@ func DecodeRoleplayCanonFactCandidateAuthorization(
 	if err != nil {
 		return zero, err
 	}
-	authoritySHA256, err := roleplayCanonSemanticAuthoritySHA256(input)
-	if err != nil {
-		return zero, err
-	}
 	result := RoleplayCanonFactCandidateAuthorization{
-		Schema: RoleplayCanonFactAuthorizationSchemaV1, AuthoritySHA256: authoritySHA256, Relation: leaf,
+		Schema: RoleplayCanonFactAuthorizationSchemaV1, Relation: leaf,
 	}
 	if err := result.ValidateFor(input); err != nil {
 		return zero, err
@@ -112,13 +107,6 @@ func (result RoleplayCanonFactCandidateAuthorization) ValidateFor(
 	}
 	if result.Schema != RoleplayCanonFactAuthorizationSchemaV1 {
 		return fmt.Errorf("roleplay canon fact authorization schema must be %q", RoleplayCanonFactAuthorizationSchemaV1)
-	}
-	authoritySHA256, err := roleplayCanonSemanticAuthoritySHA256(input)
-	if err != nil {
-		return err
-	}
-	if result.AuthoritySHA256 != authoritySHA256 {
-		return fmt.Errorf("roleplay canon fact authorization authority hash does not match")
 	}
 	switch result.Relation {
 	case RoleplayCanonFactEstablished, RoleplayCanonFactNotEstablished:

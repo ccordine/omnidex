@@ -18,6 +18,10 @@ func (s *Service) dispatchExactStationCall(
 	call exactStationCall,
 	prepared llm.PreparedModel,
 ) (assemblyline.PortableResult, exactStationExecution, error) {
+	if call.Iteration == 1 && call.RootCallEvidenceID != 0 ||
+		call.Iteration > 1 && call.RootCallEvidenceID < 1 {
+		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf("station call has invalid initial-call lineage")
+	}
 	if _, err := assemblyline.SemanticUncertaintyContractForWorkKind(call.WorkKind); err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
 			"admit exact station semantic uncertainty before dispatch: %w", err,
@@ -33,7 +37,7 @@ func (s *Service) dispatchExactStationCall(
 		return assemblyline.PortableResult{}, exactStationExecution{}, err
 	}
 	started := time.Now()
-	stopHeartbeat := s.startProgressHeartbeat(ctx, authority, "station-call:"+call.WorkID)
+	stopHeartbeat := s.startProgressHeartbeat(ctx, authority, fmt.Sprintf("station-call:%d", opening.ID))
 	result, callErr := generatePreparedExactWithinMaximumDuration(
 		ctx, s.stationClient, prepared,
 	)
@@ -54,9 +58,13 @@ func (s *Service) dispatchExactStationCall(
 		ctx, authority, opening.ID, prepared, result, callErr, time.Since(started),
 	)
 	execution := exactStationExecution{
-		CallEvidenceID: opening.ID, WorkID: call.WorkID, WorkKind: call.WorkKind,
+		CallEvidenceID: opening.ID, RootCallEvidenceID: call.RootCallEvidenceID,
+		WorkInput: call.WorkInput, WorkKind: call.WorkKind,
 		Model: prepared.BaseModel, Iteration: call.Iteration,
 		ProviderCalls: 1,
+	}
+	if call.Iteration == 1 {
+		execution.RootCallEvidenceID = opening.ID
 	}
 	if evidenceErr != nil {
 		return assemblyline.PortableResult{}, execution, evidenceErr
@@ -73,25 +81,11 @@ func (s *Service) dispatchExactStationCall(
 			evidence.Outcome.ValidationError,
 		)
 	}
-	projection, err := assemblyline.NewExactPortableResultProjection(result.Content)
-	if err != nil {
-		execution.Candidate = result.Content
-		if persistErr := s.persistExactStationSemanticOutcome(
-			ctx, authority, execution,
-			assemblyline.PortableResult{JobID: call.WorkID, Candidate: result.Content}, err,
-		); persistErr != nil {
-			return assemblyline.PortableResult{}, exactStationExecution{}, persistErr
-		}
-		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
-			"bind exact station response projection: %w", err,
-		)
-	}
 	portable := assemblyline.PortableResult{
-		JobID: call.WorkID, Candidate: result.Content, Projection: &projection,
+		Candidate: result.Content,
 	}
 	execution.CallEvidenceID = evidence.ID
 	execution.Candidate = result.Content
-	execution.CandidateResponseSHA256 = projection.SourceResponseSHA256
 	if err := ctx.Err(); err != nil {
 		if persistErr := s.persistExactStationSemanticOutcome(
 			ctx, authority, execution, portable, err,

@@ -2,14 +2,13 @@ package worker
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/roleplay"
+	"github.com/gryph/omnidex/internal/webresearch"
 )
 
 func runObjectiveTurn(
@@ -94,17 +93,17 @@ func runObjectiveTurn(
 	if kindStation == nil {
 		return objectiveTurnResult{}, fmt.Errorf("conversation objective kind station is unavailable")
 	}
-	decision, receipt, err := kindStation.Classify(ctx, input)
+	decision, dispatches, err := kindStation.Classify(ctx, input)
 	if err != nil {
 		return objectiveTurnResult{}, err
 	}
 	if err := ctx.Err(); err != nil {
 		return objectiveTurnResult{}, err
 	}
-	kindCalls := receipt.Calls
+	kindCalls := dispatches
 	result := objectiveTurnResult{
-		ObjectiveID: objectiveTurnID(authority, decision.Kind), Kind: decision.Kind,
-		InstructionSHA256: authority.SHA256, ModelCalls: kindCalls,
+		ObjectiveID: objectiveTurnID(authority), Kind: decision.Kind,
+		ModelCalls: kindCalls,
 	}
 	result.RequirementID = objectiveRequirementID(result.ObjectiveID)
 	if decision.Kind == assemblyline.ObjectiveKindWorkspaceMutation {
@@ -117,7 +116,7 @@ func runObjectiveTurn(
 		}
 		authority.Context = assemblyline.CloneObjectiveContext(continuity.ReplanContext())
 		authority.SessionContext = continuity.SessionContext()
-		result.ObjectiveID = objectiveTurnID(authority, decision.Kind)
+		result.ObjectiveID = objectiveTurnID(authority)
 		result.RequirementID = objectiveRequirementID(result.ObjectiveID)
 		return runObjectiveWorkspaceMutation(ctx, authority, result, workflows.WorkspaceMutation)
 	}
@@ -154,62 +153,66 @@ func runObjectiveRoleplayResearchTurn(
 	run func(context.Context, turnAuthority) (objectiveRoleplayResearchAnswer, error),
 ) (objectiveTurnResult, error) {
 	result := objectiveTurnResult{
-		ObjectiveID: objectiveTurnID(authority, assemblyline.ObjectiveKindExternalAnswer),
-		Kind:        assemblyline.ObjectiveKindExternalAnswer, InstructionSHA256: authority.SHA256,
+		ObjectiveID: objectiveTurnID(authority),
+		Kind:        assemblyline.ObjectiveKindExternalAnswer,
 	}
 	result.RequirementID = objectiveRequirementID(result.ObjectiveID)
 	if run == nil {
 		return result, fmt.Errorf("roleplay research workflow is unavailable")
 	}
 	answer, err := run(ctx, authority)
+	result.ModelCalls = answer.ModelCalls
 	if err != nil {
 		return result, err
 	}
 	if err := ctx.Err(); err != nil {
 		return result, err
 	}
-	webReceipt, err := answer.WebCallLedger.ValidateForMaximum(
-		"roleplay research completion", maximumObjectiveRoleplayResearchModelCalls,
-	)
+	if answer.ModelCalls < 0 || answer.ModelCalls > maximumObjectiveRoleplayResearchModelCalls {
+		return result, fmt.Errorf(
+			"roleplay research reported %d calls outside 0..%d",
+			answer.ModelCalls, maximumObjectiveRoleplayResearchModelCalls,
+		)
+	}
+	if answer.Sources.JobID != authority.JobID {
+		return result, fmt.Errorf("roleplay research sources belong to a different job")
+	}
+	sources, _, err := answer.Sources.Acquired.Project()
 	if err != nil {
 		return result, err
 	}
-	if answer.ModelCalls != webReceipt.Calls {
-		return result, fmt.Errorf(
-			"roleplay research reported %d calls but its exact ledger proves %d",
-			answer.ModelCalls, webReceipt.Calls,
-		)
-	}
-	if strings.TrimSpace(answer.Text) == "" || answer.Text != strings.TrimSpace(answer.Text) ||
-		len(answer.Text) > maxObjectiveOutputBytes ||
-		answer.ModelCalls > maximumObjectiveRoleplayResearchModelCalls ||
-		answer.Rendered == "" || answer.Rendered != strings.TrimSpace(answer.Rendered) ||
-		len(answer.Rendered) > maxObjectiveOutputBytes ||
-		!validObjectiveTextSHA(answer.Rendered, answer.RenderedSHA256) || len(answer.Paragraphs) == 0 {
-		return result, fmt.Errorf("roleplay research returned invalid bounded completion authority")
+	if err := webresearch.ValidateCompletionArtifact(answer.Artifact, sources); err != nil {
+		return result, err
 	}
 	if err := validateObjectiveRoleplayResearchTurn(authority, answer.Research); err != nil {
 		return result, err
 	}
+	paragraphs := make([]string, len(answer.Artifact.Paragraphs))
+	for index, paragraph := range answer.Artifact.Paragraphs {
+		paragraphs[index] = paragraph.Text
+	}
 	if err := validateObjectiveModelInput(
-		authority, "roleplay research model answer", answer.Text,
+		authority, "roleplay research model answer", strings.Join(paragraphs, "\n\n"),
 	); err != nil {
 		return result, err
 	}
-	citations, err := selectObjectiveCitations(answer.Evidence, answer.EvidenceIDs)
+	projected, err := projectObjectiveRoleplayResearchEvidence(answer.Sources)
+	if err != nil {
+		return result, err
+	}
+	citations, _, err := bindObjectiveRoleplayResearchCitations(projected, answer.Artifact)
 	if err != nil {
 		return result, err
 	}
 	research := answer.Research
 	result.Output, err = restoreObjectiveCodeRenderedArtifact(
-		authority, "roleplay research answer", answer.Rendered,
+		authority, "roleplay research answer", answer.Artifact.Rendered,
 	)
 	if err != nil {
 		return result, err
 	}
 	result.Citations = citations
 	result.CitationsRendered = true
-	result.ModelCalls = answer.ModelCalls
 	result.RoleplayResearch = &research
 	result.Complete = true
 	return result, nil
@@ -229,18 +232,9 @@ func runObjectiveDatabaseRead(
 		return result, fmt.Errorf("database-read workflow is unavailable")
 	}
 	acquisition, err := resolve(ctx, authority, result.RequirementID)
+	result.ModelCalls += acquisition.ModelCalls
 	if err != nil {
 		return result, err
-	}
-	databaseReceipt, err := acquisition.DatabaseCallLedger.totalForSuccess()
-	if err != nil {
-		return result, fmt.Errorf("database-read workflow receipt: %w", err)
-	}
-	if acquisition.ModelCalls != databaseReceipt.Calls {
-		return result, fmt.Errorf(
-			"database-read workflow reported %d model calls but its exact receipt ledger proves %d",
-			acquisition.ModelCalls, databaseReceipt.Calls,
-		)
 	}
 	modelEvidence, err := objectiveModelEvidence(acquisition.Evidence)
 	if err != nil {
@@ -257,11 +251,12 @@ func runObjectiveDatabaseRead(
 	if err := input.Validate(); err != nil {
 		return result, err
 	}
-	answer, receipt, err := answerStation.Answer(ctx, input)
+	answer, dispatches, err := answerStation.Answer(ctx, input)
+	result.ModelCalls += dispatches
 	if err != nil {
 		return result, err
 	}
-	if err := validateObjectiveGroundedAnswerReceipt(receipt, input); err != nil {
+	if err := validateObjectiveGroundedAnswerCalls(dispatches, input); err != nil {
 		return result, fmt.Errorf("database grounded answer: %w", err)
 	}
 	if err := answer.ValidateFor(input); err != nil {
@@ -271,7 +266,6 @@ func runObjectiveDatabaseRead(
 	if err != nil {
 		return result, err
 	}
-	result.ModelCalls += acquisition.ModelCalls + receipt.Calls
 	result.Output, err = restoreObjectiveModelText(
 		authority, "database grounded answer", answer.Text,
 	)
@@ -281,11 +275,6 @@ func runObjectiveDatabaseRead(
 	result.Citations = citations
 	result.Complete = true
 	return result, nil
-}
-
-func validObjectiveTextSHA(value, digest string) bool {
-	sum := sha256.Sum256([]byte(value))
-	return digest == hex.EncodeToString(sum[:])
 }
 
 func runObjectiveWorkspaceMutation(

@@ -2,8 +2,6 @@ package assemblyline
 
 import (
 	"fmt"
-
-	"github.com/gryph/omnidex/internal/exactjson"
 )
 
 func BuildApplicationRequirementCandidateResultPresencePrompt(
@@ -75,14 +73,9 @@ func applicationRequirementCandidateResultPresenceResult(
 	presence ApplicationRequirementCandidateResultPresence,
 ) (ApplicationRequirementCandidateResultPresenceResult, error) {
 	var zero ApplicationRequirementCandidateResultPresenceResult
-	authoritySHA256, err := applicationRequirementCandidateResultPresenceAuthoritySHA256(input)
-	if err != nil {
-		return zero, err
-	}
 	result := ApplicationRequirementCandidateResultPresenceResult{
-		Schema:          ApplicationRequirementCandidateResultPresenceSchemaV1,
-		AuthoritySHA256: authoritySHA256,
-		Presence:        presence,
+		Schema:   ApplicationRequirementCandidateResultPresenceSchemaV1,
+		Presence: presence,
 	}
 	if err := result.ValidateFor(input); err != nil {
 		return zero, err
@@ -127,17 +120,4 @@ func applicationRequirementCandidateResultPresenceOpaqueChoices(
 		return nil, err
 	}
 	return []OpaqueModelChoice{present, absent}, nil
-}
-
-func applicationRequirementCandidateResultPresenceAuthoritySHA256(
-	input ApplicationRequirementCandidateResultPresenceInput,
-) (string, error) {
-	if err := input.validate(); err != nil {
-		return "", err
-	}
-	authority, err := exactjson.Canonical(input)
-	if err != nil {
-		return "", fmt.Errorf("encode application requirement candidate result presence authority: %w", err)
-	}
-	return ExactObjectiveContextSHA(string(authority)), nil
 }

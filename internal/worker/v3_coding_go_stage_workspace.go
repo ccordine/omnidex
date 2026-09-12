@@ -59,7 +59,7 @@ func newDirectCodingGoStageWorkspace(
 			resultErr = errors.Join(resultErr, workspace.Close())
 		}
 	}()
-	if err := workspace.verifyToolchain(queue.VerificationIsolatedInstall, true); err != nil {
+	if err := workspace.verifyToolchain(queue.VerificationIsolatedInstall); err != nil {
 		return nil, err
 	}
 	return workspace, nil
@@ -70,8 +70,8 @@ func (workspace *directCodingGoStageWorkspace) VerifyTask(
 	context assemblyline.ApplicationTaskContext,
 	testName string,
 ) error {
-	if program == nil || context.WorkloadSHA256 != program.Workload.SHA256 {
-		return fmt.Errorf("Go task verification requires matching program and workload authority")
+	if program == nil {
+		return fmt.Errorf("Go task verification requires a compiled program")
 	}
 	projected, err := projectDirectCodingGoTaskVerificationProgram(*program, context)
 	if err != nil {
@@ -93,8 +93,8 @@ func projectDirectCodingGoTaskVerificationProgram(
 	program directCodingProgram,
 	context assemblyline.ApplicationTaskContext,
 ) (directCodingProgram, error) {
-	if context.WorkloadSHA256 == "" || context.WorkloadSHA256 != program.Workload.SHA256 {
-		return directCodingProgram{}, fmt.Errorf("Go task projection requires matching workload authority")
+	if err := context.ValidateFor(program.Workload); err != nil {
+		return directCodingProgram{}, err
 	}
 	files, err := program.Coverage.FilesForTask(context.Task.TaskID)
 	if err != nil {
@@ -165,7 +165,7 @@ func (workspace *directCodingGoStageWorkspace) verify(
 	}
 	for _, command := range commands {
 		if _, err := workspace.session.runRecordedVerificationCommand(
-			workspace.root, phase, command, true,
+			workspace.root, phase, command,
 		); err != nil {
 			return err
 		}
@@ -178,10 +178,9 @@ func (workspace *directCodingGoStageWorkspace) verify(
 
 func (workspace *directCodingGoStageWorkspace) verifyToolchain(
 	phase queue.VerificationCommandPhase,
-	trackWorkspace bool,
 ) error {
 	result, err := workspace.session.runRecordedVerificationCommand(
-		workspace.root, phase, directCodingGoVersionCommand(), trackWorkspace,
+		workspace.root, phase, directCodingGoVersionCommand(),
 	)
 	if err != nil {
 		return fmt.Errorf("observe Go toolchain version: %w", err)
@@ -204,7 +203,7 @@ func (workspace *directCodingGoStageWorkspace) verifyFormatting(
 		return err
 	}
 	result, err := workspace.session.runRecordedVerificationCommand(
-		workspace.root, phase, command, true,
+		workspace.root, phase, command,
 	)
 	if err != nil {
 		return err

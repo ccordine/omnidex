@@ -25,7 +25,6 @@ type RelevanceDecision struct {
 	Outcome       RelevanceOutcome
 	CandidateIDs  []websearch.CandidateID
 	SemanticCalls int
-	CallLedger    SemanticCallLedger
 }
 
 type RelevanceOutcome string

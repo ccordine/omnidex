@@ -17,11 +17,10 @@ func renderPlanReview(state planReviewState) (string, error) {
 	fmt.Fprintln(&rendered, "PLAN REVIEW")
 	fmt.Fprintf(
 		&rendered,
-		"job %d · generation %d · state %s · scope %s · revision %d\n\n",
+		"job %d · generation %d · state %s · revision %d\n\n",
 		state.snapshot.JobID,
 		state.snapshot.Generation,
 		state.snapshot.State,
-		state.snapshot.ScopeMode,
 		state.snapshot.Revision,
 	)
 	if len(state.snapshot.Leaves) == 0 {
@@ -39,23 +38,17 @@ func renderPlanReview(state planReviewState) (string, error) {
 		if index == state.selected {
 			marker = ">"
 		}
-		symbol, _ := planReviewAnnotationPresentation(leaf.Annotation)
 		fmt.Fprintf(
 			&rendered,
-			"%s %d. [%s] %s %s\n",
+			"%s %d. [%s] %s\n",
 			marker,
 			index+1,
 			leaf.Decision,
-			symbol,
 			planReviewTerminalText(leaf.Statement),
 		)
 	}
 
 	fmt.Fprintln(&rendered)
-	fmt.Fprintln(
-		&rendered,
-		"Annotations: ✓ grounded · ~ reasonable derivation · ? speculative review · ! concrete scope conflict",
-	)
 	approved, rejected, pending := planReviewDecisionCounts(state.snapshot)
 	if state.confirming {
 		fmt.Fprintf(
@@ -106,21 +99,6 @@ func planReviewDecisionCounts(snapshot model.CodingPlan) (approved, rejected, pe
 		}
 	}
 	return approved, rejected, pending
-}
-
-func planReviewAnnotationPresentation(annotation model.CodingPlanAnnotation) (string, string) {
-	switch annotation {
-	case model.CodingPlanAnnotationGrounded:
-		return "✓", "grounded"
-	case model.CodingPlanAnnotationReasonableDerivation:
-		return "~", "reasonable derivation"
-	case model.CodingPlanAnnotationSpeculativeReview:
-		return "?", "speculative review"
-	case model.CodingPlanAnnotationConcreteConflict:
-		return "!", "concrete scope conflict"
-	default:
-		return "", ""
-	}
 }
 
 func planReviewTerminalText(value string) string {

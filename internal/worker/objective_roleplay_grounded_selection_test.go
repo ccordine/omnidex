@@ -13,14 +13,14 @@ func TestRoleplayGroundedEvidenceIsAggregatedFromIndependentBinaryLeaves(t *test
 	t.Parallel()
 	input, paragraph := roleplayGroundedSelectionFixture()
 	seenEvidence := make([]string, 0, len(input.RealWorldEvidence))
-	evidenceIDs, supporting, receipt, err := resolveRoleplayGroundedEvidenceRelations(
+	evidenceIDs, supporting, dispatches, err := resolveRoleplayGroundedEvidenceRelations(
 		context.Background(),
 		input,
 		paragraph,
 		func(
 			_ context.Context,
 			leafInput assemblyline.RoleplayGroundedEvidenceRelationInput,
-		) (assemblyline.RoleplayGroundedEvidenceRelation, objectiveStationReceipt, error) {
+		) (assemblyline.RoleplayGroundedEvidenceRelation, int, error) {
 			seenEvidence = append(seenEvidence, leafInput.Evidence.ID)
 			raw := map[string]string{
 				"evidence_1": "A",
@@ -30,7 +30,7 @@ func TestRoleplayGroundedEvidenceIsAggregatedFromIndependentBinaryLeaves(t *test
 			value, err := assemblyline.DecodeRoleplayGroundedResponseEvidenceRelationLeaf(
 				leafInput, raw,
 			)
-			return value, objectiveStationReceipt{Calls: 1}, err
+			return value, 1, err
 		},
 	)
 	if err != nil {
@@ -48,8 +48,8 @@ func TestRoleplayGroundedEvidenceIsAggregatedFromIndependentBinaryLeaves(t *test
 	if !reflect.DeepEqual(supporting, wantSupporting) {
 		t.Fatalf("supporting evidence=%v, want %v", supporting, wantSupporting)
 	}
-	if receipt.Calls != 3 || receipt.Reused {
-		t.Fatalf("receipt=%+v", receipt)
+	if dispatches != 3 {
+		t.Fatalf("dispatches=%+v", dispatches)
 	}
 	decision, err := assemblyline.AssembleRoleplayGroundedResponseDecision(
 		input,
@@ -75,28 +75,28 @@ func TestRoleplayGroundedEvidenceRejectsAggregateModelPackets(t *testing.T) {
 		t.Run(raw, func(t *testing.T) {
 			input, paragraph := roleplayGroundedSelectionFixture()
 			calls := 0
-			evidenceIDs, supporting, receipt, err := resolveRoleplayGroundedEvidenceRelations(
+			evidenceIDs, supporting, dispatches, err := resolveRoleplayGroundedEvidenceRelations(
 				context.Background(),
 				input,
 				paragraph,
 				func(
 					_ context.Context,
 					leafInput assemblyline.RoleplayGroundedEvidenceRelationInput,
-				) (assemblyline.RoleplayGroundedEvidenceRelation, objectiveStationReceipt, error) {
+				) (assemblyline.RoleplayGroundedEvidenceRelation, int, error) {
 					calls++
 					value, err := assemblyline.DecodeRoleplayGroundedResponseEvidenceRelationLeaf(
 						leafInput, raw,
 					)
-					return value, objectiveStationReceipt{Calls: 1}, err
+					return value, 1, err
 				},
 			)
 			if err == nil {
 				t.Fatal("aggregate model response was decoded as roleplay evidence selection")
 			}
-			if calls != 1 || receipt.Calls != 1 || evidenceIDs != nil || supporting != nil {
+			if calls != 1 || dispatches != 1 || evidenceIDs != nil || supporting != nil {
 				t.Fatalf(
-					"calls=%d receipt=%+v IDs=%v supporting=%v",
-					calls, receipt, evidenceIDs, supporting,
+					"calls=%d dispatches=%+v IDs=%v supporting=%v",
+					calls, dispatches, evidenceIDs, supporting,
 				)
 			}
 		})

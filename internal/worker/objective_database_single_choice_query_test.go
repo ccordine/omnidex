@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -20,7 +21,7 @@ func TestQueryIntentUsesSoleFromRelationWithoutFromRelationCall(t *testing.T) {
 	call := func(
 		_ context.Context,
 		subject string,
-		_ assemblyline.PortableJob,
+		job assemblyline.PortableJob,
 		decode objectiveDatabaseRawLeafDecoder,
 	) (any, int, error) {
 		providerCalls++
@@ -31,10 +32,15 @@ func TestQueryIntentUsesSoleFromRelationWithoutFromRelationCall(t *testing.T) {
 			return nil, 1, fmt.Errorf("sole from relation reached the model call")
 		case "database_query_shape":
 			raw = "A"
-		case "database_query_purpose_presence":
-			raw = "B"
 		case "database_query_purpose_inventory":
-			raw = "Return the metric name"
+			raw = databasePurposeInventoryFixture(t, job, map[assemblyline.DatabaseQueryPurposeCollection]string{
+				assemblyline.DatabaseQueryProjectionPurpose: "Return the metric name",
+				assemblyline.DatabaseQueryFilterPurpose:     assemblyline.DatabaseNoQueryPurposeCandidates,
+				assemblyline.DatabaseQueryWindowPurpose:     assemblyline.DatabaseNoQueryPurposeCandidates,
+				assemblyline.DatabaseQueryExistencePurpose:  assemblyline.DatabaseNoQueryPurposeCandidates,
+				assemblyline.DatabaseQueryHavingPurpose:     assemblyline.DatabaseNoQueryPurposeCandidates,
+				assemblyline.DatabaseQueryOrderPurpose:      assemblyline.DatabaseNoQueryPurposeCandidates,
+			})
 		case "database_query_purpose_necessity":
 			raw = "A"
 		case "database_query_projection_field":
@@ -78,8 +84,6 @@ func TestWindowUsesSoleTemporalFieldWithoutFieldCall(t *testing.T) {
 		providerCalls++
 		var raw string
 		switch subject {
-		case "database_query_purpose_presence":
-			raw = "A"
 		case "database_query_purpose_inventory":
 			raw = "Only records from the previous day"
 		case "database_query_purpose_necessity":
@@ -102,8 +106,8 @@ func TestWindowUsesSoleTemporalFieldWithoutFieldCall(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve temporal windows: %v", err)
 	}
-	if calls != 5 || providerCalls != 5 {
-		t.Fatalf("provider calls = reported %d actual %d, want 5 non-field calls", calls, providerCalls)
+	if calls != 4 || providerCalls != 4 {
+		t.Fatalf("provider calls = reported %d actual %d, want 4 non-field calls", calls, providerCalls)
 	}
 	if fieldCalls != 0 {
 		t.Fatalf("sole temporal field made %d provider calls", fieldCalls)
@@ -118,26 +122,21 @@ func TestExistenceUsesSoleRelationWithoutRelationCall(t *testing.T) {
 		{ID: "name", Name: "name", TypeCategory: datasource.TypeText},
 	})
 	relationCalls := 0
-	presenceCalls := 0
 	providerCalls := 0
 	call := func(
 		_ context.Context,
 		subject string,
-		_ assemblyline.PortableJob,
+		job assemblyline.PortableJob,
 		decode objectiveDatabaseRawLeafDecoder,
 	) (any, int, error) {
 		providerCalls++
 		var raw string
 		switch subject {
-		case "database_query_purpose_presence":
-			presenceCalls++
-			if presenceCalls == 1 {
-				raw = "A"
-			} else {
-				raw = "B"
-			}
 		case "database_query_purpose_inventory":
-			raw = "Require a matching metric record"
+			raw = databasePurposeInventoryFixture(t, job, map[assemblyline.DatabaseQueryPurposeCollection]string{
+				assemblyline.DatabaseQueryExistencePurpose: "Require a matching metric record",
+				assemblyline.DatabaseQueryFilterPurpose:    assemblyline.DatabaseNoQueryPurposeCandidates,
+			})
 		case "database_query_purpose_necessity":
 			raw = "A"
 		case "database_query_existence_relation":
@@ -156,8 +155,8 @@ func TestExistenceUsesSoleRelationWithoutRelationCall(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve existence: %v", err)
 	}
-	if calls != 5 || providerCalls != 5 {
-		t.Fatalf("provider calls = reported %d actual %d, want 5 non-relation calls", calls, providerCalls)
+	if calls != 4 || providerCalls != 4 {
+		t.Fatalf("provider calls = reported %d actual %d, want 4 non-relation calls", calls, providerCalls)
 	}
 	if relationCalls != 0 {
 		t.Fatalf("sole existence relation made %d provider calls", relationCalls)
@@ -165,6 +164,19 @@ func TestExistenceUsesSoleRelationWithoutRelationCall(t *testing.T) {
 	if len(result.Exists) != 1 || result.Exists[0].RelationID != "metrics" {
 		t.Fatalf("existence predicates = %#v, want metrics", result.Exists)
 	}
+}
+
+func databasePurposeInventoryFixture(t *testing.T, job assemblyline.PortableJob, responses map[assemblyline.DatabaseQueryPurposeCollection]string) string {
+	t.Helper()
+	var authority assemblyline.DatabaseQueryPurposeAuthority
+	if err := json.Unmarshal(job.Payload, &authority); err != nil {
+		t.Fatal(err)
+	}
+	response, ok := responses[authority.Collection]
+	if !ok {
+		t.Fatalf("unexpected purpose collection %q", authority.Collection)
+	}
+	return response
 }
 
 func databaseSingleChoiceStateWithColumns(

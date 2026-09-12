@@ -199,7 +199,7 @@ func (r *Repository) prepareScrumCardPlayTx(
 	}
 	previous := card
 	metadata, instruction, err := scrumPlayAuthorityTx(
-		ctx, tx, card, r.modelAuthority, r.codingScopeMode,
+		ctx, tx, card, r.modelAuthority,
 	)
 	if err != nil {
 		return ScrumCardPlayResult{}, err
@@ -242,11 +242,7 @@ func pauseRunningScrumCardTx(
 	if err != nil || jobID <= 0 || strconv.FormatInt(jobID, 10) != card.JobID {
 		return fmt.Errorf("running Scrum card %q has noncanonical job ID %q", card.ID, card.JobID)
 	}
-	operationID, err := NewLifecycleOperationID(
-		"scrum-card-play-pause-v2", strconv.FormatInt(command.ProjectID, 10),
-		command.CardID, command.ExpectedUpdatedAt.UTC().Format(time.RFC3339Nano),
-		card.ID, card.JobID,
-	)
+	operationID, err := NewLifecycleOperationID()
 	if err != nil {
 		return err
 	}

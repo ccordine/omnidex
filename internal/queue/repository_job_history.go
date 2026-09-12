@@ -70,7 +70,7 @@ func readJobGenerationHistoryPage(
 ) ([]JobGenerationHistory, string, error) {
 	rows, err := tx.Query(ctx, `
 		SELECT job_id, generation, purpose, predecessor_generation,
-		       boundary_action, feedback, feedback_sha256, created_at
+		       boundary_action, feedback, created_at
 		FROM job_generations
 		WHERE job_id=$1 AND generation>$2
 		ORDER BY generation ASC
@@ -84,16 +84,15 @@ func readJobGenerationHistoryPage(
 	items := make([]JobGenerationHistory, 0, limit+1)
 	for rows.Next() {
 		var item JobGenerationHistory
-		var boundary, feedback, feedbackSHA *string
+		var boundary, feedback *string
 		if err := rows.Scan(
 			&item.JobID, &item.Generation, &item.Purpose, &item.PredecessorGeneration,
-			&boundary, &feedback, &feedbackSHA, &item.CreatedAt,
+			&boundary, &feedback, &item.CreatedAt,
 		); err != nil {
 			return nil, "", fmt.Errorf("scan job %d generation history: %w", jobID, err)
 		}
 		item.BoundaryAction = stringOrEmpty(boundary)
 		item.Feedback = stringOrEmpty(feedback)
-		item.FeedbackSHA256 = stringOrEmpty(feedbackSHA)
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {

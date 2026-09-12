@@ -13,15 +13,11 @@ func requirePreparedNarrative(
 	actualProjection NarrativeSimulationProjection,
 	actualAuthority SimulationNarrativeAuthority,
 ) error {
-	if reflect.DeepEqual(actualProjection, expectedProjection) &&
-		actualAuthority.Fingerprint == expectedAuthority.Fingerprint {
-		return nil
-	}
 	changes := simulationNarrativeChanges(
 		expectedProjection, expectedAuthority, actualProjection, actualAuthority,
 	)
 	if len(changes) == 0 {
-		changes = []string{"projection fingerprint"}
+		return nil
 	}
 	return fmt.Errorf(
 		"%w: prepared narrative changed in %s; restore and retry against the current turn state",
@@ -36,6 +32,9 @@ func simulationNarrativeChanges(
 	actualAuthority SimulationNarrativeAuthority,
 ) []string {
 	changes := make([]string, 0, 8)
+	if expectedProjection.Schema != actualProjection.Schema {
+		changes = append(changes, "projection schema")
+	}
 	if expectedAuthority.WorldID != actualAuthority.WorldID ||
 		expectedAuthority.SceneID != actualAuthority.SceneID ||
 		expectedAuthority.SceneRevision != actualAuthority.SceneRevision ||

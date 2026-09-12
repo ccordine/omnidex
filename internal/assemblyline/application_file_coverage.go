@@ -5,12 +5,11 @@ import (
 	"sort"
 )
 
-// ApplicationFileCoveragePlan is code-owned provenance from focused path-only
+// ApplicationFileCoveragePlan maps tasks to files from focused tree
 // tree calls. It is not model output and grants no content, graph, ordering, or
 // filesystem authority.
 type ApplicationFileCoveragePlan struct {
-	WorkloadSHA256 string
-	Files          []ApplicationFileCoverage
+	Files []ApplicationFileCoverage
 }
 
 type ApplicationFileCoverage struct {
@@ -23,8 +22,8 @@ func (plan ApplicationFileCoveragePlan) ValidateFor(
 	target TargetTree,
 	workload FrozenApplicationWorkload,
 ) error {
-	if plan.WorkloadSHA256 == "" || plan.WorkloadSHA256 != workload.SHA256 {
-		return fmt.Errorf("file coverage plan differs from frozen workload authority")
+	if err := ValidateFrozenApplicationWorkload(workload); err != nil {
+		return err
 	}
 	if len(target.Paths) == 0 || len(plan.Files) != len(target.Paths) {
 		return fmt.Errorf("file coverage plan must cover every target-tree path exactly once")
@@ -117,7 +116,7 @@ func NewApplicationFileCoveragePlan(
 			Path: path, Kind: kinds[path], TaskIDs: append([]string(nil), provenance[path]...),
 		}
 	}
-	plan := ApplicationFileCoveragePlan{WorkloadSHA256: workload.SHA256, Files: files}
+	plan := ApplicationFileCoveragePlan{Files: files}
 	if err := plan.ValidateFor(target, workload); err != nil {
 		return ApplicationFileCoveragePlan{}, err
 	}

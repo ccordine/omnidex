@@ -17,13 +17,13 @@ func MaterializeSimulationTurnTx(
 	tx pgx.Tx,
 	request SimulationTurnMaterializationRequest,
 ) error {
-	preparation, requestHash, exactText, err := loadMaterializationAuthorityTx(ctx, tx, request)
+	preparation, exactText, err := loadMaterializationAuthorityTx(ctx, tx, request)
 	if err != nil {
 		return err
 	}
 	if preparation.PendingTransition != nil {
 		stored, found, err := loadSimulationTransitionTx(
-			ctx, tx, preparation.PendingTransition.OperationID, requestHash,
+			ctx, tx, preparation.PendingTransition.OperationID,
 		)
 		if err != nil {
 			return err
@@ -53,7 +53,7 @@ func MaterializeSimulationTurnTx(
 	}
 	actual, _, err := applySimulationStateTx(
 		ctx, tx, locked, preparation.PendingTransition.OperationID,
-		requestHash, exactActionText(action, exactText), action,
+		exactActionText(action, exactText), action,
 		preparation.PendingTransition.CreatedAt,
 	)
 	if err != nil {
@@ -72,7 +72,7 @@ func RequireSimulationTurnMaterializedReplayTx(
 	tx pgx.Tx,
 	request SimulationTurnMaterializationRequest,
 ) error {
-	preparation, requestHash, _, err := loadMaterializationAuthorityTx(ctx, tx, request)
+	preparation, _, err := loadMaterializationAuthorityTx(ctx, tx, request)
 	if err != nil {
 		return err
 	}
@@ -80,7 +80,7 @@ func RequireSimulationTurnMaterializedReplayTx(
 		return nil
 	}
 	stored, found, err := loadSimulationTransitionTx(
-		ctx, tx, preparation.PendingTransition.OperationID, requestHash,
+		ctx, tx, preparation.PendingTransition.OperationID,
 	)
 	if err != nil {
 		return err
@@ -95,20 +95,20 @@ func loadMaterializationAuthorityTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	request SimulationTurnMaterializationRequest,
-) (SimulationTurnAuthority, string, string, error) {
+) (SimulationTurnAuthority, string, error) {
 	if ctx == nil || tx == nil || request.JobID < 1 || request.UserMessageID < 1 {
-		return SimulationTurnAuthority{}, "", "", fmt.Errorf("simulation materialization requires exact transaction, message, and job authority")
+		return SimulationTurnAuthority{}, "", fmt.Errorf("simulation materialization requires exact transaction, message, and job authority")
 	}
 	if err := validateIdentity(request.PreparationID, transitionIdentity); err != nil {
-		return SimulationTurnAuthority{}, "", "", err
+		return SimulationTurnAuthority{}, "", err
 	}
 	if err := validateChannelID(request.ChannelID); err != nil {
-		return SimulationTurnAuthority{}, "", "", err
+		return SimulationTurnAuthority{}, "", err
 	}
 	var payload []byte
-	var requestHash, exactText string
+	var exactText string
 	err := tx.QueryRow(ctx, `
-		SELECT preparation.result,preparation.request_sha256,message.content
+		SELECT preparation.result,message.content
 		FROM roleplay_simulation_turn_preparations AS preparation
 		JOIN roleplay_simulation_preparation_jobs AS binding
 		  ON binding.preparation_id=preparation.operation_id
@@ -122,23 +122,25 @@ func loadMaterializationAuthorityTx(
 		  AND job.metadata->>'channel_user_message_id'=preparation.user_message_id::text
 		  AND job.metadata->>'roleplay_simulation_preparation_id'=preparation.operation_id
 		  AND job.metadata->>'roleplay_scene_revision'=preparation.scene_revision::text
-		  AND job.metadata->>'roleplay_narrative_fingerprint'=preparation.result->>'narrative_fingerprint'
 		  AND job.metadata->'roleplay_responders'=preparation.result->'responder_routes'
 		  AND job.metadata->'roleplay_user_turn'=preparation.result->'user_turn'
 	`, request.PreparationID, request.ChannelID, request.UserMessageID, request.JobID).Scan(
-		&payload, &requestHash, &exactText,
+		&payload, &exactText,
 	)
 	if err == pgx.ErrNoRows {
-		return SimulationTurnAuthority{}, "", "", fmt.Errorf("%w: preparation and terminal job authority do not match", ErrSimulationIllegal)
+		return SimulationTurnAuthority{}, "", fmt.Errorf("%w: preparation and terminal job authority do not match", ErrSimulationIllegal)
 	}
 	if err != nil {
-		return SimulationTurnAuthority{}, "", "", err
+		return SimulationTurnAuthority{}, "", err
 	}
 	preparation, err := decodeTurnAuthority(payload)
 	if err != nil {
-		return SimulationTurnAuthority{}, "", "", err
+		return SimulationTurnAuthority{}, "", err
 	}
-	return preparation, requestHash, exactText, nil
+	if preparation.UserTurn.ExactText != exactText {
+		return SimulationTurnAuthority{}, "", fmt.Errorf("%w: prepared user text differs from the source message", ErrSimulationConflict)
+	}
+	return preparation, exactText, nil
 }
 
 func materializationAction(kind SimulationTurnInputKind, exactText string) (*SimulationAction, error) {
@@ -178,7 +180,7 @@ func requirePreparedNarrativeTx(
 		actual[index] = SimulationResponderAuthority{
 			Position: index, CharacterID: responder.CharacterID,
 			GenerationConfig: generation.Config, NarrativeProjection: projection,
-			NarrativeAuthority: authority, NarrativeFingerprint: authority.Fingerprint,
+			NarrativeAuthority: authority,
 		}
 	}
 	return requirePreparedResponderRound(preparation.Responders, actual)

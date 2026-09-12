@@ -157,10 +157,10 @@ func (r *Repository) UpdateProjectAtRevision(
 		return model.Project{}, err
 	}
 	for label, value := range map[string]string{
-		"project name": current.Name,
-		"project location": current.Location,
+		"project name":        current.Name,
+		"project location":    current.Location,
 		"project description": current.Description,
-		"project settings": string(current.Settings),
+		"project settings":    string(current.Settings),
 	} {
 		if err := validateDatabaseText(label, value); err != nil {
 			return model.Project{}, err

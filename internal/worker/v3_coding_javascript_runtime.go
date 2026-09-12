@@ -56,7 +56,7 @@ func javaScriptCommandLineRuntimeDocument(
 		ID: "application_runtime", Path: "runtime.mjs",
 		Blocks: []assemblyline.SourceBlock{{
 			ID: "runtime.api", Static: guard + "\n\n" + source,
-			API: "export function normalizeTaskResult(value)",
+			API: javaScriptCommandLineResultAPI(),
 		}},
 	}, nil
 }
@@ -72,21 +72,19 @@ func javaScriptCommandLineApplicationDocument(
 	imports := []string{"import { pathToFileURL } from 'node:url';", "import { normalizeTaskResult } from './runtime.mjs';"}
 	for index, requirement := range requirements {
 		context := contexts[requirement.ID]
-		implementationPath, err := directCodingTaskSingleImplementationPath(
-			coverage, context.Task.TaskID,
-		)
+		pair, err := directCodingTaskSinglePair(coverage, context.Task.TaskID)
 		if err != nil {
 			panic(fmt.Sprintf("validated JavaScript coverage changed: %v", err))
 		}
 		name := fmt.Sprintf("feature%03d", index+1)
 		imports = append(imports, fmt.Sprintf("import { %s } from %s;", name,
-			strconv.Quote(javaScriptRelativeModule("main.mjs", implementationPath))))
+			strconv.Quote(javaScriptRelativeModule("main.mjs", pair.ImplementationPath))))
 	}
 	return assemblyline.SourceDocument{
 		ID: "application_entrypoint", Path: "main.mjs", Preamble: strings.Join(imports, "\n"),
 		Blocks: []assemblyline.SourceBlock{{
 			ID: "application.run", Static: javaScriptCommandLineApplicationSource(requirements, capabilities, order),
-			API:       "function runApplication(arguments, standardInput)",
+			API:       "function runApplication(commandArguments, standardInput)",
 			DependsOn: append([]string(nil), dependencies...),
 		}},
 	}
@@ -102,8 +100,8 @@ func javaScriptCommandLineApplicationSource(
 		indices[requirement.ID] = index + 1
 	}
 	var source strings.Builder
-	source.WriteString("export function runApplication(arguments, standardInput) {\n")
-	source.WriteString("  const input = { arguments: [...arguments], standardInput };\n")
+	source.WriteString("export function runApplication(commandArguments, standardInput) {\n")
+	source.WriteString("  const input = { arguments: [...commandArguments], standardInput };\n")
 	source.WriteString("  const results = {};\n  const combined = { output: '', error: '', exitCode: 0, state: {} };\n")
 	for _, requirementID := range order {
 		sequence := indices[requirementID]

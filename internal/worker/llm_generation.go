@@ -11,27 +11,28 @@ import (
 )
 
 type exactStationCall struct {
-	WorkID           string
-	WorkKind         assemblyline.WorkKind
-	Iteration        int
-	ParentCallID     int64
-	Prompt           string
-	ContextTokens    int
-	MaxOutputTokens  int
-	SingleLine       bool
-	SourceCorrection *assemblyline.SourceBodyCorrectionEvidence
+	WorkInput          string
+	RootCallEvidenceID int64
+	WorkKind           assemblyline.WorkKind
+	Iteration          int
+	ParentCallID       int64
+	Prompt             string
+	ContextTokens      int
+	MaxOutputTokens    int
+	SingleLine         bool
+	SourceCorrection   *assemblyline.SourceBodyCorrectionEvidence
 }
 
 type exactStationExecution struct {
 	CallEvidenceID           int64
-	WorkID                   string
+	WorkInput                string
+	RootCallEvidenceID       int64
 	WorkKind                 assemblyline.WorkKind
 	InferenceFree            bool
 	Model                    string
 	Iteration                int
 	ProviderCalls            int
 	Candidate                string
-	CandidateResponseSHA256  string
 	SourceState              string
 	Replayed                 bool
 	PersistedOutcome         queue.LLMCallOutcomeStatus
@@ -56,7 +57,7 @@ func (s *Service) executeExactPortableStation(
 	}
 	if resolved {
 		return deterministic, exactStationExecution{
-			WorkID: job.ID, WorkKind: job.Kind, InferenceFree: true,
+			WorkInput: string(job.Payload), WorkKind: job.Kind, InferenceFree: true,
 			Candidate: deterministic.Candidate,
 		}, nil
 	}
@@ -83,7 +84,7 @@ func (s *Service) executeExactPortableStation(
 		)
 	}
 	call := exactStationCall{
-		WorkID: job.ID, WorkKind: job.Kind, Prompt: prompt,
+		WorkInput: string(job.Payload), WorkKind: job.Kind, Prompt: prompt,
 		Iteration:     1,
 		ContextTokens: contextTokens, MaxOutputTokens: maxOutputTokens,
 	}
@@ -120,7 +121,7 @@ func (s *Service) executeExactPortableStationCorrection(
 			"exact station generation provider is not configured",
 		)
 	}
-	if previous.CallEvidenceID < 1 || previous.WorkID != job.ID ||
+	if previous.CallEvidenceID < 1 || previous.RootCallEvidenceID < 1 || previous.WorkInput != string(job.Payload) ||
 		previous.WorkKind != job.Kind || previous.Model != modelName || previous.Iteration < 1 ||
 		previous.Iteration >= assemblyline.MaxSourceBodyAttempts {
 		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
@@ -139,19 +140,35 @@ func (s *Service) executeExactPortableStationCorrection(
 			"exact station correction differs from its code-owned current source state",
 		)
 	}
-	persisted, found, err := s.repo.LatestReusableLLMCallEvidence(
-		ctx, authority, job.ID,
+	root, found, err := s.repo.ReusableLLMCallRootEvidence(
+		ctx, authority, job,
 	)
 	if err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, err
 	}
-	if !found || persisted.ID != previous.CallEvidenceID {
+	if !found || root.ID != previous.RootCallEvidenceID {
 		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
-			"exact station correction parent is not the latest reusable persisted response",
+			"exact station correction has no matching initial work input",
 		)
 	}
+	persisted, err := s.repo.GetLLMCallEvidence(ctx, previous.CallEvidenceID)
+	if err != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, err
+	}
+	lineageRoot, err := s.exactStationLineageRoot(ctx, persisted)
+	if err != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, err
+	}
+	if lineageRoot.ID != root.ID {
+		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf("source correction parent belongs to different initial work")
+	}
+	if _, childExists, err := s.repo.ReusableLLMCallChildEvidence(ctx, authority, previous.CallEvidenceID); err != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, err
+	} else if childExists {
+		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf("source correction parent already has a persisted child")
+	}
 	if persisted.JobID != authority.JobID || persisted.Generation != authority.Generation ||
-		persisted.StepID != authority.StepID || persisted.WorkID != job.ID ||
+		persisted.StepID != authority.StepID ||
 		persisted.WorkKind != string(job.Kind) || persisted.Iteration != previous.Iteration ||
 		persisted.Model != modelName || persisted.RequestedModel != modelName ||
 		persisted.Protocol != string(llm.ExactPreparedProtocolPlainCompletionV4) ||
@@ -183,7 +200,8 @@ func (s *Service) executeExactPortableStationCorrection(
 		return assemblyline.PortableResult{}, exactStationExecution{}, err
 	}
 	call := exactStationCall{
-		WorkID: job.ID, WorkKind: job.Kind, Iteration: previous.Iteration + 1,
+		WorkInput: string(job.Payload), RootCallEvidenceID: root.ID,
+		WorkKind: job.Kind, Iteration: previous.Iteration + 1,
 		ParentCallID: previous.CallEvidenceID, Prompt: prompt,
 		ContextTokens: contextTokens, MaxOutputTokens: maxOutputTokens,
 		SingleLine:       opaqueCorrection,

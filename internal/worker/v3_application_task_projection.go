@@ -13,8 +13,8 @@ func projectDirectCodingApplicationTaskStage(
 ) (directCodingProgram, error) {
 	var zero directCodingProgram
 	stack := program.Project.Stack
-	if context.WorkloadSHA256 == "" || context.WorkloadSHA256 != program.Workload.SHA256 {
-		return zero, fmt.Errorf("application task context differs from program workload authority")
+	if err := context.ValidateFor(program.Workload); err != nil {
+		return zero, err
 	}
 	staticFiles, err := cloneValidatedDirectCodingStaticFiles(stack, program.StaticFiles)
 	if err != nil {

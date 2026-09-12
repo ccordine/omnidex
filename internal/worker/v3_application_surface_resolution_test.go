@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
-	"github.com/gryph/omnidex/internal/model"
 )
 
 func TestApplicationInterpreterResolvesSurfaceBeforeSpecification(t *testing.T) {
@@ -66,7 +65,6 @@ func TestApplicationInterpreterResolvesSurfaceBeforeSpecification(t *testing.T) 
 				assemblyline.ApplicationIntentInput{
 					UserRequest: fixture.request, Context: applicationContext,
 				},
-				model.CodingScopeModeNormal,
 				nil,
 			)
 			if err != nil {
@@ -77,7 +75,7 @@ func TestApplicationInterpreterResolvesSurfaceBeforeSpecification(t *testing.T) 
 			}
 			approved := []assemblyline.ApplicationRequirement{{
 				ID: "requirement_001", Statement: proposals[0].Statement,
-				RequestSHA256:  authority.requestSHA256,
+
 				ResultRelation: proposals[0].ResultRelation,
 			}}
 			interpretation, err := runDirectCodingApplicationInterpreter(
@@ -163,6 +161,6 @@ func surfaceResolutionFixtureExecutor(
 		default:
 			return assemblyline.PortableResult{}, fmt.Errorf("unexpected work kind %q", job.Kind)
 		}
-		return assemblyline.PortableResult{JobID: job.ID, Candidate: candidate}, nil
+		return assemblyline.PortableResult{Candidate: candidate}, nil
 	}
 }

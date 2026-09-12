@@ -9,7 +9,6 @@ import (
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/llm"
-	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/ollama"
 )
 
@@ -105,7 +104,6 @@ func TestLiveRequirementInventoryAuthorizationQualification(t *testing.T) {
 					UserRequest: fixture.request,
 					Context:     inventoryInput.Context,
 				},
-				model.CodingScopeModeNormal,
 				nil,
 			)
 			if err != nil {
@@ -120,9 +118,6 @@ func TestLiveRequirementInventoryAuthorizationQualification(t *testing.T) {
 			)
 			if err != nil {
 				t.Fatal(err)
-			}
-			if inventory.RawSHA256 != assemblyline.ExactObjectiveContextSHA(rawInventory) {
-				t.Fatalf("inventory raw hash=%q, want exact response hash", inventory.RawSHA256)
 			}
 			if len(inventory.Candidates) != fixture.wantRequirements {
 				t.Fatalf(
@@ -165,6 +160,5 @@ func liveRequirementInventoryInput(
 	return assemblyline.ApplicationRequirementInventoryInput{
 		UserRequest: request,
 		Context:     applicationContext,
-		ScopeMode:   model.CodingScopeModeNormal,
 	}
 }

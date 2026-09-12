@@ -132,7 +132,7 @@ func executeLivePortablePrompt(
 		return assemblyline.PortableResult{}, err
 	}
 	prepared, err := prepareExactStationCall(exactStationCall{
-		WorkID: job.ID, WorkKind: job.Kind, Iteration: 1, Prompt: prompt,
+		WorkInput: string(job.Payload), WorkKind: job.Kind, Iteration: 1, Prompt: prompt,
 		ContextTokens: contextTokens, MaxOutputTokens: maxOutputTokens,
 	}, modelName, nil)
 	if err != nil {
@@ -148,11 +148,7 @@ func executeLivePortablePrompt(
 	if validationErr != nil {
 		return assemblyline.PortableResult{}, validationErr
 	}
-	projection, err := assemblyline.NewExactPortableResultProjection(generation.Content)
-	if err != nil {
-		return assemblyline.PortableResult{}, err
-	}
 	return assemblyline.PortableResult{
-		JobID: job.ID, Candidate: generation.Content, Projection: &projection,
+		Candidate: generation.Content,
 	}, nil
 }

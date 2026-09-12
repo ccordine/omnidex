@@ -10,7 +10,6 @@ services:
       args:
         APP_UID: ${HOST_UID:?HOST_UID must match the owner of HOST_DIRECTORY_ACCESS_ROOT}
         APP_GID: ${HOST_GID:?HOST_GID must match the group of HOST_DIRECTORY_ACCESS_ROOT}
-        OMNIDEX_COMMIT: ${OMNIDEX_COMMIT:-}
     # APP_UID/APP_GID keep the image account aligned with the explicit runtime
     # identity above and with the host-authoritative workspace bind.
     # Bubblewrap creates the unprivileged user namespace that encloses

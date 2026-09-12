@@ -10,10 +10,9 @@ const (
 )
 
 type DatabaseSchemaRelationChoiceResult struct {
-	Schema          string `json:"schema"`
-	AuthoritySHA256 string `json:"authority_sha256"`
-	RelationID      string `json:"relation_id"`
-	NoAdditional    bool   `json:"no_additional"`
+	Schema       string `json:"schema"`
+	RelationID   string `json:"relation_id"`
+	NoAdditional bool   `json:"no_additional"`
 }
 
 func NewDatabaseSchemaRelationChoiceJob(
@@ -66,13 +65,8 @@ func DecodeDatabaseSchemaRelationChoiceResult(
 	if err != nil {
 		return zero, err
 	}
-	authoritySHA256, err := databaseSchemaSemanticAuthoritySHA256(input, input.validate)
-	if err != nil {
-		return zero, err
-	}
 	result := DatabaseSchemaRelationChoiceResult{
-		Schema: DatabaseSchemaRelationChoiceSchemaV1, AuthoritySHA256: authoritySHA256,
-	}
+		Schema: DatabaseSchemaRelationChoiceSchemaV1}
 	if selected == databaseSchemaNoAdditionalRelationChoice {
 		result.NoAdditional = true
 	} else {
@@ -121,13 +115,6 @@ func (result DatabaseSchemaRelationChoiceResult) ValidateFor(
 	}
 	if result.Schema != DatabaseSchemaRelationChoiceSchemaV1 {
 		return fmt.Errorf("database schema relation choice schema must be %q", DatabaseSchemaRelationChoiceSchemaV1)
-	}
-	authoritySHA256, err := databaseSchemaSemanticAuthoritySHA256(input, input.validate)
-	if err != nil {
-		return err
-	}
-	if result.AuthoritySHA256 != authoritySHA256 {
-		return fmt.Errorf("database schema relation choice authority hash does not match")
 	}
 	if result.NoAdditional {
 		if result.RelationID != "" {

@@ -27,19 +27,17 @@ const (
 )
 
 type ApplicationContextFact struct {
-	ID           string                      `json:"id"`
-	Kind         ApplicationContextFactKind  `json:"kind"`
-	Authority    ApplicationContextAuthority `json:"authority"`
-	NeedID       string                      `json:"need_id,omitempty"`
-	Value        string                      `json:"value"`
-	SourceID     string                      `json:"source_id"`
-	SourceSHA256 string                      `json:"source_sha256"`
+	ID        string                      `json:"id"`
+	Kind      ApplicationContextFactKind  `json:"kind"`
+	Authority ApplicationContextAuthority `json:"authority"`
+	NeedID    string                      `json:"need_id,omitempty"`
+	Value     string                      `json:"value"`
+	SourceID  string                      `json:"source_id"`
 }
 
 type ApplicationContext struct {
-	Schema        string                   `json:"schema"`
-	RequestSHA256 string                   `json:"request_sha256"`
-	Facts         []ApplicationContextFact `json:"facts"`
+	Schema string                   `json:"schema"`
+	Facts  []ApplicationContextFact `json:"facts"`
 }
 
 func validateApplicationRequest(label, request string) error {
@@ -60,8 +58,8 @@ func BootstrapApplicationContext(
 		return zero, err
 	}
 	context := ApplicationContext{
-		Schema:        ApplicationContextSchemaV1,
-		RequestSHA256: ExactObjectiveContextSHA(request), Facts: []ApplicationContextFact{},
+		Schema: ApplicationContextSchemaV1,
+		Facts:  []ApplicationContextFact{},
 	}
 	if err := context.Validate(); err != nil {
 		return zero, err
@@ -94,9 +92,6 @@ func (context ApplicationContext) Validate() error {
 		}
 		if fact.SourceID == "" || fact.SourceID != strings.TrimSpace(fact.SourceID) {
 			return fmt.Errorf("application context fact %q requires one source identity", fact.ID)
-		}
-		if fact.SourceSHA256 != ExactObjectiveContextSHA(fact.Value) {
-			return fmt.Errorf("application context fact %q source hash does not match", fact.ID)
 		}
 		if err := validateApplicationContextFactBoundary(fact); err != nil {
 			return fmt.Errorf("application context fact %q: %w", fact.ID, err)

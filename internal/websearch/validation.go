@@ -1,9 +1,8 @@
 package websearch
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -18,12 +17,12 @@ func ValidateCandidate(candidate Candidate) error {
 	if err := validateFetchedString("candidate snippet", candidate.Snippet); err != nil {
 		return err
 	}
-	expected, err := CandidateIDForURL(candidate.URL)
+	canonical, err := CanonicalizeURL(candidate.URL)
 	if err != nil {
 		return fmt.Errorf("candidate %q: %w", candidate.ID, err)
 	}
-	if candidate.ID != expected {
-		return fmt.Errorf("candidate %q does not match canonical URL", candidate.ID)
+	if canonical != candidate.URL || !validReportID(string(candidate.ID), "candidate_", maxConfiguredCandidates) {
+		return fmt.Errorf("candidate %q requires a report-local reference and canonical URL", candidate.ID)
 	}
 	if len(candidate.Sources) == 0 {
 		return fmt.Errorf("candidate %q requires at least one discovery source", candidate.ID)
@@ -54,8 +53,10 @@ func ValidateDocument(document Document) error {
 	if err := validateFetchedString("document content", document.Content); err != nil {
 		return err
 	}
-	if document.CandidateID == "" || strings.TrimSpace(document.Content) == "" {
-		return fmt.Errorf("document %q requires candidate identity and content", document.ID)
+	if !validReportID(string(document.ID), "document_", maxConfiguredDocuments) ||
+		!validReportID(string(document.CandidateID), "candidate_", maxConfiguredCandidates) ||
+		strings.TrimSpace(document.Content) == "" {
+		return fmt.Errorf("document %q requires report-local references and content", document.ID)
 	}
 	if document.ObservedAt.IsZero() || document.ObservedAt.Location() != time.UTC {
 		return fmt.Errorf("document %q requires an exact UTC observation time", document.ID)
@@ -67,17 +68,10 @@ func ValidateDocument(document Document) error {
 	if canonical != document.URL {
 		return fmt.Errorf("document %q URL is not canonical", document.ID)
 	}
-	expectedCandidate := candidateID(document.URL)
-	if document.CandidateID != expectedCandidate {
-		return fmt.Errorf("document %q candidate identity does not match URL", document.ID)
-	}
-	digest := sha256.Sum256([]byte(document.Content))
-	contentSHA := hex.EncodeToString(digest[:])
-	if contentSHA != document.ContentSHA256 {
-		return fmt.Errorf("document %q content SHA does not match content", document.ID)
-	}
-	if document.ID != documentID(document.URL, contentSHA) {
-		return fmt.Errorf("document %q identity does not match URL and content", document.ID)
-	}
 	return nil
+}
+
+func validReportID(value, prefix string, maximum int) bool {
+	ordinal, err := strconv.Atoi(strings.TrimPrefix(value, prefix))
+	return err == nil && ordinal > 0 && ordinal <= maximum && value == prefix+strconv.Itoa(ordinal)
 }

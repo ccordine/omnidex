@@ -4,10 +4,8 @@
 
 --
 
--- Exact append-only provider and semantic-validation evidence for every
--- portable station invocation. These tables are intentionally independent of
--- objective citation evidence: model bytes are operational proof, never
--- completion authority.
+-- Current-run provider calls and their code-owned validation results.
+-- Execution history supports inspection; it does not veto later completion.
 
 CREATE TABLE llm_call_evidence (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -21,7 +19,7 @@ CREATE TABLE llm_call_evidence (
     scope text NOT NULL CHECK (
         scope IN ('portable_semantic_worker','portable_fragment_worker')
     ),
-    work_id text NOT NULL CHECK (work_id ~ '^[0-9a-f]{64}$'),
+    work_input bytea CHECK (octet_length(work_input) BETWEEN 1 AND 131072),
     work_kind text NOT NULL CHECK (
         work_kind <> '' AND work_kind=btrim(work_kind) AND octet_length(work_kind) <= 128
     ),
@@ -29,14 +27,12 @@ CREATE TABLE llm_call_evidence (
     output_continuation integer NOT NULL CHECK (output_continuation=0),
     dispatch_attempt integer NOT NULL CHECK (dispatch_attempt=1),
     parent_call_evidence_id bigint
-        REFERENCES llm_call_evidence(id) ON DELETE RESTRICT,
+        REFERENCES llm_call_evidence(id) ON DELETE CASCADE,
     replaces_call_evidence_id bigint CHECK (replaces_call_evidence_id IS NULL),
     source_base_candidate text,
-    source_base_sha256 text,
     source_start_byte integer,
     source_end_byte integer,
     source_question text,
-    source_question_sha256 text,
     requested_model text NOT NULL CHECK (
         requested_model <> '' AND requested_model=btrim(requested_model)
         AND octet_length(requested_model) <= 512
@@ -47,24 +43,12 @@ CREATE TABLE llm_call_evidence (
     protocol text NOT NULL CHECK (
         protocol='omnidex.ollama-plain-completion-request.v4'
     ),
-    system_envelope text NOT NULL CHECK (
-        system_envelope <> '' AND btrim(system_envelope) <> ''
-        AND octet_length(system_envelope) <= 131072
-    ),
-    model_input text NOT NULL,
-    model_input_sha256 text NOT NULL CHECK (
-        model_input_sha256 ~ '^[0-9a-f]{64}$'
-        AND model_input_sha256=encode(pg_catalog.sha256(convert_to(model_input,'UTF8')),'hex')
-    ),
+    model_input text NOT NULL CHECK (btrim(model_input) <> ''),
     model_input_bytes integer NOT NULL CHECK (
         model_input_bytes=octet_length(model_input)
         AND model_input_bytes BETWEEN 1 AND 131072
     ),
     provider_request bytea NOT NULL,
-    provider_request_sha256 text NOT NULL CHECK (
-        provider_request_sha256 ~ '^[0-9a-f]{64}$'
-        AND provider_request_sha256=encode(pg_catalog.sha256(provider_request),'hex')
-    ),
     provider_request_bytes integer NOT NULL CHECK (
         provider_request_bytes=octet_length(provider_request)
         AND provider_request_bytes BETWEEN 1 AND 1048576
@@ -76,9 +60,9 @@ CREATE TABLE llm_call_evidence (
     output_limit_mode text NOT NULL CHECK (output_limit_mode IN ('explicit','natural')),
     created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
     CONSTRAINT llm_call_evidence_iteration_shape CHECK (
-        (iteration=1 AND parent_call_evidence_id IS NULL)
+        (iteration=1 AND parent_call_evidence_id IS NULL AND work_input IS NOT NULL)
         OR
-        (iteration>1 AND parent_call_evidence_id IS NOT NULL
+        (iteration>1 AND parent_call_evidence_id IS NOT NULL AND work_input IS NULL
          AND work_kind='fragment_generation')
     ),
     CONSTRAINT llm_call_evidence_dispatch_shape CHECK (
@@ -86,28 +70,20 @@ CREATE TABLE llm_call_evidence (
     ),
     CONSTRAINT llm_call_evidence_source_correction_shape CHECK (
         (iteration=1
-         AND source_base_candidate IS NULL AND source_base_sha256 IS NULL
+         AND source_base_candidate IS NULL
          AND source_start_byte IS NULL AND source_end_byte IS NULL
-         AND source_question IS NULL AND source_question_sha256 IS NULL)
+         AND source_question IS NULL)
         OR
         (iteration>1
          AND source_base_candidate IS NOT NULL
          AND octet_length(source_base_candidate) BETWEEN 1 AND 32768
-         AND source_base_sha256 ~ '^[0-9a-f]{64}$'
-         AND source_base_sha256=encode(
-             pg_catalog.sha256(convert_to(source_base_candidate,'UTF8')),'hex'
-         )
          AND source_start_byte>=0 AND source_end_byte>source_start_byte
          AND source_end_byte<=octet_length(source_base_candidate)
          AND (source_start_byte>0 OR
               source_end_byte<octet_length(source_base_candidate))
          AND source_question IS NOT NULL AND source_question=btrim(source_question)
          AND source_question<>'' AND octet_length(source_question)<=2048
-         AND source_question_sha256 ~ '^[0-9a-f]{64}$'
-         AND source_question_sha256=encode(
-             pg_catalog.sha256(convert_to(source_question,'UTF8')),'hex'
-         )
-         AND system_envelope=source_question || E'\n\n' || convert_from(
+         AND model_input=source_question || E'\n\n' || convert_from(
              substring(
                  convert_to(source_base_candidate,'UTF8')
                  FROM source_start_byte+1 FOR source_end_byte-source_start_byte
@@ -116,9 +92,7 @@ CREATE TABLE llm_call_evidence (
          ))
     ),
     CONSTRAINT llm_call_evidence_one_child
-        UNIQUE (parent_call_evidence_id),
-    CONSTRAINT llm_call_evidence_one_invocation
-        UNIQUE (job_id,generation,step_id,work_id,iteration)
+        UNIQUE (parent_call_evidence_id)
 );
 
 CREATE INDEX idx_llm_call_evidence_job
@@ -129,56 +103,36 @@ CREATE INDEX idx_llm_call_evidence_step_attempt
 
 CREATE TABLE llm_call_receipts (
     call_evidence_id bigint PRIMARY KEY
-        REFERENCES llm_call_evidence(id) ON DELETE RESTRICT,
+        REFERENCES llm_call_evidence(id) ON DELETE CASCADE,
     generation_receipt bytea NOT NULL CHECK (
         octet_length(generation_receipt) BETWEEN 2 AND 16384
     ),
-    generation_receipt_sha256 text NOT NULL CHECK (
-        generation_receipt_sha256 ~ '^[0-9a-f]{64}$'
-        AND generation_receipt_sha256=encode(pg_catalog.sha256(generation_receipt),'hex')
-    ),
     raw_response_present boolean NOT NULL,
     raw_response bytea,
-    raw_response_sha256 text,
     raw_response_bytes integer NOT NULL,
-    candidate text,
-    candidate_sha256 text,
+    candidate text CHECK (octet_length(candidate) <= 16777216),
     prompt_tokens integer NOT NULL CHECK (prompt_tokens >= 0),
     output_tokens integer NOT NULL CHECK (output_tokens >= 0),
     provider_duration_nanos bigint NOT NULL CHECK (provider_duration_nanos >= 0),
     output_limit_reached boolean NOT NULL,
     status text NOT NULL CHECK (status IN ('succeeded','failed')),
     error text,
-    error_sha256 text,
     elapsed_nanos bigint NOT NULL CHECK (elapsed_nanos >= 0),
     created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
-    CONSTRAINT llm_call_receipts_exact_raw_response CHECK (
+    CONSTRAINT llm_call_receipts_raw_response_shape CHECK (
         (raw_response_present AND raw_response IS NOT NULL
-         AND raw_response_sha256 ~ '^[0-9a-f]{64}$'
-         AND raw_response_sha256=encode(pg_catalog.sha256(raw_response),'hex')
          AND raw_response_bytes=octet_length(raw_response)
          AND raw_response_bytes BETWEEN 0 AND 122748929)
         OR
-        (NOT raw_response_present AND raw_response IS NULL
-         AND raw_response_sha256 IS NULL AND raw_response_bytes=0)
-    ),
-    CONSTRAINT llm_call_receipts_exact_candidate CHECK (
-        (candidate IS NULL AND candidate_sha256 IS NULL)
-        OR
-        (candidate IS NOT NULL AND candidate_sha256 ~ '^[0-9a-f]{64}$'
-         AND candidate_sha256=encode(pg_catalog.sha256(convert_to(candidate,'UTF8')),'hex')
-         AND octet_length(candidate) <= 16777216)
+        (NOT raw_response_present AND raw_response IS NULL AND raw_response_bytes=0)
     ),
     CONSTRAINT llm_call_receipts_terminal_shape CHECK (
         (status='succeeded' AND NOT output_limit_reached
-         AND error IS NULL AND error_sha256 IS NULL
-         AND candidate IS NOT NULL
+         AND error IS NULL AND candidate IS NOT NULL
          AND btrim(candidate) <> '' AND prompt_tokens > 0 AND output_tokens > 0)
         OR
         (status='failed' AND error IS NOT NULL AND error=btrim(error)
          AND error <> '' AND octet_length(error) <= 8192
-         AND error_sha256 ~ '^[0-9a-f]{64}$'
-         AND error_sha256=encode(pg_catalog.sha256(convert_to(error,'UTF8')),'hex')
          AND (NOT output_limit_reached OR
               (candidate IS NOT NULL AND btrim(candidate) <> ''
                AND prompt_tokens > 0 AND output_tokens > 0)))
@@ -187,58 +141,20 @@ CREATE TABLE llm_call_receipts (
 
 CREATE TABLE llm_call_outcomes (
     call_evidence_id bigint PRIMARY KEY
-        REFERENCES llm_call_evidence(id) ON DELETE RESTRICT,
+        REFERENCES llm_call_evidence(id) ON DELETE CASCADE,
     status text NOT NULL CHECK (status IN (
         'accepted','rejected','provider_failed','interrupted'
     )),
-    candidate_sha256 text CHECK (
-        candidate_sha256 IS NULL OR candidate_sha256 ~ '^[0-9a-f]{64}$'
-    ),
-    projection jsonb,
     validation_error text,
-    validation_error_sha256 text,
     created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
     CONSTRAINT llm_call_outcomes_terminal_shape CHECK (
-        (status='accepted' AND candidate_sha256 IS NOT NULL
-         AND projection IS NOT NULL AND validation_error IS NULL
-         AND validation_error_sha256 IS NULL)
+        (status='accepted' AND validation_error IS NULL)
         OR
-        (status='rejected' AND candidate_sha256 IS NOT NULL
+        (status IN ('rejected','provider_failed','interrupted')
          AND validation_error IS NOT NULL AND validation_error=btrim(validation_error)
-         AND validation_error <> '' AND octet_length(validation_error) <= 8192
-         AND validation_error_sha256 ~ '^[0-9a-f]{64}$'
-         AND validation_error_sha256=encode(
-             pg_catalog.sha256(convert_to(validation_error,'UTF8')),'hex'
-         ))
-        OR
-        (status='provider_failed' AND projection IS NULL
-         AND validation_error IS NOT NULL AND validation_error=btrim(validation_error)
-         AND validation_error <> '' AND octet_length(validation_error) <= 8192
-         AND validation_error_sha256 ~ '^[0-9a-f]{64}$'
-         AND validation_error_sha256=encode(
-             pg_catalog.sha256(convert_to(validation_error,'UTF8')),'hex'
-         ))
-        OR
-        (status='interrupted' AND candidate_sha256 IS NULL AND projection IS NULL
-         AND validation_error IS NOT NULL AND validation_error=btrim(validation_error)
-         AND validation_error <> '' AND octet_length(validation_error) <= 8192
-         AND validation_error_sha256 ~ '^[0-9a-f]{64}$'
-         AND validation_error_sha256=encode(
-             pg_catalog.sha256(convert_to(validation_error,'UTF8')),'hex'
-         ))
-    ),
-    CONSTRAINT llm_call_outcomes_projection_bound CHECK (
-        projection IS NULL OR octet_length(projection::text) <= 8192
+         AND validation_error <> '' AND octet_length(validation_error) <= 8192)
     )
 );
-
-CREATE FUNCTION prevent_llm_call_evidence_mutation() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    RAISE EXCEPTION 'LLM call evidence is immutable';
-END;
-$$;
 
 CREATE FUNCTION validate_llm_call_outcome_insert() RETURNS trigger
     LANGUAGE plpgsql
@@ -265,12 +181,10 @@ BEGIN
         RAISE EXCEPTION 'LLM call outcome lacks an exact provider receipt';
     ELSIF NEW.status='provider_failed' THEN
         IF receipt.status <> 'failed' OR
-           NEW.validation_error IS DISTINCT FROM receipt.error OR
-           NEW.candidate_sha256 IS DISTINCT FROM receipt.candidate_sha256 THEN
+           NEW.validation_error IS DISTINCT FROM receipt.error THEN
             RAISE EXCEPTION 'provider failure outcome differs from exact call evidence';
         END IF;
-    ELSIF receipt.status <> 'succeeded' OR
-          NEW.candidate_sha256 IS DISTINCT FROM receipt.candidate_sha256 THEN
+    ELSIF receipt.status <> 'succeeded' THEN
         RAISE EXCEPTION 'semantic outcome differs from exact successful call evidence';
     END IF;
     RETURN NEW;
@@ -295,6 +209,13 @@ BEGIN
 	END IF;
 	IF attempt_status<>'active' THEN
 		RAISE EXCEPTION 'inactive step attempt cannot reserve new LLM call evidence';
+	END IF;
+	IF NEW.iteration=1 AND EXISTS (
+		SELECT 1 FROM llm_call_evidence
+		WHERE job_id=NEW.job_id AND generation=NEW.generation AND step_id=NEW.step_id
+		  AND iteration=1 AND work_kind=NEW.work_kind AND work_input=NEW.work_input
+	) THEN
+		RAISE EXCEPTION 'initial semantic work already has a persisted provider call';
 	END IF;
 	IF NEW.iteration>1 THEN
 		SELECT calls.*,
@@ -328,7 +249,6 @@ BEGIN
 		        prior_call.prior_attempt_status='expired')
 		   ) OR
 		   prior_call.scope<>NEW.scope OR
-		   prior_call.work_id<>NEW.work_id OR
 		   prior_call.work_kind<>NEW.work_kind OR
 		   prior_call.requested_model<>NEW.requested_model OR
 		   prior_call.model<>NEW.model OR
@@ -380,16 +300,9 @@ CREATE FUNCTION require_llm_call_outcomes_before_attempt_completion() RETURNS tr
     AS $$
 BEGIN
 	IF NEW.status IN ('canceled','superseded','expired') THEN
-		INSERT INTO llm_call_outcomes (
-			call_evidence_id,status,candidate_sha256,projection,
-			validation_error,validation_error_sha256
-		)
-		SELECT call.id,'interrupted',NULL,NULL,
-		       format('step attempt transitioned to %s before a provider receipt was journaled',NEW.status),
-		       encode(pg_catalog.sha256(convert_to(
-			       format('step attempt transitioned to %s before a provider receipt was journaled',NEW.status),
-			       'UTF8'
-		       )),'hex')
+		INSERT INTO llm_call_outcomes (call_evidence_id,status,validation_error)
+		SELECT call.id,'interrupted',
+		       format('step attempt transitioned to %s before a provider response arrived',NEW.status)
 		FROM llm_call_evidence AS call
 		LEFT JOIN llm_call_receipts AS receipt ON receipt.call_evidence_id=call.id
 		LEFT JOIN llm_call_outcomes AS outcome ON outcome.call_evidence_id=call.id
@@ -421,69 +334,22 @@ BEGIN
 	) THEN
         RAISE EXCEPTION 'step attempt cannot finish with unterminated LLM call evidence';
     END IF;
-	IF NEW.status='completed' AND EXISTS (
-		SELECT 1
-		FROM llm_call_evidence AS call
-		LEFT JOIN llm_call_receipts AS receipt ON receipt.call_evidence_id=call.id
-		JOIN llm_call_outcomes AS outcome ON outcome.call_evidence_id=call.id
-			WHERE call.job_id=NEW.job_id AND call.generation=NEW.generation
-			  AND call.step_id=NEW.step_id AND call.step_attempt=NEW.attempt
-			  AND call.worker_id=NEW.worker_id
-			  AND (
-			      receipt.call_evidence_id IS NULL OR outcome.status='interrupted' OR
-			      outcome.status='provider_failed'
-			  )
-		) THEN
-		RAISE EXCEPTION 'step attempt cannot complete after an unfinished or failed LLM call';
-	END IF;
-	IF NEW.status='completed' AND EXISTS (
-		SELECT 1
-		FROM verification_command_evidence AS command
-		WHERE command.job_id=NEW.job_id AND command.generation=NEW.generation
-		  AND command.step_id=NEW.step_id AND command.step_attempt=NEW.attempt
-		  AND command.worker_id=NEW.worker_id AND command.status <> 'succeeded'
-	) THEN
-		RAISE EXCEPTION 'step attempt cannot complete after failed verification command evidence';
-	END IF;
+
     RETURN NEW;
 END;
 $$;
-
-CREATE TRIGGER llm_call_evidence_immutable
-    BEFORE DELETE OR UPDATE ON llm_call_evidence
-    FOR EACH ROW EXECUTE FUNCTION prevent_llm_call_evidence_mutation();
 
 CREATE TRIGGER llm_call_evidence_validate_insert
     BEFORE INSERT ON llm_call_evidence
     FOR EACH ROW EXECUTE FUNCTION validate_llm_call_evidence_insert();
 
-CREATE TRIGGER llm_call_evidence_truncate_immutable
-    BEFORE TRUNCATE ON llm_call_evidence
-    FOR EACH STATEMENT EXECUTE FUNCTION prevent_llm_call_evidence_mutation();
-
 CREATE TRIGGER llm_call_outcomes_validate_insert
     BEFORE INSERT ON llm_call_outcomes
     FOR EACH ROW EXECUTE FUNCTION validate_llm_call_outcome_insert();
 
-CREATE TRIGGER llm_call_outcomes_immutable
-    BEFORE DELETE OR UPDATE ON llm_call_outcomes
-    FOR EACH ROW EXECUTE FUNCTION prevent_llm_call_evidence_mutation();
-
-CREATE TRIGGER llm_call_outcomes_truncate_immutable
-    BEFORE TRUNCATE ON llm_call_outcomes
-    FOR EACH STATEMENT EXECUTE FUNCTION prevent_llm_call_evidence_mutation();
-
 CREATE TRIGGER llm_call_receipts_validate_insert
     BEFORE INSERT ON llm_call_receipts
     FOR EACH ROW EXECUTE FUNCTION validate_llm_call_receipt_insert();
-
-CREATE TRIGGER llm_call_receipts_immutable
-    BEFORE DELETE OR UPDATE ON llm_call_receipts
-    FOR EACH ROW EXECUTE FUNCTION prevent_llm_call_evidence_mutation();
-
-CREATE TRIGGER llm_call_receipts_truncate_immutable
-    BEFORE TRUNCATE ON llm_call_receipts
-    FOR EACH STATEMENT EXECUTE FUNCTION prevent_llm_call_evidence_mutation();
 
 CREATE TABLE verification_command_evidence (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -500,18 +366,9 @@ CREATE TABLE verification_command_evidence (
     )),
     ordinal bigint NOT NULL CHECK (ordinal > 0),
     argv bytea NOT NULL,
-    argv_sha256 text NOT NULL CHECK (
-        argv_sha256 ~ '^[0-9a-f]{64}$'
-        AND argv_sha256=encode(pg_catalog.sha256(argv),'hex')
-    ),
     environment bytea NOT NULL,
-    environment_sha256 text NOT NULL CHECK (
-        environment_sha256 ~ '^[0-9a-f]{64}$'
-        AND environment_sha256=encode(pg_catalog.sha256(environment),'hex')
-    ),
     stdin_present boolean NOT NULL,
     stdin bytea,
-    stdin_sha256 text,
     working_directory text NOT NULL CHECK (
         working_directory LIKE '/%' AND working_directory=btrim(working_directory)
         AND octet_length(working_directory) BETWEEN 1 AND 4096
@@ -524,24 +381,10 @@ CREATE TABLE verification_command_evidence (
 	observation_error text,
     stdout bytea NOT NULL CHECK (octet_length(stdout) <= 1048576),
 	stdout_complete boolean NOT NULL,
-    stdout_sha256 text NOT NULL CHECK (
-        stdout_sha256 ~ '^[0-9a-f]{64}$'
-        AND stdout_sha256=encode(pg_catalog.sha256(stdout),'hex')
-    ),
     stderr bytea NOT NULL CHECK (octet_length(stderr) <= 1048576),
 	stderr_complete boolean NOT NULL,
-    stderr_sha256 text NOT NULL CHECK (
-        stderr_sha256 ~ '^[0-9a-f]{64}$'
-        AND stderr_sha256=encode(pg_catalog.sha256(stderr),'hex')
-    ),
-    workspace_sha256_before text CHECK (
-        workspace_sha256_before IS NULL OR workspace_sha256_before ~ '^[0-9a-f]{64}$'
-    ),
-    workspace_sha256_after text CHECK (
-        workspace_sha256_after IS NULL OR workspace_sha256_after ~ '^[0-9a-f]{64}$'
-    ),
 	status text NOT NULL CHECK (status IN (
-		'succeeded','exit_failed','launch_failed','workspace_changed','observation_failed'
+		'succeeded','exit_failed','launch_failed','observation_failed'
 	)),
     created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
     CONSTRAINT verification_command_argv_bound CHECK (
@@ -555,11 +398,9 @@ CREATE TABLE verification_command_evidence (
         AND jsonb_array_length(convert_from(environment,'UTF8')::jsonb) BETWEEN 0 AND 64
     ),
     CONSTRAINT verification_command_stdin_shape CHECK (
-        (stdin_present AND stdin IS NOT NULL AND octet_length(stdin) <= 1048576
-         AND stdin_sha256 ~ '^[0-9a-f]{64}$'
-         AND stdin_sha256=encode(pg_catalog.sha256(stdin),'hex'))
+        (stdin_present AND stdin IS NOT NULL AND octet_length(stdin) <= 1048576)
         OR
-        (NOT stdin_present AND stdin IS NULL AND stdin_sha256 IS NULL)
+        (NOT stdin_present AND stdin IS NULL)
     ),
     CONSTRAINT verification_command_time_shape CHECK (
         finished_at >= started_at
@@ -579,13 +420,6 @@ CREATE TABLE verification_command_evidence (
          AND launch_error=btrim(launch_error) AND launch_error<>''
          AND octet_length(launch_error) <= 8192)
 		OR
-		(status='workspace_changed' AND observation_error IS NULL
-		 AND ((exit_code IS NOT NULL AND launch_error IS NULL
-		       AND stdout_complete AND stderr_complete) OR
-		      (exit_code IS NULL AND launch_error IS NOT NULL
-		       AND launch_error=btrim(launch_error) AND launch_error<>''
-		       AND octet_length(launch_error) <= 8192)))
-		OR
 		(status='observation_failed' AND observation_error IS NOT NULL
 		 AND observation_error=btrim(observation_error) AND observation_error<>''
 		 AND octet_length(observation_error) <= 8192
@@ -594,24 +428,6 @@ CREATE TABLE verification_command_evidence (
 		      (exit_code IS NULL AND launch_error IS NOT NULL
 		       AND launch_error=btrim(launch_error) AND launch_error<>''
 		       AND octet_length(launch_error) <= 8192)))
-    ),
-    CONSTRAINT verification_command_workspace_shape CHECK (
-		(phase NOT IN ('host_install','host_final','host_cleanup') OR
-		 workspace_sha256_before IS NOT NULL)
-		AND (workspace_sha256_after IS NULL OR workspace_sha256_before IS NOT NULL)
-		AND (
-			(status='observation_failed' AND workspace_sha256_before IS NOT NULL
-			 AND workspace_sha256_after IS NULL)
-			OR
-			(status='workspace_changed' AND workspace_sha256_before IS NOT NULL
-			 AND workspace_sha256_after IS NOT NULL
-			 AND workspace_sha256_before<>workspace_sha256_after)
-			OR
-			(status NOT IN ('observation_failed','workspace_changed')
-			 AND (workspace_sha256_before IS NULL)=(workspace_sha256_after IS NULL)
-			 AND (workspace_sha256_before IS NULL OR
-			      workspace_sha256_before=workspace_sha256_after))
-		)
     ),
     CONSTRAINT verification_command_one_ordinal
         UNIQUE (job_id,generation,step_id,step_attempt,ordinal)
@@ -662,25 +478,9 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION prevent_verification_command_evidence_mutation() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    RAISE EXCEPTION 'verification command evidence is immutable';
-END;
-$$;
-
 CREATE TRIGGER verification_command_evidence_validate_insert
     BEFORE INSERT ON verification_command_evidence
     FOR EACH ROW EXECUTE FUNCTION validate_verification_command_evidence_insert();
-
-CREATE TRIGGER verification_command_evidence_immutable
-    BEFORE DELETE OR UPDATE ON verification_command_evidence
-    FOR EACH ROW EXECUTE FUNCTION prevent_verification_command_evidence_mutation();
-
-CREATE TRIGGER verification_command_evidence_truncate_immutable
-    BEFORE TRUNCATE ON verification_command_evidence
-    FOR EACH STATEMENT EXECUTE FUNCTION prevent_verification_command_evidence_mutation();
 
 --
 -- Name: apply_scrum_card_message_counters(); Type: FUNCTION; Schema: current runtime; Owner: -
@@ -974,7 +774,6 @@ BEGIN
     FROM lifecycle_operation_registry
     WHERE operation_id=NEW.operation_id
       AND kind=NEW.kind
-      AND command_sha256=NEW.command_sha256
     FOR SHARE;
     IF NOT FOUND OR NEW.kind<>'channel_session_turn' OR
        jsonb_typeof(payload)<>'object' OR
@@ -982,7 +781,7 @@ BEGIN
        (payload - ARRAY['operation_id','channel_id','workspace_root','workspace_identity','text'])<>'{}'::jsonb OR
        payload->>'operation_id'<>NEW.operation_id OR
        payload->>'channel_id'<>NEW.channel_id OR
-       payload->>'workspace_identity' !~ '^directory_identity_v1_[0-9a-f]{64}$' OR
+       payload->>'workspace_identity' !~ '^directory_(0|[1-9][0-9]{0,19})_[1-9][0-9]{0,19}$' OR
        NOT lifecycle_feedback_is_valid(payload->>'text',4096) THEN
         RAISE EXCEPTION 'Channel session operation differs from its exact registry command';
     END IF;
@@ -1212,21 +1011,19 @@ CREATE FUNCTION own_scrum_channel_operation_insert() RETURNS trigger
     AS $$
 DECLARE
     registry_payload JSONB;
-    registry_sha TEXT;
     effect_job BIGINT;
 BEGIN
     IF NEW.created_at IS NOT NULL THEN
         RAISE EXCEPTION 'Scrum operation forbids caller-supplied created_at';
     END IF;
-    SELECT command_payload,command_sha256 INTO registry_payload,registry_sha
+    SELECT command_payload INTO registry_payload
     FROM lifecycle_operation_registry
     WHERE operation_id=NEW.operation_id AND kind='scrum_channel_message' FOR SHARE;
     IF NOT FOUND OR NOT scrum_valid_channel_command(registry_payload) OR
        registry_payload->>'operation_id'<>NEW.operation_id OR
        (registry_payload->>'project_id')::BIGINT<>NEW.project_id OR
-       registry_payload->>'card_id'<>NEW.card_id OR
-       registry_sha<>scrum_channel_command_sha256(registry_payload) THEN
-        RAISE EXCEPTION 'Scrum operation registry payload or digest differs';
+       registry_payload->>'card_id'<>NEW.card_id THEN
+        RAISE EXCEPTION 'Scrum operation registry payload differs';
     END IF;
     PERFORM 1 FROM jobs AS job
     JOIN scrum_cards AS card ON card.project_id=NEW.project_id AND card.id=NEW.card_id
@@ -1254,10 +1051,6 @@ BEGIN
             RAISE EXCEPTION 'Scrum start operation lacks exact job origin';
         END IF;
     ELSE
-        IF NEW.effect_operation_id<>scrum_effect_operation_id(
-          NEW.operation_id,NEW.effect_kind,NEW.job_id) THEN
-            RAISE EXCEPTION 'Scrum operation effect identity is not derived from its command';
-        END IF;
         SELECT job_id INTO effect_job FROM job_lifecycle_operations
         WHERE operation_id=NEW.effect_operation_id AND kind=NEW.effect_kind
           AND command_payload->>'operation_id'=NEW.effect_operation_id
@@ -1468,7 +1261,7 @@ BEGIN
             'roleplay_generation_config','roleplay_responders','roleplay_user_turn',
             'roleplay_simulation_preparation_id','roleplay_world_id','roleplay_scene_id',
             'roleplay_scene_revision','roleplay_input_kind',
-            'roleplay_participant_character_ids','roleplay_narrative_fingerprint'
+            'roleplay_participant_character_ids'
         ] LOOP
             IF NEW.metadata->binding_key IS DISTINCT FROM OLD.metadata->binding_key THEN
                 RAISE EXCEPTION 'chat turn binding authority % is immutable',binding_key;
@@ -1827,7 +1620,7 @@ SELECT
    (jsonb_typeof(payload -> 'workspace_root') = 'string') AND
    (octet_length(payload ->> 'workspace_root') BETWEEN 1 AND 4096) AND
    (jsonb_typeof(payload -> 'workspace_identity') = 'string') AND
-   ((payload ->> 'workspace_identity') ~ '^directory_identity_v1_[0-9a-f]{64}$'));
+   ((payload ->> 'workspace_identity') ~ '^directory_(0|[1-9][0-9]{0,19})_[1-9][0-9]{0,19}$'));
 $$;
 
 
@@ -1848,7 +1641,7 @@ BEGIN
         RETURN NEW;
     END IF;
     IF NOT (NEW.command_payload ?& ARRAY['workspace_root','workspace_identity']) OR
-       NEW.command_payload->>'workspace_identity' !~ '^directory_identity_v1_[0-9a-f]{64}$' THEN
+       NEW.command_payload->>'workspace_identity' !~ '^directory_(0|[1-9][0-9]{0,19})_[1-9][0-9]{0,19}$' THEN
         RAISE EXCEPTION 'Lifecycle workspace authority is incomplete or invalid';
     END IF;
     SELECT metadata->>'client_cwd', metadata->>'client_workspace_identity'
@@ -2237,7 +2030,7 @@ BEGIN
         RETURN NEW;
     END IF;
     IF preparation_count<>1 OR target_preparation_id<>NEW.operation_id OR
-       NOT roleplay_terminal_simulation_publication_valid(target_preparation_id,NULL) THEN
+       NOT roleplay_terminal_simulation_publication_valid(target_preparation_id) THEN
         RAISE EXCEPTION
             'prepared simulation transition requires one exact terminal roleplay completion';
     END IF;
@@ -2254,10 +2047,7 @@ CREATE FUNCTION require_terminal_roleplay_turn_advance() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
-    IF NOT roleplay_terminal_simulation_publication_valid(
-        NEW.preparation_id,
-        NEW.operation_id
-    ) THEN
+    IF NOT roleplay_terminal_simulation_publication_valid(NEW.preparation_id) THEN
         RAISE EXCEPTION
             'simulation turn advance requires one exact terminal roleplay completion';
     END IF;
@@ -2542,46 +2332,6 @@ $$;
 
 
 --
--- Name: roleplay_portable_result_reuse_authority(jsonb); Type: FUNCTION; Schema: current runtime; Owner: -
---
-
-CREATE FUNCTION roleplay_portable_result_reuse_authority(metadata jsonb) RETURNS jsonb
-    LANGUAGE sql IMMUTABLE STRICT
-    AS $$
-    SELECT CASE
-        WHEN metadata->>'channel_mode'='roleplay' AND
-             COALESCE(metadata->>'channel_id','')<>'' AND
-             COALESCE(metadata->>'roleplay_world_id','')<>'' AND
-             COALESCE(metadata->>'roleplay_scene_id','')<>'' AND
-             jsonb_typeof(metadata->'roleplay_scene_revision')='number' AND
-             COALESCE(metadata->>'roleplay_input_kind','')<>'' AND
-             jsonb_typeof(metadata->'roleplay_user_turn')='object' AND
-             jsonb_typeof(metadata->'roleplay_participant_character_ids')='array' AND
-             jsonb_typeof(metadata->'roleplay_responders')='array'
-        THEN jsonb_build_object(
-            'channel_id',metadata->'channel_id',
-            'world_id',metadata->'roleplay_world_id',
-            'scene_id',metadata->'roleplay_scene_id',
-            'scene_revision',metadata->'roleplay_scene_revision',
-            'input_kind',metadata->'roleplay_input_kind',
-            'user_turn',metadata->'roleplay_user_turn',
-            'participant_character_ids',metadata->'roleplay_participant_character_ids',
-            'responders',(
-                SELECT jsonb_agg(jsonb_build_object(
-                    'position',responder.value->'position',
-                    'character_id',responder.value->'character_id',
-                    'narrative_fingerprint',responder.value->'narrative_fingerprint'
-                ) ORDER BY responder.ordinality)
-                FROM jsonb_array_elements(metadata->'roleplay_responders')
-                     WITH ORDINALITY AS responder(value,ordinality)
-            )
-        )
-        ELSE NULL
-    END;
-$$;
-
-
---
 -- Name: roleplay_response_round_valid(jsonb); Type: FUNCTION; Schema: current runtime; Owner: -
 --
 
@@ -2624,13 +2374,10 @@ BEGIN
            (route->>'position')::integer<>index_value OR
            responder->>'character_id'<>route->>'character_id' OR
            responder->'generation_config'<>route->'generation_config' OR
-           responder->>'narrative_fingerprint'<>route->>'narrative_fingerprint' OR
            responder->'narrative_authority'->>'viewpoint_id'<>responder->>'character_id' OR
            responder->'narrative_authority'->>'world_id'<>result_value->>'world_id' OR
            responder->'narrative_authority'->>'scene_id'<>result_value->>'scene_id' OR
            responder->'narrative_authority'->>'scene_revision'<>result_value->>'scene_revision' OR
-           responder->'narrative_authority'->>'fingerprint'<>
-               responder->>'narrative_fingerprint' OR
            jsonb_typeof(responder->'narrative_projection')<>'object' OR
            jsonb_typeof(responder->'generation_config')<>'object' OR
            NOT roleplay_initiative_clock_valid(
@@ -2642,8 +2389,7 @@ BEGIN
     responder := result_value->'responders'->0;
     RETURN result_value->'generation_config'=responder->'generation_config' AND
            result_value->'narrative_projection'=responder->'narrative_projection' AND
-           result_value->'narrative_authority'=responder->'narrative_authority' AND
-           result_value->>'narrative_fingerprint'=responder->>'narrative_fingerprint';
+           result_value->'narrative_authority'=responder->'narrative_authority';
 EXCEPTION WHEN OTHERS THEN
     RETURN FALSE;
 END;
@@ -2651,10 +2397,10 @@ $$;
 
 
 --
--- Name: roleplay_terminal_simulation_publication_valid(text, text); Type: FUNCTION; Schema: current runtime; Owner: -
+-- Name: roleplay_terminal_simulation_publication_valid(text); Type: FUNCTION; Schema: current runtime; Owner: -
 --
 
-CREATE FUNCTION roleplay_terminal_simulation_publication_valid(target_preparation_id text, target_advance_operation_id text) RETURNS boolean
+CREATE FUNCTION roleplay_terminal_simulation_publication_valid(target_preparation_id text) RETURNS boolean
     LANGUAGE sql STABLE
     AS $$
     SELECT COUNT(*)=1
@@ -2677,8 +2423,6 @@ CREATE FUNCTION roleplay_terminal_simulation_publication_valid(target_preparatio
          AND operation.result_job_status='completed'
          AND operation.result_step_status='completed'
         WHERE preparation.operation_id=target_preparation_id
-          AND (target_advance_operation_id IS NULL OR
-               advance.operation_id=target_advance_operation_id)
           AND advance.world_id=preparation.world_id
           AND advance.scene_id=preparation.scene_id
           AND advance.before_revision=preparation.scene_revision
@@ -3242,34 +2986,10 @@ CREATE FUNCTION scrum_canonical_timestamp(value timestamp with time zone) RETURN
     RETURN (isfinite(value) AND (value = date_trunc('microseconds'::text, value)) AND ((EXTRACT(year FROM (value AT TIME ZONE 'UTC'::text)) >= (1)::numeric) AND (EXTRACT(year FROM (value AT TIME ZONE 'UTC'::text)) <= (9999)::numeric)));
 
 
---
--- Name: scrum_json_string(text); Type: FUNCTION; Schema: current runtime; Owner: -
---
-
-CREATE FUNCTION scrum_json_string(value text) RETURNS text
-    LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
-    SET search_path TO 'pg_catalog', '__OMNIDEX_RUNTIME_SCHEMA__', 'pg_temp'
-    RETURN replace(replace(replace(replace(replace((to_json(value))::text, '<'::text, '\u003c'::text), '>'::text, '\u003e'::text), '&'::text, '\u0026'::text), chr(8232), '\u2028'::text), chr(8233), '\u2029'::text);
 
 
---
--- Name: scrum_channel_command_text(jsonb); Type: FUNCTION; Schema: current runtime; Owner: -
---
-
-CREATE FUNCTION scrum_channel_command_text(payload jsonb) RETURNS text
-    LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
-    SET search_path TO 'pg_catalog', '__OMNIDEX_RUNTIME_SCHEMA__', 'pg_temp'
-    RETURN (((((((('{"operation_id":'::text || scrum_json_string((payload ->> 'operation_id'::text))) || ',"project_id":'::text) || (((payload ->> 'project_id'::text))::bigint)::text) || ',"card_id":'::text) || scrum_json_string((payload ->> 'card_id'::text))) || ',"message":'::text) || scrum_json_string((payload ->> 'message'::text))) || '}'::text);
 
 
---
--- Name: scrum_channel_command_sha256(jsonb); Type: FUNCTION; Schema: current runtime; Owner: -
---
-
-CREATE FUNCTION scrum_channel_command_sha256(payload jsonb) RETURNS text
-    LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
-    SET search_path TO 'pg_catalog', '__OMNIDEX_RUNTIME_SCHEMA__', 'pg_temp'
-    RETURN encode(pg_catalog.sha256((((int8send((octet_length('omnidex.scrum-channel-operation.v1'::text))::bigint) || convert_to('omnidex.scrum-channel-operation.v1'::text, 'UTF8'::name)) || int8send((octet_length(scrum_channel_command_text(payload)))::bigint)) || convert_to(scrum_channel_command_text(payload), 'UTF8'::name))), 'hex'::text);
 
 
 --
@@ -3282,14 +3002,6 @@ CREATE FUNCTION scrum_database_time() RETURNS timestamp with time zone
     RETURN date_trunc('microseconds'::text, clock_timestamp());
 
 
---
--- Name: scrum_effect_operation_id(text, text, bigint); Type: FUNCTION; Schema: current runtime; Owner: -
---
-
-CREATE FUNCTION scrum_effect_operation_id(outer_operation_id text, effect_kind text, job_id bigint) RETURNS text
-    LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
-    SET search_path TO 'pg_catalog', '__OMNIDEX_RUNTIME_SCHEMA__', 'pg_temp'
-    RETURN ('lifecycle_operation_'::text || encode(pg_catalog.sha256((((((((((int8send((octet_length('omnidex.lifecycle-operation-identity.v1'::text))::bigint) || convert_to('omnidex.lifecycle-operation-identity.v1'::text, 'UTF8'::name)) || int8send((octet_length('scrum-channel-effect.v1'::text))::bigint)) || convert_to('scrum-channel-effect.v1'::text, 'UTF8'::name)) || int8send((octet_length(outer_operation_id))::bigint)) || convert_to(outer_operation_id, 'UTF8'::name)) || int8send((octet_length(effect_kind))::bigint)) || convert_to(effect_kind, 'UTF8'::name)) || int8send((octet_length((job_id)::text))::bigint)) || convert_to((job_id)::text, 'UTF8'::name))), 'hex'::text));
 
 
 --
@@ -3320,7 +3032,7 @@ CREATE FUNCTION scrum_trim_space(value text) RETURNS text
 CREATE FUNCTION scrum_valid_channel_command(payload jsonb) RETURNS boolean
     LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
     SET search_path TO 'pg_catalog', '__OMNIDEX_RUNTIME_SCHEMA__', 'pg_temp'
-    RETURN ((jsonb_typeof(payload) = 'object'::text) AND (payload ?& ARRAY['operation_id'::text, 'project_id'::text, 'card_id'::text, 'message'::text]) AND ((payload - ARRAY['operation_id'::text, 'project_id'::text, 'card_id'::text, 'message'::text]) = '{}'::jsonb) AND (jsonb_typeof((payload -> 'operation_id'::text)) = 'string'::text) AND ((payload ->> 'operation_id'::text) ~ '^lifecycle_operation_[0-9a-f]{64}$'::text) AND (jsonb_typeof((payload -> 'project_id'::text)) = 'number'::text) AND ((payload -> 'project_id'::text) = to_jsonb(((payload ->> 'project_id'::text))::bigint)) AND (((payload ->> 'project_id'::text))::bigint > 0) AND (jsonb_typeof((payload -> 'card_id'::text)) = 'string'::text) AND ((octet_length((payload ->> 'card_id'::text)) >= 1) AND (octet_length((payload ->> 'card_id'::text)) <= 256)) AND ((payload ->> 'card_id'::text) = scrum_trim_space((payload ->> 'card_id'::text))) AND (jsonb_typeof((payload -> 'message'::text)) = 'string'::text) AND ((octet_length((payload ->> 'message'::text)) >= 1) AND (octet_length((payload ->> 'message'::text)) <= 4096)) AND (scrum_trim_space((payload ->> 'message'::text)) <> ''::text));
+    RETURN ((jsonb_typeof(payload) = 'object'::text) AND (payload ?& ARRAY['operation_id'::text, 'project_id'::text, 'card_id'::text, 'message'::text]) AND ((payload - ARRAY['operation_id'::text, 'project_id'::text, 'card_id'::text, 'message'::text]) = '{}'::jsonb) AND (jsonb_typeof((payload -> 'operation_id'::text)) = 'string'::text) AND ((payload ->> 'operation_id'::text) ~ '^lifecycle_operation_[a-z0-9_]{1,128}$'::text) AND (jsonb_typeof((payload -> 'project_id'::text)) = 'number'::text) AND ((payload -> 'project_id'::text) = to_jsonb(((payload ->> 'project_id'::text))::bigint)) AND (((payload ->> 'project_id'::text))::bigint > 0) AND (jsonb_typeof((payload -> 'card_id'::text)) = 'string'::text) AND ((octet_length((payload ->> 'card_id'::text)) >= 1) AND (octet_length((payload ->> 'card_id'::text)) <= 256)) AND ((payload ->> 'card_id'::text) = scrum_trim_space((payload ->> 'card_id'::text))) AND (jsonb_typeof((payload -> 'message'::text)) = 'string'::text) AND ((octet_length((payload ->> 'message'::text)) >= 1) AND (octet_length((payload ->> 'message'::text)) <= 4096)) AND (scrum_trim_space((payload ->> 'message'::text)) <> ''::text));
 
 
 --
@@ -3334,10 +3046,10 @@ CREATE FUNCTION scrum_valid_message_id(value text) RETURNS boolean
 
 
 --
--- Name: validate_database_evidence_receipt_insert(); Type: FUNCTION; Schema: current runtime; Owner: -
+-- Name: validate_database_evidence_insert(); Type: FUNCTION; Schema: current runtime; Owner: -
 --
 
-CREATE FUNCTION validate_database_evidence_receipt_insert() RETURNS trigger
+CREATE FUNCTION validate_database_evidence_insert() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -3352,11 +3064,10 @@ BEGIN
       AND jsonb_typeof(job.metadata->'data_source_id')='string'
       AND job.metadata->>'data_source_id'=NEW.data_source_id
       AND channel.data_source_id=NEW.data_source_id
-      AND source.schema_catalog->>'fingerprint'=NEW.schema_fingerprint
     FOR KEY SHARE OF job,channel,source;
     IF NOT FOUND THEN
         RAISE EXCEPTION
-            'database evidence receipt does not match its exact channel and job source binding';
+            'database evidence does not match its channel and job source binding';
     END IF;
     RETURN NEW;
 END;
@@ -3664,7 +3375,6 @@ BEGIN
           AND job.metadata->>'roleplay_scene_id'=preparation.scene_id
           AND job.metadata->>'roleplay_scene_revision'=preparation.scene_revision::text
           AND job.metadata->>'roleplay_input_kind'=preparation.input_kind
-          AND job.metadata->>'roleplay_narrative_fingerprint'=preparation.result->>'narrative_fingerprint'
           AND job.metadata->>'roleplay_viewpoint_character_id'=
               preparation.result->'responder_routes'->0->>'character_id'
           AND job.metadata->'roleplay_participant_character_ids'=
@@ -3700,20 +3410,13 @@ BEGIN
           AND item.job_id=completion.job_id
           AND item.kind='objective_citation'
           AND item.source_type='web_document'
-          AND item.source_ref=NEW.source_ref
-          AND item.payload_json->>'hash'=NEW.source_sha256
-          AND item.payload_json->>'source_ref'=NEW.source_ref
           AND item.payload_json#>>'{metadata,capsule_id}'=NEW.capsule_id
-          AND item.payload_json#>>'{metadata,source_sha256}'=NEW.source_sha256
           AND item.payload_json#>>'{metadata,authority_namespace}'='REAL_WORLD'
           AND item.payload_json#>>'{metadata,roleplay_research_preparation_id}'=research.preparation_id
           AND item.payload_json#>>'{metadata,roleplay_research_world_id}'=research.world_id
           AND item.payload_json#>>'{metadata,roleplay_research_character_id}'=research.character_id
-          AND item.payload_json#>>'{metadata,roleplay_research_question_sha256}'=research.question_sha256
           AND item.payload_json#>>'{metadata,roleplay_research_capability_grant_id}'=research.capability_grant_id
           AND item.payload_json#>'{metadata,paragraph_indexes}'=NEW.paragraph_indexes
-          AND (item.payload_json#>>'{metadata,source_observed_at}')::timestamptz=NEW.observed_at
-          AND (item.payload_json#>>'{metadata,source_truncated}')::boolean=NEW.truncated
     ) THEN
         RAISE EXCEPTION 'research citation differs from exact REAL_WORLD completion evidence';
     END IF;
@@ -3752,7 +3455,7 @@ BEGIN
          AND operation.kind='complete_step'
          AND operation.command_payload->>'context_key'='objective_result'
         WHERE binding.preparation_id=NEW.preparation_id AND binding.job_id=NEW.job_id
-          AND encode(pg_catalog.sha256(convert_to(message.content,'UTF8')),'hex')=NEW.rendered_sha256
+          AND message.content=operation.command_payload->>'output'
           AND evidence_set.evidence_count BETWEEN 1 AND 4
           AND objective_completion_evidence_set_is_valid(NEW.operation_id)
     ) OR EXISTS (
@@ -3831,9 +3534,7 @@ CREATE FUNCTION validate_roleplay_research_turn() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
-    IF NEW.question_sha256<>
-       encode(pg_catalog.sha256(convert_to(NEW.question,'UTF8')),'hex') OR
-       NOT EXISTS (
+    IF NOT EXISTS (
            SELECT 1
            FROM roleplay_simulation_turn_preparations AS preparation
            JOIN ai_channel_messages AS message
@@ -3858,7 +3559,6 @@ BEGIN
              AND preparation.active_character_id=NEW.character_id
              AND preparation.input_kind='external_command'
              AND NOT preparation.explicit_action
-			 AND preparation.result->>'narrative_fingerprint'=NEW.narrative_fingerprint
              AND message.content='/research '||to_json(NEW.question)::text
        ) THEN
         RAISE EXCEPTION
@@ -3945,13 +3645,11 @@ BEGIN
            NEW.before_initiative_round,NEW.before_initiative_turn,NEW.before_fictional_time_tick,
            NEW.after_initiative_round,NEW.after_initiative_turn,NEW.after_fictional_time_tick,
            NEW.previous_character_id,NEW.active_character_id,NEW.participant_character_ids
-       ) OR NEW.result->>'operation_id'<>NEW.operation_id OR
-       NEW.result->>'preparation_id'<>NEW.preparation_id OR
+       ) OR NEW.result->>'preparation_id'<>NEW.preparation_id OR
        NEW.result->>'world_id'<>NEW.world_id OR NEW.result->>'scene_id'<>NEW.scene_id OR
        NEW.result->>'previous_character_id'<>NEW.previous_character_id OR
        NEW.result->>'active_character_id'<>NEW.active_character_id OR
        NEW.result->'participant_character_ids'<>NEW.participant_character_ids OR
-       NEW.result->>'narrative_fingerprint'<>NEW.narrative_fingerprint OR
        (NEW.result->>'before_revision')::bigint<>NEW.before_revision OR
        (NEW.result->>'after_revision')::bigint<>NEW.after_revision THEN
         RAISE EXCEPTION 'simulation turn advance does not match exact preparation, scene, initiative, or result authority';
@@ -4345,9 +4043,16 @@ CREATE TABLE ai_channels (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     scope text NOT NULL,
     workspace_root text NOT NULL,
+    cli_workspace_identity text,
     data_source_id text,
     mode text DEFAULT 'assistant'::text NOT NULL,
     roleplay_viewpoint_character_id text,
+    CONSTRAINT ai_channels_cli_workspace_check CHECK (
+        (cli_workspace_identity IS NULL AND id NOT LIKE 'cli-chat-%') OR
+        (cli_workspace_identity IS NOT NULL AND
+         cli_workspace_identity ~ '^directory_(0|[1-9][0-9]{0,19})_[1-9][0-9]{0,19}$' AND
+         id ~ '^cli-chat-[0-9a-f]{32}$' AND mode = 'assistant' AND data_source_id IS NULL)
+    ),
     CONSTRAINT ai_channels_identity_check CHECK ((id ~ '^[a-z0-9][a-z0-9_.:-]{0,95}$'::text)),
     CONSTRAINT ai_channels_mode_check CHECK ((mode = ANY (ARRAY['assistant'::text, 'roleplay'::text]))),
     CONSTRAINT ai_channels_name_check CHECK ((((octet_length(name) >= 1) AND (octet_length(name) <= 256)) AND (name = btrim(name)))),
@@ -4366,7 +4071,6 @@ CREATE TABLE ai_channels (
 CREATE TABLE channel_session_turn_operations (
     operation_id text NOT NULL,
     kind text NOT NULL,
-    command_sha256 text NOT NULL,
     channel_id text NOT NULL,
     job_id bigint NOT NULL,
     result_generation bigint NOT NULL,
@@ -4375,10 +4079,9 @@ CREATE TABLE channel_session_turn_operations (
     result_step_id bigint,
     result_job jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
-    CONSTRAINT channel_session_turn_operations_command_sha256_check CHECK ((command_sha256 ~ '^[0-9a-f]{64}$'::text)),
     CONSTRAINT channel_session_turn_operations_disposition_check CHECK ((disposition = ANY (ARRAY['enqueued'::text, 'replanned'::text, 'feedback_submitted'::text]))),
     CONSTRAINT channel_session_turn_operations_kind_check CHECK ((kind = 'channel_session_turn'::text)),
-    CONSTRAINT channel_session_turn_operations_operation_id_check CHECK ((operation_id ~ '^lifecycle_operation_[0-9a-f]{64}$'::text)),
+    CONSTRAINT channel_session_turn_operations_operation_id_check CHECK ((operation_id ~ '^lifecycle_operation_[a-z0-9_]{1,128}$'::text)),
     CONSTRAINT channel_session_turn_operations_result_generation_check CHECK ((result_generation > 0)),
     CONSTRAINT channel_session_turn_operations_result_job_check CHECK (((jsonb_typeof(result_job) = 'object'::text) AND (result_job ? 'id'::text) AND (result_job ? 'current_generation'::text) AND (result_job ? 'status'::text) AND (((result_job ->> 'id'::text))::bigint = job_id) AND (((result_job ->> 'current_generation'::text))::bigint = result_generation) AND ((result_job ->> 'status'::text) = ANY (ARRAY['pending'::text, 'running'::text, 'completed'::text, 'failed'::text, 'canceled'::text, 'waiting_input'::text])))),
     CONSTRAINT channel_session_turn_operations_shape_check CHECK ((((disposition = 'enqueued'::text) AND (result_generation = 1) AND (user_message_id IS NOT NULL) AND (result_step_id IS NULL)) OR ((disposition = 'replanned'::text) AND (result_generation > 1) AND (user_message_id IS NULL) AND (result_step_id IS NULL)) OR ((disposition = 'feedback_submitted'::text) AND (user_message_id IS NULL) AND (result_step_id IS NOT NULL))))
@@ -4433,7 +4136,17 @@ CREATE TABLE data_sources (
     CONSTRAINT data_sources_identity_check CHECK ((id ~ '^[a-z0-9][a-z0-9_.:-]{0,127}$'::text)),
     CONSTRAINT data_sources_name_check CHECK (((name <> ''::text) AND (name = btrim(name)))),
     CONSTRAINT data_sources_read_only_check CHECK (read_only),
-    CONSTRAINT data_sources_schema_snapshot_shape_check CHECK (((schema_catalog IS NULL) OR ((execution_mode = 'direct'::text) AND (jsonb_typeof(schema_catalog) = 'object'::text) AND (schema_catalog ?& ARRAY['schema'::text, 'source_id'::text, 'source_name'::text, 'driver'::text, 'fingerprint'::text, 'captured_at'::text, 'relations'::text]) AND ((schema_catalog - ARRAY['schema'::text, 'source_id'::text, 'source_name'::text, 'driver'::text, 'fingerprint'::text, 'captured_at'::text, 'relations'::text]) = '{}'::jsonb) AND ((schema_catalog ->> 'schema'::text) = 'omnidex.datasource-schema.v1'::text) AND ((schema_catalog ->> 'source_id'::text) = id) AND (jsonb_typeof((schema_catalog -> 'source_name'::text)) = 'string'::text) AND ((schema_catalog ->> 'driver'::text) = 'postgres'::text) AND ((schema_catalog ->> 'fingerprint'::text) ~ '^[0-9a-f]{64}$'::text) AND (jsonb_typeof((schema_catalog -> 'captured_at'::text)) = 'string'::text) AND (jsonb_typeof((schema_catalog -> 'relations'::text)) = 'array'::text) AND (jsonb_array_length((schema_catalog -> 'relations'::text)) > 0))))
+    CONSTRAINT data_sources_schema_snapshot_shape_check CHECK (
+        schema_catalog IS NULL OR (
+            execution_mode='direct' AND jsonb_typeof(schema_catalog)='object' AND
+            schema_catalog ?& ARRAY['schema','source_id','source_name','driver','captured_at','relations'] AND
+            schema_catalog - ARRAY['schema','source_id','source_name','driver','captured_at','relations']='{}'::jsonb AND
+            schema_catalog->>'schema'='omnidex.datasource-schema.v1' AND
+            schema_catalog->>'source_id'=id AND jsonb_typeof(schema_catalog->'source_name')='string' AND
+            schema_catalog->>'driver'='postgres' AND jsonb_typeof(schema_catalog->'captured_at')='string' AND
+            jsonb_typeof(schema_catalog->'relations')='array' AND jsonb_array_length(schema_catalog->'relations')>0
+        )
+    )
 );
 
 
@@ -4452,36 +4165,34 @@ ALTER TABLE data_sources ALTER COLUMN sort_order ADD GENERATED BY DEFAULT AS IDE
 
 
 --
--- Name: database_evidence_receipts; Type: TABLE; Schema: current runtime; Owner: -
+-- Name: database_evidence; Type: TABLE; Schema: current runtime; Owner: -
 --
 
-CREATE TABLE database_evidence_receipts (
+CREATE TABLE database_evidence (
     id bigint NOT NULL,
     job_id bigint NOT NULL,
     data_source_id text NOT NULL,
-    schema_fingerprint text NOT NULL,
-    intent_hash text NOT NULL,
-    query_hash text NOT NULL,
-    result_hash text NOT NULL,
+    schema_snapshot jsonb NOT NULL CHECK (jsonb_typeof(schema_snapshot)='object'),
+    query_plan jsonb NOT NULL CHECK (jsonb_typeof(query_plan)='object'),
+    query_text text NOT NULL CHECK (octet_length(query_text)>0),
+    query_parameters jsonb NOT NULL CHECK (jsonb_typeof(query_parameters)='array'),
+    result_json jsonb NOT NULL CHECK (jsonb_typeof(result_json)='object'),
     plan_total_cost double precision NOT NULL,
     plan_estimated_rows bigint NOT NULL,
     returned_rows integer NOT NULL,
     result_bytes integer NOT NULL,
     acquired_at timestamp with time zone NOT NULL,
+    duration_ms bigint NOT NULL CHECK (duration_ms>=0),
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT database_evidence_intent_hash_check CHECK ((intent_hash ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT database_evidence_metrics_check CHECK (((plan_total_cost >= (0)::double precision) AND (plan_total_cost <= ('1000000000000'::bigint)::double precision) AND (plan_estimated_rows >= 0) AND (plan_estimated_rows <= 1000000000) AND (returned_rows >= 0) AND (returned_rows <= 500) AND (result_bytes >= 0) AND (result_bytes <= 4194304) AND isfinite(acquired_at))),
-    CONSTRAINT database_evidence_query_hash_check CHECK ((query_hash ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT database_evidence_result_hash_check CHECK ((result_hash ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT database_evidence_schema_hash_check CHECK ((schema_fingerprint ~ '^[0-9a-f]{64}$'::text))
+    CONSTRAINT database_evidence_metrics_check CHECK (((plan_total_cost >= (0)::double precision) AND (plan_total_cost <= ('1000000000000'::bigint)::double precision) AND (plan_estimated_rows >= 0) AND (plan_estimated_rows <= 1000000000) AND (returned_rows >= 0) AND (returned_rows <= 500) AND (result_bytes >= 0) AND (result_bytes <= 4194304) AND isfinite(acquired_at)))
 );
 
 
 --
--- Name: database_evidence_receipts_id_seq; Type: SEQUENCE; Schema: current runtime; Owner: -
+-- Name: database_evidence_id_seq; Type: SEQUENCE; Schema: current runtime; Owner: -
 --
 
-CREATE SEQUENCE database_evidence_receipts_id_seq
+CREATE SEQUENCE database_evidence_id_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -4490,10 +4201,10 @@ CREATE SEQUENCE database_evidence_receipts_id_seq
 
 
 --
--- Name: database_evidence_receipts_id_seq; Type: SEQUENCE OWNED BY; Schema: current runtime; Owner: -
+-- Name: database_evidence_id_seq; Type: SEQUENCE OWNED BY; Schema: current runtime; Owner: -
 --
 
-ALTER SEQUENCE database_evidence_receipts_id_seq OWNED BY database_evidence_receipts.id;
+ALTER SEQUENCE database_evidence_id_seq OWNED BY database_evidence.id;
 
 
 --
@@ -4546,9 +4257,8 @@ CREATE TABLE job_generations (
     predecessor_generation bigint,
     boundary_action text,
     feedback text,
-    feedback_sha256 text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT job_generations_authoritative_shape CHECK ((((generation = 1) AND (purpose = 'initial'::text) AND (predecessor_generation IS NULL) AND (boundary_action IS NULL) AND (feedback IS NULL) AND (feedback_sha256 IS NULL)) OR ((generation > 1) AND (purpose = ANY (ARRAY['interrupt'::text, 'replan'::text])) AND (predecessor_generation = (generation - 1)) AND (boundary_action = ANY (ARRAY['v3_coding_plan'::text, 'objective_resolve'::text])) AND lifecycle_feedback_is_valid(feedback, 4096) AND (feedback_sha256 ~ '^[0-9a-f]{64}$'::text) AND (feedback_sha256 = encode(pg_catalog.sha256(convert_to(feedback, 'UTF8')), 'hex'::text))))),
+    CONSTRAINT job_generations_authoritative_shape CHECK ((((generation = 1) AND (purpose = 'initial'::text) AND (predecessor_generation IS NULL) AND (boundary_action IS NULL) AND (feedback IS NULL)) OR ((generation > 1) AND (purpose = ANY (ARRAY['interrupt'::text, 'replan'::text])) AND (predecessor_generation = (generation - 1)) AND (boundary_action = ANY (ARRAY['v3_coding_plan'::text, 'objective_resolve'::text])) AND lifecycle_feedback_is_valid(feedback, 4096)))),
     CONSTRAINT job_generations_generation_check CHECK ((generation > 0)),
     CONSTRAINT job_generations_purpose_check CHECK ((purpose = ANY (ARRAY['initial'::text, 'interrupt'::text, 'replan'::text])))
 );
@@ -4565,7 +4275,6 @@ CREATE TABLE job_lifecycle_operations (
     result_generation bigint NOT NULL,
     step_id bigint,
     kind text NOT NULL,
-    command_sha256 text NOT NULL,
     command_payload jsonb NOT NULL,
     result_job_status text NOT NULL,
     result_step_status text,
@@ -4579,10 +4288,9 @@ CASE
     WHEN (kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text])) THEN ((command_payload ? 'step_id'::text) AND (((command_payload ->> 'step_id'::text))::bigint = step_id))
     ELSE ((command_payload ? 'job_id'::text) AND (((command_payload ->> 'job_id'::text))::bigint = job_id))
 END),
-    CONSTRAINT job_lifecycle_operations_command_sha256_check CHECK ((command_sha256 ~ '^[0-9a-f]{64}$'::text)),
     CONSTRAINT job_lifecycle_operations_kind_check CHECK ((kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text, 'submit_feedback'::text, 'interrupt_job'::text, 'replan_job'::text, 'cancel_job'::text, 'coding_plan_decisions'::text, 'coding_plan_freeze'::text]))),
     CONSTRAINT job_lifecycle_operations_observed_generation_check CHECK ((observed_generation > 0)),
-    CONSTRAINT job_lifecycle_operations_operation_id_check CHECK ((operation_id ~ '^lifecycle_operation_[0-9a-f]{64}$'::text)),
+    CONSTRAINT job_lifecycle_operations_operation_id_check CHECK ((operation_id ~ '^lifecycle_operation_[a-z0-9_]{1,128}$'::text)),
     CONSTRAINT job_lifecycle_operations_result_generation_check CHECK ((result_generation > 0)),
     CONSTRAINT job_lifecycle_operations_result_job_status_check CHECK ((result_job_status = ANY (ARRAY['pending'::text, 'running'::text, 'completed'::text, 'failed'::text, 'canceled'::text, 'waiting_input'::text]))),
     CONSTRAINT job_lifecycle_operations_result_step_status_check CHECK (((result_step_status IS NULL) OR (result_step_status = ANY (ARRAY['completed'::text, 'failed'::text, 'waiting_input'::text]))))
@@ -4710,13 +4418,11 @@ ALTER SEQUENCE jobs_id_seq OWNED BY jobs.id;
 CREATE TABLE lifecycle_operation_registry (
     operation_id text NOT NULL,
     kind text NOT NULL,
-    command_sha256 text NOT NULL,
     command_payload jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT lifecycle_operation_registry_check CHECK (((jsonb_typeof(command_payload) = 'object'::text) AND (command_payload ? 'operation_id'::text) AND ((command_payload ->> 'operation_id'::text) = operation_id))),
-    CONSTRAINT lifecycle_operation_registry_command_sha256_check CHECK ((command_sha256 ~ '^[0-9a-f]{64}$'::text)),
     CONSTRAINT lifecycle_operation_registry_kind_check CHECK ((kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text, 'submit_feedback'::text, 'interrupt_job'::text, 'replan_job'::text, 'channel_session_turn'::text, 'scrum_channel_message'::text, 'cancel_job'::text, 'coding_plan_decisions'::text, 'coding_plan_freeze'::text]))),
-    CONSTRAINT lifecycle_operation_registry_operation_id_check CHECK ((operation_id ~ '^lifecycle_operation_[0-9a-f]{64}$'::text))
+    CONSTRAINT lifecycle_operation_registry_operation_id_check CHECK ((operation_id ~ '^lifecycle_operation_[a-z0-9_]{1,128}$'::text))
 );
 
 
@@ -5359,10 +5065,6 @@ CREATE TABLE roleplay_research_completion_citations (
     completion_index integer NOT NULL,
     evidence_id bigint NOT NULL,
     capsule_id text NOT NULL,
-    source_ref text NOT NULL,
-    source_sha256 text NOT NULL,
-    observed_at timestamp with time zone NOT NULL,
-    truncated boolean NOT NULL,
     paragraph_indexes jsonb NOT NULL,
     authority_namespace text DEFAULT 'REAL_WORLD'::text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -5370,9 +5072,7 @@ CREATE TABLE roleplay_research_completion_citations (
     CONSTRAINT roleplay_research_completion_citation_authority_namespace_check CHECK ((authority_namespace = 'REAL_WORLD'::text)),
     CONSTRAINT roleplay_research_completion_citations_capsule_id_check CHECK ((((octet_length(capsule_id) >= 1) AND (octet_length(capsule_id) <= 128)) AND (capsule_id = btrim(capsule_id)))),
     CONSTRAINT roleplay_research_completion_citations_completion_index_check CHECK (((completion_index >= 0) AND (completion_index <= 3))),
-    CONSTRAINT roleplay_research_completion_citations_paragraph_indexes_check CHECK (((jsonb_typeof(paragraph_indexes) = 'array'::text) AND ((jsonb_array_length(paragraph_indexes) >= 1) AND (jsonb_array_length(paragraph_indexes) <= 4)))),
-    CONSTRAINT roleplay_research_completion_citations_source_ref_check CHECK ((((octet_length(source_ref) >= 1) AND (octet_length(source_ref) <= 2048)) AND (source_ref = btrim(source_ref)))),
-    CONSTRAINT roleplay_research_completion_citations_source_sha256_check CHECK ((source_sha256 ~ '^[0-9a-f]{64}$'::text))
+    CONSTRAINT roleplay_research_completion_citations_paragraph_indexes_check CHECK (((jsonb_typeof(paragraph_indexes) = 'array'::text) AND ((jsonb_array_length(paragraph_indexes) >= 1) AND (jsonb_array_length(paragraph_indexes) <= 4))))
 );
 
 
@@ -5385,11 +5085,9 @@ CREATE TABLE roleplay_research_completions (
     preparation_id text NOT NULL,
     job_id bigint NOT NULL,
     source_message_id bigint NOT NULL,
-    rendered_sha256 text NOT NULL,
     authority_namespace text DEFAULT 'REAL_WORLD'::text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT roleplay_research_completions_authority_namespace_check CHECK ((authority_namespace = 'REAL_WORLD'::text)),
-    CONSTRAINT roleplay_research_completions_rendered_sha256_check CHECK ((rendered_sha256 ~ '^[0-9a-f]{64}$'::text))
+    CONSTRAINT roleplay_research_completions_authority_namespace_check CHECK ((authority_namespace = 'REAL_WORLD'::text))
 );
 
 
@@ -5419,16 +5117,12 @@ CREATE TABLE roleplay_research_turns (
     capability text NOT NULL,
     capability_grant_id text NOT NULL,
     question text NOT NULL,
-    question_sha256 text NOT NULL,
-    narrative_fingerprint text NOT NULL,
     authority_namespace text DEFAULT 'REAL_WORLD'::text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT roleplay_research_turns_authority_namespace_check CHECK ((authority_namespace = 'REAL_WORLD'::text)),
     CONSTRAINT roleplay_research_turns_capability_check CHECK ((capability = 'web_research'::text)),
-    CONSTRAINT roleplay_research_turns_narrative_fingerprint_check CHECK ((narrative_fingerprint ~ '^[0-9a-f]{64}$'::text)),
     CONSTRAINT roleplay_research_turns_question_check CHECK ((((octet_length(question) >= 1) AND (octet_length(question) <= 1024)) AND (question = btrim(question)) AND (POSITION(('
 '::text) IN (question)) = 0) AND (POSITION((''::text) IN (question)) = 0))),
-    CONSTRAINT roleplay_research_turns_question_sha256_check CHECK ((question_sha256 ~ '^[0-9a-f]{64}$'::text)),
     CONSTRAINT roleplay_research_turns_scene_revision_check CHECK ((scene_revision >= 1))
 );
 
@@ -5473,7 +5167,6 @@ CREATE TABLE roleplay_simulation_transitions (
     exact_action text NOT NULL,
     action_kind text NOT NULL,
     command_key text NOT NULL,
-    request_sha256 text NOT NULL,
     result jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     observer_character_ids jsonb,
@@ -5485,7 +5178,6 @@ CREATE TABLE roleplay_simulation_transitions (
     CONSTRAINT roleplay_simulation_transitions_command_key_check CHECK ((octet_length(command_key) <= 32)),
     CONSTRAINT roleplay_simulation_transitions_exact_action_check CHECK ((octet_length(exact_action) <= 1060)),
     CONSTRAINT roleplay_simulation_transitions_operation_id_check CHECK ((operation_id ~ '^rpt_[0-9a-f]{32}$'::text)),
-    CONSTRAINT roleplay_simulation_transitions_request_sha256_check CHECK ((request_sha256 ~ '^[0-9a-f]{64}$'::text)),
     CONSTRAINT roleplay_simulation_transitions_result_check CHECK (((jsonb_typeof(result) = 'object'::text) AND (octet_length((result)::text) <= 65536) AND (result ?& ARRAY['schema'::text, 'operation_id'::text, 'world_id'::text, 'scene_id'::text, 'actor_character_id'::text, 'before_revision'::text, 'after_revision'::text, 'action'::text, 'effects'::text, 'narrative_events'::text, 'created_at'::text]) AND (jsonb_typeof((result -> 'action'::text)) = 'object'::text) AND (jsonb_typeof((result -> 'effects'::text)) = 'array'::text) AND (jsonb_typeof((result -> 'narrative_events'::text)) = 'array'::text)))
 );
 
@@ -5509,7 +5201,6 @@ ALTER TABLE roleplay_simulation_transitions ALTER COLUMN ordinal ADD GENERATED A
 --
 
 CREATE TABLE roleplay_simulation_turn_advances (
-    operation_id text NOT NULL,
     preparation_id text NOT NULL,
     job_id bigint NOT NULL,
     world_id text NOT NULL,
@@ -5519,8 +5210,6 @@ CREATE TABLE roleplay_simulation_turn_advances (
     previous_character_id text NOT NULL,
     active_character_id text NOT NULL,
     participant_character_ids jsonb NOT NULL,
-    narrative_fingerprint text NOT NULL,
-    request_sha256 text NOT NULL,
     result jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     before_initiative_round bigint NOT NULL,
@@ -5533,10 +5222,7 @@ CREATE TABLE roleplay_simulation_turn_advances (
     CONSTRAINT roleplay_simulation_turn_advances_before_revision_check CHECK ((before_revision >= 1)),
     CONSTRAINT roleplay_simulation_turn_advances_check CHECK ((after_revision = (before_revision + 1))),
     CONSTRAINT roleplay_simulation_turn_advances_initiative_check CHECK (roleplay_initiative_advance_valid(before_initiative_round, before_initiative_turn, before_fictional_time_tick, after_initiative_round, after_initiative_turn, after_fictional_time_tick, previous_character_id, active_character_id, participant_character_ids)),
-    CONSTRAINT roleplay_simulation_turn_advances_narrative_fingerprint_check CHECK ((narrative_fingerprint ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT roleplay_simulation_turn_advances_operation_id_check CHECK ((operation_id ~ '^rpt_[0-9a-f]{32}$'::text)),
-    CONSTRAINT roleplay_simulation_turn_advances_request_sha256_check CHECK ((request_sha256 ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT roleplay_simulation_turn_advances_result_check CHECK (((jsonb_typeof(result) = 'object'::text) AND (octet_length((result)::text) <= 32768) AND (result ?& ARRAY['operation_id'::text, 'preparation_id'::text, 'world_id'::text, 'scene_id'::text, 'previous_character_id'::text, 'active_character_id'::text, 'before_revision'::text, 'after_revision'::text, 'before_initiative'::text, 'after_initiative'::text, 'participant_character_ids'::text, 'narrative_fingerprint'::text, 'created_at'::text]) AND ((result -> 'before_initiative'::text) = jsonb_build_object('round', before_initiative_round, 'turn', before_initiative_turn, 'fictional_time_tick', before_fictional_time_tick)) AND ((result -> 'after_initiative'::text) = jsonb_build_object('round', after_initiative_round, 'turn', after_initiative_turn, 'fictional_time_tick', after_fictional_time_tick)) AND (jsonb_typeof((result -> 'participant_character_ids'::text)) = 'array'::text)))
+    CONSTRAINT roleplay_simulation_turn_advances_result_check CHECK (((jsonb_typeof(result) = 'object'::text) AND (octet_length((result)::text) <= 32768) AND (result ?& ARRAY['preparation_id'::text, 'world_id'::text, 'scene_id'::text, 'previous_character_id'::text, 'active_character_id'::text, 'before_revision'::text, 'after_revision'::text, 'before_initiative'::text, 'after_initiative'::text, 'participant_character_ids'::text, 'created_at'::text]) AND ((result -> 'before_initiative'::text) = jsonb_build_object('round', before_initiative_round, 'turn', before_initiative_turn, 'fictional_time_tick', before_fictional_time_tick)) AND ((result -> 'after_initiative'::text) = jsonb_build_object('round', after_initiative_round, 'turn', after_initiative_turn, 'fictional_time_tick', after_fictional_time_tick)) AND (jsonb_typeof((result -> 'participant_character_ids'::text)) = 'array'::text)))
 );
 
 
@@ -5550,7 +5236,6 @@ CREATE TABLE roleplay_simulation_turn_preparations (
     user_message_id bigint NOT NULL,
     world_id text NOT NULL,
     scene_id text NOT NULL,
-    request_sha256 text NOT NULL,
     base_scene_revision bigint NOT NULL,
     scene_revision bigint NOT NULL,
     active_character_id text NOT NULL,
@@ -5568,8 +5253,7 @@ CREATE TABLE roleplay_simulation_turn_preparations (
     CONSTRAINT roleplay_simulation_turn_preparations_check3 CHECK (((pending_transition_id IS NULL) = (scene_revision = base_scene_revision))),
     CONSTRAINT roleplay_simulation_turn_preparations_input_kind_check CHECK ((input_kind = ANY (ARRAY['prose'::text, 'simulation_action'::text, 'external_command'::text]))),
     CONSTRAINT roleplay_simulation_turn_preparations_operation_id_check CHECK ((operation_id ~ '^rpt_[0-9a-f]{32}$'::text)),
-    CONSTRAINT roleplay_simulation_turn_preparations_request_sha256_check CHECK ((request_sha256 ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT roleplay_simulation_turn_preparations_result_check CHECK (((jsonb_typeof(result) = 'object'::text) AND (octet_length((result)::text) <= 524288) AND (result ?& ARRAY['preparation_id'::text, 'channel_id'::text, 'user_message_id'::text, 'world_id'::text, 'scene_id'::text, 'base_scene_revision'::text, 'scene_revision'::text, 'active_character_id'::text, 'user_turn'::text, 'input_kind'::text, 'explicit_action'::text, 'participant_character_ids'::text, 'generation_config'::text, 'narrative_projection'::text, 'narrative_authority'::text, 'narrative_fingerprint'::text, 'responders'::text, 'responder_routes'::text, 'created_at'::text]) AND roleplay_response_round_valid(result))),
+    CONSTRAINT roleplay_simulation_turn_preparations_result_check CHECK (((jsonb_typeof(result) = 'object'::text) AND (octet_length((result)::text) <= 524288) AND (result ?& ARRAY['preparation_id'::text, 'channel_id'::text, 'user_message_id'::text, 'world_id'::text, 'scene_id'::text, 'base_scene_revision'::text, 'scene_revision'::text, 'active_character_id'::text, 'user_turn'::text, 'input_kind'::text, 'explicit_action'::text, 'participant_character_ids'::text, 'generation_config'::text, 'narrative_projection'::text, 'narrative_authority'::text, 'responders'::text, 'responder_routes'::text, 'created_at'::text]) AND roleplay_response_round_valid(result))),
     CONSTRAINT roleplay_simulation_turn_preparations_scene_revision_check CHECK ((scene_revision >= 1))
 );
 
@@ -5591,7 +5275,7 @@ CREATE TABLE roleplay_turn_completions (
     CONSTRAINT roleplay_turn_completions_authority_check CHECK ((authority_namespace = 'FICTIONAL_CANON'::text)),
     CONSTRAINT roleplay_turn_completions_facts_check CHECK (((jsonb_typeof(facts) = 'array'::text) AND (jsonb_array_length(facts) <= 8))),
     CONSTRAINT roleplay_turn_completions_knowledge_check CHECK (((jsonb_typeof(knowledge_character_ids) = 'array'::text) AND (jsonb_array_length(knowledge_character_ids) <= 16) AND ((jsonb_array_length(facts) > 0) OR (jsonb_array_length(knowledge_character_ids) = 0)))),
-    CONSTRAINT roleplay_turn_completions_operation_check CHECK ((operation_id ~ '^lifecycle_operation_[0-9a-f]{64}$'::text)),
+    CONSTRAINT roleplay_turn_completions_operation_check CHECK ((operation_id ~ '^lifecycle_operation_[a-z0-9_]{1,128}$'::text)),
     CONSTRAINT roleplay_turn_completions_position_check CHECK (((response_position >= 0) AND (response_position <= 15)))
 );
 
@@ -5615,7 +5299,7 @@ CREATE TABLE roleplay_user_canon_completions (
     CONSTRAINT roleplay_user_canon_completions_persona_kind_check CHECK ((persona_kind = ANY (ARRAY['character'::text, 'narrator'::text]))),
     CONSTRAINT roleplay_user_canon_facts_check CHECK (((jsonb_typeof(facts) = 'array'::text) AND (jsonb_array_length(facts) <= 8))),
     CONSTRAINT roleplay_user_canon_knowledge_check CHECK (((jsonb_typeof(knowledge_character_ids) = 'array'::text) AND (jsonb_array_length(knowledge_character_ids) <= 16) AND ((jsonb_array_length(facts) > 0) OR (jsonb_array_length(knowledge_character_ids) = 0)))),
-    CONSTRAINT roleplay_user_canon_operation_check CHECK ((operation_id ~ '^lifecycle_operation_[0-9a-f]{64}$'::text)),
+    CONSTRAINT roleplay_user_canon_operation_check CHECK ((operation_id ~ '^lifecycle_operation_[a-z0-9_]{1,128}$'::text)),
     CONSTRAINT roleplay_user_canon_persona_check CHECK ((((persona_kind = 'character'::text) AND (actor_character_id IS NOT NULL)) OR ((persona_kind = 'narrator'::text) AND (actor_character_id IS NULL))))
 );
 
@@ -5743,7 +5427,7 @@ CREATE TABLE scrum_channel_operations (
     created_at timestamp with time zone NOT NULL,
     CONSTRAINT scrum_channel_operations_created_at_check CHECK (scrum_canonical_timestamp(created_at)),
     CONSTRAINT scrum_channel_operations_effect_kind_check CHECK ((effect_kind = ANY (ARRAY['start_job'::text, 'replan_job'::text, 'submit_feedback'::text]))),
-    CONSTRAINT scrum_channel_operations_effect_operation_id_check CHECK ((effect_operation_id ~ '^lifecycle_operation_[0-9a-f]{64}$'::text)),
+    CONSTRAINT scrum_channel_operations_effect_operation_id_check CHECK ((effect_operation_id ~ '^lifecycle_operation_[a-z0-9_]{1,128}$'::text)),
     CONSTRAINT scrum_channel_operations_result_action_check CHECK ((result_action = ANY (ARRAY['started'::text, 'replanned'::text, 'feedback'::text])))
 );
 
@@ -5790,7 +5474,7 @@ CREATE TABLE step_completion_evidence_sets (
     CONSTRAINT step_completion_evidence_sets_check CHECK ((evidence_count = jsonb_array_length(records_json))),
     CONSTRAINT step_completion_evidence_sets_evidence_count_check CHECK (((evidence_count >= 0) AND (evidence_count <= 32))),
     CONSTRAINT step_completion_evidence_sets_generation_check CHECK ((generation > 0)),
-    CONSTRAINT step_completion_evidence_sets_operation_id_check CHECK ((operation_id ~ '^lifecycle_operation_[0-9a-f]{64}$'::text)),
+    CONSTRAINT step_completion_evidence_sets_operation_id_check CHECK ((operation_id ~ '^lifecycle_operation_[a-z0-9_]{1,128}$'::text)),
     CONSTRAINT step_completion_evidence_sets_records_json_check CHECK ((jsonb_typeof(records_json) = 'array'::text)),
     CONSTRAINT step_completion_evidence_sets_worker_id_check CHECK (((worker_id <> ''::text) AND (worker_id = btrim(worker_id)) AND (octet_length(worker_id) <= 256)))
 );
@@ -5834,7 +5518,7 @@ CREATE VIEW channel_conversation_followup_events AS
     turn.created_at,
     turn.operation_id
    FROM (channel_session_turn_operations turn
-     JOIN lifecycle_operation_registry registry ON (((registry.operation_id = turn.operation_id) AND (registry.kind = turn.kind) AND (registry.command_sha256 = turn.command_sha256))))
+     JOIN lifecycle_operation_registry registry ON (((registry.operation_id = turn.operation_id) AND (registry.kind = turn.kind))))
   WHERE (turn.disposition = ANY (ARRAY['replanned'::text, 'feedback_submitted'::text]))
 UNION ALL
  SELECT (job.metadata ->> 'channel_id'::text) AS channel_id,
@@ -5899,10 +5583,10 @@ ALTER TABLE ONLY ai_channel_messages ALTER COLUMN id SET DEFAULT nextval('ai_cha
 
 
 --
--- Name: database_evidence_receipts id; Type: DEFAULT; Schema: current runtime; Owner: -
+-- Name: database_evidence id; Type: DEFAULT; Schema: current runtime; Owner: -
 --
 
-ALTER TABLE ONLY database_evidence_receipts ALTER COLUMN id SET DEFAULT nextval('database_evidence_receipts_id_seq'::regclass);
+ALTER TABLE ONLY database_evidence ALTER COLUMN id SET DEFAULT nextval('database_evidence_id_seq'::regclass);
 
 
 --
@@ -6002,10 +5686,10 @@ SELECT pg_catalog.setval('data_sources_sort_order_seq', 1, false);
 
 
 --
--- Name: database_evidence_receipts_id_seq; Type: SEQUENCE SET; Schema: current runtime; Owner: -
+-- Name: database_evidence_id_seq; Type: SEQUENCE SET; Schema: current runtime; Owner: -
 --
 
-SELECT pg_catalog.setval('database_evidence_receipts_id_seq', 1, false);
+SELECT pg_catalog.setval('database_evidence_id_seq', 1, false);
 
 
 --
@@ -6167,19 +5851,11 @@ ALTER TABLE ONLY data_sources
 
 
 --
--- Name: database_evidence_receipts database_evidence_receipts_job_id_schema_fingerprint_intent_key; Type: CONSTRAINT; Schema: current runtime; Owner: -
+-- Name: database_evidence database_evidence_pkey; Type: CONSTRAINT; Schema: current runtime; Owner: -
 --
 
-ALTER TABLE ONLY database_evidence_receipts
-    ADD CONSTRAINT database_evidence_receipts_job_id_schema_fingerprint_intent_key UNIQUE (job_id, schema_fingerprint, intent_hash, query_hash, result_hash);
-
-
---
--- Name: database_evidence_receipts database_evidence_receipts_pkey; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY database_evidence_receipts
-    ADD CONSTRAINT database_evidence_receipts_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY database_evidence
+    ADD CONSTRAINT database_evidence_pkey PRIMARY KEY (id);
 
 
 --
@@ -6270,7 +5946,7 @@ ALTER TABLE ONLY jobs
 --
 
 ALTER TABLE ONLY lifecycle_operation_registry
-    ADD CONSTRAINT lifecycle_operation_registry_operation_id_kind_command_sha2_key UNIQUE (operation_id, kind, command_sha256);
+    ADD CONSTRAINT lifecycle_operation_registry_operation_id_kind_key UNIQUE (operation_id, kind);
 
 
 --
@@ -6871,15 +6547,7 @@ ALTER TABLE ONLY roleplay_simulation_turn_advances
 --
 
 ALTER TABLE ONLY roleplay_simulation_turn_advances
-    ADD CONSTRAINT roleplay_simulation_turn_advances_pkey PRIMARY KEY (operation_id);
-
-
---
--- Name: roleplay_simulation_turn_advances roleplay_simulation_turn_advances_preparation_id_key; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY roleplay_simulation_turn_advances
-    ADD CONSTRAINT roleplay_simulation_turn_advances_preparation_id_key UNIQUE (preparation_id);
+    ADD CONSTRAINT roleplay_simulation_turn_advances_pkey PRIMARY KEY (preparation_id);
 
 
 --
@@ -7091,6 +6759,8 @@ CREATE INDEX idx_ai_channels_data_source_updated ON ai_channels USING btree (dat
 
 CREATE INDEX idx_ai_channels_scope_updated ON ai_channels USING btree (scope, updated_at DESC, id);
 
+CREATE INDEX idx_ai_channels_cli_workspace ON ai_channels (cli_workspace_identity) WHERE cli_workspace_identity IS NOT NULL;
+
 
 --
 -- Name: idx_data_source_channels_source; Type: INDEX; Schema: current runtime; Owner: -
@@ -7103,7 +6773,7 @@ CREATE INDEX idx_data_source_channels_source ON data_source_channels USING btree
 -- Name: idx_database_evidence_job; Type: INDEX; Schema: current runtime; Owner: -
 --
 
-CREATE INDEX idx_database_evidence_job ON database_evidence_receipts USING btree (job_id, id);
+CREATE INDEX idx_database_evidence_job ON database_evidence USING btree (job_id, id);
 
 
 --
@@ -7618,24 +7288,24 @@ CREATE CONSTRAINT TRIGGER ai_channels_roleplay_viewpoint_authority AFTER INSERT 
 
 
 --
--- Name: database_evidence_receipts database_evidence_receipts_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
+-- Name: database_evidence database_evidence_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
 --
 
-CREATE TRIGGER database_evidence_receipts_immutable BEFORE DELETE OR UPDATE ON database_evidence_receipts FOR EACH ROW EXECUTE FUNCTION reject_database_evidence_receipt_change();
-
-
---
--- Name: database_evidence_receipts database_evidence_receipts_truncate_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER database_evidence_receipts_truncate_immutable BEFORE TRUNCATE ON database_evidence_receipts FOR EACH STATEMENT EXECUTE FUNCTION reject_database_evidence_receipt_change();
+CREATE TRIGGER database_evidence_immutable BEFORE DELETE OR UPDATE ON database_evidence FOR EACH ROW EXECUTE FUNCTION reject_database_evidence_receipt_change();
 
 
 --
--- Name: database_evidence_receipts database_evidence_receipts_validate_insert; Type: TRIGGER; Schema: current runtime; Owner: -
+-- Name: database_evidence database_evidence_truncate_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
 --
 
-CREATE TRIGGER database_evidence_receipts_validate_insert BEFORE INSERT ON database_evidence_receipts FOR EACH ROW EXECUTE FUNCTION validate_database_evidence_receipt_insert();
+CREATE TRIGGER database_evidence_truncate_immutable BEFORE TRUNCATE ON database_evidence FOR EACH STATEMENT EXECUTE FUNCTION reject_database_evidence_receipt_change();
+
+
+--
+-- Name: database_evidence database_evidence_validate_insert; Type: TRIGGER; Schema: current runtime; Owner: -
+--
+
+CREATE TRIGGER database_evidence_validate_insert BEFORE INSERT ON database_evidence FOR EACH ROW EXECUTE FUNCTION validate_database_evidence_insert();
 
 
 --
@@ -8708,7 +8378,7 @@ ALTER TABLE ONLY channel_session_turn_operations
 --
 
 ALTER TABLE ONLY channel_session_turn_operations
-    ADD CONSTRAINT channel_session_turn_operations_operation_fkey FOREIGN KEY (operation_id, kind, command_sha256) REFERENCES lifecycle_operation_registry(operation_id, kind, command_sha256) ON DELETE RESTRICT;
+    ADD CONSTRAINT channel_session_turn_operations_operation_fkey FOREIGN KEY (operation_id, kind) REFERENCES lifecycle_operation_registry(operation_id, kind) ON DELETE RESTRICT;
 
 
 --
@@ -8736,19 +8406,19 @@ ALTER TABLE ONLY data_source_channels
 
 
 --
--- Name: database_evidence_receipts database_evidence_receipts_data_source_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
+-- Name: database_evidence database_evidence_data_source_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
 --
 
-ALTER TABLE ONLY database_evidence_receipts
-    ADD CONSTRAINT database_evidence_receipts_data_source_id_fkey FOREIGN KEY (data_source_id) REFERENCES data_sources(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY database_evidence
+    ADD CONSTRAINT database_evidence_data_source_id_fkey FOREIGN KEY (data_source_id) REFERENCES data_sources(id) ON DELETE RESTRICT;
 
 
 --
--- Name: database_evidence_receipts database_evidence_receipts_job_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
+-- Name: database_evidence database_evidence_job_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
 --
 
-ALTER TABLE ONLY database_evidence_receipts
-    ADD CONSTRAINT database_evidence_receipts_job_id_fkey FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY database_evidence
+    ADD CONSTRAINT database_evidence_job_id_fkey FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE RESTRICT;
 
 
 --
@@ -8804,7 +8474,7 @@ ALTER TABLE ONLY job_generations
 --
 
 ALTER TABLE ONLY job_lifecycle_operations
-    ADD CONSTRAINT job_lifecycle_operations_global_identity FOREIGN KEY (operation_id, kind, command_sha256) REFERENCES lifecycle_operation_registry(operation_id, kind, command_sha256) ON DELETE RESTRICT;
+    ADD CONSTRAINT job_lifecycle_operations_global_identity FOREIGN KEY (operation_id, kind) REFERENCES lifecycle_operation_registry(operation_id, kind) ON DELETE RESTRICT;
 
 
 --
@@ -9785,8 +9455,6 @@ CREATE TABLE coding_plans (
     generation bigint NOT NULL,
     revision bigint DEFAULT 1 NOT NULL,
     state text DEFAULT 'review'::text NOT NULL,
-    scope_mode text NOT NULL,
-    request_sha256 text NOT NULL,
     plan_step_id bigint NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -9794,8 +9462,6 @@ CREATE TABLE coding_plans (
     CONSTRAINT coding_plans_pkey PRIMARY KEY (job_id,generation),
     CONSTRAINT coding_plans_revision_positive CHECK (revision>0),
     CONSTRAINT coding_plans_state_check CHECK (state IN ('review','frozen','superseded','canceled')),
-    CONSTRAINT coding_plans_scope_mode_check CHECK (scope_mode IN ('strict','normal','expansive')),
-    CONSTRAINT coding_plans_request_sha256_check CHECK (request_sha256 ~ '^[0-9a-f]{64}$'),
     CONSTRAINT coding_plans_timestamp_shape CHECK (
         updated_at>=created_at AND
         ((state='review' AND frozen_at IS NULL) OR
@@ -9813,7 +9479,6 @@ CREATE FUNCTION validate_coding_plan_insert() RETURNS trigger
     AS $$
 DECLARE
     authoritative_generation BIGINT;
-    authoritative_scope_mode TEXT;
     plan_action TEXT;
     plan_status TEXT;
     plan_superseded_at_generation BIGINT;
@@ -9822,11 +9487,10 @@ BEGIN
     IF NEW.revision<>1 OR NEW.state<>'review' OR NEW.frozen_at IS NOT NULL THEN
         RAISE EXCEPTION 'a coding plan must enter authority as revision 1 review state';
     END IF;
-    SELECT current_generation,metadata->>'coding_scope_mode',status
-      INTO authoritative_generation,authoritative_scope_mode,job_status
+    SELECT current_generation,status
+      INTO authoritative_generation,job_status
       FROM jobs WHERE id=NEW.job_id FOR SHARE;
     IF authoritative_generation IS DISTINCT FROM NEW.generation OR
-       authoritative_scope_mode IS DISTINCT FROM NEW.scope_mode OR
        job_status IS DISTINCT FROM 'running' THEN
         RAISE EXCEPTION 'coding plan does not match current running job authority';
     END IF;
@@ -9850,30 +9514,24 @@ CREATE TABLE coding_plan_leaves (
     leaf_id text NOT NULL,
     sort_index integer NOT NULL,
     statement text NOT NULL,
-    annotation text NOT NULL,
     decision text NOT NULL,
     decision_origin_generation bigint NOT NULL,
-    result_schema text,
-    candidate_sha256 text,
-    kind_receipt_sha256 text,
-    cardinality_receipt_sha256 text,
-    result_relation text,
+    result_schema text NOT NULL,
+    result_relation text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT coding_plan_leaves_pkey PRIMARY KEY (job_id,generation,leaf_id),
     CONSTRAINT coding_plan_leaves_sort_key UNIQUE (job_id,generation,sort_index),
+    CONSTRAINT coding_plan_leaves_statement_key UNIQUE (job_id,generation,statement),
     CONSTRAINT coding_plan_leaves_plan_fkey FOREIGN KEY (job_id,generation)
         REFERENCES coding_plans(job_id,generation) ON DELETE RESTRICT,
     CONSTRAINT coding_plan_leaves_leaf_id_check CHECK (
-        leaf_id='coding_plan_leaf_' || encode(pg_catalog.sha256(convert_to(statement,'UTF8')),'hex')
+        leaf_id ~ '^coding_plan_leaf_[0-9a-f]{32}$'
     ),
     CONSTRAINT coding_plan_leaves_statement_check CHECK (
         octet_length(statement) BETWEEN 1 AND 1024 AND statement=btrim(statement)
     ),
     CONSTRAINT coding_plan_leaves_sort_check CHECK (sort_index BETWEEN 0 AND 29),
-    CONSTRAINT coding_plan_leaves_annotation_check CHECK (
-        annotation IN ('grounded','reasonable_derivation','speculative_review','concrete_scope_conflict')
-    ),
     CONSTRAINT coding_plan_leaves_decision_check CHECK (decision IN ('pending','approved','rejected')),
     CONSTRAINT coding_plan_leaves_decision_origin_check CHECK (
         decision_origin_generation BETWEEN 1 AND generation AND
@@ -9882,9 +9540,6 @@ CREATE TABLE coding_plan_leaves (
     CONSTRAINT coding_plan_leaves_timestamp_shape CHECK (updated_at>=created_at),
     CONSTRAINT coding_plan_leaves_receipt_shape CHECK (
         result_schema='omnidex.application-requirement-candidate-result-relation.v1' AND
-        candidate_sha256=encode(pg_catalog.sha256(convert_to(statement,'UTF8')),'hex') AND
-        kind_receipt_sha256 ~ '^[0-9a-f]{64}$' AND
-        cardinality_receipt_sha256 ~ '^[0-9a-f]{64}$' AND
         result_relation IN ('NO_DERIVED_RESULT','EXPLICIT_DERIVED_RESULT_RELATION')
     )
 );
@@ -9935,15 +9590,12 @@ CREATE FUNCTION coding_plan_result_matches_current_authority(
           AND result.kind=operation_kind
           AND result.result_revision=plan.revision
           AND result.result_plan->>'state'=plan.state
-          AND result.result_plan->>'scope_mode'=plan.scope_mode
-          AND result.result_plan->>'request_sha256'=plan.request_sha256
           AND result.result_plan->'leaves'=(
               SELECT COALESCE(
                   jsonb_agg(
                       jsonb_build_object(
                           'id',leaf.leaf_id,
                           'statement',leaf.statement,
-                          'annotation',leaf.annotation,
                           'decision',leaf.decision
                       ) ORDER BY leaf.sort_index
                   ),
@@ -9962,9 +9614,9 @@ DECLARE
     approved_leaf_count BIGINT;
     pending_leaf_count BIGINT;
 BEGIN
-    IF ROW(OLD.job_id,OLD.generation,OLD.scope_mode,OLD.request_sha256,OLD.plan_step_id,OLD.created_at)
+    IF ROW(OLD.job_id,OLD.generation,OLD.plan_step_id,OLD.created_at)
        IS DISTINCT FROM
-       ROW(NEW.job_id,NEW.generation,NEW.scope_mode,NEW.request_sha256,NEW.plan_step_id,NEW.created_at) THEN
+       ROW(NEW.job_id,NEW.generation,NEW.plan_step_id,NEW.created_at) THEN
         RAISE EXCEPTION 'coding plan identity and authority are immutable';
     END IF;
     IF OLD.state IN ('superseded','canceled') OR
@@ -10004,6 +9656,7 @@ DECLARE
     job_status TEXT;
     prior_decision TEXT;
     prior_origin_generation BIGINT;
+    prior_leaf_id TEXT;
 BEGIN
     SELECT plan.state,step.status,job.status
       INTO plan_state,plan_step_status,job_status
@@ -10019,19 +9672,20 @@ BEGIN
        job_status IS DISTINCT FROM 'running' THEN
         RAISE EXCEPTION 'coding plan leaves may be inserted only during the active initial StoreCodingPlanReview transaction';
     END IF;
-    SELECT leaf.decision,leaf.decision_origin_generation
-      INTO prior_decision,prior_origin_generation
+    SELECT leaf.leaf_id,leaf.decision,leaf.decision_origin_generation
+      INTO prior_leaf_id,prior_decision,prior_origin_generation
       FROM coding_plan_leaves AS leaf
       JOIN coding_plans AS plan
         ON plan.job_id=leaf.job_id AND plan.generation=leaf.generation
       WHERE leaf.job_id=NEW.job_id AND leaf.generation<NEW.generation
-        AND leaf.leaf_id=NEW.leaf_id
+        AND leaf.statement=NEW.statement
         AND leaf.decision IN ('approved','rejected')
         AND plan.state='superseded'
       ORDER BY leaf.generation DESC
       LIMIT 1;
     IF FOUND THEN
-        IF NEW.decision IS DISTINCT FROM prior_decision OR
+        IF NEW.leaf_id IS DISTINCT FROM prior_leaf_id OR
+           NEW.decision IS DISTINCT FROM prior_decision OR
            NEW.decision_origin_generation IS DISTINCT FROM prior_origin_generation THEN
             RAISE EXCEPTION 'coding plan leaf decision differs from its exact superseded prior-generation decision';
         END IF;
@@ -10048,13 +9702,11 @@ CREATE FUNCTION validate_coding_plan_leaf_update() RETURNS trigger
 DECLARE
     plan_state TEXT;
 BEGIN
-    IF ROW(OLD.job_id,OLD.generation,OLD.leaf_id,OLD.sort_index,OLD.statement,OLD.annotation,
-           OLD.result_schema,OLD.candidate_sha256,OLD.kind_receipt_sha256,
-           OLD.cardinality_receipt_sha256,OLD.result_relation,OLD.created_at)
+    IF ROW(OLD.job_id,OLD.generation,OLD.leaf_id,OLD.sort_index,OLD.statement,
+           OLD.result_schema,OLD.result_relation,OLD.created_at)
        IS DISTINCT FROM
-       ROW(NEW.job_id,NEW.generation,NEW.leaf_id,NEW.sort_index,NEW.statement,NEW.annotation,
-           NEW.result_schema,NEW.candidate_sha256,NEW.kind_receipt_sha256,
-           NEW.cardinality_receipt_sha256,NEW.result_relation,NEW.created_at) THEN
+       ROW(NEW.job_id,NEW.generation,NEW.leaf_id,NEW.sort_index,NEW.statement,
+           NEW.result_schema,NEW.result_relation,NEW.created_at) THEN
         RAISE EXCEPTION 'coding plan leaf semantic identity is immutable';
     END IF;
     SELECT state INTO plan_state FROM coding_plans
@@ -10253,3 +9905,13 @@ CREATE CONSTRAINT TRIGGER job_lifecycle_operations_require_coding_plan_result
     AFTER INSERT ON job_lifecycle_operations
     DEFERRABLE INITIALLY DEFERRED
     FOR EACH ROW EXECUTE FUNCTION require_coding_plan_lifecycle_result();
+
+-- Actual search/fetch observations for the current service lifecycle.
+CREATE TABLE web_evidence (
+    id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    job_id bigint NOT NULL REFERENCES jobs(id),
+    acquisition jsonb NOT NULL CHECK (jsonb_typeof(acquisition)='object'),
+    created_at timestamp with time zone NOT NULL DEFAULT now()
+);
+
+CREATE INDEX web_evidence_job_idx ON web_evidence(job_id,id);

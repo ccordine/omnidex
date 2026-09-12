@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/websearch"
 )
 
 // EvidenceRequest is the exact authority required to acquire and select web
@@ -26,26 +27,23 @@ type EvidenceConfig struct {
 	CandidateSummaryBytes int
 }
 
-// EvidenceResult contains only exact selected evidence and its bounded
-// model-visible projection. Acquisition mechanics and ordering remain code
-// owned. The semantic station returns only one raw relevance relation per
-// candidate; code retains the exact query and builds the candidate-ID selection.
+// EvidenceResult distinguishes selected evidence and its model projection from
+// bounded acquisition reports, which can also describe failed or cancelled work.
+// Acquisition mechanics and ordering remain code owned. The semantic station
+// returns only one raw relevance relation per candidate; code builds the selection.
 type EvidenceResult struct {
-	Evidence            []Evidence
-	Projected           []ProjectedEvidence
-	AcquisitionAttempts int
-	DiscoveryAttempts   int
-	FetchAttempts       int
-	RelevanceCalls      int
-	SemanticCalls       int
-	CallLedger          SemanticCallLedger
+	Evidence      []Evidence
+	Projected     []ProjectedEvidence
+	Discovery     []websearch.CandidateReport
+	Fetches       []websearch.DocumentReport
+	SemanticCalls int
 }
 
 type evidenceMachine struct {
-	objective Objective
-	config    EvidenceConfig
-	relevance RelevanceStation
-	contracts acquisitionContracts
+	objective   Objective
+	config      EvidenceConfig
+	relevance   RelevanceStation
+	acquisition Acquisition
 }
 
 // GatherRelevantEvidence runs the shared deterministic web evidence sieve.
@@ -89,22 +87,11 @@ func GatherRelevantEvidence(
 			ErrInvalidConfiguration, config.MaxFetchCandidates, limits.MaxDocuments,
 		)
 	}
-	contracts, err := newAcquisitionContracts(acquisition, config.MaxFetchCandidates)
-	if err != nil {
-		return EvidenceResult{}, fmt.Errorf("%w: acquisition contracts: %w", ErrInvalidConfiguration, err)
-	}
 	machine := &evidenceMachine{
 		objective: objective,
-		config: EvidenceConfig{
-			MaxFetchCandidates: config.MaxFetchCandidates, MaxProjectionBytes: config.MaxProjectionBytes,
-			MaxRelevantCandidates: config.MaxRelevantCandidates, CandidateSummaryBytes: config.CandidateSummaryBytes,
-		},
-		relevance: relevance, contracts: contracts,
+		config:    config, relevance: relevance, acquisition: acquisition,
 	}
-	result := evidenceRun{
-		Objective:               cloneObjective(objective),
-		AcquisitionAttemptLimit: 2,
-	}
+	var result evidenceRun
 	if err := machine.gatherRelevantEvidence(ctx, &result); err != nil {
 		return evidenceResultFromRun(result, nil), err
 	}
@@ -116,13 +103,12 @@ func GatherRelevantEvidence(
 }
 
 func evidenceResultFromRun(result evidenceRun, selected []Evidence) EvidenceResult {
+	// Acquisition already detached these reports from the provider. Transfer
+	// the completed run's owned values without another receipt or copy layer.
 	return EvidenceResult{
-		Evidence: cloneEvidence(selected), Projected: cloneProjection(result.Projected),
-		AcquisitionAttempts: result.AcquisitionAttempts,
-		DiscoveryAttempts:   result.DiscoveryAttempts, FetchAttempts: result.FetchAttempts,
-		RelevanceCalls: result.RelevanceCalls,
-		SemanticCalls:  result.SemanticCalls,
-		CallLedger:     result.CallLedger.Clone(),
+		Evidence: selected, Projected: result.Projected,
+		Discovery: result.Discovery, Fetches: result.Fetches,
+		SemanticCalls: result.SemanticCalls,
 	}
 }
 
@@ -136,9 +122,6 @@ func evidenceForProjection(evidence []Evidence, projected []ProjectedEvidence) (
 		item, exists := byID[projection.EvidenceID]
 		if !exists || item.CandidateID != projection.CandidateID {
 			return nil, fmt.Errorf("%w: projected evidence %q lost acquisition authority", ErrInvalidAcquisition, projection.EvidenceID)
-		}
-		if projection.Truncated {
-			item.Truncated = true
 		}
 		selected[index] = item
 	}

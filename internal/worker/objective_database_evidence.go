@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/gryph/omnidex/internal/datasource"
+	"github.com/gryph/omnidex/internal/queue"
 )
 
 const (
@@ -14,39 +15,19 @@ const (
 	maxDatabaseEvidenceNeedBytes    = 2 * 1024
 )
 
-type objectiveDatabaseEvidenceColumn struct {
-	Label string                        `json:"label"`
-	Kind  datasource.ColumnTypeCategory `json:"kind"`
-}
-
-type objectiveDatabaseEvidencePayload struct {
-	Columns []objectiveDatabaseEvidenceColumn `json:"columns"`
-	Rows    [][]datasource.EvidenceValue      `json:"rows"`
-}
-
-func projectObjectiveDatabaseEvidence(
-	snapshot datasource.SchemaSnapshot,
-	intent datasource.RelationalIntent,
-	evidence datasource.EvidenceResult,
-) ([]objectiveEvidence, error) {
-	if evidence.Schema != datasource.EvidenceResultV1 ||
-		evidence.Provenance.SourceID != snapshot.SourceID ||
-		evidence.Provenance.SchemaFingerprint != snapshot.Fingerprint ||
-		evidence.Result.Hash != evidence.Provenance.ResultHash {
-		return nil, fmt.Errorf("database evidence does not match its schema and execution authority")
+func projectObjectiveDatabaseEvidence(record queue.DatabaseEvidenceRecord) ([]objectiveEvidence, error) {
+	if record.ID < 1 || record.JobID < 1 {
+		return nil, fmt.Errorf("database evidence projection requires its recorded execution")
 	}
-	if !validObjectiveSHA256(evidence.Provenance.IntentHash) ||
-		!validObjectiveSHA256(evidence.Provenance.QueryHash) ||
-		!validObjectiveSHA256(evidence.Provenance.ResultHash) {
-		return nil, fmt.Errorf("database evidence provenance hashes are invalid")
+	snapshot, intent, evidence := record.Snapshot, record.Plan.Intent, record.Evidence
+	if err := evidence.ValidateForPlan(snapshot, record.Plan, objectiveDatabaseExecutionLimits()); err != nil {
+		return nil, err
 	}
-	columns, err := objectiveDatabaseEvidenceColumns(snapshot, intent, evidence)
+	base, err := datasource.ProjectEvidenceRows(snapshot, intent, evidence.Result, 0, evidence.Result.RowCount)
 	if err != nil {
 		return nil, err
 	}
-	base := objectiveDatabaseEvidencePayload{
-		Columns: columns,
-	}
+	base.Rows = nil
 	groups, err := splitObjectiveDatabaseRows(base, evidence.Result.Rows)
 	if err != nil {
 		return nil, err
@@ -55,10 +36,13 @@ func projectObjectiveDatabaseEvidence(
 		return nil, fmt.Errorf("database evidence requires %d capsules; maximum is %d", len(groups), maxDatabaseEvidenceCapsules)
 	}
 	projected := make([]objectiveEvidence, 0, len(groups))
-	total := 0
+	total, rowStart := 0, 0
 	for index, rows := range groups {
-		payload := base
-		payload.Rows = rows
+		rowEnd := rowStart + len(rows)
+		payload, err := datasource.ProjectEvidenceRows(snapshot, intent, evidence.Result, rowStart, rowEnd)
+		if err != nil {
+			return nil, err
+		}
 		encoded, err := json.Marshal(payload)
 		if err != nil {
 			return nil, fmt.Errorf("encode database evidence capsule: %w", err)
@@ -67,74 +51,21 @@ func projectObjectiveDatabaseEvidence(
 		if total > maxDatabaseEvidenceContextBytes {
 			return nil, fmt.Errorf("database evidence projection exceeds %d context bytes", maxDatabaseEvidenceContextBytes)
 		}
-		id := fmt.Sprintf("DB-%02d-%s", index+1, evidence.Provenance.ResultHash[:12])
-		sourceRef := fmt.Sprintf(
-			"database:%s:intent:%s:result:%s",
-			snapshot.SourceID, evidence.Provenance.IntentHash[:12], evidence.Provenance.ResultHash[:12],
-		)
-		item, err := newObjectiveEvidence(id, string(encoded), "postgres_query", sourceRef)
+		item, err := newObjectiveEvidence(fmt.Sprintf("DB-%02d", index+1), string(encoded), "postgres_query", record.SourceRef())
 		if err != nil {
 			return nil, err
 		}
-		item.SourceSHA256 = evidence.Provenance.ResultHash
-		item.ObservedAt = evidence.Provenance.AcquiredAt
+		item.DatabaseEvidenceID = record.ID
+		item.DatabaseRowStart, item.DatabaseRowEnd = rowStart, rowEnd
+		item.ObservedAt = evidence.Execution.AcquiredAt
 		projected = append(projected, item)
+		rowStart = rowEnd
 	}
 	return projected, nil
 }
 
-func objectiveDatabaseEvidenceColumns(
-	snapshot datasource.SchemaSnapshot,
-	intent datasource.RelationalIntent,
-	evidence datasource.EvidenceResult,
-) ([]objectiveDatabaseEvidenceColumn, error) {
-	if intent.Shape == datasource.ResultExistence {
-		if len(intent.Projections) != 0 || len(evidence.Result.Columns) != 1 {
-			return nil, fmt.Errorf("database existence evidence must contain exactly one code-owned boolean column")
-		}
-		return []objectiveDatabaseEvidenceColumn{{
-			Label: "exists", Kind: datasource.TypeBoolean,
-		}}, nil
-	}
-	if len(evidence.Result.Columns) != len(intent.Projections) {
-		return nil, fmt.Errorf("database evidence column count does not match relational intent")
-	}
-	columns := make([]objectiveDatabaseEvidenceColumn, len(intent.Projections))
-	for index, projection := range intent.Projections {
-		label, category, err := objectiveDatabaseProjectionLabel(snapshot, projection)
-		if err != nil {
-			return nil, err
-		}
-		columns[index] = objectiveDatabaseEvidenceColumn{
-			Label: label, Kind: category,
-		}
-	}
-	return columns, nil
-}
-
-func objectiveDatabaseProjectionLabel(
-	snapshot datasource.SchemaSnapshot,
-	projection datasource.RelationalProjection,
-) (string, datasource.ColumnTypeCategory, error) {
-	if projection.Aggregate == datasource.AggregateCountRows {
-		return "count_rows", datasource.TypeInteger, nil
-	}
-	relation, column, err := snapshot.Column(projection.FieldID)
-	if err != nil {
-		return "", "", err
-	}
-	name := relation.Schema + "." + relation.Name + "." + column.Name
-	if projection.Aggregate != "" {
-		return string(projection.Aggregate) + "(" + name + ")", column.TypeCategory, nil
-	}
-	if projection.TimeBucket != "" {
-		return string(projection.TimeBucket) + "(" + name + ")", datasource.TypeTemporal, nil
-	}
-	return name, column.TypeCategory, nil
-}
-
 func splitObjectiveDatabaseRows(
-	base objectiveDatabaseEvidencePayload,
+	base datasource.EvidenceRows,
 	rows [][]datasource.EvidenceValue,
 ) ([][][]datasource.EvidenceValue, error) {
 	if len(rows) == 0 {

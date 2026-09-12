@@ -16,7 +16,7 @@ import (
 
 func TestChatPlanReviewPersistsDecisionThenDeliberatelyFreezes(t *testing.T) {
 	workspaceRoot := "/tmp/cli-plan-review"
-	const workspaceIdentity = "directory_identity_v1_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	const workspaceIdentity = "directory_1_101"
 	const jobID int64 = 73
 	plan := singleLeafPlanReviewFixture(t, jobID, 1)
 	var mu sync.Mutex

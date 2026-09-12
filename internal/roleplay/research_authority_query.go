@@ -38,8 +38,8 @@ const researchAuthorityBaseSelect = `
 	SELECT 'omnidex.roleplay-research-turn.v1',research.preparation_id,research.channel_id,
 	       research.user_message_id,research.world_id,research.scene_id,
 	       research.scene_revision,research.character_id,research.capability,
-	       research.capability_grant_id,research.question,research.question_sha256,
-	       research.narrative_fingerprint,research.authority_namespace,
+	       research.capability_grant_id,research.question,
+	       research.authority_namespace,
 	       capability_grant.created_at,research.created_at
 	FROM roleplay_research_turns AS research
 	JOIN roleplay_character_capability_grants AS capability_grant
@@ -67,7 +67,7 @@ func scanResearchAuthority(row pgx.Row) (ResearchTurnAuthority, bool, error) {
 		&authority.Schema, &authority.PreparationID, &authority.ChannelID, &authority.UserMessageID,
 		&authority.WorldID, &authority.SceneID, &authority.SceneRevision, &authority.CharacterID,
 		&authority.Capability, &authority.CapabilityGrantID, &authority.Question,
-		&authority.QuestionSHA256, &authority.NarrativeFingerprint, &namespace,
+		&namespace,
 		&authority.CapabilityIssuedAt, &authority.CreatedAt,
 	)
 	if err == pgx.ErrNoRows {

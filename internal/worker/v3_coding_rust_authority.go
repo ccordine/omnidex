@@ -258,20 +258,21 @@ func rustTypeIdentifierBelongsToPath(node, parent *treesitter.Node) bool {
 }
 
 // Rust macro arguments are token trees rather than expression ASTs. A token
-// immediately following '.' is mechanically a member/method name, not a free
-// callable or path root. The receiver remains independently inspected.
-func rustIdentifierIsMemberToken(source []byte, node *treesitter.Node) bool {
-	if node == nil || node.StartByte() == 0 || int(node.StartByte()) > len(source) {
+// following '.' or '::' is a member or associated item, not a free value.
+// Receivers, path roots, and forbidden components remain independently inspected.
+func rustIdentifierIsMemberToken(node *treesitter.Node) bool {
+	if node == nil || node.Parent() == nil {
 		return false
 	}
-	for index := int(node.StartByte()) - 1; index >= 0; index-- {
-		switch source[index] {
-		case ' ', '\t', '\r', '\n':
-			continue
-		case '.':
-			return true
-		default:
-			return false
+	parent := node.Parent()
+	previous := ""
+	for index := uint(0); index < parent.ChildCount(); index++ {
+		child := parent.Child(index)
+		if child.Id() == node.Id() {
+			return previous == "." || previous == "::"
+		}
+		if child.Kind() != "line_comment" && child.Kind() != "block_comment" {
+			previous = child.Kind()
 		}
 	}
 	return false

@@ -36,7 +36,7 @@ const (
 type LLMCallOpeningRecord struct {
 	Authority              model.StepAttemptAuthority
 	Scope                  string
-	WorkID                 string
+	WorkInput              json.RawMessage
 	WorkKind               assemblyline.WorkKind
 	Iteration              int
 	OutputContinuation     int
@@ -59,35 +59,19 @@ type LLMCallReceiptRecord struct {
 }
 
 // LLMCallOutcomeRecord appends the code-owned semantic validation result for
-// one successful provider call. It never changes the immutable call receipt.
+// one successful provider call.
 type LLMCallOutcomeRecord struct {
 	Authority       model.StepAttemptAuthority
 	CallEvidenceID  int64
 	Candidate       string
-	Projection      *assemblyline.PortableResultProjection
 	ValidationError string
 }
 
 type LLMCallOutcome struct {
-	CallEvidenceID        int64                `json:"call_evidence_id"`
-	Status                LLMCallOutcomeStatus `json:"status"`
-	CandidateSHA256       string               `json:"candidate_sha256"`
-	Projection            json.RawMessage      `json:"projection,omitempty"`
-	ValidationError       string               `json:"validation_error,omitempty"`
-	ValidationErrorSHA256 string               `json:"validation_error_sha256,omitempty"`
-	CreatedAt             time.Time            `json:"created_at"`
-}
-
-// LLMCallProjectionEvidence records the exact provider response identity
-// without duplicating its potentially multi-megabyte bytes.
-type LLMCallProjectionEvidence struct {
-	Kind                 assemblyline.PortableResultProjectionKind `json:"kind"`
-	SourceResponseSHA256 string                                    `json:"source_response_sha256"`
-	SourceSHA256         string                                    `json:"source_sha256"`
-	StartByte            int                                       `json:"start_byte"`
-	EndByte              int                                       `json:"end_byte"`
-	RawBytes             int                                       `json:"raw_bytes"`
-	DiscardedBytes       int                                       `json:"discarded_bytes"`
+	CallEvidenceID  int64                `json:"call_evidence_id"`
+	Status          LLMCallOutcomeStatus `json:"status"`
+	ValidationError string               `json:"validation_error,omitempty"`
+	CreatedAt       time.Time            `json:"created_at"`
 }
 
 type LLMCallEvidence struct {
@@ -98,7 +82,7 @@ type LLMCallEvidence struct {
 	StepAttempt              int64           `json:"step_attempt"`
 	WorkerID                 string          `json:"worker_id"`
 	Scope                    string          `json:"scope"`
-	WorkID                   string          `json:"work_id"`
+	WorkInput                json.RawMessage `json:"work_input,omitempty"`
 	WorkKind                 string          `json:"work_kind"`
 	Iteration                int             `json:"iteration"`
 	OutputContinuation       int             `json:"output_continuation"`
@@ -106,40 +90,31 @@ type LLMCallEvidence struct {
 	ParentCallEvidenceID     int64           `json:"parent_call_evidence_id,omitempty"`
 	ReplacesCallEvidenceID   int64           `json:"replaces_call_evidence_id,omitempty"`
 	SourceBaseCandidate      string          `json:"source_base_candidate,omitempty"`
-	SourceBaseSHA256         string          `json:"source_base_sha256,omitempty"`
 	SourceStartByte          int             `json:"source_start_byte,omitempty"`
 	SourceEndByte            int             `json:"source_end_byte,omitempty"`
 	SourceQuestion           string          `json:"source_question,omitempty"`
-	SourceQuestionSHA256     string          `json:"source_question_sha256,omitempty"`
 	RequestedModel           string          `json:"requested_model"`
 	Model                    string          `json:"model"`
 	Protocol                 string          `json:"protocol"`
-	SystemEnvelope           string          `json:"system_envelope"`
 	ModelInput               string          `json:"model_input"`
-	ModelInputSHA256         string          `json:"model_input_sha256"`
 	ModelInputBytes          int             `json:"model_input_bytes"`
 	ProviderRequest          []byte          `json:"provider_request"`
-	ProviderRequestSHA256    string          `json:"provider_request_sha256"`
 	ProviderRequestBytes     int             `json:"provider_request_bytes"`
 	ContextTokens            int             `json:"context_tokens"`
 	MaxOutputTokens          int             `json:"max_output_tokens"`
 	OutputLimitMode          string          `json:"output_limit_mode"`
 	ProviderReceiptPresent   bool            `json:"provider_receipt_present"`
 	GenerationReceipt        json.RawMessage `json:"generation_receipt"`
-	GenerationReceiptSHA256  string          `json:"generation_receipt_sha256"`
 	RawResponsePresent       bool            `json:"raw_response_present"`
 	RawResponse              []byte          `json:"raw_response,omitempty"`
-	RawResponseSHA256        string          `json:"raw_response_sha256,omitempty"`
 	RawResponseBytes         int             `json:"raw_response_bytes"`
 	Candidate                string          `json:"candidate,omitempty"`
-	CandidateSHA256          string          `json:"candidate_sha256,omitempty"`
 	PromptTokens             int             `json:"prompt_tokens"`
 	OutputTokens             int             `json:"output_tokens"`
 	ProviderDurationNanos    int64           `json:"provider_duration_nanos"`
 	OutputLimitReached       bool            `json:"output_limit_reached"`
 	Status                   LLMCallStatus   `json:"status"`
 	Error                    string          `json:"error,omitempty"`
-	ErrorSHA256              string          `json:"error_sha256,omitempty"`
 	ElapsedNanos             int64           `json:"elapsed_nanos"`
 	CreatedAt                time.Time       `json:"created_at"`
 	ProviderReceiptCreatedAt *time.Time      `json:"provider_receipt_created_at,omitempty"`

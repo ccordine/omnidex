@@ -3,7 +3,6 @@ package queue
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 	"time"
 
@@ -35,13 +34,9 @@ func TestFreshSchemaRejectsStepCompletionWithUnterminatedLLMCall(t *testing.T) {
 	if _, err := setEvidenceAttemptStatus(ctx, pool, claim.Authority, "completed"); err == nil {
 		t.Fatal("step completion accepted an LLM call without a terminal outcome")
 	}
-	projection, err := assemblyline.NewExactPortableResultProjection(record.Generation.Content)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if _, err := repository.RecordLLMCallOutcome(ctx, LLMCallOutcomeRecord{
 		Authority: claim.Authority, CallEvidenceID: evidence.ID,
-		Candidate: record.Generation.Content, Projection: &projection,
+		Candidate: record.Generation.Content,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +103,6 @@ func TestFreshSchemaExpiredAttemptPreservesReceiptFirstAndRejectsTerminalFirstRe
 		t, assemblyline.WorkArtifactHandling, "Classify ARTIFACT_1 after expiration.", "B",
 	)
 	terminalFirst.Authority = claim.Authority
-	terminalFirst.WorkID = strings.Repeat("b", 64)
 	terminalOpening, err := repository.ReserveLLMCallEvidence(ctx, terminalFirst.LLMCallOpeningRecord)
 	if err != nil {
 		t.Fatalf("reserve provider-in-flight call: %v", err)
@@ -117,13 +111,9 @@ func TestFreshSchemaExpiredAttemptPreservesReceiptFirstAndRejectsTerminalFirstRe
 		t.Fatal(err)
 	}
 
-	projection, err := assemblyline.NewExactPortableResultProjection(receiptFirst.Generation.Content)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if _, err := repository.RecordLLMCallOutcome(ctx, LLMCallOutcomeRecord{
 		Authority: claim.Authority, CallEvidenceID: receiptEvidence.ID,
-		Candidate: receiptFirst.Generation.Content, Projection: &projection,
+		Candidate: receiptFirst.Generation.Content,
 	}); !errors.Is(err, ErrLLMCallTerminalizedByAttempt) {
 		t.Fatalf("terminalized call outcome err=%v", err)
 	}

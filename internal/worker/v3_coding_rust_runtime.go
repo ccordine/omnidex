@@ -8,27 +8,32 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
-func rustCommandLineRuntimeDocument() assemblyline.SourceDocument {
-	const source = `use std::collections::BTreeMap;
+func rustCommandLineRuntimeBlockIDs() []string {
+	return []string{"runtime.input", "runtime.result", "runtime.capabilities"}
+}
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+func rustCommandLineRuntimeDocument() assemblyline.SourceDocument {
+	const input = `#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct TaskInput {
     pub arguments: Vec<String>,
     pub standard_input: String,
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+}`
+	const result = `#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct TaskResult {
     pub output: String,
     pub error: String,
     pub exit_code: i32,
     pub state: BTreeMap<String, String>,
-}
-
-pub type CapabilityResults = BTreeMap<String, TaskResult>;`
+}`
+	const capabilities = `pub type CapabilityResults = BTreeMap<String, TaskResult>;`
 	return assemblyline.SourceDocument{
 		ID: "application_runtime", Path: "src/runtime.rs",
-		Blocks: []assemblyline.SourceBlock{{ID: "runtime.api", Static: source, API: source}},
+		Preamble: "use std::collections::BTreeMap;",
+		Blocks: []assemblyline.SourceBlock{
+			{ID: "runtime.input", Static: input, API: input},
+			{ID: "runtime.result", Static: result, API: result},
+			{ID: "runtime.capabilities", Static: capabilities, API: capabilities, DependsOn: []string{"runtime.result"}},
+		},
 	}
 }
 

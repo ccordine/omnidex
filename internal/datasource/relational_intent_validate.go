@@ -6,7 +6,7 @@ import (
 )
 
 func (intent RelationalIntent) Validate(snapshot SchemaSnapshot) error {
-	if snapshot.Schema != SchemaSnapshotV1 || snapshot.Driver != DriverPostgres || snapshot.Fingerprint == "" {
+	if snapshot.Schema != SchemaSnapshotV1 || snapshot.Driver != DriverPostgres || snapshot.SourceID == "" {
 		return fmt.Errorf("relational intent requires a valid PostgreSQL schema snapshot")
 	}
 	if intent.Schema != RelationalIntentV1 {
@@ -14,9 +14,6 @@ func (intent RelationalIntent) Validate(snapshot SchemaSnapshot) error {
 	}
 	if intent.SourceID != snapshot.SourceID {
 		return fmt.Errorf("relational intent source %q does not match snapshot source", intent.SourceID)
-	}
-	if intent.SchemaFingerprint != snapshot.Fingerprint {
-		return fmt.Errorf("relational intent schema fingerprint is stale")
 	}
 	if _, err := snapshot.Relation(intent.FromRelationID); err != nil {
 		return err

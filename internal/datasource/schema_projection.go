@@ -39,10 +39,9 @@ type IntentRelationProjection struct {
 }
 
 type IntentSchemaProjection struct {
-	Schema            string                     `json:"schema"`
-	SourceID          string                     `json:"source_id"`
-	SchemaFingerprint string                     `json:"schema_fingerprint"`
-	Relations         []IntentRelationProjection `json:"relations"`
+	Schema    string                     `json:"schema"`
+	SourceID  string                     `json:"source_id"`
+	Relations []IntentRelationProjection `json:"relations"`
 }
 
 func ProjectSchemaForIntent(snapshot SchemaSnapshot, relationIDs []string) (IntentSchemaProjection, error) {
@@ -52,7 +51,7 @@ func ProjectSchemaForIntent(snapshot SchemaSnapshot, relationIDs []string) (Inte
 	if len(relationIDs) == 0 || len(relationIDs) > MaxProjectedRelations {
 		return IntentSchemaProjection{}, fmt.Errorf("intent schema projection requires 1..%d relation IDs", MaxProjectedRelations)
 	}
-	projection := IntentSchemaProjection{Schema: IntentSchemaProjectionV1, SourceID: snapshot.SourceID, SchemaFingerprint: snapshot.Fingerprint}
+	projection := IntentSchemaProjection{Schema: IntentSchemaProjectionV1, SourceID: snapshot.SourceID}
 	seen := map[string]struct{}{}
 	columnCount := 0
 	enumValueCount := 0

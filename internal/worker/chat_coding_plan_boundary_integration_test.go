@@ -252,7 +252,7 @@ func newChatCodingBoundaryRepository(t *testing.T, pool *pgxpool.Pool) *queue.Re
 	if err != nil {
 		t.Fatal(err)
 	}
-	return queue.New(pool, authority, model.CodingScopeModeNormal)
+	return queue.New(pool, authority)
 }
 
 func enqueueChatCodingBoundaryJob(
@@ -270,9 +270,7 @@ func enqueueChatCodingBoundaryJob(
 	if err != nil {
 		t.Fatal(err)
 	}
-	operationID, err := queue.NewLifecycleOperationID(
-		"worker-chat-plan", codingPlanLifecycleRequestHash(t),
-	)
+	operationID, err := queue.NewLifecycleOperationID()
 	if err != nil {
 		t.Fatal(err)
 	}

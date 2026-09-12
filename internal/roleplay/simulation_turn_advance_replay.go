@@ -7,23 +7,24 @@ import (
 	"slices"
 	"time"
 
+	"github.com/gryph/omnidex/internal/exactjson"
 	"github.com/jackc/pgx/v5"
 )
 
 func loadTurnAdvanceTx(
 	ctx context.Context,
 	tx pgx.Tx,
-	operationID, requestHash string,
+	request SimulationTurnAdvanceRequest,
 ) (SimulationTurnAdvanceResult, bool, error) {
 	type advanceRow struct {
 		preparationID, worldID, sceneID        string
 		previousCharacterID, activeCharacterID string
 		jobID, beforeRevision, afterRevision   int64
 		beforeInitiative, afterInitiative      SimulationInitiativeClock
-		requestHash                            string
+		channelID                              string
+		userMessageID                          int64
 		participantPayload                     []byte
 		userTurnPayload                        []byte
-		narrativeFingerprint                   string
 		payload                                []byte
 		createdAt                              time.Time
 	}
@@ -36,21 +37,21 @@ func loadTurnAdvanceTx(
 		       advance.before_initiative_round,advance.before_initiative_turn,
 		       advance.before_fictional_time_tick,advance.after_initiative_round,
 		       advance.after_initiative_turn,advance.after_fictional_time_tick,
-		       advance.narrative_fingerprint,advance.request_sha256,advance.result,
+		       advance.result,
+		       preparation.channel_id,preparation.user_message_id,
 		       preparation.result->'user_turn',advance.created_at
 		FROM roleplay_simulation_turn_advances AS advance
 		JOIN roleplay_simulation_turn_preparations AS preparation
 		  ON preparation.operation_id=advance.preparation_id
-		WHERE advance.operation_id=$1
-	`, operationID).Scan(
+		WHERE advance.preparation_id=$1
+	`, request.PreparationID).Scan(
 		&row.preparationID, &row.jobID, &row.worldID, &row.sceneID,
 		&row.beforeRevision, &row.afterRevision, &row.previousCharacterID,
 		&row.activeCharacterID, &row.participantPayload,
 		&row.beforeInitiative.Round, &row.beforeInitiative.Turn,
 		&row.beforeInitiative.FictionalTimeTick, &row.afterInitiative.Round,
 		&row.afterInitiative.Turn, &row.afterInitiative.FictionalTimeTick,
-		&row.narrativeFingerprint,
-		&row.requestHash, &row.payload, &row.userTurnPayload, &row.createdAt,
+		&row.payload, &row.channelID, &row.userMessageID, &row.userTurnPayload, &row.createdAt,
 	)
 	if err == pgx.ErrNoRows {
 		return SimulationTurnAdvanceResult{}, false, nil
@@ -58,10 +59,15 @@ func loadTurnAdvanceTx(
 	if err != nil {
 		return SimulationTurnAdvanceResult{}, false, err
 	}
-	if row.requestHash != requestHash {
+	if row.preparationID != request.PreparationID || row.channelID != request.ChannelID ||
+		row.userMessageID != request.UserMessageID || row.jobID != request.JobID ||
+		row.beforeRevision != request.ExpectedRevision {
 		return SimulationTurnAdvanceResult{}, false, fmt.Errorf("%w: turn advance identity was reused", ErrSimulationConflict)
 	}
 	var result SimulationTurnAdvanceResult
+	if err := exactjson.ValidateObject(row.payload, result, "simulation turn advance"); err != nil {
+		return result, false, err
+	}
 	if err := json.Unmarshal(row.payload, &result); err != nil {
 		return result, false, fmt.Errorf("decode simulation turn advance: %w", err)
 	}
@@ -76,13 +82,12 @@ func loadTurnAdvanceTx(
 	if err := userTurn.Validate(); err != nil {
 		return SimulationTurnAdvanceResult{}, false, fmt.Errorf("persisted simulation turn advance user authority: %w", err)
 	}
-	if result.OperationID != operationID || result.PreparationID != row.preparationID ||
+	if result.PreparationID != row.preparationID ||
 		result.WorldID != row.worldID || result.SceneID != row.sceneID ||
 		result.PreviousCharacterID != row.previousCharacterID || result.ActiveCharacterID != row.activeCharacterID ||
 		result.BeforeRevision != row.beforeRevision || result.AfterRevision != row.afterRevision ||
 		result.BeforeInitiative != row.beforeInitiative || result.AfterInitiative != row.afterInitiative ||
 		!slices.Equal(result.ParticipantCharacterIDs, participantIDs) ||
-		result.NarrativeFingerprint != row.narrativeFingerprint ||
 		!result.CreatedAt.Equal(row.createdAt) {
 		return SimulationTurnAdvanceResult{}, false, fmt.Errorf("persisted simulation turn advance does not match its row authority")
 	}
@@ -93,14 +98,13 @@ func loadTurnAdvanceTx(
 }
 
 func validateAdvanceReplayResult(result SimulationTurnAdvanceResult, userTurn UserTurnAuthority) error {
-	if validateIdentity(result.OperationID, transitionIdentity) != nil ||
-		validateIdentity(result.PreparationID, transitionIdentity) != nil ||
+	if validateIdentity(result.PreparationID, transitionIdentity) != nil ||
 		validateIdentity(result.WorldID, worldIdentity) != nil ||
 		validateIdentity(result.SceneID, sceneIdentity) != nil ||
 		validateIdentity(result.PreviousCharacterID, characterIdentity) != nil ||
 		validateIdentity(result.ActiveCharacterID, characterIdentity) != nil ||
 		result.BeforeRevision < 1 || result.AfterRevision != result.BeforeRevision+1 ||
-		!validSimulationSHA(result.NarrativeFingerprint) || result.CreatedAt.IsZero() {
+		result.CreatedAt.IsZero() {
 		return fmt.Errorf("persisted simulation turn advance is invalid")
 	}
 	if len(result.ParticipantCharacterIDs) < 1 || len(result.ParticipantCharacterIDs) > MaxSceneParticipants {

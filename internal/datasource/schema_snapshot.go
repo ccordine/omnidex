@@ -1,9 +1,6 @@
 package datasource
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -29,38 +26,28 @@ func NewSchemaSnapshot(
 	if err != nil {
 		return SchemaSnapshot{}, err
 	}
-	fingerprintDefinitions := cloneRelationDefinitions(canonical)
-	for index := range fingerprintDefinitions {
-		fingerprintDefinitions[index].RowEstimate = 0
-	}
-	encoded, err := json.Marshal(fingerprintDefinitions)
-	if err != nil {
-		return SchemaSnapshot{}, fmt.Errorf("encode canonical schema metadata: %w", err)
-	}
-	fingerprintBytes := sha256.Sum256(encoded)
-	fingerprint := hex.EncodeToString(fingerprintBytes[:])
-	relations, err := resolveSchemaDefinitions(sourceID, fingerprint, canonical)
+	relations, err := resolveSchemaDefinitions(canonical)
 	if err != nil {
 		return SchemaSnapshot{}, err
 	}
 	return SchemaSnapshot{
 		Schema: SchemaSnapshotV1, SourceID: sourceID, SourceName: strings.TrimSpace(sourceName),
-		Driver: DriverPostgres, Fingerprint: fingerprint, CapturedAt: capturedAt.UTC(), Relations: relations,
+		Driver: DriverPostgres, CapturedAt: capturedAt.UTC(), Relations: relations,
 	}, nil
 }
 
-func resolveSchemaDefinitions(sourceID, fingerprint string, definitions []RelationDefinition) ([]SchemaRelation, error) {
+func resolveSchemaDefinitions(definitions []RelationDefinition) ([]SchemaRelation, error) {
 	relations := make([]SchemaRelation, len(definitions))
 	relationIDs := map[string]string{}
 	columnIDs := map[string]map[string]string{}
 	for index, definition := range definitions {
 		key := relationDefinitionKey(definition.Schema, definition.Name)
-		relationID := opaqueSchemaID("rel", sourceID, fingerprint, key)
+		relationID := fmt.Sprintf("rel_%d", index+1)
 		relationIDs[key] = relationID
 		columnIDs[key] = map[string]string{}
 		relation := SchemaRelation{ID: relationID, Schema: definition.Schema, Name: definition.Name, Kind: definition.Kind, RowEstimate: definition.RowEstimate}
-		for _, column := range definition.Columns {
-			columnID := opaqueSchemaID("col", sourceID, fingerprint, key, column.Name)
+		for columnIndex, column := range definition.Columns {
+			columnID := fmt.Sprintf("%s_col_%d", relationID, columnIndex+1)
 			columnIDs[key][column.Name] = columnID
 			relation.Columns = append(relation.Columns, SchemaColumn{ID: columnID, Name: column.Name, Ordinal: column.Ordinal, DataType: column.DataType, TypeCategory: column.TypeCategory, Nullable: column.Nullable, Generated: column.Generated, Identity: column.Identity, AllowedValues: append([]string(nil), column.AllowedValues...)})
 		}
@@ -71,10 +58,10 @@ func resolveSchemaDefinitions(sourceID, fingerprint string, definitions []Relati
 		relation := &relations[index]
 		relation.PrimaryKey = resolveColumnNames(columnIDs[key], definition.PrimaryKey)
 		if definition.PrimaryKeyName != "" {
-			relation.PrimaryKeyID = opaqueSchemaID("pk", sourceID, fingerprint, key, definition.PrimaryKeyName)
+			relation.PrimaryKeyID = relation.ID + "_pk"
 			relation.PrimaryKeyName = definition.PrimaryKeyName
 		}
-		for _, fk := range definition.ForeignKeys {
+		for foreignKeyIndex, fk := range definition.ForeignKeys {
 			targetKey := relationDefinitionKey(fk.ReferencedSchema, fk.ReferencedRelation)
 			targetRelationID, exists := relationIDs[targetKey]
 			if !exists {
@@ -84,24 +71,19 @@ func resolveSchemaDefinitions(sourceID, fingerprint string, definitions []Relati
 			if err := validateColumnNames("foreign key "+fk.Name+" referenced", fk.ReferencedColumns, stringSet(targetColumns), false); err != nil {
 				return nil, err
 			}
-			relation.ForeignKeys = append(relation.ForeignKeys, SchemaForeignKey{ID: opaqueSchemaID("fk", sourceID, fingerprint, key, fk.Name), Name: fk.Name, ColumnIDs: resolveColumnNames(columnIDs[key], fk.Columns), ReferencedRelationID: targetRelationID, ReferencedColumnIDs: resolveColumnNames(targetColumns, fk.ReferencedColumns), MatchType: fk.MatchType, OnUpdate: fk.OnUpdate, OnDelete: fk.OnDelete, Deferrable: fk.Deferrable})
+			relation.ForeignKeys = append(relation.ForeignKeys, SchemaForeignKey{ID: fmt.Sprintf("%s_fk_%d", relation.ID, foreignKeyIndex+1), Name: fk.Name, ColumnIDs: resolveColumnNames(columnIDs[key], fk.Columns), ReferencedRelationID: targetRelationID, ReferencedColumnIDs: resolveColumnNames(targetColumns, fk.ReferencedColumns), MatchType: fk.MatchType, OnUpdate: fk.OnUpdate, OnDelete: fk.OnDelete, Deferrable: fk.Deferrable})
 		}
-		for _, unique := range definition.UniqueConstraints {
-			relation.UniqueConstraints = append(relation.UniqueConstraints, SchemaUniqueConstraint{ID: opaqueSchemaID("uniq", sourceID, fingerprint, key, unique.Name), Name: unique.Name, ColumnIDs: resolveColumnNames(columnIDs[key], unique.Columns)})
+		for uniqueIndex, unique := range definition.UniqueConstraints {
+			relation.UniqueConstraints = append(relation.UniqueConstraints, SchemaUniqueConstraint{ID: fmt.Sprintf("%s_unique_%d", relation.ID, uniqueIndex+1), Name: unique.Name, ColumnIDs: resolveColumnNames(columnIDs[key], unique.Columns)})
 		}
-		for _, check := range definition.CheckConstraints {
-			relation.CheckConstraints = append(relation.CheckConstraints, SchemaCheckConstraint{ID: opaqueSchemaID("check", sourceID, fingerprint, key, check.Name), Name: check.Name, Expression: check.Expression})
+		for checkIndex, check := range definition.CheckConstraints {
+			relation.CheckConstraints = append(relation.CheckConstraints, SchemaCheckConstraint{ID: fmt.Sprintf("%s_check_%d", relation.ID, checkIndex+1), Name: check.Name, Expression: check.Expression})
 		}
-		for _, schemaIndex := range definition.Indexes {
-			relation.Indexes = append(relation.Indexes, SchemaIndex{ID: opaqueSchemaID("idx", sourceID, fingerprint, key, schemaIndex.Name), Name: schemaIndex.Name, ColumnIDs: resolveColumnNames(columnIDs[key], schemaIndex.Columns), Unique: schemaIndex.Unique, Primary: schemaIndex.Primary, Expression: schemaIndex.Expression, Predicate: schemaIndex.Predicate})
+		for indexIndex, schemaIndex := range definition.Indexes {
+			relation.Indexes = append(relation.Indexes, SchemaIndex{ID: fmt.Sprintf("%s_index_%d", relation.ID, indexIndex+1), Name: schemaIndex.Name, ColumnIDs: resolveColumnNames(columnIDs[key], schemaIndex.Columns), Unique: schemaIndex.Unique, Primary: schemaIndex.Primary, Expression: schemaIndex.Expression, Predicate: schemaIndex.Predicate})
 		}
 	}
 	return relations, nil
-}
-
-func opaqueSchemaID(prefix string, parts ...string) string {
-	digest := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
-	return prefix + "_" + hex.EncodeToString(digest[:12])
 }
 
 func resolveColumnNames(ids map[string]string, names []string) []string {

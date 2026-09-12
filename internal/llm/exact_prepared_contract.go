@@ -3,7 +3,6 @@ package llm
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"strings"
 	"unicode/utf8"
 )
@@ -24,14 +23,11 @@ const (
 	maxExactPreparedJSONBytesPerContentByte = 6
 	maxExactPreparedJSONBytesPerContextID   = 21
 	maxExactPreparedProviderScalarBytes     = 64 * 1024
-	MaxExactPreparedProviderResponseBytes   =
-		(maxExactPreparedJSONBytesPerContentByte * MaxExactPreparedModelContentBytes) +
+	MaxExactPreparedProviderResponseBytes   = (maxExactPreparedJSONBytesPerContentByte * MaxExactPreparedModelContentBytes) +
 		(maxExactPreparedJSONBytesPerContextID * MaxInferenceContextTokens) +
 		maxExactPreparedProviderScalarBytes
 	maxExactPreparedProviderBoundaryBytes = 1
 )
-
-var exactSHA256Digest = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 type ProviderResponseDisposition string
 
@@ -55,26 +51,23 @@ type ProviderGenerationUsage struct {
 }
 
 type PreparedGeneration struct {
-	Schema                        string                          `json:"schema"`
-	Protocol                      ExactPreparedProtocol           `json:"protocol"`
-	ProviderRequestDisposition    ProviderRequestDisposition      `json:"provider_request_disposition"`
-	Content                       string                          `json:"content"`
-	ProviderRequestSHA256         string                          `json:"provider_request_sha256"`
-	ProviderHTTPStatus            int                             `json:"provider_http_status"`
-	ProviderResponseDisposition   ProviderResponseDisposition     `json:"provider_response_disposition"`
-	ProviderResponseComplete      bool                            `json:"provider_response_complete"`
-	ProviderContentEncoding       ProviderContentEncodingEvidence `json:"provider_content_encoding"`
-	ProviderResponseBytesKnown    bool                            `json:"provider_response_bytes_known"`
-	ProviderResponseSHA256        string                          `json:"provider_response_sha256"`
-	ProviderResponseBytes         int64                           `json:"provider_response_bytes"`
-	ProviderResponseCaptureSHA256 string                          `json:"provider_response_capture_sha256"`
-	ProviderResponseCapturedBytes int                             `json:"provider_response_captured_bytes"`
-	ProviderResponseCapture       []byte                          `json:"-"`
-	ProviderDonePresent           bool                            `json:"provider_done_present"`
-	ProviderDone                  bool                            `json:"provider_done"`
-	ProviderDoneReason            string                          `json:"provider_done_reason"`
-	UsagePresent                  bool                            `json:"usage_present"`
-	Usage                         ProviderGenerationUsage         `json:"usage"`
+	Schema                        string                      `json:"schema"`
+	Protocol                      ExactPreparedProtocol       `json:"protocol"`
+	ProviderRequestDisposition    ProviderRequestDisposition  `json:"provider_request_disposition"`
+	Content                       string                      `json:"content"`
+	ProviderHTTPStatus            int                         `json:"provider_http_status"`
+	ProviderResponseDisposition   ProviderResponseDisposition `json:"provider_response_disposition"`
+	ProviderResponseComplete      bool                        `json:"provider_response_complete"`
+	ProviderContentEncoding       ProviderContentEncoding     `json:"provider_content_encoding"`
+	ProviderResponseBytesKnown    bool                        `json:"provider_response_bytes_known"`
+	ProviderResponseBytes         int64                       `json:"provider_response_bytes"`
+	ProviderResponseCapturedBytes int                         `json:"provider_response_captured_bytes"`
+	ProviderResponseCapture       []byte                      `json:"-"`
+	ProviderDonePresent           bool                        `json:"provider_done_present"`
+	ProviderDone                  bool                        `json:"provider_done"`
+	ProviderDoneReason            string                      `json:"provider_done_reason"`
+	UsagePresent                  bool                        `json:"usage_present"`
+	Usage                         ProviderGenerationUsage     `json:"usage"`
 }
 
 func (usage ProviderGenerationUsage) ValidateSuccessful() error {
@@ -140,9 +133,7 @@ func (generation PreparedGeneration) ValidateProviderResponseEvidence() error {
 		}
 		return nil
 	}
-	if len(generation.ProviderResponseCapture) != generation.ProviderResponseCapturedBytes ||
-		providerBodySHA256(generation.ProviderResponseCapture) !=
-			generation.ProviderResponseCaptureSHA256 {
+	if len(generation.ProviderResponseCapture) != generation.ProviderResponseCapturedBytes {
 		return fmt.Errorf("provider response capture bytes differ from their receipt")
 	}
 	return ValidateExactPreparedResponseProjection(generation)
@@ -152,16 +143,13 @@ func (generation PreparedGeneration) ValidateProviderResponseEvidence() error {
 // without claiming that its out-of-line raw response bytes were supplied.
 func (generation PreparedGeneration) ValidateProviderResponseReceipt() error {
 	if generation.Schema != PreparedGenerationSchemaV1 || generation.Protocol.Validate() != nil ||
-		generation.ProviderRequestDisposition.Validate() != nil ||
-		!exactSHA256Digest.MatchString(generation.ProviderRequestSHA256) {
+		generation.ProviderRequestDisposition.Validate() != nil {
 		return fmt.Errorf("exact prepared provider response evidence is invalid")
 	}
 	if generation.ProviderResponseDisposition == ProviderResponseTransportError {
 		if generation.ProviderHTTPStatus != 0 || generation.ProviderResponseComplete ||
 			generation.ProviderResponseBytesKnown ||
-			generation.ProviderContentEncoding != (ProviderContentEncodingEvidence{}) ||
-			generation.ProviderResponseSHA256 != "" || generation.ProviderResponseBytes != 0 ||
-			generation.ProviderResponseCaptureSHA256 != "" ||
+			generation.ProviderContentEncoding != "" || generation.ProviderResponseBytes != 0 ||
 			generation.ProviderResponseCapturedBytes != 0 ||
 			generation.ProviderDonePresent || generation.ProviderDone || generation.ProviderDoneReason != "" {
 			return fmt.Errorf("transport failure claims a provider response")
@@ -176,7 +164,6 @@ func (generation PreparedGeneration) ValidateProviderResponseReceipt() error {
 		generation.ProviderResponseBytes < 0 || generation.ProviderResponseCapturedBytes < 0 ||
 		generation.ProviderResponseCapturedBytes >
 			MaxExactPreparedProviderResponseBytes+maxExactPreparedProviderBoundaryBytes ||
-		!exactSHA256Digest.MatchString(generation.ProviderResponseCaptureSHA256) ||
 		generation.ProviderContentEncoding.Validate() != nil {
 		return fmt.Errorf("provider response receipt is invalid")
 	}
@@ -186,18 +173,15 @@ func (generation PreparedGeneration) ValidateProviderResponseReceipt() error {
 			return fmt.Errorf("partial provider response disposition claims a complete body")
 		}
 		if !generation.ProviderResponseBytesKnown ||
-			!exactSHA256Digest.MatchString(generation.ProviderResponseSHA256) ||
 			generation.ProviderResponseCapturedBytes > MaxExactPreparedProviderResponseBytes ||
-			generation.ProviderResponseBytes != int64(generation.ProviderResponseCapturedBytes) ||
-			generation.ProviderResponseSHA256 != generation.ProviderResponseCaptureSHA256 {
-			return fmt.Errorf("complete provider response lacks its raw body identity")
+			generation.ProviderResponseBytes != int64(generation.ProviderResponseCapturedBytes) {
+			return fmt.Errorf("complete provider response has an invalid body length")
 		}
 	} else {
 		if generation.ProviderResponseBytesKnown || generation.ProviderResponseBytes != 0 ||
-			generation.ProviderResponseSHA256 != "" ||
 			(generation.ProviderResponseDisposition != ProviderResponseBodyLimit &&
 				generation.ProviderResponseDisposition != ProviderResponseBodyReadError) {
-			return fmt.Errorf("partial provider response claims a complete raw body identity")
+			return fmt.Errorf("partial provider response claims a complete body")
 		}
 		if generation.ProviderResponseDisposition == ProviderResponseBodyLimit &&
 			generation.ProviderResponseCapturedBytes !=

@@ -20,7 +20,6 @@ type objectiveDatabaseRawLeafCall func(
 func (adapter portableObjectiveDatabaseStations) rawLeafCall(
 	owner station.ID,
 	resolveModel func() (string, error),
-	ledger *objectiveDatabaseRawLeafCallLedger,
 ) objectiveDatabaseRawLeafCall {
 	return func(
 		ctx context.Context,
@@ -28,22 +27,11 @@ func (adapter portableObjectiveDatabaseStations) rawLeafCall(
 		job assemblyline.PortableJob,
 		decode objectiveDatabaseRawLeafDecoder,
 	) (any, int, error) {
-		value, receipt, err := runObjectivePortableRawLeafStation[any](
+		value, dispatches, err := runObjectivePortableRawLeafStation[any](
 			ctx, adapter.runtime, subject, job, owner, resolveModel,
 			objectiveRawLeafDecoder[any](decode),
 		)
-		if err != nil {
-			return value, receipt.Calls, err
-		}
-		if ledger == nil {
-			return nil, receipt.Calls, fmt.Errorf(
-				"database raw semantic leaf %s has no receipt ledger", subject,
-			)
-		}
-		if err := ledger.record(subject, receipt); err != nil {
-			return nil, receipt.Calls, err
-		}
-		return value, receipt.Calls, nil
+		return value, dispatches, err
 	}
 }
 

@@ -45,26 +45,16 @@ func (machine *evidenceMachine) selectAndProject(
 		MaxSelections: min(machine.config.MaxRelevantCandidates, len(evidence)),
 	}
 	decision, err := machine.relevance.Select(ctx, cloneRelevanceCall(call))
-	result.RelevanceCalls++
+	result.SemanticCalls += decision.SemanticCalls
 	if err != nil {
 		return nil, false, fmt.Errorf("relevance station: %w", err)
 	}
-	receipt, err := decision.CallLedger.ValidateForMaximum(
-		"web relevance decision", len(candidates)*exactPortableSemanticLeafCalls,
-	)
-	if err != nil {
-		return nil, false, fmt.Errorf("%w: %v", ErrInvalidRelevance, err)
-	}
-	if decision.SemanticCalls != receipt.Calls {
+	if decision.SemanticCalls < 0 || decision.SemanticCalls > len(candidates) {
 		return nil, false, fmt.Errorf(
-			"%w: relevance reported %d calls but its exact ledger proves %d",
-			ErrInvalidRelevance, decision.SemanticCalls, receipt.Calls,
+			"%w: relevance reported %d calls outside 0..%d",
+			ErrInvalidRelevance, decision.SemanticCalls, len(candidates),
 		)
 	}
-	if err := result.CallLedger.Merge("relevance", decision.CallLedger); err != nil {
-		return nil, false, fmt.Errorf("%w: %v", ErrInvalidRelevance, err)
-	}
-	result.SemanticCalls += receipt.Calls
 	if err := ctx.Err(); err != nil {
 		return nil, false, err
 	}
@@ -72,7 +62,6 @@ func (machine *evidenceMachine) selectAndProject(
 	if err != nil {
 		return nil, false, err
 	}
-	result.Steps = append(result.Steps, StepRelevanceResolved)
 	if decision.Outcome == RelevanceNone {
 		return nil, false, nil
 	}
@@ -281,26 +270,6 @@ func projectWebEvidenceModelText(
 		label, provenance, result,
 	); err != nil {
 		return "", err
-	}
-	return result, nil
-}
-
-func applyProjectionTruncation(
-	evidence []Evidence,
-	projected []ProjectedEvidence,
-) ([]Evidence, error) {
-	truncatedByID := make(map[EvidenceID]bool, len(projected))
-	for _, item := range projected {
-		if _, duplicate := truncatedByID[item.EvidenceID]; duplicate {
-			return nil, fmt.Errorf("%w: projected evidence ID %q is duplicated", ErrInvalidAcquisition, item.EvidenceID)
-		}
-		truncatedByID[item.EvidenceID] = item.Truncated
-	}
-	result := cloneEvidence(evidence)
-	for index := range result {
-		if truncated, selected := truncatedByID[result[index].ID]; selected && truncated {
-			result[index].Truncated = true
-		}
 	}
 	return result, nil
 }

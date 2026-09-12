@@ -16,7 +16,7 @@ const MaxChannelSessionMessages = 200
 type ChannelSessionSnapshot struct {
 	Channel           model.Channel
 	WorkspaceIdentity string
-	Revision          string
+	State             ChannelSessionState
 	Transcript        model.ChannelMessagePage
 	Turns             []ChannelSessionTurn
 	TurnsTruncated    bool
@@ -62,12 +62,12 @@ func (r *Repository) ChannelSessionSnapshot(
 	}
 	state, err := channelSessionStateTx(ctx, tx, channelID, workspaceIdentity)
 	if err != nil {
-		return ChannelSessionSnapshot{}, fmt.Errorf("read channel %q session revision: %w", channelID, err)
+		return ChannelSessionSnapshot{}, fmt.Errorf("read channel %q session state: %w", channelID, err)
 	}
 	if state.ChannelID != channel.ID || state.WorkspaceRoot != channel.WorkspaceRoot ||
 		state.WorkspaceIdentity != workspaceIdentity {
 		return ChannelSessionSnapshot{}, fmt.Errorf(
-			"channel %q session revision differs from exact channel authority",
+			"channel %q session state differs from exact channel authority",
 			channelID,
 		)
 	}
@@ -97,7 +97,7 @@ func (r *Repository) ChannelSessionSnapshot(
 		return ChannelSessionSnapshot{}, fmt.Errorf("commit channel %q session snapshot: %w", channelID, err)
 	}
 	return ChannelSessionSnapshot{
-		Channel: channel, WorkspaceIdentity: workspaceIdentity, Revision: state.Revision,
+		Channel: channel, WorkspaceIdentity: workspaceIdentity, State: state,
 		Transcript: transcript,
 		Turns:      turns, TurnsTruncated: turnsTruncated,
 		Controls: controls, ControlsTruncated: controlsTruncated,
