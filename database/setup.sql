@@ -51,7 +51,8 @@ CREATE TABLE llm_call_evidence (
     provider_request bytea NOT NULL,
     provider_request_bytes integer NOT NULL CHECK (
         provider_request_bytes=octet_length(provider_request)
-        AND provider_request_bytes BETWEEN 1 AND 1048576
+        -- Semantic prompt plus JSON escaping/wrapper and bounded native IDs.
+        AND provider_request_bytes BETWEEN 1 AND (1048576 + 21*1048576)
     ),
     context_tokens integer NOT NULL CHECK (context_tokens BETWEEN 1 AND 1048576),
     max_output_tokens integer NOT NULL CHECK (
@@ -198,7 +199,12 @@ CREATE FUNCTION validate_llm_call_evidence_insert() RETURNS trigger
 DECLARE
 	attempt_status text;
 	prior_call record;
+	request_context jsonb;
 BEGIN
+	request_context := (convert_from(NEW.provider_request,'UTF8')::json -> 'context')::jsonb;
+	IF NEW.iteration=1 AND request_context IS NOT NULL THEN
+		RAISE EXCEPTION 'initial LLM call cannot inherit model context';
+	END IF;
 	SELECT status INTO attempt_status FROM job_step_attempts
 	WHERE job_id=NEW.job_id AND generation=NEW.generation
 	  AND step_id=NEW.step_id AND attempt=NEW.step_attempt
@@ -221,6 +227,7 @@ BEGIN
 		SELECT calls.*,
 		       receipts.status AS prior_receipt_status,
 		       receipts.output_limit_reached AS prior_output_limit_reached,
+		       receipts.raw_response AS prior_raw_response,
 		       outcomes.status AS prior_outcome_status,
 		       parent_attempt.status AS prior_attempt_status
 		INTO prior_call
@@ -261,6 +268,14 @@ BEGIN
 		      prior_call.prior_output_limit_reached OR
 		      prior_call.prior_outcome_status<>'rejected' THEN
 			RAISE EXCEPTION 'iterative LLM call parent was not a rejected successful response';
+		END IF;
+		IF jsonb_typeof(request_context) IS DISTINCT FROM 'array' THEN
+			RAISE EXCEPTION 'source correction requires retained model context';
+		END IF;
+		IF jsonb_array_length(request_context) NOT BETWEEN 1 AND NEW.context_tokens OR
+		   request_context IS DISTINCT FROM
+		       (convert_from(prior_call.prior_raw_response,'UTF8')::json -> 'context')::jsonb THEN
+			RAISE EXCEPTION 'source correction model context differs from its exact parent response';
 		END IF;
 	END IF;
 	RETURN NEW;

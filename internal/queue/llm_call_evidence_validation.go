@@ -84,6 +84,12 @@ func normalizeLLMCallOpening(record LLMCallOpeningRecord) (normalizedLLMCallOpen
 		)
 	}
 	isLineageRoot := record.Iteration == 1
+	if isLineageRoot && record.Prepared.RetainedContext != nil {
+		return normalizedLLMCallOpening{}, fmt.Errorf("initial LLM call cannot inherit model context")
+	}
+	if !isLineageRoot && len(record.Prepared.RetainedContext) == 0 {
+		return normalizedLLMCallOpening{}, fmt.Errorf("source correction requires retained model context")
+	}
 	if isLineageRoot {
 		work := assemblyline.PortableJob{
 			Schema: assemblyline.PortableJobSchemaV2, Kind: record.WorkKind, Payload: record.WorkInput,

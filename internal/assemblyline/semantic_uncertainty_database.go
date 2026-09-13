@@ -89,6 +89,13 @@ func databaseSemanticUncertaintyContract(
 			"Only the focused literal purpose, selected field, accepted comparison, its parent purpose when needed, and any remaining closed-choice values; retained values remain in code.",
 			"One exact filter-literal value.",
 			"DecodeDatabaseQueryFilterValueLeaf parses the literal before code appends it to the focused filter.")
+	case WorkDatabaseQueryFilterValueChoice:
+		contract = semanticUncertaintyContract(kind,
+			"Which remaining code-known field value, if any, belongs in the set required by the focused filter purpose?",
+			"The schema determines every legal value but cannot determine which subset expresses the natural-language filter purpose.",
+			"One accepted filter purpose, its focused field and comparison relation, and only unselected legal values plus the no-additional-value alternative.",
+			"One call-local opaque value-choice ID.",
+			"DecodeDatabaseQueryFilterValueChoice binds one remaining typed literal or semantic absence; code appends and removes a selected value, enforces the predicate bound, or ends selection.")
 	case WorkDatabaseQueryWindowField:
 		contract = semanticUncertaintyContract(kind,
 			"Which temporal field is constrained by the next relative window?",

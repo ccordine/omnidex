@@ -2,6 +2,7 @@ package worker
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/llm"
@@ -31,7 +32,8 @@ func prepareExactStationCall(
 		Prompt:          call.Prompt,
 		MaxOutputTokens: call.MaxOutputTokens, OutputLimitMode: llm.ExactPreparedOutputLimitExplicit,
 		ContextTokens: call.ContextTokens, RawTextStopSequence: stop,
-		Temperature: temperature,
+		Temperature:     temperature,
+		RetainedContext: slices.Clone(call.RetainedContext),
 	}, nil
 }
 

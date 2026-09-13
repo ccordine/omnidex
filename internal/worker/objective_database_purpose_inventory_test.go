@@ -120,6 +120,7 @@ func TestDatabasePurposeEmptyRequiredResultsFailAtTheirConsumers(t *testing.T) {
 			case "membership":
 				_, calls, err = resolveDatabaseQueryFilterValues(context.Background(), assemblyline.DatabaseQueryFilterLeafInput{
 					State: state, Purpose: "Match one of the requested names.", FieldID: "name", Operator: datasource.FilterIn,
+					AcceptedFilters: []datasource.RelationalPredicate{}, AcceptedValues: []datasource.IntentLiteral{},
 				}, call, 0)
 				wantError = "requires at least one literal purpose"
 			}

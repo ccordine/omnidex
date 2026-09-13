@@ -28,6 +28,8 @@ func renderPortableDatabaseLeaf(job PortableJob) (string, error) {
 		return renderPortableDatabaseInput(job, BuildDatabaseQueryFilterOperatorPrompt)
 	case WorkDatabaseQueryFilterValue:
 		return renderPortableDatabaseInput(job, BuildDatabaseQueryFilterValuePrompt)
+	case WorkDatabaseQueryFilterValueChoice:
+		return renderPortableDatabaseInput(job, BuildDatabaseQueryFilterValueChoicePrompt)
 	case WorkDatabaseQueryWindowField:
 		return renderPortableDatabaseInput(job, BuildDatabaseQueryWindowFieldPrompt)
 	case WorkDatabaseQueryWindowUnit:

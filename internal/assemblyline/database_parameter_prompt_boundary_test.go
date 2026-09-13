@@ -97,7 +97,7 @@ func TestDatabaseClosedParameterShowsOnlyRemainingValues(t *testing.T) {
 		FieldID: "focus-value", Operator: datasource.FilterIn, AcceptedFilters: []datasource.RelationalPredicate{},
 		AcceptedValues: []datasource.IntentLiteral{{Type: datasource.LiteralString, Value: "draft"}},
 	}
-	job, err := NewDatabaseQueryFilterValueJob(input)
+	job, err := NewDatabaseQueryFilterValueChoiceJob(input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,8 +115,8 @@ func TestDatabaseClosedParameterShowsOnlyRemainingValues(t *testing.T) {
 			t.Errorf("closed parameter exposed retained or duplicated values %q", omitted)
 		}
 	}
-	value, err := DecodeDatabaseQueryFilterValueLeaf(input, "A")
-	if err != nil || value != (datasource.IntentLiteral{Type: datasource.LiteralString, Value: "issued"}) {
+	value, err := DecodeDatabaseQueryFilterValueChoice(input, "A")
+	if err != nil || value.Value == nil || *value.Value != (datasource.IntentLiteral{Type: datasource.LiteralString, Value: "issued"}) {
 		t.Fatalf("remaining choice did not bind to its actual value: %v %v", value, err)
 	}
 	if !reflect.DeepEqual(column.AllowedValues, []string{"draft", "issued", "settled"}) ||

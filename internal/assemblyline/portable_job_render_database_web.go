@@ -9,7 +9,7 @@ func renderPortableDatabaseWebJob(job PortableJob) (string, bool, error) {
 		WorkDatabaseQueryProjectionAggregate,
 		WorkDatabaseQueryProjectionField, WorkDatabaseQueryProjectionTimeBucket,
 		WorkDatabaseQueryFilterField, WorkDatabaseQueryFilterOperator,
-		WorkDatabaseQueryFilterValue,
+		WorkDatabaseQueryFilterValue, WorkDatabaseQueryFilterValueChoice,
 		WorkDatabaseQueryWindowField, WorkDatabaseQueryWindowUnit,
 		WorkDatabaseQueryWindowAmount,
 		WorkDatabaseQueryExistenceRelation, WorkDatabaseQueryExistenceNegated,

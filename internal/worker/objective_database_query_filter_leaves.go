@@ -123,6 +123,13 @@ func resolveDatabaseQueryFilterValues(
 	call objectiveDatabaseRawLeafCall,
 	total int,
 ) ([]datasource.IntentLiteral, int, error) {
+	closed, err := assemblyline.DatabaseQueryFilterHasClosedValues(leaf)
+	if err != nil {
+		return nil, total, err
+	}
+	if closed {
+		return resolveDatabaseQueryClosedFilterValues(ctx, leaf, call, total)
+	}
 	purposes, nextTotal, err := resolveDatabaseQueryPurposeQueue(
 		ctx,
 		assemblyline.DatabaseQueryPurposeAuthority{

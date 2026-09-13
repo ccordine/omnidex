@@ -21,6 +21,7 @@ type exactStationCall struct {
 	MaxOutputTokens    int
 	SingleLine         bool
 	SourceCorrection   *assemblyline.SourceBodyCorrectionEvidence
+	RetainedContext    []int
 }
 
 type exactStationExecution struct {
@@ -189,6 +190,14 @@ func (s *Service) executeExactPortableStationCorrection(
 			"persisted exact station model context is invalid: %w", err,
 		)
 	}
+	retainedContext, err := llm.DecodeExactPreparedRetainedContext(
+		llm.ExactPreparedProtocol(persisted.Protocol), persisted.RawResponse, contextTokens,
+	)
+	if err != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
+			"restore source correction model context from parent call %d: %w", persisted.ID, err,
+		)
+	}
 	opaqueResponseBytes, opaqueCorrection, err := correction.OpaqueResponseMaximumBytes()
 	if err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, err
@@ -206,6 +215,7 @@ func (s *Service) executeExactPortableStationCorrection(
 		ContextTokens: contextTokens, MaxOutputTokens: maxOutputTokens,
 		SingleLine:       opaqueCorrection,
 		SourceCorrection: &correctionEvidence,
+		RetainedContext:  retainedContext,
 	}
 	prepared, err := prepareExactStationCall(call, modelName, nil)
 	if err != nil {

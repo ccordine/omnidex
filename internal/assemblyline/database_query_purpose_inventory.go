@@ -89,12 +89,15 @@ func (input DatabaseQueryPurposeAuthority) validate() error {
 		if input.ParentPurpose == "" {
 			return fmt.Errorf("database query filter-value purpose requires its accepted filter purpose")
 		}
-		_, relationID, ok := databaseQueryColumn(input.State, input.FocusedFieldID)
+		column, relationID, ok := databaseQueryColumn(input.State, input.FocusedFieldID)
 		if !ok || input.ScopeRelationID != "" && relationID != input.ScopeRelationID {
 			return fmt.Errorf("database query filter-value field %q is outside its authority", input.FocusedFieldID)
 		}
 		if input.FocusedOperator != datasource.FilterIn && input.FocusedOperator != datasource.FilterNotIn {
 			return fmt.Errorf("database query filter-value purpose requires one set-membership operator")
+		}
+		if len(column.AllowedValues) > 0 || column.TypeCategory == datasource.TypeBoolean {
+			return fmt.Errorf("closed set-membership values cannot enter a purpose inventory")
 		}
 		return nil
 	case DatabaseQueryWindowPurpose, DatabaseQueryExistencePurpose,

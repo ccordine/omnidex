@@ -145,6 +145,24 @@ func databaseQueryFilterOperatorChoices(
 func databaseQueryFilterValueChoices(
 	input DatabaseQueryFilterLeafInput,
 ) ([]OpaqueModelChoice, bool, error) {
+	values, closed, err := databaseQueryAvailableFilterValues(input)
+	if err != nil || !closed {
+		return nil, closed, err
+	}
+	if input.Operator == datasource.FilterIn || input.Operator == datasource.FilterNotIn {
+		return nil, true, fmt.Errorf("closed set-membership values require remaining-value choice rounds")
+	}
+	specs := make([]databaseOpaqueChoiceSpec, 0, len(values))
+	for _, value := range values {
+		specs = append(specs, databaseOpaqueChoiceSpec{
+			description: "The exact value " + strconv.Quote(value), value: value,
+		})
+	}
+	choices, err := databaseOpaqueChoices(specs)
+	return choices, true, err
+}
+
+func databaseQueryAvailableFilterValues(input DatabaseQueryFilterLeafInput) ([]string, bool, error) {
 	if err := input.validateOperator(); err != nil {
 		return nil, false, err
 	}
@@ -165,18 +183,19 @@ func databaseQueryFilterValueChoices(
 	for _, literal := range input.AcceptedValues {
 		accepted[literal.Value] = struct{}{}
 	}
-	specs := make([]databaseOpaqueChoiceSpec, 0, len(values))
+	remaining := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
 	for _, value := range values {
+		if _, duplicate := seen[value]; duplicate {
+			return nil, true, fmt.Errorf("database query available filter value is duplicated")
+		}
+		seen[value] = struct{}{}
 		if _, exists := accepted[value]; exists {
 			continue
 		}
-		specs = append(specs, databaseOpaqueChoiceSpec{
-			description: "The exact value " + strconv.Quote(value),
-			value:       value,
-		})
+		remaining = append(remaining, value)
 	}
-	choices, err := databaseOpaqueChoices(specs)
-	return choices, true, err
+	return remaining, true, nil
 }
 
 func databaseQueryWindowUnitChoices(input DatabaseQueryWindowLeafInput) ([]OpaqueModelChoice, error) {

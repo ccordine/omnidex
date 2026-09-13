@@ -47,6 +47,7 @@ func validateObjectiveRawCandidatePathBoundary(
 		assemblyline.WorkDatabaseQueryProjectionTimeBucket,
 		assemblyline.WorkDatabaseQueryFilterField,
 		assemblyline.WorkDatabaseQueryFilterOperator,
+		assemblyline.WorkDatabaseQueryFilterValueChoice,
 		assemblyline.WorkDatabaseQueryWindowField,
 		assemblyline.WorkDatabaseQueryWindowUnit,
 		assemblyline.WorkDatabaseQueryWindowAmount,

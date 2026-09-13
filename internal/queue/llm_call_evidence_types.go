@@ -10,8 +10,8 @@ import (
 	"github.com/gryph/omnidex/internal/model"
 )
 
-// One row can retain roughly 133 MiB across the generation receipt, raw
-// provider capture, candidate, request, and prompt. Keep server-side reads at
+// One row can retain the bounded generation receipt, raw provider capture,
+// candidate, request including native context, and prompt. Keep reads at
 // one exact call per page even though this journal is not publicly exposed.
 const MaxLLMCallEvidencePageSize = 1
 

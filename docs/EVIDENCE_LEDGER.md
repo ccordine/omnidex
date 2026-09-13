@@ -37,6 +37,23 @@ descriptions are admission metadata, not evidence that anything ran. They have n
 separate versioned identity, historical constructor chain, or renderer-ID receipt.
 The actual call input, response, and validation result establish what happened.
 
+Source correction restores the native token IDs from its immediate parent's
+complete captured response. The correction request records those IDs separately
+from the new defect question and mutable span. PostgreSQL binds them to the same
+parent, model route, and context limit. Missing or malformed context stops that
+correction before dispatch; an independent accepted result needs no continuation
+capability. Native IDs remain bounded by the retained context limit, and the
+request byte ceiling includes their encoded representation.
+[HTTP transport coverage](../internal/ollama/prepared_context_test.go) checks the
+actual request body. PostgreSQL fixtures cover
+[unrelated calls](../internal/worker/source_context_isolation_integration_test.go),
+[expired attempts](../internal/worker/source_body_attempt_recovery_integration_test.go),
+[successive defects](../internal/worker/source_context_chain_integration_test.go),
+[missing capability and replay](../internal/worker/source_context_failure_integration_test.go),
+and [forged context and request capacity](../internal/queue/llm_call_context_integration_test.go).
+These fixed-provider tests establish transport and persistence behavior; they do
+not establish live-model correction quality or autonomous building.
+
 Shared objective stations return the semantic value and actual dispatch count;
 there is no station-receipt wrapper or reuse flag. Code-resolved choices and
 retained results both contribute zero provider calls. Call bounds still apply,
@@ -55,8 +72,7 @@ raw responses, and model routes are compared with the stored records. These are
 fixed-provider execution tests, not live-language quality or autonomy evidence.
 
 [Requirement-sieve regressions](../internal/worker/v3_application_authorization_sieve_test.go)
-exercise two unrelated requests under all three inventory scope modes, with and
-without a requested candidate following a full retained-capacity batch of
+exercise two unrelated requests, with and without a requested candidate following a full retained-capacity batch of
 unrequested candidates. Code discards each not-entailed candidate immediately:
 no scope-annotation call, classification, partition, duplicate comparison, result
 question, or retained-plan capacity is consumed after that negative relation.
@@ -106,6 +122,28 @@ return one bounded sequence of candidate lines or `NO_QUERY_PURPOSE_CANDIDATES`.
 There is no separate presence call. Code ends an empty optional collection;
 the existing projection, ranking, and set-membership consumers still reject
 missing required results. Zero remaining capacity opens no inventory call.
+
+[Finite filter-set regressions](../internal/worker/objective_database_filter_subset_test.go)
+select enum and boolean membership values through remaining-value choice rounds.
+They establish zero-call initial sole selection, removal of accepted values,
+optional stopping with one candidate left, and deterministic domain exhaustion.
+[Boundary checks](../internal/assemblyline/database_filter_subset_boundary_test.go)
+reject the obsolete inventory and scalar-literal paths for closed membership,
+keep unrelated query state out of the prompt, and admit the full 256-member enum
+domain plus absence. The provider returns one opaque letter per round.
+[Failure checks](../internal/worker/objective_database_filter_subset_failure_test.go)
+reject an empty required set, invalid choices, list responses, and a selected
+set beyond the predicate limit without another station or silent truncation.
+[PostgreSQL workflow fixtures](../internal/worker/database_filter_subset_evidence_integration_test.go)
+inspect real enum and boolean schemas, record every fixed-provider call, execute
+parameterized `IN` and `NOT IN` queries, and compare their actual returned rows.
+The fixtures use three and two subset calls respectively (13 and 12 total query
+calls); reconstructing accepted intent requires zero additional provider calls.
+[Persisted failure coverage](../internal/worker/database_filter_subset_failure_integration_test.go)
+retains an accepted member and the subsequent invalid choice as separate call
+outcomes; replay uses no inference and executes no SQL. These are framework
+execution and boundary tests, not live-language quality evidence.
+
 [Full query-intent fixtures](../internal/worker/database_purpose_evidence_integration_test.go)
 exercise numeric and text filters using fixed provider text and actual PostgreSQL
 call records. They remove exact and semantic duplicate purposes, discard an

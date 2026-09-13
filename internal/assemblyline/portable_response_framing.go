@@ -55,7 +55,7 @@ func PortableResponseFramingForWorkKind(
 		WorkDatabaseQueryProjectionTimeBucket,
 		WorkDatabaseQueryFilterField,
 		WorkDatabaseQueryFilterOperator,
-		WorkDatabaseQueryFilterValue,
+		WorkDatabaseQueryFilterValue, WorkDatabaseQueryFilterValueChoice,
 		WorkDatabaseQueryWindowField,
 		WorkDatabaseQueryWindowUnit,
 		WorkDatabaseQueryWindowAmount,

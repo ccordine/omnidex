@@ -26,13 +26,16 @@ func (mode ExactPreparedOutputLimitMode) Validate() error {
 }
 
 type PreparedModel struct {
-	Protocol            ExactPreparedProtocol
-	BaseModel           string
-	ContextModel        string
-	Prompt              string
-	MaxOutputTokens     int
-	OutputLimitMode     ExactPreparedOutputLimitMode
-	ContextTokens       int
+	Protocol        ExactPreparedProtocol
+	BaseModel       string
+	ContextModel    string
+	Prompt          string
+	MaxOutputTokens int
+	OutputLimitMode ExactPreparedOutputLimitMode
+	ContextTokens   int
+	// RetainedContext contains only token IDs returned by the exact parent
+	// source-generation response. Independent station calls leave it nil.
+	RetainedContext     []int
 	Temperature         *ExactPreparedTemperature
 	RawTextStopSequence string
 }

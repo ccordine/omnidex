@@ -190,6 +190,7 @@ func TestFreshSchemaSourceBodyCorrectionRequiresRejectedSameJobAndModelParent(t 
 		t, assemblyline.WorkFragmentGeneration,
 		"Write one implementation body.", "return missingValue;",
 	)
+	initial = exactLLMEvidenceWithNativeContext(initial, "[17,28,39]")
 	initial.Authority = claim.Authority
 	initialEvidence, err := recordExactLLMEvidenceFixture(ctx, repository, initial)
 	if err != nil {
@@ -234,6 +235,7 @@ func TestFreshSchemaSourceBodyCorrectionRequiresRejectedSameJobAndModelParent(t 
 	correction.Iteration = 2
 	correction.ParentCallEvidenceID = initialEvidence.ID
 	correction.SourceCorrection = &correctionEvidence
+	correction.Prepared.RetainedContext = []int{17, 28, 39}
 	correctedEvidence, err := recordExactLLMEvidenceFixture(ctx, repository, correction)
 	if err != nil {
 		t.Fatal(err)
@@ -259,6 +261,7 @@ func TestFreshSchemaSourceBodyCorrectionRequiresRejectedSameJobAndModelParent(t 
 		t, assemblyline.WorkFragmentGeneration,
 		"Write another implementation body.", "return unknown;",
 	)
+	unrejected = exactLLMEvidenceWithNativeContext(unrejected, "[50,61]")
 	unrejected.Authority = claim.Authority
 	unrejectedEvidence, err := recordExactLLMEvidenceFixture(ctx, repository, unrejected)
 	if err != nil {
@@ -296,6 +299,7 @@ func TestFreshSchemaSourceBodyCorrectionRequiresRejectedSameJobAndModelParent(t 
 	illegal.Iteration = 2
 	illegal.ParentCallEvidenceID = unrejectedEvidence.ID
 	illegal.SourceCorrection = &illegalEvidence
+	illegal.Prepared.RetainedContext = []int{50, 61}
 	if _, err := repository.ReserveLLMCallEvidence(
 		ctx, illegal.LLMCallOpeningRecord,
 	); err == nil {

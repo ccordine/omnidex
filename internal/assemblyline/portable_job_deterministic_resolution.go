@@ -56,6 +56,12 @@ func resolvePortableDatabaseJobWithoutInference(
 			return false, true, err
 		}
 		_, resolved, err = ResolveSoleDatabaseQueryFilterValueLeaf(input)
+	case WorkDatabaseQueryFilterValueChoice:
+		var input DatabaseQueryFilterLeafInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return false, true, err
+		}
+		_, resolved, err = ResolveDatabaseQueryFilterValueChoice(input)
 	case WorkDatabaseQueryWindowField:
 		var input DatabaseQueryWindowLeafInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {

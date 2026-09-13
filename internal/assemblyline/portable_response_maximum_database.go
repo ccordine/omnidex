@@ -55,6 +55,15 @@ func portableDatabaseResponseMaximum(job PortableJob) (int, bool, error) {
 	case WorkDatabaseQueryFilterValue:
 		maximum, err := databaseFilterValueMaximum(job)
 		return maximum, true, err
+	case WorkDatabaseQueryFilterValueChoice:
+		var input DatabaseQueryFilterLeafInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return 0, true, err
+		}
+		maximum, err := opaqueModelChoiceBuilderResponseMaximum(func() ([]OpaqueModelChoice, error) {
+			return databaseQueryFilterValueSubsetChoices(input)
+		})
+		return maximum, true, err
 	case WorkDatabaseQueryWindowField:
 		maximum, err := databaseWindowFieldMaximum(job)
 		return maximum, true, err

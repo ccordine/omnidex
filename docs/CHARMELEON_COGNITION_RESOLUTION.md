@@ -122,6 +122,15 @@ plus one no-additional-choice alternative. Code removes each accepted candidate
 before the next round. Letters are remapped locally, and a model cannot repeat a
 selection or emit a list of workflow decisions.
 
+Database `IN` and `NOT IN` predicates over enum or boolean fields use these
+rounds directly. The schema already supplies the candidate values, so a literal
+purpose inventory is forbidden for those fields. An initially sole value is
+consumed without inference; a sole value remaining after earlier selections still
+competes with absence. Exhausting the domain ends selection mechanically.
+Unconstrained literal domains still require their bounded purpose inventory.
+An empty required set or a selection exceeding the predicate's hard value limit
+fails at its consumer; code never silently truncates the predicate.
+
 ## Candidate and call ownership
 
 [Context acquisition](../internal/contextcompiler/compiler.go) has a fixed provider.

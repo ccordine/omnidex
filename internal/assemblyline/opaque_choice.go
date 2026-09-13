@@ -6,7 +6,8 @@ import (
 	"unicode/utf8"
 )
 
-const maxOpaqueModelChoices = 256
+// A projected enum can have 256 members; subset rounds also offer absence.
+const maxOpaqueModelChoices = 257
 
 // OpaqueModelChoice keeps the application value code-owned. The model sees
 // only the generated letter and the minimum semantic description needed to

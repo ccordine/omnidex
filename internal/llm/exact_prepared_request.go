@@ -40,8 +40,8 @@ func ExactPreparedModelInput(prompt string) (string, error) {
 }
 
 // ExactPreparedRequestModelInput returns the one code-owned semantic prompt.
-// Model-native provider framing carries no application state or response
-// contract and does not participate in semantic admission.
+// Retained provider context is carried separately; it never enlarges this
+// new semantic question or copies the retained source into the prompt.
 func ExactPreparedRequestModelInput(prepared PreparedModel) (string, error) {
 	if strings.TrimSpace(prepared.BaseModel) == "" || prepared.ContextModel != prepared.BaseModel ||
 		prepared.ContextTokens <= 0 {
@@ -76,6 +76,11 @@ func validateExactPreparedRequest(prepared PreparedModel) error {
 	}
 	if err := ValidateResponseContract(prepared); err != nil {
 		return err
+	}
+	if prepared.RetainedContext != nil {
+		if err := validateExactPreparedRetainedContext(prepared.RetainedContext, prepared.ContextTokens); err != nil {
+			return err
+		}
 	}
 	rawInput, err := ExactPreparedRequestModelInput(prepared)
 	if err != nil {
