@@ -101,7 +101,7 @@ func directCodingGoIdentifierChoices(
 	candidates = directCodingTrialIdentifierCandidates(
 		body, failedStart, failedStart+len(failed), candidates,
 		func(trial string) error {
-			_, err := validateDirectCodingGoFragment(input, trial)
+			_, err := validateDirectCodingGoFragmentSyntax(input, trial)
 			return err
 		},
 	)

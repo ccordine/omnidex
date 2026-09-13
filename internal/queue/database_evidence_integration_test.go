@@ -11,6 +11,7 @@ import (
 
 	"github.com/gryph/omnidex/internal/datasource"
 	"github.com/gryph/omnidex/internal/evidence"
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
@@ -102,7 +103,7 @@ func TestDatabaseEvidenceRecordsExecutedValuesAndVerifiesCitations(t *testing.T)
 				t.Fatalf("a second actual read was collapsed into a content receipt: %#v / %v", secondRecord, err)
 			}
 			citation := databaseEvidenceCitation(t, stored, claim.Step.ID)
-			operationID, err := NewLifecycleOperationID()
+			operationID, err := model.NewLifecycleOperationID()
 			if err != nil {
 				t.Fatal(err)
 			}

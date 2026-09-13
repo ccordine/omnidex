@@ -44,7 +44,7 @@ func (s *Server) handleCLIChatSessionBootstrap(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := s.requireServerWorkspaceIdentity(
+	if err := s.requireClientWorkspaceIdentity(r.Context(),
 		request.WorkspaceRoot,
 		request.WorkspaceIdentity,
 	); err != nil {

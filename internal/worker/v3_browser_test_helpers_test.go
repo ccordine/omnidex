@@ -84,7 +84,7 @@ func testTypeScriptBrowserProgramAtRoot(
 	stack, profile := testTypeScriptBrowserProject(t)
 	occupation := directCodingTargetTreeOccupation{}
 	if root != "" {
-		occupation, err = snapshotDirectCodingTargetTreeOccupation(root, stack)
+		occupation, err = snapshotDirectCodingTargetTreeOccupationAtRoot(root, stack)
 		if err != nil {
 			t.Fatalf("snapshot browser fixture target occupation: %v", err)
 		}

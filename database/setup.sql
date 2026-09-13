@@ -377,7 +377,7 @@ CREATE TABLE verification_command_evidence (
     ),
     phase text NOT NULL CHECK (phase IN (
         'isolated_install','isolated_implementation','isolated_task','isolated_final',
-        'host_install','host_final','host_cleanup'
+        'host_install','host_final'
     )),
     ordinal bigint NOT NULL CHECK (ordinal > 0),
     argv bytea NOT NULL,
@@ -385,8 +385,13 @@ CREATE TABLE verification_command_evidence (
     stdin_present boolean NOT NULL,
     stdin bytea,
     working_directory text NOT NULL CHECK (
-        working_directory LIKE '/%' AND working_directory=btrim(working_directory)
-        AND octet_length(working_directory) BETWEEN 1 AND 4096
+        working_directory='/workspace'
+    ),
+    container_id text,
+    container_image_id text,
+    container_exec_id text,
+    container_network_enabled boolean CHECK (
+        container_network_enabled IS NOT TRUE OR phase IN ('isolated_install','host_install')
     ),
     started_at timestamp with time zone NOT NULL,
     finished_at timestamp with time zone NOT NULL,
@@ -445,7 +450,16 @@ CREATE TABLE verification_command_evidence (
 		       AND octet_length(launch_error) <= 8192)))
     ),
     CONSTRAINT verification_command_one_ordinal
-        UNIQUE (job_id,generation,step_id,step_attempt,ordinal)
+        UNIQUE (job_id,generation,step_id,step_attempt,ordinal),
+    CONSTRAINT verification_command_container_authority CHECK (
+        (container_id IS NULL AND container_image_id IS NULL AND container_exec_id IS NULL
+         AND container_network_enabled IS NULL AND launch_error IS NOT NULL)
+        OR
+        (container_id IS NOT NULL AND container_id ~ '^[0-9a-f]{64}$'
+         AND container_image_id IS NOT NULL AND container_image_id ~ '^sha256:[0-9a-f]{64}$'
+         AND ((container_exec_id IS NOT NULL AND container_exec_id ~ '^[0-9a-f]{64}$' AND container_network_enabled IS NOT NULL)
+              OR (container_exec_id IS NULL AND launch_error IS NOT NULL)))
+    )
 );
 
 CREATE INDEX idx_verification_command_evidence_job
@@ -796,7 +810,7 @@ BEGIN
        (payload - ARRAY['operation_id','channel_id','workspace_root','workspace_identity','text'])<>'{}'::jsonb OR
        payload->>'operation_id'<>NEW.operation_id OR
        payload->>'channel_id'<>NEW.channel_id OR
-       payload->>'workspace_identity' !~ '^directory_(0|[1-9][0-9]{0,19})_[1-9][0-9]{0,19}$' OR
+       payload->>'workspace_identity' !~ '^client_[0-9a-f]{32}_directory_(0|[1-9][0-9]{0,19})_[1-9][0-9]{0,19}$' OR
        NOT lifecycle_feedback_is_valid(payload->>'text',4096) THEN
         RAISE EXCEPTION 'Channel session operation differs from its exact registry command';
     END IF;
@@ -1635,7 +1649,7 @@ SELECT
    (jsonb_typeof(payload -> 'workspace_root') = 'string') AND
    (octet_length(payload ->> 'workspace_root') BETWEEN 1 AND 4096) AND
    (jsonb_typeof(payload -> 'workspace_identity') = 'string') AND
-   ((payload ->> 'workspace_identity') ~ '^directory_(0|[1-9][0-9]{0,19})_[1-9][0-9]{0,19}$'));
+   ((payload ->> 'workspace_identity') ~ '^(client_[0-9a-f]{32}_)?directory_(0|[1-9][0-9]{0,19})_[1-9][0-9]{0,19}$'));
 $$;
 
 
@@ -1656,7 +1670,7 @@ BEGIN
         RETURN NEW;
     END IF;
     IF NOT (NEW.command_payload ?& ARRAY['workspace_root','workspace_identity']) OR
-       NEW.command_payload->>'workspace_identity' !~ '^directory_(0|[1-9][0-9]{0,19})_[1-9][0-9]{0,19}$' THEN
+       NEW.command_payload->>'workspace_identity' !~ '^(client_[0-9a-f]{32}_)?directory_(0|[1-9][0-9]{0,19})_[1-9][0-9]{0,19}$' THEN
         RAISE EXCEPTION 'Lifecycle workspace authority is incomplete or invalid';
     END IF;
     SELECT metadata->>'client_cwd', metadata->>'client_workspace_identity'
@@ -3037,7 +3051,8 @@ CREATE FUNCTION scrum_trim_space(value text) RETURNS text
     LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
     SET search_path TO 'pg_catalog', '__OMNIDEX_RUNTIME_SCHEMA__', 'pg_temp'
     RETURN btrim(value, (((((((((((((((((((((' 	
-'::text || chr(11)) || chr(12)) || chr(133)) || chr(160)) || chr(5760)) || chr(8192)) || chr(8193)) || chr(8194)) || chr(8195)) || chr(8196)) || chr(8197)) || chr(8198)) || chr(8199)) || chr(8200)) || chr(8201)) || chr(8202)) || chr(8232)) || chr(8233)) || chr(8239)) || chr(8287)) || chr(12288)));
+
+'::text || chr(11)) || chr(12)) || chr(133)) || chr(160)) || chr(5760)) || chr(8192)) || chr(8193)) || chr(8194)) || chr(8195)) || chr(8196)) || chr(8197)) || chr(8198)) || chr(8199)) || chr(8200)) || chr(8201)) || chr(8202)) || chr(8232)) || chr(8233)) || chr(8239)) || chr(8287)) || chr(12288)));
 
 
 --
@@ -4050,6 +4065,39 @@ ALTER SEQUENCE ai_channel_messages_id_seq OWNED BY ai_channel_messages.id;
 -- Name: ai_channels; Type: TABLE; Schema: current runtime; Owner: -
 --
 
+CREATE FUNCTION channel_workspace_root_is_exact(root text) RETURNS boolean
+    LANGUAGE plpgsql IMMUTABLE STRICT
+    AS $$
+DECLARE
+    components text[];
+    component text;
+BEGIN
+    IF octet_length(root) NOT BETWEEN 1 AND 4096 OR root <> btrim(root) THEN
+        RETURN false;
+    END IF;
+    IF left(root, 1) = '/' THEN
+        RETURN root !~ '//' AND root !~ '(^|/)\.{1,2}(/|$)'
+            AND (root = '/' OR right(root, 1) <> '/');
+    END IF;
+    IF position('/' in root) > 0 THEN RETURN false; END IF;
+    IF left(root, 2) ~ '^[A-Za-z]:$' AND substring(root from 3 for 1) = chr(92) THEN
+        IF length(root) = 3 THEN RETURN true; END IF;
+        components := string_to_array(substring(root from 4), chr(92));
+    ELSIF left(root, 2) = chr(92) || chr(92) THEN
+        components := string_to_array(substring(root from 3), chr(92));
+        IF cardinality(components) < 2 THEN RETURN false; END IF;
+    ELSE
+        RETURN false;
+    END IF;
+    FOREACH component IN ARRAY components LOOP
+        IF component IN ('', '.', '..') OR component ~ '[:<>"|?*]' THEN
+            RETURN false;
+        END IF;
+    END LOOP;
+    RETURN true;
+END;
+$$;
+
 CREATE TABLE ai_channels (
     id text NOT NULL,
     name text DEFAULT ''::text NOT NULL,
@@ -4065,7 +4113,7 @@ CREATE TABLE ai_channels (
     CONSTRAINT ai_channels_cli_workspace_check CHECK (
         (cli_workspace_identity IS NULL AND id NOT LIKE 'cli-chat-%') OR
         (cli_workspace_identity IS NOT NULL AND
-         cli_workspace_identity ~ '^directory_(0|[1-9][0-9]{0,19})_[1-9][0-9]{0,19}$' AND
+         cli_workspace_identity ~ '^client_[0-9a-f]{32}_directory_(0|[1-9][0-9]{0,19})_[1-9][0-9]{0,19}$' AND
          id ~ '^cli-chat-[0-9a-f]{32}$' AND mode = 'assistant' AND data_source_id IS NULL)
     ),
     CONSTRAINT ai_channels_identity_check CHECK ((id ~ '^[a-z0-9][a-z0-9_.:-]{0,95}$'::text)),
@@ -4075,7 +4123,7 @@ CREATE TABLE ai_channels (
     CONSTRAINT ai_channels_roleplay_data_source_isolation_check CHECK (((mode = 'assistant'::text) OR (data_source_id IS NULL))),
     CONSTRAINT ai_channels_scope_check CHECK ((scope = 'user'::text)),
     CONSTRAINT ai_channels_tags_check CHECK (channel_tags_are_exact(tags)),
-    CONSTRAINT ai_channels_workspace_root_check CHECK ((((octet_length(workspace_root) >= 1) AND (octet_length(workspace_root) <= 4096)) AND (workspace_root = btrim(workspace_root)) AND (workspace_root ~~ '/%'::text) AND (workspace_root !~ '//'::text) AND (workspace_root !~ '(^|/)\.{1,2}(/|$)'::text) AND ((workspace_root = '/'::text) OR ("right"(workspace_root, 1) <> '/'::text))))
+    CONSTRAINT ai_channels_workspace_root_check CHECK (channel_workspace_root_is_exact(workspace_root))
 );
 
 
@@ -4969,7 +5017,8 @@ CREATE TABLE roleplay_item_templates (
     CONSTRAINT roleplay_item_templates_check1 CHECK ((((trigger_meter_key IS NULL) AND (trigger_direction IS NULL) AND (trigger_threshold IS NULL)) OR ((trigger_meter_key IS NOT NULL) AND (trigger_direction = ANY (ARRAY['at_or_below'::text, 'at_or_above'::text])) AND ((trigger_threshold >= '-1000000'::integer) AND (trigger_threshold <= 1000000))))),
     CONSTRAINT roleplay_item_templates_description_check CHECK ((((octet_length(description) >= 1) AND (octet_length(description) <= 512)) AND (description = btrim(description)))),
     CONSTRAINT roleplay_item_templates_id_check CHECK ((id ~ '^rpi_[0-9a-f]{32}$'::text)),
-    CONSTRAINT roleplay_item_templates_name_check CHECK ((((octet_length(name) >= 1) AND (octet_length(name) <= 256)) AND (name = btrim(name)) AND (POSITION(('"'::text) IN (name)) = 0) AND (POSITION(('\'::text) IN (name)) = 0) AND (POSITION((''::text) IN (name)) = 0) AND (POSITION(('
+    CONSTRAINT roleplay_item_templates_name_check CHECK ((((octet_length(name) >= 1) AND (octet_length(name) <= 256)) AND (name = btrim(name)) AND (POSITION(('"'::text) IN (name)) = 0) AND (POSITION(('\'::text) IN (name)) = 0) AND (POSITION(('
+'::text) IN (name)) = 0) AND (POSITION(('
 '::text) IN (name)) = 0))),
     CONSTRAINT roleplay_item_templates_priority_check CHECK (((priority >= '-1000'::integer) AND (priority <= 1000))),
     CONSTRAINT roleplay_item_templates_use_policy_check CHECK ((use_policy = ANY (ARRAY['finite'::text, 'infinite'::text])))
@@ -5137,7 +5186,8 @@ CREATE TABLE roleplay_research_turns (
     CONSTRAINT roleplay_research_turns_authority_namespace_check CHECK ((authority_namespace = 'REAL_WORLD'::text)),
     CONSTRAINT roleplay_research_turns_capability_check CHECK ((capability = 'web_research'::text)),
     CONSTRAINT roleplay_research_turns_question_check CHECK ((((octet_length(question) >= 1) AND (octet_length(question) <= 1024)) AND (question = btrim(question)) AND (POSITION(('
-'::text) IN (question)) = 0) AND (POSITION((''::text) IN (question)) = 0))),
+'::text) IN (question)) = 0) AND (POSITION(('
+'::text) IN (question)) = 0))),
     CONSTRAINT roleplay_research_turns_scene_revision_check CHECK ((scene_revision >= 1))
 );
 

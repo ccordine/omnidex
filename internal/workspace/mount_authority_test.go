@@ -40,6 +40,13 @@ func TestAuthoritativeWorkspaceRootRenameRejectsEscapingParent(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(workspace, "escape")); err != nil {
 		t.Fatalf("create escaping parent symlink: %v", err)
 	}
+	link, err := os.Lstat(filepath.Join(workspace, "escape"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if link.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("created escape fixture is not reported as a symbolic link: mode=%v metadata=%#v", link.Mode(), link.Sys())
+	}
 	root := openAuthoritativeWorkspaceRootForTest(t, workspace)
 
 	if err := root.Rename("source.txt", "escape/result.txt"); err == nil {

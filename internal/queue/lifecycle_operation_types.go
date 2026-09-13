@@ -1,51 +1,27 @@
 package queue
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"regexp"
 
 	"github.com/gryph/omnidex/internal/evidence"
 	"github.com/gryph/omnidex/internal/model"
 )
 
-var (
-	ErrLifecycleOperationConflict = errors.New("lifecycle operation identity conflict")
-	lifecycleOperationIDPattern   = regexp.MustCompile(`^lifecycle_operation_[a-z0-9_]{1,128}$`)
-)
-
-type LifecycleOperationID string
-
-func NewLifecycleOperationID() (LifecycleOperationID, error) {
-	var nonce [32]byte
-	if _, err := rand.Read(nonce[:]); err != nil {
-		return "", fmt.Errorf("generate lifecycle operation identity: %w", err)
-	}
-	return LifecycleOperationID("lifecycle_operation_" + hex.EncodeToString(nonce[:])), nil
-}
+var ErrLifecycleOperationConflict = errors.New("lifecycle operation identity conflict")
 
 // A worker retry belongs to the same persisted step attempt. Its ID does not
 // depend on output text or require allocating another operation on retry.
-func NewStepLifecycleOperationID(authority model.StepAttemptAuthority, kind LifecycleOperationKind) (LifecycleOperationID, error) {
+func NewStepLifecycleOperationID(authority model.StepAttemptAuthority, kind LifecycleOperationKind) (model.LifecycleOperationID, error) {
 	if err := validateStepAttemptAuthority(authority); err != nil {
 		return "", err
 	}
 	if kind != LifecycleCompleteStep && kind != LifecycleFailStep {
 		return "", fmt.Errorf("step lifecycle operation kind %q is unsupported", kind)
 	}
-	return ParseLifecycleOperationID(fmt.Sprintf(
+	return model.ParseLifecycleOperationID(fmt.Sprintf(
 		"lifecycle_operation_step_%d_attempt_%d_%s", authority.StepID, authority.Attempt, kind,
 	))
-}
-
-func ParseLifecycleOperationID(value string) (LifecycleOperationID, error) {
-	id := LifecycleOperationID(value)
-	if !lifecycleOperationIDPattern.MatchString(value) {
-		return "", fmt.Errorf("lifecycle operation ID requires lifecycle_operation_ plus 1..128 lowercase letters, digits, or underscores")
-	}
-	return id, nil
 }
 
 type LifecycleOperationKind string
@@ -64,7 +40,7 @@ const (
 )
 
 type CompleteStepCommand struct {
-	OperationID               LifecycleOperationID                 `json:"operation_id"`
+	OperationID               model.LifecycleOperationID           `json:"operation_id"`
 	Authority                 model.StepAttemptAuthority           `json:"-"`
 	StepID                    int64                                `json:"step_id"`
 	Output                    string                               `json:"output"`
@@ -104,34 +80,34 @@ type CompleteStepEvidenceCommand struct {
 }
 
 type FailStepCommand struct {
-	OperationID LifecycleOperationID       `json:"operation_id"`
+	OperationID model.LifecycleOperationID `json:"operation_id"`
 	Authority   model.StepAttemptAuthority `json:"-"`
 	StepID      int64                      `json:"step_id"`
 	Error       string                     `json:"error"`
 }
 
 type SubmitJobFeedbackCommand struct {
-	OperationID       LifecycleOperationID `json:"operation_id"`
-	JobID             int64                `json:"job_id"`
-	Feedback          string               `json:"feedback"`
-	WorkspaceRoot     string               `json:"workspace_root,omitempty"`
-	WorkspaceIdentity string               `json:"workspace_identity,omitempty"`
+	OperationID       model.LifecycleOperationID `json:"operation_id"`
+	JobID             int64                      `json:"job_id"`
+	Feedback          string                     `json:"feedback"`
+	WorkspaceRoot     string                     `json:"workspace_root,omitempty"`
+	WorkspaceIdentity string                     `json:"workspace_identity,omitempty"`
 }
 
 type ReplanJobCommand struct {
-	OperationID       LifecycleOperationID `json:"operation_id"`
-	JobID             int64                `json:"job_id"`
-	Feedback          string               `json:"feedback"`
-	WorkspaceRoot     string               `json:"workspace_root,omitempty"`
-	WorkspaceIdentity string               `json:"workspace_identity,omitempty"`
+	OperationID       model.LifecycleOperationID `json:"operation_id"`
+	JobID             int64                      `json:"job_id"`
+	Feedback          string                     `json:"feedback"`
+	WorkspaceRoot     string                     `json:"workspace_root,omitempty"`
+	WorkspaceIdentity string                     `json:"workspace_identity,omitempty"`
 }
 
 type CancelJobCommand struct {
-	OperationID       LifecycleOperationID `json:"operation_id"`
-	JobID             int64                `json:"job_id"`
-	Reason            string               `json:"reason"`
-	WorkspaceRoot     string               `json:"workspace_root,omitempty"`
-	WorkspaceIdentity string               `json:"workspace_identity,omitempty"`
+	OperationID       model.LifecycleOperationID `json:"operation_id"`
+	JobID             int64                      `json:"job_id"`
+	Reason            string                     `json:"reason"`
+	WorkspaceRoot     string                     `json:"workspace_root,omitempty"`
+	WorkspaceIdentity string                     `json:"workspace_identity,omitempty"`
 }
 
 // LifecycleJobResult distinguishes a newly committed mutation from the exact

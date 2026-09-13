@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/evidence"
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -168,7 +169,7 @@ func payloadsAsRawMessages(payloads [][]byte) []json.RawMessage {
 func requireObjectiveCompletionEvidenceReplayTx(
 	ctx context.Context,
 	tx pgx.Tx,
-	operationID LifecycleOperationID,
+	operationID model.LifecycleOperationID,
 	payloads [][]byte,
 ) error {
 	setPayload, err := json.Marshal(payloadsAsRawMessages(payloads))

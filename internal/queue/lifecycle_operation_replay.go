@@ -119,6 +119,6 @@ func requireLifecycleGenerationExistsTx(ctx context.Context, tx pgx.Tx, jobID, g
 	return nil
 }
 
-func lifecycleReplayStateError(id LifecycleOperationID, subject string) error {
+func lifecycleReplayStateError(id model.LifecycleOperationID, subject string) error {
 	return fmt.Errorf("%w: lifecycle operation %q has inconsistent %s", ErrStepNotWritable, id, subject)
 }

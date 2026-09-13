@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"github.com/gryph/omnidex/internal/assemblyline"
 	"strings"
 	"testing"
 )
@@ -75,11 +76,13 @@ func TestBrowserFeatureContextRetainsRequiredDirectCapabilityBinding(t *testing.
 
 func TestSourceContractsDoNotDefineResponseOrReceiptGrammar(t *testing.T) {
 	t.Parallel()
+	goProgram, _, _, _ := goAcceptanceFixture(t)
+	goValue := goAcceptanceFixtureBlock(t, goProgram, assemblyline.SourceBlockTaskImplementation)
 
 	contracts := []string{
 		genericBrowserFeatureContract("Provide the requested interaction.", false),
 		genericBrowserAcceptanceContract("Verify the requested interaction."),
-		goCommandLineFeatureContract("Provide the requested command behavior."),
+		goValue.Block.Contract,
 		javaCommandLineFeatureContract("Provide the requested command behavior."),
 		javaScriptCommandLineFeatureContract("Provide the requested command behavior."),
 		rustCommandLineFeatureContract("Provide the requested command behavior."),

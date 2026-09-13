@@ -8,7 +8,6 @@ import (
 
 	"github.com/gryph/omnidex/internal/client"
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/queue"
 )
 
 type chatSnapshotEntryKind int
@@ -25,8 +24,8 @@ type chatSnapshotEntry struct {
 	key       string
 	kind      chatSnapshotEntryKind
 	message   model.ChannelMessage
-	turn      queue.ChannelSessionTurn
-	control   queue.ChannelSessionControl
+	turn      model.ChannelSessionTurn
+	control   model.ChannelSessionControl
 	terminal  model.ChannelMessage
 }
 
@@ -170,14 +169,14 @@ func (session *chatSession) requireSnapshotContinuity(snapshot client.ChatSessio
 	if err := requireHistoryContinuity(session.messages, messageIDs, snapshot.HasMore, "transcript"); err != nil {
 		return err
 	}
-	turnIDs := make(map[queue.LifecycleOperationID]struct{}, len(snapshot.Turns))
+	turnIDs := make(map[model.LifecycleOperationID]struct{}, len(snapshot.Turns))
 	for _, turn := range snapshot.Turns {
 		turnIDs[turn.OperationID] = struct{}{}
 	}
 	if err := requireHistoryContinuity(session.turns, turnIDs, snapshot.TurnsTruncated, "turn history"); err != nil {
 		return err
 	}
-	controlIDs := make(map[queue.LifecycleOperationID]struct{}, len(snapshot.Controls))
+	controlIDs := make(map[model.LifecycleOperationID]struct{}, len(snapshot.Controls))
 	for _, control := range snapshot.Controls {
 		controlIDs[control.OperationID] = struct{}{}
 	}
@@ -245,10 +244,10 @@ func terminalMessageTurn(message model.ChannelMessage) bool {
 	return message.Turn != nil && terminalJob(message.Turn.Status)
 }
 
-func enqueuedTurnsByJob(turns []queue.ChannelSessionTurn) map[int64]queue.ChannelSessionTurn {
-	result := make(map[int64]queue.ChannelSessionTurn)
+func enqueuedTurnsByJob(turns []model.ChannelSessionTurn) map[int64]model.ChannelSessionTurn {
+	result := make(map[int64]model.ChannelSessionTurn)
 	for _, turn := range turns {
-		if turn.Disposition == queue.ChannelSessionTurnEnqueued {
+		if turn.Disposition == model.ChannelSessionTurnEnqueued {
 			result[turn.JobID] = turn
 		}
 	}
@@ -257,7 +256,7 @@ func enqueuedTurnsByJob(turns []queue.ChannelSessionTurn) map[int64]queue.Channe
 
 func (session *chatSession) suppressLocalEnqueuedMessage(
 	message model.ChannelMessage,
-	enqueued map[int64]queue.ChannelSessionTurn,
+	enqueued map[int64]model.ChannelSessionTurn,
 ) bool {
 	if !session.renderer.console.IsTerminal() || session.pendingTurn == nil || message.Turn == nil {
 		return false
@@ -268,10 +267,10 @@ func (session *chatSession) suppressLocalEnqueuedMessage(
 }
 
 func (session *chatSession) suppressSessionTurn(
-	turn queue.ChannelSessionTurn,
+	turn model.ChannelSessionTurn,
 	messages []model.ChannelMessage,
 ) bool {
-	if turn.Disposition == queue.ChannelSessionTurnEnqueued {
+	if turn.Disposition == model.ChannelSessionTurnEnqueued {
 		for _, message := range messages {
 			if message.Turn != nil && message.Turn.JobID == turn.JobID && message.Content == turn.Text {
 				return true
@@ -282,7 +281,7 @@ func (session *chatSession) suppressSessionTurn(
 		session.pendingTurn.operationID == turn.OperationID
 }
 
-func (session *chatSession) suppressSessionControl(control queue.ChannelSessionControl) bool {
+func (session *chatSession) suppressSessionControl(control model.ChannelSessionControl) bool {
 	return session.renderer.console.IsTerminal() && session.pendingControl != nil &&
 		session.pendingControl.locallyEchoed && session.pendingControl.operationID == control.OperationID
 }

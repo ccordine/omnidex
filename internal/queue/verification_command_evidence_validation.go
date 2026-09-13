@@ -3,7 +3,6 @@ package queue
 import (
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -38,9 +37,8 @@ func normalizeVerificationCommandEvidence(
 	if err := validateVerificationEnvironment(record.Environment); err != nil {
 		return VerificationCommandEvidence{}, err
 	}
-	if !filepath.IsAbs(record.WorkingDirectory) || filepath.Clean(record.WorkingDirectory) != record.WorkingDirectory ||
-		len(record.WorkingDirectory) > 4096 || !validVerificationText(record.WorkingDirectory) {
-		return VerificationCommandEvidence{}, fmt.Errorf("verification working directory must be one canonical absolute path")
+	if err := validateVerificationContainerEvidence(record); err != nil {
+		return VerificationCommandEvidence{}, err
 	}
 	if record.StartedAt.Location() != time.UTC || record.FinishedAt.Location() != time.UTC ||
 		record.StartedAt.IsZero() ||
@@ -139,7 +137,7 @@ func registeredVerificationCommandPhase(phase VerificationCommandPhase) bool {
 	switch phase {
 	case VerificationIsolatedInstall, VerificationIsolatedImplementation,
 		VerificationIsolatedTask, VerificationIsolatedFinal,
-		VerificationHostInstall, VerificationHostFinal, VerificationHostCleanup:
+		VerificationHostInstall, VerificationHostFinal:
 		return true
 	default:
 		return false

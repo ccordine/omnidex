@@ -19,6 +19,8 @@ type directCodingProjectStack struct {
 	ProjectCompleteTargetTree func(directCodingTargetTreeOccupation) (assemblyline.TargetTree, error)
 	ProjectFocusedTargetTree  func(int, directCodingTargetTreeOccupation) (assemblyline.TargetTree, error)
 	CompileSource             directCodingProjectCompiler
+	ResolveInputSources       func(typedWorkerRuntime, string, assemblyline.FrozenApplicationWorkload, []assemblyline.ArtifactIdentity) (directCodingInputSourcePlan, error)
+	ResolveResultValueKinds   func(typedWorkerRuntime, string, assemblyline.FrozenApplicationWorkload, []assemblyline.ArtifactIdentity) (directCodingResultValueKindPlan, error)
 	ValidateBlueprint         func(assemblyline.SourceBlueprint) error
 	ValidateSourceOwnership   func(
 		assemblyline.FrozenApplicationWorkload,
@@ -36,11 +38,14 @@ type directCodingProjectCompiler func(
 	profile directCodingProjectVersionProfile,
 	targetTree assemblyline.TargetTree,
 	coverage assemblyline.ApplicationFileCoveragePlan,
+	valueKinds directCodingResultValueKindPlan,
+	inputSources directCodingInputSourcePlan,
 ) (assemblyline.SourceBlueprint, []directCodingFileTask, error)
 
 type directCodingProjectSourceGenerator interface {
 	GenerateBlock(assemblyline.ApplicationTaskContext, *directCodingProgram, assemblyline.SourceBlockRef) (string, error)
 	VerifyTask(assemblyline.ApplicationTaskContext, *directCodingProgram) error
+	VerifyProgress(*directCodingProgram) error
 	VerifyFinal(*directCodingProgram) error
 	Close() error
 }
@@ -75,6 +80,8 @@ func registeredDirectCodingProjectStacks() []directCodingProjectStack {
 			TargetTreeReservedPaths:  []string{"main.go", "runtime.go"},
 			ProjectFocusedTargetTree: projectGoCommandLineFocusedTargetTree,
 			CompileSource:            compileGenericGoCommandLineBlueprint,
+			ResolveResultValueKinds:  resolveDirectCodingResultValueKinds,
+			ResolveInputSources:      resolveDirectCodingInputSources,
 			ValidateBlueprint:        assemblyline.ValidateGoSourceBlueprint,
 			ValidateSourceOwnership:  validateDirectCodingSinglePairSourceOwnership,
 			VerifyHost:               (*directCodingSession).verifyAuthoritativeGoWorkspace,

@@ -36,7 +36,7 @@ func (s *Server) getChannelSessionState(
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := s.requireServerWorkspaceIdentity(
+	if err := s.requireClientWorkspaceIdentity(r.Context(),
 		state.WorkspaceRoot,
 		workspaceIdentity,
 	); err != nil {

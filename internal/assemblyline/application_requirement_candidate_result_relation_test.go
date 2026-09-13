@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestApplicationRequirementDeterminingRelationPromptDefinesParametricRules(t *testing.T) {
+func TestApplicationRequirementDeterminingRelationPromptProjectsOnlyCandidateAndQuestion(t *testing.T) {
 	t.Parallel()
 	for _, candidate := range []string{
 		"The finished software performs unit-conversion operations on supplied measurements.",
@@ -37,16 +37,16 @@ func TestApplicationRequirementDeterminingRelationPromptDefinesParametricRules(t
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, required := range []string{
-				candidate,
-				"family of result-bearing operations over governed inputs",
-				"An operation-family name and governed inputs suffice",
-				"named intrinsic or mechanically observable property",
-				"Named dimensions, lengths, counts",
-				"Merely calling an output calculated, computed, evaluated",
+			if strings.Count(prompt, candidate) != 1 {
+				t.Fatalf("prompt must carry the exact candidate once: %s", prompt)
+			}
+			for _, hidden := range []string{
+				authority.Kind.Schema, authority.Kind.Relation,
+				authority.Cardinality.Schema, authority.Cardinality.Relation,
+				derived.Schema, string(derived.Presence),
 			} {
-				if !strings.Contains(prompt, required) {
-					t.Fatalf("prompt does not contain required operation-family contract %q", required)
+				if strings.Contains(prompt, hidden) {
+					t.Fatalf("prompt exposed code-owned prior result %q", hidden)
 				}
 			}
 		})

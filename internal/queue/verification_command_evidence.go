@@ -21,7 +21,6 @@ const (
 	VerificationIsolatedFinal          VerificationCommandPhase = "isolated_final"
 	VerificationHostInstall            VerificationCommandPhase = "host_install"
 	VerificationHostFinal              VerificationCommandPhase = "host_final"
-	VerificationHostCleanup            VerificationCommandPhase = "host_cleanup"
 )
 
 type VerificationCommandStatus string
@@ -38,27 +37,31 @@ const (
 // the command and result fields; database-owned identity,
 // duration, status, and CreatedAt must remain zero.
 type VerificationCommandEvidence struct {
-	ID               int64                      `json:"id,omitempty"`
-	Authority        model.StepAttemptAuthority `json:"authority"`
-	Phase            VerificationCommandPhase   `json:"phase"`
-	Ordinal          int64                      `json:"ordinal"`
-	Argv             []string                   `json:"argv"`
-	Environment      []string                   `json:"environment"`
-	Stdin            []byte                     `json:"stdin,omitempty"`
-	WorkingDirectory string                     `json:"working_directory"`
-	StartedAt        time.Time                  `json:"started_at"`
-	FinishedAt       time.Time                  `json:"finished_at"`
-	ExitCode         *int                       `json:"exit_code,omitempty"`
-	LaunchError      string                     `json:"launch_error,omitempty"`
-	ObservationError string                     `json:"observation_error,omitempty"`
-	Stdout           []byte                     `json:"stdout"`
-	StdoutComplete   bool                       `json:"stdout_complete"`
-	Stderr           []byte                     `json:"stderr"`
-	StderrComplete   bool                       `json:"stderr_complete"`
-	Status           VerificationCommandStatus  `json:"status,omitempty"`
-	DurationNanos    int64                      `json:"duration_nanos,omitempty"`
-	StdinPresent     bool                       `json:"stdin_present"`
-	CreatedAt        time.Time                  `json:"created_at,omitempty"`
+	ID                      int64                      `json:"id,omitempty"`
+	Authority               model.StepAttemptAuthority `json:"authority"`
+	Phase                   VerificationCommandPhase   `json:"phase"`
+	Ordinal                 int64                      `json:"ordinal"`
+	Argv                    []string                   `json:"argv"`
+	Environment             []string                   `json:"environment"`
+	Stdin                   []byte                     `json:"stdin,omitempty"`
+	WorkingDirectory        string                     `json:"working_directory"`
+	ContainerID             string                     `json:"container_id,omitempty"`
+	ContainerImageID        string                     `json:"container_image_id,omitempty"`
+	ContainerExecID         string                     `json:"container_exec_id,omitempty"`
+	ContainerNetworkEnabled *bool                      `json:"container_network_enabled,omitempty"`
+	StartedAt               time.Time                  `json:"started_at"`
+	FinishedAt              time.Time                  `json:"finished_at"`
+	ExitCode                *int                       `json:"exit_code,omitempty"`
+	LaunchError             string                     `json:"launch_error,omitempty"`
+	ObservationError        string                     `json:"observation_error,omitempty"`
+	Stdout                  []byte                     `json:"stdout"`
+	StdoutComplete          bool                       `json:"stdout_complete"`
+	Stderr                  []byte                     `json:"stderr"`
+	StderrComplete          bool                       `json:"stderr_complete"`
+	Status                  VerificationCommandStatus  `json:"status,omitempty"`
+	DurationNanos           int64                      `json:"duration_nanos,omitempty"`
+	StdinPresent            bool                       `json:"stdin_present"`
+	CreatedAt               time.Time                  `json:"created_at,omitempty"`
 }
 
 func (r *Repository) AppendVerificationCommandEvidence(
@@ -101,10 +104,11 @@ func (r *Repository) AppendVerificationCommandEvidence(
 			job_id,generation,step_id,step_attempt,worker_id,phase,ordinal,
 			argv,environment,stdin_present,stdin,working_directory,
 			started_at,finished_at,duration_nanos,exit_code,launch_error,observation_error,
-			stdout,stdout_complete,stderr,stderr_complete,status
+			stdout,stdout_complete,stderr,stderr_complete,status,
+			container_id,container_image_id,container_exec_id,container_network_enabled
 		) VALUES (
 			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,
-			$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23
+			$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27
 		)
 	`, normalized.Authority.JobID, normalized.Authority.Generation,
 		normalized.Authority.StepID, normalized.Authority.Attempt,
@@ -113,7 +117,8 @@ func (r *Repository) AppendVerificationCommandEvidence(
 		normalized.WorkingDirectory, normalized.StartedAt, normalized.FinishedAt,
 		normalized.DurationNanos, exitCode, launchError, observationError,
 		normalized.Stdout, normalized.StdoutComplete,
-		normalized.Stderr, normalized.StderrComplete, string(normalized.Status))
+		normalized.Stderr, normalized.StderrComplete, string(normalized.Status),
+		optionalExactText(normalized.ContainerID), optionalExactText(normalized.ContainerImageID), optionalExactText(normalized.ContainerExecID), normalized.ContainerNetworkEnabled)
 	if err != nil {
 		return fmt.Errorf("append exact verification command evidence: %w", err)
 	}

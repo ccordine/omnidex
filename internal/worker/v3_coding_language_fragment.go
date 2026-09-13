@@ -113,6 +113,9 @@ func runDirectCodingLanguageFragmentWorker(
 		} else if validationErr == nil {
 			body, validationErr = correction.Apply(result.Candidate)
 			providerBody = body
+			if validationErr == nil {
+				body, validationErr = selectDirectCodingSourceCorrection(job, runtime.PathProvenance, correction, result.Candidate)
+			}
 		}
 		candidate := ""
 		var nextCorrection *assemblyline.SourceBodyCorrection
@@ -221,8 +224,14 @@ func validateDirectCodingLanguageBody(
 	for {
 		candidate, validationErr = job.Validate(job.Input, body)
 		if validationErr == nil {
+			pathSource := body
+			if job.Input.Language == "go" {
+				// Go's parser has removed ordinary comments and declaration
+				// noise. Validate the exact source that code will retain.
+				pathSource = candidate
+			}
 			validationErr = validateDirectCodingLanguageFragmentCandidatePathBoundary(
-				job.Input.Language, provenance, body,
+				job.Input.Language, provenance, pathSource,
 			)
 		}
 		if validationErr == nil {
@@ -269,7 +278,9 @@ func normalizeDirectCodingLanguageResponse(
 	}
 	switch job.Input.Language {
 	case "go":
-		return gofragment.ExtractNewFunctionBodyResponse(job.Input.Signature, response)
+		permitted := append([]string(nil), job.Input.Capabilities...)
+		permitted = append(permitted, job.Input.PermittedSymbols...)
+		return gofragment.ExtractNewFunctionBodyResponse(job.Input.Signature, permitted, response)
 	case "typescript":
 		return assemblyline.ExtractTypeScriptFunctionBodyResponse(
 			assemblyline.TypeScriptFunctionContract{Signature: job.Input.Signature}, response,

@@ -3,7 +3,6 @@ package main
 import (
 	"github.com/gryph/omnidex/internal/client"
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/queue"
 )
 
 // retainSnapshotAuthority keeps only the current bounded server projection.
@@ -14,11 +13,11 @@ func (session *chatSession) retainSnapshotAuthority(snapshot client.ChatSessionS
 	for _, message := range snapshot.Messages {
 		messages[message.ID] = message
 	}
-	turns := make(map[queue.LifecycleOperationID]queue.ChannelSessionTurn, len(snapshot.Turns))
+	turns := make(map[model.LifecycleOperationID]model.ChannelSessionTurn, len(snapshot.Turns))
 	for _, turn := range snapshot.Turns {
 		turns[turn.OperationID] = turn
 	}
-	controls := make(map[queue.LifecycleOperationID]queue.ChannelSessionControl, len(snapshot.Controls))
+	controls := make(map[model.LifecycleOperationID]model.ChannelSessionControl, len(snapshot.Controls))
 	for _, control := range snapshot.Controls {
 		controls[control.OperationID] = control
 	}

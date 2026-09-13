@@ -16,8 +16,20 @@ func (r *Repository) JobRequiresLifecycleWorkspaceAuthority(
 	ctx context.Context,
 	jobID int64,
 ) (bool, error) {
+	authority, err := r.LifecycleWorkspaceAuthority(ctx, jobID)
+	return authority.Required, err
+}
+
+type LifecycleWorkspaceAuthority struct {
+	Required    bool
+	ClientOwned bool
+	Root        string
+	Identity    string
+}
+
+func (r *Repository) LifecycleWorkspaceAuthority(ctx context.Context, jobID int64) (LifecycleWorkspaceAuthority, error) {
 	if ctx == nil || r == nil || r.pool == nil || jobID <= 0 {
-		return false, fmt.Errorf(
+		return LifecycleWorkspaceAuthority{}, fmt.Errorf(
 			"lifecycle workspace authority lookup requires PostgreSQL, context, and a positive job ID",
 		)
 	}
@@ -28,12 +40,15 @@ func (r *Repository) JobRequiresLifecycleWorkspaceAuthority(
 		WHERE id=$1
 	`, jobID).Scan(&job.Pipeline, &job.Metadata); err != nil {
 		if err == pgx.ErrNoRows {
-			return false, err
+			return LifecycleWorkspaceAuthority{}, err
 		}
-		return false, fmt.Errorf("read job %d lifecycle workspace authority: %w", jobID, err)
+		return LifecycleWorkspaceAuthority{}, fmt.Errorf("read job %d lifecycle workspace authority: %w", jobID, err)
 	}
-	required, _, _, err := lifecycleJobWorkspaceRequirement(job)
-	return required, err
+	required, root, identity, err := lifecycleJobWorkspaceRequirement(job)
+	return LifecycleWorkspaceAuthority{
+		Required: required, ClientOwned: job.Pipeline == model.PipelineChat,
+		Root: root, Identity: identity,
+	}, err
 }
 
 // requireLifecycleWorkspaceAuthority binds every lifecycle mutation of a

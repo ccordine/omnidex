@@ -13,8 +13,9 @@ type directCodingApplicationTaskLifecycleHooks struct {
 		*directCodingProgram,
 		assemblyline.SourceBlockRef,
 	) (string, error)
-	VerifyTask func(assemblyline.ApplicationTaskContext, *directCodingProgram) error
-	FinalStage func(*directCodingProgram) error
+	VerifyTask  func(assemblyline.ApplicationTaskContext, *directCodingProgram) error
+	PublishTask func(*directCodingProgram, *directCodingProgram) error
+	FinalStage  func(*directCodingProgram) error
 }
 
 func runDirectCodingApplicationTaskLifecycle(
@@ -30,6 +31,9 @@ func runDirectCodingApplicationTaskLifecycle(
 	}
 	if hooks.VerifyTask == nil || hooks.FinalStage == nil {
 		return fmt.Errorf("application task lifecycle requires task and complete verification hooks")
+	}
+	if hooks.PublishTask == nil {
+		return fmt.Errorf("application task lifecycle requires one verified-task publication hook")
 	}
 	if len(program.Generated) != 0 {
 		return fmt.Errorf("application task lifecycle requires an empty generated-source set")
@@ -69,6 +73,9 @@ func runDirectCodingApplicationTaskLifecycle(
 			}
 			for _, blockID := range expectedIDs {
 				program.Generated[blockID] = stage.Generated[blockID]
+			}
+			if err := hooks.PublishTask(program, &stage); err != nil {
+				return fmt.Errorf("publish verified application task %s: %w", context.Task.TaskID, err)
 			}
 			return nil
 		},

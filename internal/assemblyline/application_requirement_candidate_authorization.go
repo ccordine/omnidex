@@ -83,7 +83,7 @@ func BuildApplicationRequirementCandidateAuthorizationPrompt(
 		return "", err
 	}
 	return RenderOpaqueModelChoiceQuestion(
-		"Is every semantic detail in the candidate required by the software request and established facts? Entailment is semantic, not textual identity. A neutral finished-software subject, ordinary inflection, or exact synonym adds no meaning. A purpose-bearing product name entails only its literal core runtime action or governed result, not customary controls, variants, history, persistence, presentation, process steps, triggers, or enhancements. A direction to build, test, check, or verify can itself be request-grounded and can contain an embedded runtime assertion. Construction technologies and delivery instructions do not by themselves entail runtime outcomes. Any unstated mechanism, interface, input source, algorithm, mode, prerequisite, customary feature, speculative enhancement, or merely useful behavior is additional meaning.",
+		"Is every semantic detail in the candidate required by the software request and established facts? The candidate may describe only one requested part; it need not repeat other requirements or construction instructions. Judge the meaning, not the wording. Describing requested behavior as something the finished software does adds nothing.",
 		[]string{
 			projection,
 			"Candidate:\n" + input.Candidate,

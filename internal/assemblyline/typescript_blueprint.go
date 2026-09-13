@@ -41,6 +41,7 @@ const (
 	SourceBlockTaskImplementation SourceBlockRole = "task_implementation"
 	SourceBlockTaskRepresentation SourceBlockRole = "task_representation"
 	SourceBlockTaskVerification   SourceBlockRole = "task_verification"
+	SourceBlockTaskExample        SourceBlockRole = "task_example"
 )
 
 type SourceBlock struct {
@@ -213,7 +214,7 @@ func validateSourceBlockTaskOwnership(block SourceBlock) error {
 	}
 	switch block.Role {
 	case SourceBlockTaskSupport, SourceBlockTaskImplementation,
-		SourceBlockTaskRepresentation, SourceBlockTaskVerification:
+		SourceBlockTaskRepresentation, SourceBlockTaskVerification, SourceBlockTaskExample:
 	default:
 		return fmt.Errorf("block %s task role %q is invalid", block.ID, block.Role)
 	}
@@ -221,7 +222,7 @@ func validateSourceBlockTaskOwnership(block SourceBlock) error {
 		return fmt.Errorf("generated block %s cannot use task-support role", block.ID)
 	}
 	if !block.Generated() && (block.Role == SourceBlockTaskImplementation ||
-		block.Role == SourceBlockTaskRepresentation || block.Role == SourceBlockTaskVerification) {
+		block.Role == SourceBlockTaskRepresentation || block.Role == SourceBlockTaskVerification || block.Role == SourceBlockTaskExample) {
 		return fmt.Errorf("static block %s cannot claim generated task role %s", block.ID, block.Role)
 	}
 	return nil

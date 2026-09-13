@@ -15,12 +15,12 @@ type channelSessionTurnRequest struct {
 	WorkspaceRoot     string                     `json:"workspace_root"`
 	WorkspaceIdentity string                     `json:"workspace_identity"`
 	Text              string                     `json:"text"`
-	OperationID       queue.LifecycleOperationID `json:"operation_id"`
+	OperationID       model.LifecycleOperationID `json:"operation_id"`
 }
 
 type channelSessionTurnResponse struct {
-	OperationID       queue.LifecycleOperationID          `json:"operation_id"`
-	Disposition       queue.ChannelSessionTurnDisposition `json:"disposition"`
+	OperationID       model.LifecycleOperationID          `json:"operation_id"`
+	Disposition       model.ChannelSessionTurnDisposition `json:"disposition"`
 	ChannelID         model.ChannelID                     `json:"channel_id"`
 	WorkspaceRoot     string                              `json:"workspace_root"`
 	WorkspaceIdentity string                              `json:"workspace_identity"`
@@ -50,7 +50,7 @@ func (s *Server) postChannelSessionTurn(
 		writeChannelBodyError(w, err)
 		return
 	}
-	operationID, err := queue.ParseLifecycleOperationID(string(request.OperationID))
+	operationID, err := model.ParseLifecycleOperationID(string(request.OperationID))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -60,7 +60,7 @@ func (s *Server) postChannelSessionTurn(
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := s.requireServerWorkspaceIdentity(
+	if err := s.requireClientWorkspaceIdentity(r.Context(),
 		request.WorkspaceRoot,
 		request.WorkspaceIdentity,
 	); err != nil {
@@ -91,7 +91,7 @@ func (s *Server) postChannelSessionTurn(
 		return
 	}
 	phase, summary := realtimeJobChanged, "Interactive turn accepted"
-	if result.Disposition == queue.ChannelSessionTurnEnqueued {
+	if result.Disposition == model.ChannelSessionTurnEnqueued {
 		phase, summary = realtimeJobQueued, "Job queued"
 	}
 	if result.Applied {
@@ -133,9 +133,9 @@ func channelSessionTurnReceipt(
 		)
 	}
 	switch result.Disposition {
-	case queue.ChannelSessionTurnEnqueued,
-		queue.ChannelSessionTurnReplanned,
-		queue.ChannelSessionTurnFeedback:
+	case model.ChannelSessionTurnEnqueued,
+		model.ChannelSessionTurnReplanned,
+		model.ChannelSessionTurnFeedback:
 	default:
 		return channelSessionTurnResponse{}, fmt.Errorf(
 			"channel session turn returned unregistered disposition %q",
@@ -151,7 +151,7 @@ func channelSessionTurnReceipt(
 			result.Job.Status,
 		)
 	}
-	if result.Disposition == queue.ChannelSessionTurnEnqueued {
+	if result.Disposition == model.ChannelSessionTurnEnqueued {
 		if result.UserMessage == nil || result.UserMessage.ChannelID != expectedChannelID ||
 			result.UserMessage.Role != model.ChannelMessageRoleUser ||
 			result.UserMessage.Content != request.Text {

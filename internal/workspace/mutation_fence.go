@@ -6,11 +6,12 @@ import (
 	"fmt"
 	"os"
 	"sync"
-	"syscall"
 	"time"
 )
 
 const mutationFencePollInterval = 100 * time.Millisecond
+
+var ErrWorkspaceBusy = errors.New("workspace mutation authority is already held")
 
 // MutationFence is the cross-process authority to mutate one exact workspace
 // directory. The operating system releases the advisory lock when the owning
@@ -20,12 +21,23 @@ type MutationFence struct {
 	root      string
 	rootFS    *os.Root
 	directory *os.File
+	lock      directoryLock
 	rootInfo  os.FileInfo
 	mountID   uint64
 	released  bool
 }
 
 func AcquireMutationFence(ctx context.Context, root string) (*MutationFence, error) {
+	return acquireMutationFence(ctx, root, true)
+}
+
+// TryAcquireMutationFence distinguishes a held operating-system lock from an
+// invalid root or unavailable platform. Remote callers can wait between RPCs.
+func TryAcquireMutationFence(ctx context.Context, root string) (*MutationFence, error) {
+	return acquireMutationFence(ctx, root, false)
+}
+
+func acquireMutationFence(ctx context.Context, root string, wait bool) (*MutationFence, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("acquire workspace mutation fence: context is required")
 	}
@@ -54,6 +66,7 @@ func AcquireMutationFence(ctx context.Context, root string) (*MutationFence, err
 			directory.Close(), rootFS.Close(),
 		)
 	}
+	var lock directoryLock
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, errors.Join(
@@ -61,18 +74,18 @@ func AcquireMutationFence(ctx context.Context, root string) (*MutationFence, err
 				directory.Close(), rootFS.Close(),
 			)
 		}
-		err := syscall.Flock(int(directory.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		lock, err = tryLockWorkspaceDirectory(directory)
 		if err == nil {
 			break
 		}
-		if errors.Is(err, syscall.EINTR) {
-			continue
-		}
-		if !errors.Is(err, syscall.EWOULDBLOCK) && !errors.Is(err, syscall.EAGAIN) {
+		if !errors.Is(err, ErrWorkspaceBusy) {
 			return nil, errors.Join(
 				fmt.Errorf("lock workspace root mutation authority %q: %w", root, err),
 				directory.Close(), rootFS.Close(),
 			)
+		}
+		if !wait {
+			return nil, errors.Join(ErrWorkspaceBusy, directory.Close(), rootFS.Close())
 		}
 		timer := time.NewTimer(mutationFencePollInterval)
 		select {
@@ -93,7 +106,7 @@ func AcquireMutationFence(ctx context.Context, root string) (*MutationFence, err
 	if err := ctx.Err(); err != nil {
 		return nil, errors.Join(
 			fmt.Errorf("acquire workspace mutation fence for %q: %w", root, err),
-			releaseMutationFenceHandles(directory, rootFS),
+			releaseMutationFenceHandles(directory, rootFS, lock),
 		)
 	}
 	current, err := os.Lstat(root)
@@ -102,18 +115,18 @@ func AcquireMutationFence(ctx context.Context, root string) (*MutationFence, err
 		!os.SameFile(opened, current) || !os.SameFile(opened, anchored) {
 		return nil, errors.Join(
 			fmt.Errorf("workspace root %q changed after acquiring mutation authority", root),
-			releaseMutationFenceHandles(directory, rootFS),
+			releaseMutationFenceHandles(directory, rootFS, lock),
 		)
 	}
 	mountID, err := workspaceMountIDForHandle(directory)
 	if err != nil {
 		return nil, errors.Join(
 			fmt.Errorf("resolve workspace root mount authority %q: %w", root, err),
-			releaseMutationFenceHandles(directory, rootFS),
+			releaseMutationFenceHandles(directory, rootFS, lock),
 		)
 	}
 	return &MutationFence{
-		root: root, rootFS: rootFS, directory: directory,
+		root: root, rootFS: rootFS, directory: directory, lock: lock,
 		rootInfo: opened, mountID: mountID,
 	}, nil
 }
@@ -129,10 +142,12 @@ func (fence *MutationFence) Release() error {
 	}
 	directory := fence.directory
 	rootFS := fence.rootFS
+	lock := fence.lock
 	fence.directory = nil
 	fence.rootFS = nil
+	fence.lock = nil
 	fence.released = true
-	if err := releaseMutationFenceHandles(directory, rootFS); err != nil {
+	if err := releaseMutationFenceHandles(directory, rootFS, lock); err != nil {
 		return fmt.Errorf("release workspace mutation fence for %q: %w", fence.root, err)
 	}
 	return nil
@@ -140,7 +155,7 @@ func (fence *MutationFence) Release() error {
 
 func (fence *MutationFence) authoritativeRootLocked() (*authoritativeWorkspaceRoot, error) {
 	if fence == nil || fence.released || fence.directory == nil || fence.rootFS == nil ||
-		fence.rootInfo == nil || fence.mountID == 0 {
+		fence.rootInfo == nil || fence.lock == nil {
 		return nil, fmt.Errorf("workspace mutation authority is unavailable")
 	}
 	locked, lockedErr := fence.directory.Stat()
@@ -165,7 +180,7 @@ func (fence *MutationFence) authoritativeRootLocked() (*authoritativeWorkspaceRo
 	}, nil
 }
 
-func releaseMutationFenceHandles(directory *os.File, root *os.Root) error {
+func releaseMutationFenceHandles(directory *os.File, root *os.Root, lock directoryLock) error {
 	var unlockErr error
 	var directoryCloseErr error
 	var rootCloseErr error
@@ -174,10 +189,14 @@ func releaseMutationFenceHandles(directory *os.File, root *os.Root) error {
 	} else {
 		rootCloseErr = root.Close()
 	}
-	if directory == nil {
-		unlockErr = fmt.Errorf("workspace mutation fence directory is unavailable")
+	if lock == nil {
+		unlockErr = fmt.Errorf("workspace directory lock is unavailable")
 	} else {
-		unlockErr = syscall.Flock(int(directory.Fd()), syscall.LOCK_UN)
+		unlockErr = lock.Release()
+	}
+	if directory == nil {
+		directoryCloseErr = fmt.Errorf("workspace mutation fence directory is unavailable")
+	} else {
 		directoryCloseErr = directory.Close()
 	}
 	return errors.Join(unlockErr, directoryCloseErr, rootCloseErr)

@@ -74,7 +74,7 @@ func TestRoleplayResearchUsesExactQuestionMessageAndRecordedWebEvidence(t *testi
 			if err != nil {
 				t.Fatal(err)
 			}
-			operationID, err := NewLifecycleOperationID()
+			operationID, err := model.NewLifecycleOperationID()
 			if err != nil {
 				t.Fatal(err)
 			}

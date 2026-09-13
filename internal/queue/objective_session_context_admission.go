@@ -34,12 +34,12 @@ func requireObjectiveSessionContextAdmissionTx(
 	if err != nil {
 		return err
 	}
-	if len(followups) >= MaxChannelSessionTurns {
+	if len(followups) >= model.MaxChannelSessionTurns {
 		return fmt.Errorf(
 			"%w: job %d already has the maximum %d persisted context events",
 			ErrObjectiveSessionContextCapacity,
 			job.ID,
-			MaxChannelSessionTurns,
+			model.MaxChannelSessionTurns,
 		)
 	}
 	total := 0

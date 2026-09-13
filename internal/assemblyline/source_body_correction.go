@@ -183,35 +183,60 @@ func (correction SourceBodyCorrection) Evidence() (SourceBodyCorrectionEvidence,
 }
 
 func (correction SourceBodyCorrection) Apply(rawReplacement string) (string, error) {
-	if err := correction.Validate(); err != nil {
+	candidates, err := correction.ApplyCandidates(rawReplacement)
+	if err != nil {
 		return "", err
 	}
+	return candidates[0], nil
+}
+
+// ApplyCandidates preserves response order. The source adapter validates each
+// splice before selecting it; no candidate can change bytes outside this span.
+func (correction SourceBodyCorrection) ApplyCandidates(rawReplacement string) ([]string, error) {
+	if err := correction.Validate(); err != nil {
+		return nil, err
+	}
 	if len(correction.replacements) == 1 {
-		return "", fmt.Errorf(
+		return nil, fmt.Errorf(
 			"source-body correction has one code-owned replacement and forbids a model response",
 		)
 	}
-	replacement := rawReplacement
 	if len(correction.replacements) > 1 {
 		decoded, err := DecodeOpaqueModelChoice(rawReplacement, correction.replacements)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
-		replacement = decoded
-	} else {
-		candidate, extractErr := sourcebodyresponse.ExtractCandidate(
-			rawReplacement, MaxPortableRawCandidateBytes,
-		)
-		if extractErr != nil {
-			return "", fmt.Errorf("source-span replacement extraction: %w", extractErr)
-		}
-		normalized, err := NormalizeSourceBodyResponse(candidate.Source)
-		if err != nil {
-			return "", fmt.Errorf("source-span replacement: %w", err)
-		}
-		replacement = normalized
+		body, err := correction.applyReplacement(decoded)
+		return []string{body}, err
 	}
-	return correction.applyReplacement(replacement)
+	candidates, err := sourcebodyresponse.ExtractCandidates(rawReplacement, MaxPortableRawCandidateBytes)
+	if err != nil {
+		return nil, fmt.Errorf("source-span replacement extraction: %w", err)
+	}
+	var bodies []string
+	var firstError error
+	seen := make(map[string]bool)
+	for _, candidate := range candidates {
+		normalized, err := NormalizeSourceBodyResponse(candidate.Source)
+		body := ""
+		if err == nil {
+			body, err = correction.applyReplacement(normalized)
+		}
+		if err != nil {
+			if firstError == nil {
+				firstError = err
+			}
+			continue
+		}
+		if !seen[body] {
+			bodies = append(bodies, body)
+			seen[body] = true
+		}
+	}
+	if len(bodies) == 0 {
+		return nil, fmt.Errorf("source-span replacements contain no bounded splice: %w", firstError)
+	}
+	return bodies, nil
 }
 
 func (correction SourceBodyCorrection) applyReplacement(replacement string) (string, error) {

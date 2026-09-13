@@ -31,7 +31,7 @@ func (r *Repository) EnsureCLIChatSessionChannel(
 	if err := model.ValidateChannelWorkspaceRoot(workspaceRoot); err != nil {
 		return model.Channel{}, err
 	}
-	if err := projectroot.ValidateDirectoryIdentity(workspaceIdentity); err != nil {
+	if err := projectroot.ValidateClientWorkspaceIdentity(workspaceIdentity); err != nil {
 		return model.Channel{}, fmt.Errorf("CLI workspace identity: %w", err)
 	}
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})

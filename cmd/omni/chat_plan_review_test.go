@@ -11,12 +11,11 @@ import (
 
 	"github.com/gryph/omnidex/internal/client"
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/queue"
 )
 
 func TestChatPlanReviewPersistsDecisionThenDeliberatelyFreezes(t *testing.T) {
 	workspaceRoot := "/tmp/cli-plan-review"
-	const workspaceIdentity = "directory_1_101"
+	const workspaceIdentity = "client_11111111111111111111111111111111_directory_1_101"
 	const jobID int64 = 73
 	plan := singleLeafPlanReviewFixture(t, jobID, 1)
 	var mu sync.Mutex
@@ -38,7 +37,7 @@ func TestChatPlanReviewPersistsDecisionThenDeliberatelyFreezes(t *testing.T) {
 		case "/v1/jobs/73/plan/decisions":
 			decisionRequests++
 			var body struct {
-				OperationID       queue.LifecycleOperationID        `json:"operation_id"`
+				OperationID       model.LifecycleOperationID        `json:"operation_id"`
 				Generation        int64                             `json:"generation"`
 				Revision          int64                             `json:"revision"`
 				WorkspaceRoot     string                            `json:"workspace_root"`
@@ -46,7 +45,7 @@ func TestChatPlanReviewPersistsDecisionThenDeliberatelyFreezes(t *testing.T) {
 				Decisions         []client.CodingPlanDecisionChange `json:"decisions"`
 			}
 			decodeChatPlanReviewJSON(t, request, &body)
-			if _, err := queue.ParseLifecycleOperationID(string(body.OperationID)); err != nil {
+			if _, err := model.ParseLifecycleOperationID(string(body.OperationID)); err != nil {
 				t.Errorf("decision operation ID: %v", err)
 			}
 			if body.Generation != plan.Generation || body.Revision != plan.Revision ||
@@ -62,14 +61,14 @@ func TestChatPlanReviewPersistsDecisionThenDeliberatelyFreezes(t *testing.T) {
 		case "/v1/jobs/73/plan/freeze":
 			freezeRequests++
 			var body struct {
-				OperationID       queue.LifecycleOperationID `json:"operation_id"`
+				OperationID       model.LifecycleOperationID `json:"operation_id"`
 				Generation        int64                      `json:"generation"`
 				Revision          int64                      `json:"revision"`
 				WorkspaceRoot     string                     `json:"workspace_root"`
 				WorkspaceIdentity string                     `json:"workspace_identity"`
 			}
 			decodeChatPlanReviewJSON(t, request, &body)
-			if _, err := queue.ParseLifecycleOperationID(string(body.OperationID)); err != nil {
+			if _, err := model.ParseLifecycleOperationID(string(body.OperationID)); err != nil {
 				t.Errorf("freeze operation ID: %v", err)
 			}
 			if body.Generation != plan.Generation || body.Revision != plan.Revision ||

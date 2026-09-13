@@ -161,6 +161,13 @@ complete only after its exact transition is observed. An objective is complete
 only after all prerequisite tasks and filesystem leaves are complete and the
 selected real workspace verification passes.
 
+Verified task artifacts reach the workspace progressively. Code publishes only
+complete documents with ready declared dependencies, retains every observed write,
+and keeps partial shared documents inside the experiment. Combining accepted task
+source requires deterministic verification of that combination. A later failure
+does not roll back earlier verified files or stop independent tasks; it still
+prevents completion of the incomplete objective.
+
 Those predicates close only the frozen accepted objective for the current iteration.
 They do not require every plausible product enhancement. Rejected, speculative, and
 deferred intake candidates own no task or filesystem leaf and cannot block completion;

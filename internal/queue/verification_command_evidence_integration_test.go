@@ -33,6 +33,11 @@ func TestFreshSchemaVerificationCommandResultsDoNotVetoLaterCompletion(t *testin
 	commands[0].Stdin = []byte{}
 	commands[0].Stdout = []byte{}
 	commands[0].Stderr = []byte{}
+	commands[0].ContainerID = strings.Repeat("a", 64)
+	commands[0].ContainerImageID = "sha256:" + strings.Repeat("b", 64)
+	commands[0].ContainerExecID = strings.Repeat("c", 64)
+	networkEnabled := false
+	commands[0].ContainerNetworkEnabled = &networkEnabled
 	changed := verificationIntegrationCommand(claim.Authority, 4, started.Add(3*time.Second), &zero, "")
 	changed.Phase = VerificationHostFinal
 	commands = append(commands, changed)
@@ -74,6 +79,17 @@ func TestFreshSchemaVerificationCommandResultsDoNotVetoLaterCompletion(t *testin
 		stored[0].Stdin == nil || stored[0].Stdout == nil || stored[0].Stderr == nil {
 		t.Fatalf("present empty command bytes were not preserved: %#v", stored[0])
 	}
+	if stored[0].ContainerID != commands[0].ContainerID || stored[0].ContainerImageID != commands[0].ContainerImageID || stored[0].ContainerExecID != commands[0].ContainerExecID {
+		t.Fatalf("exact Docker command identities were not preserved: %#v", stored[0])
+	}
+	if stored[0].ContainerNetworkEnabled == nil || *stored[0].ContainerNetworkEnabled {
+		t.Fatal("exact disabled network observation was not preserved")
+	}
+	for _, mutation := range []string{"container_image_id=NULL", "container_image_id='node:22'", "container_exec_id=NULL", "container_id=NULL", "container_network_enabled=NULL", "container_network_enabled=true", "working_directory='/tmp/source'", "phase='host_cleanup'", "container_id=NULL,container_image_id=NULL,container_exec_id=NULL,container_network_enabled=NULL"} {
+		if _, err := pool.Exec(ctx, "UPDATE verification_command_evidence SET "+mutation+" WHERE job_id=$1 AND ordinal=1", job.ID); err == nil {
+			t.Fatalf("schema accepted invalid Docker authority: %s", mutation)
+		}
+	}
 	firstPage, err := repository.ListVerificationCommandEvidenceForJob(ctx, job.ID, 0, 2)
 	if err != nil || len(firstPage) != 2 {
 		t.Fatalf("first verification-command page=%#v err=%v", firstPage, err)
@@ -87,8 +103,15 @@ func TestFreshSchemaVerificationCommandResultsDoNotVetoLaterCompletion(t *testin
 		t.Fatalf("third verification-command page=%#v err=%v", thirdPage, err)
 	}
 	passed := verificationIntegrationCommand(claim.Authority, 6, started.Add(5*time.Second), &zero, "")
+	passed.Phase = VerificationIsolatedInstall
+	acquiring := true
+	passed.ContainerNetworkEnabled = &acquiring
 	if err := repository.AppendVerificationCommandEvidence(ctx, passed); err != nil {
 		t.Fatal(err)
+	}
+	latest, err := repository.ListVerificationCommandEvidenceForJob(ctx, job.ID, stored[len(stored)-1].ID, 1)
+	if err != nil || len(latest) != 1 || latest[0].ContainerNetworkEnabled == nil || !*latest[0].ContainerNetworkEnabled {
+		t.Fatalf("acquisition observation did not round-trip: %+v %v", latest, err)
 	}
 	if _, err := pool.Exec(ctx, `
 		UPDATE job_step_attempts SET status='completed',finished_at=clock_timestamp()
@@ -109,10 +132,13 @@ func verificationIntegrationCommand(
 	exitCode *int,
 	launchError string,
 ) VerificationCommandEvidence {
+	networkEnabled := false
 	return VerificationCommandEvidence{
 		Authority: authority, Phase: VerificationIsolatedTask, Ordinal: ordinal,
 		Argv: []string{"go", "test", "./..."}, Environment: []string{"GOCACHE=/tmp/cache"},
-		WorkingDirectory: "/tmp/evidence-project", StartedAt: started,
+		WorkingDirectory: "/workspace", StartedAt: started,
+		ContainerID: strings.Repeat("a", 64), ContainerImageID: "sha256:" + strings.Repeat("b", 64),
+		ContainerExecID: strings.Repeat("c", 64), ContainerNetworkEnabled: &networkEnabled,
 		FinishedAt: started.Add(10 * time.Millisecond), ExitCode: exitCode,
 		LaunchError: launchError, Stdout: []byte("output\n"), StdoutComplete: true,
 		Stderr: []byte("diagnostic\n"), StderrComplete: true,
@@ -132,11 +158,13 @@ func invalidObservationCommandSQL(unboundedLaunchError bool) string {
 		INSERT INTO verification_command_evidence (
 			job_id,generation,step_id,step_attempt,worker_id,phase,ordinal,
 			argv,environment,stdin_present,stdin,working_directory,
+			container_id,container_image_id,container_exec_id,container_network_enabled,
 			started_at,finished_at,duration_nanos,exit_code,launch_error,observation_error,
 			stdout,stdout_complete,stderr,stderr_complete,status
 		)
 		SELECT job_id,generation,step_id,step_attempt,worker_id,phase,6,
 		       argv,environment,stdin_present,stdin,working_directory,
+		       container_id,container_image_id,container_exec_id,container_network_enabled,
 		       started_at,finished_at,duration_nanos,` + exitCode + `,` + launchError + `,observation_error,
 		       stdout,` + stdoutComplete + `,stderr,stderr_complete,status
 		FROM verification_command_evidence

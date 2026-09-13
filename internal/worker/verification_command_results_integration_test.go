@@ -3,7 +3,6 @@ package worker
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -31,6 +30,16 @@ func TestVerificationCommandsUseProcessResultsWithoutWorkspaceHashGates(t *testi
 		root:    root,
 		runtime: &nativeRuntimeV3{svc: &Service{repo: repository}, ctx: ctx, claim: claim},
 	}
+	profile := testCompiledLanguageVerificationProgram(t, genericJavaScriptCommandLineAdapter).Project.Profile
+	workspace, err := openDirectCodingExperiment(session, profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := workspace.Close(); err != nil {
+			t.Error(err)
+		}
+	})
 	for _, fixture := range []struct {
 		name, script, path, content string
 	}{
@@ -38,24 +47,24 @@ func TestVerificationCommandsUseProcessResultsWithoutWorkspaceHashGates(t *testi
 		{"generated report", "mkdir reports; printf passed > reports/result.txt", "reports/result.txt", "passed"},
 	} {
 		t.Run(fixture.name, func(t *testing.T) {
-			_, err := session.runRecordedVerificationCommand(root, queue.VerificationIsolatedFinal,
-				directCodingVerificationCommand{Argv: []string{"sh", "-c", fixture.script}, Timeout: time.Second})
+			_, err := session.runRecordedDockerVerificationCommand(workspace, queue.VerificationIsolatedFinal,
+				directCodingVerificationCommand{Argv: []string{"sh", "-c", fixture.script}, Timeout: 10 * time.Second})
 			if err != nil {
 				t.Fatal(err)
 			}
-			content, err := os.ReadFile(filepath.Join(root, fixture.path))
-			if err != nil || string(content) != fixture.content {
-				t.Fatalf("command output=%q err=%v", content, err)
+			files, err := workspace.Collect(ctx, []string{fixture.path})
+			if err != nil || len(files) != 1 || string(files[0].Content) != fixture.content {
+				t.Fatalf("command output=%v err=%v", files, err)
 			}
 		})
 	}
-	_, err = session.runRecordedVerificationCommand(root, queue.VerificationIsolatedFinal,
-		directCodingVerificationCommand{Argv: []string{"sh", "-c", "exit 7"}, Timeout: time.Second})
+	_, err = session.runRecordedDockerVerificationCommand(workspace, queue.VerificationIsolatedFinal,
+		directCodingVerificationCommand{Argv: []string{"sh", "-c", "exit 7"}, Timeout: 10 * time.Second})
 	if err == nil || !strings.Contains(err.Error(), "exited 7") {
 		t.Fatalf("process failure was hidden: %v", err)
 	}
-	_, err = session.runRecordedVerificationCommand(root, queue.VerificationIsolatedFinal,
-		directCodingVerificationCommand{Argv: []string{"sh", "-c", "printf verified"}, Timeout: time.Second})
+	_, err = session.runRecordedDockerVerificationCommand(workspace, queue.VerificationIsolatedFinal,
+		directCodingVerificationCommand{Argv: []string{"sh", "-c", "printf verified"}, Timeout: 10 * time.Second})
 	if err != nil {
 		t.Fatalf("later command blocked by historical failure: %v", err)
 	}
@@ -70,5 +79,15 @@ func TestVerificationCommandsUseProcessResultsWithoutWorkspaceHashGates(t *testi
 		if records[i].Status != status {
 			t.Fatalf("command %d status=%s; want %s", i, records[i].Status, status)
 		}
+		if records[i].ContainerID == "" || records[i].ContainerExecID == "" || records[i].ContainerNetworkEnabled == nil || *records[i].ContainerNetworkEnabled {
+			t.Fatalf("command %d lacks an observed offline Docker process: %+v", i, records[i])
+		}
 	}
+	if entries, err := os.ReadDir(root); err != nil || len(entries) != 0 {
+		t.Fatalf("experiment changed host files: %v %v", entries, err)
+	}
+	if err := workspace.Close(); err != nil {
+		t.Fatal(err)
+	}
+	assertCompiledLanguageContainersRemoved(t, records)
 }

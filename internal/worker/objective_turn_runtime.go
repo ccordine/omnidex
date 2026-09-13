@@ -73,12 +73,14 @@ func (r *nativeRuntimeV3) deriveObjectiveInstructionProvenance() (
 			"objective instruction provenance requires a claimed job",
 		)
 	}
-	scope, err := r.svc.workspaceScopeForV3Job(r.claim.Job)
+	// Path provenance uses declared lexical context. Directory access belongs
+	// to the first operation that actually reads or mutates the workspace.
+	root, err := codingWorkspaceForJob(r.claim.Job)
 	if err != nil {
 		return assemblyline.ArtifactIdentityProvenance{}, err
 	}
 	provenance, err := objectiveInstructionPathProvenance(
-		r.ctx, scope.Root, r.claim.Job.Instruction,
+		r.ctx, root, r.claim.Job.Instruction,
 	)
 	if err != nil {
 		return assemblyline.ArtifactIdentityProvenance{}, fmt.Errorf(

@@ -12,7 +12,7 @@ import (
 )
 
 type scrumChannelDispatchResult struct {
-	OperationID queue.LifecycleOperationID
+	OperationID model.LifecycleOperationID
 	ProjectID   int64
 	Card        ScrumCard
 	Job         model.Job
@@ -21,7 +21,7 @@ type scrumChannelDispatchResult struct {
 }
 
 type scrumChannelDispatchResponse struct {
-	OperationID queue.LifecycleOperationID `json:"operation_id"`
+	OperationID model.LifecycleOperationID `json:"operation_id"`
 	ProjectID   int64                      `json:"project_id"`
 	Card        ScrumCard                  `json:"card"`
 	Action      string                     `json:"action"`
@@ -31,7 +31,7 @@ func (s *Server) dispatchScrumChannelMessage(
 	r *http.Request,
 	projectID int64,
 	cardID string,
-	operationID queue.LifecycleOperationID,
+	operationID model.LifecycleOperationID,
 	userMessage string,
 ) (scrumChannelDispatchResult, error) {
 	if s == nil || s.repo == nil || r == nil || projectID <= 0 {

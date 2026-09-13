@@ -4,12 +4,11 @@ import (
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/queue"
 )
 
 type lifecycleControlReceipt struct {
 	JobID       int64                      `json:"job_id"`
-	OperationID queue.LifecycleOperationID `json:"operation_id"`
+	OperationID model.LifecycleOperationID `json:"operation_id"`
 	Status      string                     `json:"status"`
 }
 
@@ -25,13 +24,13 @@ func validateSameJobAuthority(expectedID int64, job model.Job) error {
 
 func newLifecycleControlReceipt(
 	expectedID int64,
-	operationID queue.LifecycleOperationID,
+	operationID model.LifecycleOperationID,
 	job model.Job,
 ) (lifecycleControlReceipt, error) {
 	if err := validateSameJobAuthority(expectedID, job); err != nil {
 		return lifecycleControlReceipt{}, err
 	}
-	if _, err := queue.ParseLifecycleOperationID(string(operationID)); err != nil {
+	if _, err := model.ParseLifecycleOperationID(string(operationID)); err != nil {
 		return lifecycleControlReceipt{}, err
 	}
 	switch job.Status {

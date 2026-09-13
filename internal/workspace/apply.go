@@ -48,6 +48,9 @@ func (prepared *PreparedReconciliation) ApplyVerified(
 	if err != nil || !anchored.IsDir() || !os.SameFile(prepared.rootInfo, anchored) {
 		return ReconciliationResult{}, fmt.Errorf("authoritative workspace root changed before mutation")
 	}
+	if err := requireExpectedFiles(ctx, root, prepared.expected); err != nil {
+		return ReconciliationResult{}, err
+	}
 	result, applyErr := applyReconciliation(ctx, root, prepared.desired, observer)
 	if applyErr != nil {
 		return result, applyErr

@@ -9,7 +9,7 @@ func BuildApplicationClassificationPrompt(input ApplicationClassificationInput) 
 		return "", err
 	}
 	return RenderOpaqueModelChoiceQuestion(
-		"Which description matches only the observable delivery surface required by this software request? A missing surface constraint is different from an explicit requirement outside the registered set or an incompatible combination of explicit surfaces.",
+		"What kind of interface does the request describe?",
 		[]string{"Software request:\n" + input.UserRequest},
 		choices,
 	)
@@ -38,10 +38,10 @@ func applicationClassificationOpaqueChoices() ([]OpaqueModelChoice, error) {
 		description string
 		value       string
 	}{
-		{"The request requires an interactive browser page.", string(ApplicationSurfaceBrowser)},
-		{"The request requires a terminal program.", string(ApplicationSurfaceCommandLine)},
-		{"The request does not constrain its observable delivery surface.", string(ApplicationSurfaceUnspecified)},
-		{"The request explicitly requires an unregistered surface or incompatible multiple explicit surfaces.", string(ApplicationSurfaceUnsupported)},
+		{"A browser app or web page.", string(ApplicationSurfaceBrowser)},
+		{"A command-line program or terminal interface.", string(ApplicationSurfaceCommandLine)},
+		{"The request does not say what interface to use.", string(ApplicationSurfaceUnspecified)},
+		{"Another interface, such as a native mobile or graphical desktop app, or a combination of interfaces.", string(ApplicationSurfaceUnsupported)},
 	}
 	choices := make([]OpaqueModelChoice, 0, len(definitions))
 	for _, definition := range definitions {

@@ -8,24 +8,24 @@ import (
 )
 
 func TestLifecycleOperationIdentityIsAllocatedWithoutContent(t *testing.T) {
-	first, err := NewLifecycleOperationID()
+	first, err := model.NewLifecycleOperationID()
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := NewLifecycleOperationID()
+	second, err := model.NewLifecycleOperationID()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if first == second {
 		t.Fatal("independent operations share an identity")
 	}
-	for _, id := range []LifecycleOperationID{first, second} {
-		if _, err := ParseLifecycleOperationID(string(id)); err != nil {
+	for _, id := range []model.LifecycleOperationID{first, second} {
+		if _, err := model.ParseLifecycleOperationID(string(id)); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for _, invalid := range []string{"", "lifecycle_operation_", "lifecycle_operation_with space", "lifecycle_operation_" + strings.Repeat("a", 129)} {
-		if _, err := ParseLifecycleOperationID(invalid); err == nil {
+		if _, err := model.ParseLifecycleOperationID(invalid); err == nil {
 			t.Fatalf("accepted invalid identity %q", invalid)
 		}
 	}

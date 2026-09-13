@@ -96,7 +96,7 @@ func TestCodingPlanAPICommitsServerAuthoritativeDecisionsAndFreeze(t *testing.T)
 		{action: "cancel", field: "reason", value: "Cancel this exact job."},
 	} {
 		control := control
-		operationID, err := queue.NewLifecycleOperationID()
+		operationID, err := model.NewLifecycleOperationID()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -114,7 +114,7 @@ func TestCodingPlanAPICommitsServerAuthoritativeDecisionsAndFreeze(t *testing.T)
 			http.StatusBadRequest,
 		)
 
-		operationID, err = queue.NewLifecycleOperationID()
+		operationID, err = model.NewLifecycleOperationID()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -143,7 +143,7 @@ func TestCodingPlanAPICommitsServerAuthoritativeDecisionsAndFreeze(t *testing.T)
 	requireStatus(
 		http.MethodGet, planPath+"?"+wrongPlanQuery.Encode(), nil, http.StatusConflict,
 	)
-	missingDecisionID, err := queue.NewLifecycleOperationID()
+	missingDecisionID, err := model.NewLifecycleOperationID()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +161,7 @@ func TestCodingPlanAPICommitsServerAuthoritativeDecisionsAndFreeze(t *testing.T)
 	requireStatus(
 		http.MethodPost, planPath+"/decisions", missingDecisionBody, http.StatusBadRequest,
 	)
-	wrongDecisionID, err := queue.NewLifecycleOperationID()
+	wrongDecisionID, err := model.NewLifecycleOperationID()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +201,7 @@ func TestCodingPlanAPICommitsServerAuthoritativeDecisionsAndFreeze(t *testing.T)
 		t.Fatalf("read plan=%+v", readPlan)
 	}
 
-	decisionID, err := queue.NewLifecycleOperationID()
+	decisionID, err := model.NewLifecycleOperationID()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +237,7 @@ func TestCodingPlanAPICommitsServerAuthoritativeDecisionsAndFreeze(t *testing.T)
 		decided.Leaves[0].Decision != model.CodingPlanDecisionApproved {
 		t.Fatalf("decided plan=%+v", decided)
 	}
-	missingFreezeID, err := queue.NewLifecycleOperationID()
+	missingFreezeID, err := model.NewLifecycleOperationID()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +252,7 @@ func TestCodingPlanAPICommitsServerAuthoritativeDecisionsAndFreeze(t *testing.T)
 	requireStatus(
 		http.MethodPost, planPath+"/freeze", missingFreezeBody, http.StatusBadRequest,
 	)
-	wrongFreezeID, err := queue.NewLifecycleOperationID()
+	wrongFreezeID, err := model.NewLifecycleOperationID()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,7 +270,7 @@ func TestCodingPlanAPICommitsServerAuthoritativeDecisionsAndFreeze(t *testing.T)
 		http.MethodPost, planPath+"/freeze", wrongFreezeBody, http.StatusConflict,
 	)
 
-	freezeID, err := queue.NewLifecycleOperationID()
+	freezeID, err := model.NewLifecycleOperationID()
 	if err != nil {
 		t.Fatal(err)
 	}

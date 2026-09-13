@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/queue"
 )
 
 func TestCLIControlsUseExactJobBoundEndpointsAndPayloads(t *testing.T) {
@@ -24,12 +23,12 @@ func TestCLIControlsUseExactJobBoundEndpointsAndPayloads(t *testing.T) {
 		textField string
 		text      string
 		status    string
-		invoke    func(*Client, queue.LifecycleOperationID) (model.Job, error)
+		invoke    func(*Client, model.LifecycleOperationID) (model.Job, error)
 	}{
 		{
 			name: "feedback", action: "feedback", textField: "feedback",
 			text: "Use this clarification for the waiting job.", status: model.JobStatusRunning,
-			invoke: func(apiClient *Client, operationID queue.LifecycleOperationID) (model.Job, error) {
+			invoke: func(apiClient *Client, operationID model.LifecycleOperationID) (model.Job, error) {
 				return apiClient.SubmitFeedback(
 					context.Background(), channel, testWorkspaceIdentity, jobID, operationID,
 					"Use this clarification for the waiting job.",
@@ -39,7 +38,7 @@ func TestCLIControlsUseExactJobBoundEndpointsAndPayloads(t *testing.T) {
 		{
 			name: "interrupt", action: "interrupt", textField: "feedback",
 			text: "Pause while I inspect the current result.", status: model.JobStatusWaiting,
-			invoke: func(apiClient *Client, operationID queue.LifecycleOperationID) (model.Job, error) {
+			invoke: func(apiClient *Client, operationID model.LifecycleOperationID) (model.Job, error) {
 				return apiClient.Interrupt(
 					context.Background(), channel, testWorkspaceIdentity, jobID, operationID,
 					"Pause while I inspect the current result.",
@@ -49,7 +48,7 @@ func TestCLIControlsUseExactJobBoundEndpointsAndPayloads(t *testing.T) {
 		{
 			name: "redirect", action: "replan", textField: "feedback",
 			text: "Preserve the current headings and shorten each entry.", status: model.JobStatusRunning,
-			invoke: func(apiClient *Client, operationID queue.LifecycleOperationID) (model.Job, error) {
+			invoke: func(apiClient *Client, operationID model.LifecycleOperationID) (model.Job, error) {
 				return apiClient.Replan(
 					context.Background(), channel, testWorkspaceIdentity, jobID, operationID,
 					"Preserve the current headings and shorten each entry.",
@@ -59,7 +58,7 @@ func TestCLIControlsUseExactJobBoundEndpointsAndPayloads(t *testing.T) {
 		{
 			name: "cancel", action: "cancel", textField: "reason",
 			text: "Stop this objective.", status: model.JobStatusCanceled,
-			invoke: func(apiClient *Client, operationID queue.LifecycleOperationID) (model.Job, error) {
+			invoke: func(apiClient *Client, operationID model.LifecycleOperationID) (model.Job, error) {
 				return apiClient.Cancel(
 					context.Background(), channel, testWorkspaceIdentity, jobID, operationID,
 					"Stop this objective.",

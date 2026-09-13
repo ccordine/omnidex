@@ -27,7 +27,7 @@ const (
 )
 
 type ObjectiveSessionTurnAuthority struct {
-	OperationID LifecycleOperationID
+	OperationID model.LifecycleOperationID
 	Kind        ObjectiveSessionTurnKind
 	Text        string
 	ContextText string
@@ -39,7 +39,7 @@ type ObjectiveSessionContextAuthority struct {
 	JobID                    int64
 	InitialInstruction       string
 	Turns                    []ObjectiveSessionTurnAuthority
-	CurrentReplanOperationID LifecycleOperationID
+	CurrentReplanOperationID model.LifecycleOperationID
 }
 
 type ObjectiveContinuityAuthority struct {
@@ -292,7 +292,7 @@ func (session ObjectiveSessionContextAuthority) validate(
 	contextBytes := 0
 	currentReplans := 0
 	for index, turn := range session.Turns {
-		if _, err := ParseLifecycleOperationID(string(turn.OperationID)); err != nil {
+		if _, err := model.ParseLifecycleOperationID(string(turn.OperationID)); err != nil {
 			return err
 		}
 		if turn.Generation < 1 || turn.CreatedAt.IsZero() {

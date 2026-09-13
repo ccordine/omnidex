@@ -82,7 +82,7 @@ func normalizeApplyCodingPlanDecisionsCommand(
 			"coding plan decisions require positive job, generation, and revision identities",
 		)
 	}
-	if _, err := ParseLifecycleOperationID(string(command.OperationID)); err != nil {
+	if _, err := model.ParseLifecycleOperationID(string(command.OperationID)); err != nil {
 		return ApplyCodingPlanDecisionsCommand{}, err
 	}
 	if err := validateRequiredLifecycleWorkspaceBinding(command.WorkspaceRoot, command.WorkspaceIdentity); err != nil {
@@ -130,7 +130,7 @@ func normalizeFreezeCodingPlanCommand(
 			"coding plan freeze requires positive job, generation, and revision identities",
 		)
 	}
-	if _, err := ParseLifecycleOperationID(string(command.OperationID)); err != nil {
+	if _, err := model.ParseLifecycleOperationID(string(command.OperationID)); err != nil {
 		return FreezeCodingPlanCommand{}, err
 	}
 	if err := validateRequiredLifecycleWorkspaceBinding(command.WorkspaceRoot, command.WorkspaceIdentity); err != nil {

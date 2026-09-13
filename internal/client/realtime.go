@@ -76,7 +76,7 @@ func (client *Client) OpenJobEvents(
 	if err := channelID.Validate(); err != nil {
 		return nil, fmt.Errorf("open channel realtime stream: %w", err)
 	}
-	if err := projectroot.ValidateDirectoryIdentity(workspaceIdentity); err != nil {
+	if err := projectroot.ValidateClientWorkspaceIdentity(workspaceIdentity); err != nil {
 		return nil, fmt.Errorf("open channel realtime workspace identity: %w", err)
 	}
 	endpoint, err := url.Parse(client.baseURL)

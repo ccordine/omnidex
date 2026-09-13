@@ -108,9 +108,9 @@ func codingPlanAcceptedReceipt(t *testing.T, statement string) assemblyline.Appl
 	return result
 }
 
-func codingPlanOperationID(t *testing.T, label string, jobID int64) LifecycleOperationID {
+func codingPlanOperationID(t *testing.T, label string, jobID int64) model.LifecycleOperationID {
 	t.Helper()
-	id, err := NewLifecycleOperationID()
+	id, err := model.NewLifecycleOperationID()
 	if err != nil {
 		t.Fatalf("construct coding-plan operation ID: %v", err)
 	}

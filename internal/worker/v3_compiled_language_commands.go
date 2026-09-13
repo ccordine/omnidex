@@ -1,9 +1,7 @@
 package worker
 
 import (
-	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -11,7 +9,7 @@ import (
 	"github.com/gryph/omnidex/internal/queue"
 )
 
-func (session *directCodingSession) verifyCompiledLanguageToolchain(root string, phase queue.VerificationCommandPhase, profile directCodingProjectVersionProfile) error {
+func verifyDirectCodingCompiledLanguageToolchain(run func(queue.VerificationCommandPhase, directCodingVerificationCommand) (directCodingVerificationCommandResult, error), phase queue.VerificationCommandPhase, profile directCodingProjectVersionProfile) error {
 	var tools []string
 	switch profile.StackID {
 	case genericJavaScriptCommandLineAdapter:
@@ -24,7 +22,7 @@ func (session *directCodingSession) verifyCompiledLanguageToolchain(root string,
 		return fmt.Errorf("stack %s has no compiled-language toolchain", profile.StackID)
 	}
 	for _, tool := range tools {
-		result, err := session.runRecordedVerificationCommand(root, phase, directCodingToolchainVersionCommand(tool))
+		result, err := run(phase, directCodingToolchainVersionCommand(tool))
 		if err != nil {
 			return err
 		}
@@ -37,31 +35,6 @@ func (session *directCodingSession) verifyCompiledLanguageToolchain(root string,
 	// Cargo enforces rust-version and edition from the exact manifest; javac
 	// enforces the selected API/source release through --release. Their real
 	// compilation results, not a second version assertion, establish compatibility.
-	return nil
-}
-
-func (session *directCodingSession) runCompiledLanguageVerification(root, output string, phase queue.VerificationCommandPhase, program directCodingProgram, assembly directCodingAssembly, complete bool) (resultErr error) {
-	commands, err := directCodingCompiledLanguageCommands(program.Project.Profile, assembly, root, output, complete)
-	if err != nil {
-		return err
-	}
-	if err := os.RemoveAll(output); err != nil {
-		return fmt.Errorf("clear owned compiler output: %w", err)
-	}
-	if err := os.MkdirAll(output, 0o700); err != nil {
-		return err
-	}
-	if program.Project.Stack.ID == genericJavaCommandLineAdapter {
-		if err := os.Mkdir(filepath.Join(output, "classes"), 0o700); err != nil {
-			return err
-		}
-	}
-	defer func() { resultErr = errors.Join(resultErr, validateDirectCodingAssemblyAtRoot(root, assembly)) }()
-	for _, command := range commands {
-		if _, err := session.runRecordedVerificationCommand(root, phase, command); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 

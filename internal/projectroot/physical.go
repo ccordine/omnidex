@@ -15,12 +15,18 @@ func ResolvePhysicalDirectory(candidate string) (string, error) {
 	if err := model.ValidateChannelWorkspaceRoot(candidate); err != nil {
 		return "", fmt.Errorf("invoking directory: %w", err)
 	}
+	if !filepath.IsAbs(candidate) || filepath.Clean(candidate) != candidate {
+		return "", fmt.Errorf("invoking directory requires one canonical native absolute path")
+	}
 	resolved, err := filepath.EvalSymlinks(candidate)
 	if err != nil {
 		return "", fmt.Errorf("resolve invoking directory %q: %w", candidate, err)
 	}
 	if err := model.ValidateChannelWorkspaceRoot(resolved); err != nil {
 		return "", fmt.Errorf("resolved invoking directory: %w", err)
+	}
+	if !filepath.IsAbs(resolved) || filepath.Clean(resolved) != resolved {
+		return "", fmt.Errorf("resolved invoking directory requires one canonical native absolute path")
 	}
 	resolvedInfo, err := os.Lstat(resolved)
 	if err != nil {

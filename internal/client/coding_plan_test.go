@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/queue"
 )
 
 func TestCodingPlanTransportUsesExactPersistedReviewAuthority(t *testing.T) {
@@ -157,7 +156,7 @@ func TestCodingPlanMutationRejectsInvalidAuthorityBeforeTransport(t *testing.T) 
 	}
 	tests := []struct {
 		name       string
-		operation  queue.LifecycleOperationID
+		operation  model.LifecycleOperationID
 		generation int64
 		revision   int64
 		changes    []CodingPlanDecisionChange

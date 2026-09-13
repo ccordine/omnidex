@@ -1,8 +1,6 @@
 package worker
 
 import (
-	"os"
-	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -63,37 +61,21 @@ func TestTypeScriptBrowserStageProjectionsRetainStaticVerificationAuthority(t *t
 				if !reflect.DeepEqual(stage.StaticFiles, program.StaticFiles) {
 					t.Fatalf("%s stage lost exact static-file authority", stageName)
 				}
-				assertTypeScriptStageStaticFilesMaterialize(t, stageName, stage.StaticFiles)
+				assertTypeScriptStageStaticFileAuthority(t, stageName, stage.StaticFiles)
 			}
 		})
 	}
 }
 
-func assertTypeScriptStageStaticFilesMaterialize(
+func assertTypeScriptStageStaticFileAuthority(
 	t *testing.T,
 	stageName string,
 	files []directCodingFileTask,
 ) {
 	t.Helper()
-	root := t.TempDir()
 	packageFiles, err := directCodingStagePackageFiles(files)
 	if err != nil {
 		t.Fatalf("%s stage package authority: %v", stageName, err)
-	}
-	workspace := directCodingTypeScriptStageWorkspace{
-		root: root, packageAuthority: make(map[string]directCodingFileTask, len(packageFiles)),
-	}
-	for _, file := range packageFiles {
-		workspace.packageAuthority[file.Path] = file
-		if err := writeDirectCodingStageFile(root, file); err != nil {
-			t.Fatalf("write %s stage package authority: %v", stageName, err)
-		}
-	}
-	if err := workspace.resetSource(); err != nil {
-		t.Fatalf("reset %s stage source: %v", stageName, err)
-	}
-	if err := workspace.writeAssembly(directCodingAssembly{Files: files}); err != nil {
-		t.Fatalf("materialize %s stage static authority: %v", stageName, err)
 	}
 	byPath := make(map[string]directCodingFileTask, len(files))
 	for _, file := range files {
@@ -103,15 +85,13 @@ func assertTypeScriptStageStaticFilesMaterialize(
 		"package.json", "package-lock.json", "tsconfig.json", "vite.config.ts",
 	} {
 		expected, exists := byPath[required]
-		if !exists {
+		if !exists || len(expected.Content) == 0 {
 			t.Fatalf("%s stage authority omits %s", stageName, required)
 		}
-		actual, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(required)))
-		if err != nil {
-			t.Fatalf("read materialized %s stage file %s: %v", stageName, required, err)
-		}
-		if !reflect.DeepEqual(actual, expected.Content) {
-			t.Fatalf("materialized %s stage file %s differs from authority", stageName, required)
+	}
+	for _, file := range packageFiles {
+		if !reflect.DeepEqual(file, byPath[file.Path]) {
+			t.Fatalf("%s package authority differs from exact static file %s", stageName, file.Path)
 		}
 	}
 }

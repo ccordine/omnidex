@@ -11,7 +11,7 @@ import (
 
 	"github.com/gryph/omnidex/internal/client"
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/queue"
+
 	"golang.org/x/term"
 )
 
@@ -102,10 +102,10 @@ func operationGuardActiveSnapshot(t *testing.T, session *chatSession) client.Cha
 		t.Fatalf("encode active job metadata: %v", err)
 	}
 	return client.ChatSessionSnapshot{
-		State: client.ChatSessionState{
+		State: model.ChannelSessionState{
 			ChannelID: session.channel.ID, WorkspaceRoot: session.channel.WorkspaceRoot,
 			WorkspaceIdentity: session.workspaceIdentity, ChannelUpdatedAt: session.channel.UpdatedAt,
-			LatestJob: &client.ChatSessionJobState{ID: 41, Generation: 1, Status: model.JobStatusRunning, UpdatedAt: now},
+			LatestJob: &model.ChannelSessionJobState{ID: 41, Generation: 1, Status: model.JobStatusRunning, UpdatedAt: now},
 		},
 		Channel: session.channel, WorkspaceIdentity: session.workspaceIdentity,
 		Messages: []model.ChannelMessage{{
@@ -113,7 +113,7 @@ func operationGuardActiveSnapshot(t *testing.T, session *chatSession) client.Cha
 			Content: instruction, CreatedAt: now,
 			Turn: &model.ChannelMessageTurnState{JobID: 41, Status: model.JobStatusRunning, UpdatedAt: now},
 		}},
-		Turns: []queue.ChannelSessionTurn{}, Controls: []queue.ChannelSessionControl{},
+		Turns: []model.ChannelSessionTurn{}, Controls: []model.ChannelSessionControl{},
 		ActiveJob: &model.JobDetails{
 			Job: model.Job{
 				ID: 41, Instruction: instruction, Pipeline: model.PipelineChat,

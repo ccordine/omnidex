@@ -117,9 +117,9 @@ func codingPlanLifecycleOperationID(
 	kind string,
 	jobID int64,
 	generation int64,
-) queue.LifecycleOperationID {
+) model.LifecycleOperationID {
 	t.Helper()
-	id, err := queue.NewLifecycleOperationID()
+	id, err := model.NewLifecycleOperationID()
 	if err != nil {
 		t.Fatal(err)
 	}

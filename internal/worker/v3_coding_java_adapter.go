@@ -16,6 +16,8 @@ func compileGenericJavaCommandLineBlueprint(
 	_ directCodingProjectVersionProfile,
 	_ assemblyline.TargetTree,
 	coverage assemblyline.ApplicationFileCoveragePlan,
+	_ directCodingResultValueKindPlan,
+	_ directCodingInputSourcePlan,
 ) (assemblyline.SourceBlueprint, []directCodingFileTask, error) {
 	if err := validateJavaCommandLineCoverage(workload, coverage); err != nil {
 		return assemblyline.SourceBlueprint{}, nil, err

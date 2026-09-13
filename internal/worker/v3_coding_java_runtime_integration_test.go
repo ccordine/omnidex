@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gryph/omnidex/internal/experiment"
 	"github.com/gryph/omnidex/internal/queue"
 )
 
@@ -15,6 +16,7 @@ func TestJavaNativeRuntimeRejectsDisabledAssertionsAndMissingInput(t *testing.T)
 	if databaseURL == "" {
 		t.Skip("OMNI_TEST_DATABASE_URL is required for native Java boundary evidence")
 	}
+	rejectNativeCompiledLanguageTools(t)
 	_, repository := freshWorkerEvidenceRepository(t, databaseURL)
 	ctx := context.Background()
 	root, scratch := t.TempDir(), t.TempDir()
@@ -47,12 +49,13 @@ func TestJavaNativeRuntimeRejectsDisabledAssertionsAndMissingInput(t *testing.T)
 	program.Generated = make(map[string]string)
 	if err := runDirectCodingApplicationTaskLifecycle(program.Workload, &program, directCodingApplicationTaskLifecycleHooks{
 		BuildBlock: fixtureExecutor.GenerateBlock, VerifyTask: selected.VerifyTask, FinalStage: selected.VerifyFinal,
+		PublishTask: func(*directCodingProgram, *directCodingProgram) error { return nil }, // isolated runtime primitive
 	}); err != nil {
 		t.Fatal(err)
 	}
 	executor := selected.(*directCodingCompiledLanguageExecutor)
 	classes := filepath.Join(executor.workspace.output, "classes")
-	result, err := session.runRecordedVerificationCommand(executor.workspace.source, queue.VerificationIsolatedFinal, directCodingVerificationCommand{
+	result, err := executor.workspace.run(queue.VerificationIsolatedFinal, directCodingVerificationCommand{
 		Argv: []string{"java", "-cp", classes, "Feature001Test"}, Timeout: defaultDirectCodingVerificationTimeout,
 	})
 	if err == nil || !strings.Contains(string(result.Stderr), "behavioral verification requires enabled assertions") || len(result.Stdout) != 0 {
@@ -61,7 +64,7 @@ func TestJavaNativeRuntimeRejectsDisabledAssertionsAndMissingInput(t *testing.T)
 
 	// This code-owned fixture calls the actual runtime boundary. It is not
 	// generated application behavior or evidence of intent understanding.
-	boundaryPath := filepath.Join(t.TempDir(), "InputBoundaryTest.java")
+	boundaryPath := "InputBoundaryTest.java"
 	boundarySource := `@SuppressWarnings("auxiliaryclass")
 final class InputBoundaryTest {
   public static void main(String[] arguments) {
@@ -81,7 +84,7 @@ final class InputBoundaryTest {
     System.out.println("input boundary passed");
   }
 }`
-	if err := os.WriteFile(boundaryPath, []byte(boundarySource), 0o600); err != nil {
+	if err := executor.workspace.experiment.Write(ctx, []experiment.File{{Path: boundaryPath, Content: []byte(boundarySource), Mode: 0o600}}); err != nil {
 		t.Fatal(err)
 	}
 	release, err := directCodingVersionComponent(program.Project.Profile, "java_release")
@@ -92,7 +95,7 @@ final class InputBoundaryTest {
 		{"javac", "--release", release, "-encoding", "UTF-8", "-Xlint:all", "-Werror", "-cp", classes, "-d", classes, boundaryPath},
 		{"java", "-ea", "-cp", classes, "InputBoundaryTest"},
 	} {
-		result, err = session.runRecordedVerificationCommand(executor.workspace.source, queue.VerificationIsolatedFinal, directCodingVerificationCommand{Argv: argv, Timeout: defaultDirectCodingVerificationTimeout})
+		result, err = executor.workspace.run(queue.VerificationIsolatedFinal, directCodingVerificationCommand{Argv: argv, Timeout: defaultDirectCodingVerificationTimeout})
 		if err != nil {
 			t.Fatalf("native input boundary: %+v %v", result, err)
 		}

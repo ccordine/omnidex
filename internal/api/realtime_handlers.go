@@ -257,7 +257,7 @@ func (s *Server) handleRealtimeWS(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "channel realtime requires a user conversation")
 			return
 		}
-		if err := s.requireServerWorkspaceIdentity(
+		if err := s.requireClientWorkspaceIdentity(r.Context(),
 			channel.WorkspaceRoot,
 			workspaceIdentity,
 		); err != nil {

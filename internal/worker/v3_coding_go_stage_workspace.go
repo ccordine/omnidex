@@ -3,12 +3,12 @@ package worker
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/experiment"
 	"github.com/gryph/omnidex/internal/queue"
 )
 
@@ -19,47 +19,31 @@ type directCodingGoStageWorkspace struct {
 	outputRoot      string
 	session         *directCodingSession
 	profile         directCodingProjectVersionProfile
+	experiment      *experiment.Workspace
 }
 
 func newDirectCodingGoStageWorkspace(
 	session *directCodingSession,
 	program directCodingProgram,
 ) (_ *directCodingGoStageWorkspace, resultErr error) {
-	if session == nil {
-		return nil, fmt.Errorf("isolated Go stage requires one active coding session")
-	}
-	root, err := os.MkdirTemp("", "omnidex-go-stage-")
+	return openDirectCodingGoStageWorkspace(session, program, queue.VerificationIsolatedInstall)
+}
+
+func openDirectCodingGoStageWorkspace(session *directCodingSession, program directCodingProgram, phase queue.VerificationCommandPhase) (_ *directCodingGoStageWorkspace, resultErr error) {
+	container, err := openDirectCodingExperiment(session, program.Project.Profile)
 	if err != nil {
-		return nil, fmt.Errorf("create isolated Go stage: %w", err)
-	}
-	cacheRoot, err := os.MkdirTemp("", "omnidex-go-build-cache-")
-	if err != nil {
-		_ = os.RemoveAll(root)
-		return nil, fmt.Errorf("create isolated Go build cache: %w", err)
-	}
-	moduleCacheRoot, err := os.MkdirTemp("", "omnidex-go-module-cache-")
-	if err != nil {
-		_ = os.RemoveAll(root)
-		_ = os.RemoveAll(cacheRoot)
-		return nil, fmt.Errorf("create isolated Go module cache: %w", err)
-	}
-	outputRoot, err := os.MkdirTemp("", "omnidex-go-build-output-")
-	if err != nil {
-		_ = os.RemoveAll(root)
-		_ = os.RemoveAll(cacheRoot)
-		_ = os.RemoveAll(moduleCacheRoot)
-		return nil, fmt.Errorf("create isolated Go build output: %w", err)
+		return nil, err
 	}
 	workspace := &directCodingGoStageWorkspace{
-		root: root, cacheRoot: cacheRoot, moduleCacheRoot: moduleCacheRoot,
-		outputRoot: outputRoot, session: session, profile: program.Project.Profile,
+		root: experiment.WorkingDirectory, cacheRoot: "/tmp/omnidex-go-cache", moduleCacheRoot: "/tmp/omnidex-go-modules",
+		outputRoot: "/tmp/omnidex-go-output", session: session, profile: program.Project.Profile, experiment: container,
 	}
 	defer func() {
 		if resultErr != nil {
 			resultErr = errors.Join(resultErr, workspace.Close())
 		}
 	}()
-	if err := workspace.verifyToolchain(queue.VerificationIsolatedInstall); err != nil {
+	if err := workspace.verifyToolchain(phase); err != nil {
 		return nil, err
 	}
 	return workspace, nil
@@ -111,6 +95,10 @@ func projectDirectCodingGoTaskVerificationProgram(
 func (workspace *directCodingGoStageWorkspace) VerifyFinal(
 	program *directCodingProgram,
 ) error {
+	return workspace.verifyFinal(program, queue.VerificationIsolatedFinal)
+}
+
+func (workspace *directCodingGoStageWorkspace) verifyFinal(program *directCodingProgram, phase queue.VerificationCommandPhase) error {
 	commands := make([]directCodingVerificationCommand, 0, 3)
 	for _, arguments := range [][]string{
 		{"test", "-count=1", "./..."},
@@ -125,7 +113,18 @@ func (workspace *directCodingGoStageWorkspace) VerifyFinal(
 		}
 		commands = append(commands, command)
 	}
-	return workspace.verify(program, queue.VerificationIsolatedFinal, commands, true)
+	return workspace.verify(program, phase, commands, true)
+}
+
+func (workspace *directCodingGoStageWorkspace) VerifyProgress(program *directCodingProgram) error {
+	command, err := directCodingGoVerificationCommand(
+		workspace.root, workspace.cacheRoot, workspace.moduleCacheRoot,
+		"test", "-count=1", "./...",
+	)
+	if err != nil {
+		return err
+	}
+	return workspace.verify(program, queue.VerificationIsolatedTask, []directCodingVerificationCommand{command}, false)
 }
 
 func (workspace *directCodingGoStageWorkspace) verify(
@@ -133,15 +132,12 @@ func (workspace *directCodingGoStageWorkspace) verify(
 	phase queue.VerificationCommandPhase,
 	commands []directCodingVerificationCommand,
 	complete bool,
-) error {
+) (resultErr error) {
 	if workspace == nil || workspace.session == nil || workspace.root == "" || program == nil {
 		return fmt.Errorf("Go stage verification requires one active isolated workspace and program")
 	}
 	if len(commands) == 0 {
 		return fmt.Errorf("Go stage verification requires at least one exact command")
-	}
-	if err := workspace.reset(); err != nil {
-		return err
 	}
 	assembly, err := directCodingAssemblyFromProgram(*program)
 	if err != nil {
@@ -155,23 +151,22 @@ func (workspace *directCodingGoStageWorkspace) verify(
 	if err != nil {
 		return err
 	}
-	for _, file := range assembly.Files {
-		if err := writeDirectCodingStageFile(workspace.root, file); err != nil {
-			return err
-		}
+	if err := workspace.reset(phase); err != nil {
+		return err
 	}
+	if err := workspace.experiment.Write(workspace.session.runtime.ctx, directCodingExperimentFiles(assembly)); err != nil {
+		return err
+	}
+	defer func() {
+		resultErr = errors.Join(resultErr, validateDirectCodingExperimentAssembly(workspace.session.runtime.ctx, workspace.experiment, assembly))
+	}()
 	if err := workspace.verifyFormatting(phase, assembly); err != nil {
 		return err
 	}
 	for _, command := range commands {
-		if _, err := workspace.session.runRecordedVerificationCommand(
-			workspace.root, phase, command,
-		); err != nil {
+		if _, err := workspace.run(phase, command); err != nil {
 			return err
 		}
-	}
-	if err := validateDirectCodingAssemblyAtRoot(workspace.root, assembly); err != nil {
-		return fmt.Errorf("revalidate exact isolated Go source after commands: %w", err)
 	}
 	return nil
 }
@@ -179,9 +174,7 @@ func (workspace *directCodingGoStageWorkspace) verify(
 func (workspace *directCodingGoStageWorkspace) verifyToolchain(
 	phase queue.VerificationCommandPhase,
 ) error {
-	result, err := workspace.session.runRecordedVerificationCommand(
-		workspace.root, phase, directCodingGoVersionCommand(),
-	)
+	result, err := workspace.run(phase, directCodingGoVersionCommand())
 	if err != nil {
 		return fmt.Errorf("observe Go toolchain version: %w", err)
 	}
@@ -202,9 +195,7 @@ func (workspace *directCodingGoStageWorkspace) verifyFormatting(
 	if err != nil {
 		return err
 	}
-	result, err := workspace.session.runRecordedVerificationCommand(
-		workspace.root, phase, command,
-	)
+	result, err := workspace.run(phase, command)
 	if err != nil {
 		return err
 	}
@@ -222,36 +213,30 @@ func directCodingGoAssemblySourcePaths(assembly directCodingAssembly) []string {
 	return paths
 }
 
-func (workspace *directCodingGoStageWorkspace) reset() error {
-	entries, err := os.ReadDir(workspace.root)
-	if err != nil {
-		return fmt.Errorf("read isolated Go stage: %w", err)
+func (workspace *directCodingGoStageWorkspace) run(phase queue.VerificationCommandPhase, command directCodingVerificationCommand) (directCodingVerificationCommandResult, error) {
+	return workspace.session.runRecordedDockerVerificationCommand(workspace.experiment, phase, command)
+}
+
+func (workspace *directCodingGoStageWorkspace) reset(phase queue.VerificationCommandPhase) error {
+	_, err := workspace.run(phase, directCodingGoSourceResetCommand())
+	return err
+}
+
+func directCodingGoSourceResetCommand() directCodingVerificationCommand {
+	return directCodingVerificationCommand{
+		Argv:    []string{"/bin/sh", "-c", "rm -rf -- /workspace/* /workspace/.[!.]* /workspace/..?* /tmp/omnidex-go-output && mkdir -p /tmp/omnidex-go-output"},
+		Timeout: defaultDirectCodingVerificationTimeout,
 	}
-	for _, entry := range entries {
-		if err := os.RemoveAll(filepath.Join(workspace.root, entry.Name())); err != nil {
-			return fmt.Errorf("reset isolated Go stage path %s: %w", entry.Name(), err)
-		}
-	}
-	return nil
 }
 
 func (workspace *directCodingGoStageWorkspace) Close() error {
 	if workspace == nil {
 		return nil
 	}
-	var failures []error
-	for label, target := range map[string]*string{
-		"stage": &workspace.root, "build cache": &workspace.cacheRoot,
-		"module cache": &workspace.moduleCacheRoot,
-		"build output": &workspace.outputRoot,
-	} {
-		if *target == "" {
-			continue
-		}
-		if err := os.RemoveAll(*target); err != nil {
-			failures = append(failures, fmt.Errorf("remove isolated Go %s: %w", label, err))
-		}
-		*target = ""
+	if err := workspace.experiment.Close(); err != nil {
+		return err
 	}
-	return errors.Join(failures...)
+	workspace.experiment = nil
+	workspace.root, workspace.cacheRoot, workspace.moduleCacheRoot, workspace.outputRoot = "", "", "", ""
+	return nil
 }

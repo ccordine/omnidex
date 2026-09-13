@@ -20,7 +20,7 @@ type nativeRuntimeV3 struct {
 	routingErr              error
 	routingOnce             sync.Once
 	objectivePathProvenance assemblyline.ArtifactIdentityProvenance
-	workspaceFence          *workspacefacts.MutationFence
+	workspaceFence          workspacefacts.Access
 	workspaceFenceRoot      string
 }
 
@@ -31,9 +31,6 @@ func (s *Service) runNativeV3Step(
 ) error {
 	if s == nil || claim == nil {
 		return fmt.Errorf("native worker execution requires one claimed step")
-	}
-	if _, err := s.workspaceScopeForV3Job(claim.Job); err != nil {
-		return fmt.Errorf("validate host workspace before action %q: %w", action, err)
 	}
 	runtime := &nativeRuntimeV3{
 		svc: s, ctx: ctx, claim: claim,

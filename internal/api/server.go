@@ -12,6 +12,7 @@ import (
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 	workspacefacts "github.com/gryph/omnidex/internal/workspace"
+	"github.com/gryph/omnidex/internal/workspacetransport"
 )
 
 type Server struct {
@@ -34,6 +35,7 @@ type Server struct {
 	hostAgentURL              string
 	hostAgentToken            string
 	hostDirectoryAccess       workspacefacts.HostDirectoryAccess
+	workspaceConnections      *workspacetransport.Hub
 	integrationAPIToken       string
 	realtimeHub               *RealtimeHub
 	scrumAutoWorkMu           sync.Mutex
@@ -65,14 +67,14 @@ type memoryCandidatePromotionRequest struct {
 }
 
 type feedbackRequest struct {
-	OperationID       queue.LifecycleOperationID `json:"operation_id"`
+	OperationID       model.LifecycleOperationID `json:"operation_id"`
 	Feedback          string                     `json:"feedback"`
 	WorkspaceRoot     lifecycleWorkspaceValue    `json:"workspace_root,omitempty"`
 	WorkspaceIdentity lifecycleWorkspaceValue    `json:"workspace_identity,omitempty"`
 }
 
 type cancelRequest struct {
-	OperationID       queue.LifecycleOperationID `json:"operation_id"`
+	OperationID       model.LifecycleOperationID `json:"operation_id"`
 	Reason            string                     `json:"reason"`
 	WorkspaceRoot     lifecycleWorkspaceValue    `json:"workspace_root,omitempty"`
 	WorkspaceIdentity lifecycleWorkspaceValue    `json:"workspace_identity,omitempty"`
@@ -88,12 +90,6 @@ func NewServer(
 	}
 	if options.LifecycleContext == nil {
 		return nil, fmt.Errorf("server requires lifecycle context")
-	}
-	hostDirectoryAccess, err := workspacefacts.NewHostDirectoryAccess(
-		options.HostDirectoryAccessRoot,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("construct server host directory access authority: %w", err)
 	}
 	providerConfig := options.ProviderConfig
 	providerConfig.CompatibleProviders = config.CloneCompatibleProviders(providerConfig.CompatibleProviders)
@@ -114,7 +110,8 @@ func NewServer(
 		uiSessionTTL:         options.UISessionTTL,
 		hostAgentURL:         strings.TrimSpace(options.HostAgentURL),
 		hostAgentToken:       strings.TrimSpace(options.HostAgentToken),
-		hostDirectoryAccess:  hostDirectoryAccess,
+		hostDirectoryAccess:  workspacefacts.NewHostDirectoryAccess(options.HostDirectoryAccessRoot),
+		workspaceConnections: workspacetransport.NewHub(),
 		integrationAPIToken:  options.IntegrationAPIToken,
 	}
 	s.realtimeHub = NewRealtimeHub()
@@ -189,6 +186,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v1/ui/chat/timeline", s.handleChatTimelineComponent)
 	s.mux.HandleFunc("/v1/channels", s.handleChannels)
 	s.mux.HandleFunc("/v1/channels/cli-session", s.handleCLIChatSessionBootstrap)
+	s.mux.HandleFunc("/v1/cli/workspace/ws", s.handleCLIWorkspaceConnection)
 	s.mux.HandleFunc("/v1/channels/", s.handleChannelByID)
 	s.mux.HandleFunc("/v1/ui/chat/channels", s.handleChatChannelOptions)
 	s.mux.HandleFunc("/v1/integrations/channels", s.requireIntegrationAuthentication(s.handleIntegrationChannels))

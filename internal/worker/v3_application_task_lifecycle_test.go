@@ -19,8 +19,9 @@ func TestApplicationTaskLifecycleRejectsMissingVerificationHooks(t *testing.T) {
 					calls++
 					return bodies[ref.Block.ID], nil
 				},
-				VerifyTask: func(assemblyline.ApplicationTaskContext, *directCodingProgram) error { calls++; return nil },
-				FinalStage: func(*directCodingProgram) error { calls++; return nil },
+				VerifyTask:  func(assemblyline.ApplicationTaskContext, *directCodingProgram) error { calls++; return nil },
+				FinalStage:  func(*directCodingProgram) error { calls++; return nil },
+				PublishTask: func(*directCodingProgram, *directCodingProgram) error { calls++; return nil },
 			}
 			if missing == "task" {
 				hooks.VerifyTask = nil

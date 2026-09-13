@@ -33,7 +33,7 @@ func PortableResponseFramingForWorkKind(
 		WorkApplicationRequirementCandidateAuthorization,
 		WorkApplicationRequirementCandidateOutcomeRelation,
 		WorkApplicationRequirementCandidateResultRelation,
-		WorkApplicationProjectStackConstraint,
+		WorkApplicationProjectStackConstraint, WorkApplicationResultValueKind, WorkApplicationInputSource,
 		WorkApplicationClassify,
 		WorkContextRelevanceRelation,
 		WorkConversationObjectiveKind,

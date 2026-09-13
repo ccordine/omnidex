@@ -15,6 +15,7 @@ func TestLifecycleWorkspaceAuthorityIsConditionalAndExact(t *testing.T) {
 	const root = "/tmp/lifecycle-workspace-authority"
 	const identity = "directory_1_101"
 	const otherIdentity = "directory_1_102"
+	const clientIdentity = "client_11111111111111111111111111111111_" + identity
 
 	chatMetadata, err := marshalChannelTurnMetadata(
 		model.ChannelID("lifecycle-workspace-authority"),
@@ -25,7 +26,7 @@ func TestLifecycleWorkspaceAuthorityIsConditionalAndExact(t *testing.T) {
 		model.ChannelModeAssistant,
 		modelconfig.Config{},
 		nil,
-		identity,
+		clientIdentity,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -44,7 +45,11 @@ func TestLifecycleWorkspaceAuthorityIsConditionalAndExact(t *testing.T) {
 		job := job
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			if err := requireLifecycleWorkspaceAuthority(job, root, identity); err != nil {
+			exactIdentity := identity
+			if job.Pipeline == model.PipelineChat {
+				exactIdentity = clientIdentity
+			}
+			if err := requireLifecycleWorkspaceAuthority(job, root, exactIdentity); err != nil {
 				t.Fatalf("exact authority: %v", err)
 			}
 			if err := requireLifecycleWorkspaceAuthority(job, "", ""); err == nil ||
@@ -123,7 +128,7 @@ func TestCodingPlanWorkspaceAuthorityIsRequiredAndExact(t *testing.T) {
 
 func TestCodingPlanCommandsRejectOmittedWorkspaceAuthority(t *testing.T) {
 	t.Parallel()
-	operationID, err := NewLifecycleOperationID()
+	operationID, err := model.NewLifecycleOperationID()
 	if err != nil {
 		t.Fatal(err)
 	}

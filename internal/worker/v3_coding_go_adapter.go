@@ -14,13 +14,15 @@ func compileGenericGoCommandLineBlueprint(
 	profile directCodingProjectVersionProfile,
 	target assemblyline.TargetTree,
 	coverage assemblyline.ApplicationFileCoveragePlan,
+	valueKinds directCodingResultValueKindPlan,
+	inputSources directCodingInputSourcePlan,
 ) (assemblyline.SourceBlueprint, []directCodingFileTask, error) {
 	contexts, err := directCodingApplicationTaskContexts(workload)
 	if err != nil {
 		return assemblyline.SourceBlueprint{}, nil, err
 	}
 	documents, err := genericGoCommandLineDocuments(
-		specification, contexts, capabilities, coverage,
+		specification, contexts, capabilities, coverage, valueKinds, inputSources,
 	)
 	if err != nil {
 		return assemblyline.SourceBlueprint{}, nil, err

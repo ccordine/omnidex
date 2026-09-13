@@ -10,6 +10,7 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/datasource"
 	"github.com/gryph/omnidex/internal/evidence"
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 	"github.com/jackc/pgx/v5"
 )
@@ -127,7 +128,7 @@ func assertDatabaseWorkflowCompletion(t *testing.T, run databaseWorkflowFixture,
 		records[index].JobID = run.claim.Job.ID
 		records[index].StepID = run.claim.Step.ID
 	}
-	operation, err := queue.NewLifecycleOperationID()
+	operation, err := model.NewLifecycleOperationID()
 	if err != nil {
 		t.Fatal(err)
 	}

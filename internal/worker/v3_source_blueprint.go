@@ -155,7 +155,8 @@ func directCodingTaskGeneratedBlockRefs(
 			switch ref.Block.Role {
 			case assemblyline.SourceBlockTaskImplementation,
 				assemblyline.SourceBlockTaskRepresentation,
-				assemblyline.SourceBlockTaskVerification:
+				assemblyline.SourceBlockTaskVerification,
+				assemblyline.SourceBlockTaskExample:
 			default:
 				return nil, fmt.Errorf("generated task block %s has role %q", ref.Block.ID, ref.Block.Role)
 			}

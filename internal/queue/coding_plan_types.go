@@ -22,7 +22,7 @@ type CodingPlanDecisionChange struct {
 }
 
 type ApplyCodingPlanDecisionsCommand struct {
-	OperationID       LifecycleOperationID       `json:"operation_id"`
+	OperationID       model.LifecycleOperationID `json:"operation_id"`
 	JobID             int64                      `json:"job_id"`
 	Generation        int64                      `json:"generation"`
 	Revision          int64                      `json:"revision"`
@@ -32,12 +32,12 @@ type ApplyCodingPlanDecisionsCommand struct {
 }
 
 type FreezeCodingPlanCommand struct {
-	OperationID       LifecycleOperationID `json:"operation_id"`
-	JobID             int64                `json:"job_id"`
-	Generation        int64                `json:"generation"`
-	Revision          int64                `json:"revision"`
-	WorkspaceRoot     string               `json:"workspace_root,omitempty"`
-	WorkspaceIdentity string               `json:"workspace_identity,omitempty"`
+	OperationID       model.LifecycleOperationID `json:"operation_id"`
+	JobID             int64                      `json:"job_id"`
+	Generation        int64                      `json:"generation"`
+	Revision          int64                      `json:"revision"`
+	WorkspaceRoot     string                     `json:"workspace_root,omitempty"`
+	WorkspaceIdentity string                     `json:"workspace_identity,omitempty"`
 }
 
 type CodingPlanMutationResult struct {

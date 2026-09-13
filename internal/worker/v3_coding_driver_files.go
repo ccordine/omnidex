@@ -7,26 +7,61 @@ import (
 )
 
 type directCodingPreparedMutation struct {
-	reconciliation           *workspacefacts.PreparedReconciliation
+	reconciliation           workspacefacts.Prepared
 	result                   workspacefacts.ReconciliationResult
 	hostVerificationProgram  *directCodingProgram
 	hostVerificationAssembly directCodingAssembly
+	expectedAssembly         directCodingAssembly
 }
 
 func (s *directCodingSession) PrepareAssembly(
 	assembly directCodingAssembly,
 ) (*directCodingPreparedMutation, error) {
+	program, programAssembly, verify, err := s.hostVerificationAuthority(assembly)
+	if err != nil {
+		return nil, err
+	}
+	prepared, err := s.prepareWorkspaceReconciliation(assembly)
+	if err != nil {
+		return nil, err
+	}
+	if verify {
+		prepared.hostVerificationProgram = program
+		prepared.hostVerificationAssembly = programAssembly
+	}
+	return prepared, nil
+}
+
+func (s *directCodingSession) prepareWorkspaceReconciliation(
+	assembly directCodingAssembly,
+) (*directCodingPreparedMutation, error) {
 	if s == nil || s.runtime == nil || s.runtime.ctx == nil || s.runtime.svc == nil {
 		return nil, fmt.Errorf("workspace mutation preparation requires one active session")
-	}
-	if s.program != nil && s.program.Project.Stack.ID == genericTypeScriptBrowserAdapter {
-		if err := validateDirectCodingTypeScriptGreenfieldAssemblyRoot(s.root, assembly); err != nil {
-			return nil, err
-		}
 	}
 	desired, err := s.directCodingAssemblyDesiredStates(assembly)
 	if err != nil {
 		return nil, err
+	}
+	// Desired-state validation may remove a move optimization to preserve
+	// its protected source. Verification consumes that same effective state.
+	assembly = cloneDirectCodingAssembly(assembly)
+	files := make(map[string]int, len(assembly.Files))
+	for index, file := range assembly.Files {
+		files[file.Path] = index
+	}
+	for _, state := range desired {
+		if index, exists := files[state.Path]; exists {
+			assembly.Files[index].MoveFrom = state.MoveFrom
+		}
+	}
+	unpublished, err := directCodingUnpublishedAssembly(assembly, s.publishedAssembly)
+	if err != nil {
+		return nil, err
+	}
+	if s.program != nil && s.program.Project.Stack.ID == genericTypeScriptBrowserAdapter {
+		if err := validateDirectCodingTypeScriptGreenfieldAssembly(s.runtime.ctx, s.runtime.workspaceFence, unpublished); err != nil {
+			return nil, err
+		}
 	}
 	s.plannedFiles = 0
 	s.plannedDeletes = 0
@@ -37,8 +72,21 @@ func (s *directCodingSession) PrepareAssembly(
 			s.plannedDeletes++
 		}
 	}
+	// Already observed files are verified below, never rewritten by later
+	// publication. Only newly ready files have mutation authority.
+	retained := make(map[string]struct{}, len(s.publishedAssembly.Files))
+	for _, file := range s.publishedAssembly.Files {
+		retained[file.Path] = struct{}{}
+	}
+	mutations := desired[:0]
+	for _, state := range desired {
+		_, previous := retained[state.Path]
+		if !previous {
+			mutations = append(mutations, state)
+		}
+	}
 	if err := s.runtime.svc.requireWorkspaceScopeForV3Job(
-		s.runtime.claim.Job,
+		s.runtime.ctx, s.runtime.claim.Job,
 		s.root,
 	); err != nil {
 		return nil, fmt.Errorf("validate host workspace before mutation preparation: %w", err)
@@ -46,25 +94,31 @@ func (s *directCodingSession) PrepareAssembly(
 	if err := s.runtime.requireWorkspaceMutationFence(); err != nil {
 		return nil, err
 	}
-	reconciliation, err := s.runtime.workspaceFence.PrepareReconciliation(
+	if err := validateDirectCodingAssembly(s.runtime.ctx, s.runtime.workspaceFence, s.publishedAssembly); err != nil {
+		return nil, fmt.Errorf("previously published workspace changed: %w", err)
+	}
+	reconciliation, err := s.runtime.workspaceFence.Prepare(
 		s.runtime.ctx,
-		s.runtime.svc.hostDirectoryAccess,
-		s.root,
-		desired,
+		mutations,
+		directCodingExpectedWorkspaceFiles(s.publishedAssembly),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("prepare direct-coding workspace reconciliation: %w", err)
 	}
-	prepared := &directCodingPreparedMutation{reconciliation: reconciliation}
-	program, programAssembly, verify, err := s.hostVerificationAuthority(assembly)
-	if err != nil {
-		return nil, err
+	return &directCodingPreparedMutation{
+		reconciliation: reconciliation, expectedAssembly: assembly,
+	}, nil
+}
+
+func directCodingExpectedWorkspaceFiles(assembly directCodingAssembly) []workspacefacts.File {
+	files := make([]workspacefacts.File, len(assembly.Files))
+	for index, file := range assembly.Files {
+		files[index] = workspacefacts.File{
+			Entry:   workspacefacts.Entry{Path: file.Path, Kind: workspacefacts.EntryFile, Mode: file.Mode, Size: int64(len(file.Content))},
+			Content: []byte(file.Content),
+		}
 	}
-	if verify {
-		prepared.hostVerificationProgram = program
-		prepared.hostVerificationAssembly = programAssembly
-	}
-	return prepared, nil
+	return files
 }
 
 func (s *directCodingSession) directCodingAssemblyDesiredStates(
@@ -76,6 +130,10 @@ func (s *directCodingSession) directCodingAssemblyDesiredStates(
 	deletions := make(map[string]struct{}, len(assembly.DeletePaths))
 	createOnly := s.program != nil &&
 		s.program.Project.Stack.ID == genericTypeScriptBrowserAdapter
+	published := make(map[string]struct{}, len(s.publishedAssembly.Files))
+	for _, file := range s.publishedAssembly.Files {
+		published[file.Path] = struct{}{}
+	}
 	for _, path := range assembly.DeletePaths {
 		deletions[path] = struct{}{}
 	}
@@ -92,10 +150,11 @@ func (s *directCodingSession) directCodingAssemblyDesiredStates(
 				)
 			}
 		}
+		_, alreadyPublished := published[task.Path]
 		state := workspacefacts.DesiredFile{
 			Path: task.Path, Present: true,
 			Content: append([]byte(nil), task.Content...), Mode: task.Mode,
-			MoveFrom: task.MoveFrom, CreateOnly: createOnly,
+			MoveFrom: task.MoveFrom, CreateOnly: createOnly && !alreadyPublished,
 		}
 		if state.MoveFrom != "" && directCodingPathProtected(state.MoveFrom, s.protectedPaths) {
 			state.MoveFrom = ""

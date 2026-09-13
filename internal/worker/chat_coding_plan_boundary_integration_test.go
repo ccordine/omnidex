@@ -63,6 +63,10 @@ func TestChatWorkspaceMutationWaitsAtPersistedPlanAndKeepsObjectiveReplanContinu
 	if err != nil {
 		t.Fatal(err)
 	}
+	workspaceIdentity, err = projectroot.ClientWorkspaceIdentity(strings.Repeat("1", 32), workspaceIdentity)
+	if err != nil {
+		t.Fatal(err)
+	}
 	client := &chatCodingBoundaryClient{objectiveChoice: "B"}
 	service := newChatCodingBoundaryService(t, repository, client)
 	ctx := context.Background()
@@ -266,11 +270,15 @@ func enqueueChatCodingBoundaryJob(
 	if err != nil {
 		t.Fatal(err)
 	}
+	workspaceIdentity, err = projectroot.ClientWorkspaceIdentity(strings.Repeat("1", 32), workspaceIdentity)
+	if err != nil {
+		t.Fatal(err)
+	}
 	channel, err := repository.EnsureCLIChatSessionChannel(ctx, workspaceRoot, workspaceIdentity)
 	if err != nil {
 		t.Fatal(err)
 	}
-	operationID, err := queue.NewLifecycleOperationID()
+	operationID, err := model.NewLifecycleOperationID()
 	if err != nil {
 		t.Fatal(err)
 	}

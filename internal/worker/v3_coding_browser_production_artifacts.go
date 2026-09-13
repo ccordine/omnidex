@@ -2,30 +2,30 @@ package worker
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/gryph/omnidex/internal/experiment"
 
 	treesitter "github.com/tree-sitter/go-tree-sitter"
 	typescript "github.com/tree-sitter/tree-sitter-typescript/bindings/go"
 )
 
-func validateDirectCodingBrowserProductionArtifacts(root string) error {
-	distRoot := filepath.Join(root, "dist")
-	indexPath := filepath.Join(distRoot, "index.html")
-	index, err := os.ReadFile(indexPath)
-	if err != nil {
-		return fmt.Errorf("read browser production entrypoint: %w", err)
+func validateDirectCodingBrowserProductionArtifacts(assembly directCodingAssembly, artifacts []experiment.File) error {
+	var index []byte
+	for _, file := range artifacts {
+		if file.Path == "dist/index.html" {
+			index = file.Content
+		}
 	}
 	if len(index) == 0 || !strings.Contains(string(index), `id="root"`) {
 		return fmt.Errorf("browser production build lacks its non-empty root entrypoint")
 	}
-	css, err := directCodingBrowserBuiltCSS(distRoot)
+	css, err := directCodingBrowserBuiltCSS(artifacts)
 	if err != nil {
 		return err
 	}
-	classes, err := directCodingBrowserSourceTailwindClasses(filepath.Join(root, "src"))
+	classes, err := directCodingBrowserSourceTailwindClasses(assembly.Files)
 	if err != nil {
 		return err
 	}
@@ -43,37 +43,22 @@ func validateDirectCodingBrowserProductionArtifacts(root string) error {
 	return nil
 }
 
-func directCodingBrowserBuiltCSS(distRoot string) (string, error) {
+func directCodingBrowserBuiltCSS(artifacts []experiment.File) (string, error) {
 	var content strings.Builder
 	files := 0
-	err := filepath.WalkDir(distRoot, func(candidate string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
+	for _, file := range artifacts {
+		if !strings.HasPrefix(file.Path, "dist/") || !strings.HasSuffix(strings.ToLower(file.Path), ".css") {
+			continue
 		}
-		if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".css") {
-			return nil
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return err
-		}
-		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() <= 0 {
-			return fmt.Errorf("browser production CSS %q is not one non-empty regular file", candidate)
+		if file.Mode == 0 || file.Mode&^uint32(0o777) != 0 || len(file.Content) == 0 {
+			return "", fmt.Errorf("browser production CSS %q is not one non-empty regular file", file.Path)
 		}
 		files++
-		if files > 64 || info.Size() > 16*1024*1024 || content.Len() > 16*1024*1024-int(info.Size()) {
-			return fmt.Errorf("browser production CSS exceeds its deterministic evidence bound")
+		if files > 64 || len(file.Content) > 16*1024*1024 || content.Len() > 16*1024*1024-len(file.Content) {
+			return "", fmt.Errorf("browser production CSS exceeds its deterministic evidence bound")
 		}
-		source, err := os.ReadFile(candidate)
-		if err != nil {
-			return err
-		}
-		content.Write(source)
+		content.Write(file.Content)
 		content.WriteByte('\n')
-		return nil
-	})
-	if err != nil {
-		return "", fmt.Errorf("inspect browser production CSS: %w", err)
 	}
 	if files == 0 {
 		return "", fmt.Errorf("browser production build emitted no CSS artifact")
@@ -81,65 +66,15 @@ func directCodingBrowserBuiltCSS(distRoot string) (string, error) {
 	return content.String(), nil
 }
 
-func directCodingBrowserSourceTailwindClasses(sourceRoot string) ([]string, error) {
+func directCodingBrowserSourceTailwindClasses(files []directCodingFileTask) ([]string, error) {
 	classes := make(map[string]struct{})
-	err := filepath.WalkDir(sourceRoot, func(candidate string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
+	for _, file := range files {
+		if !strings.HasPrefix(file.Path, "src/") || !strings.HasSuffix(strings.ToLower(file.Path), ".tsx") {
+			continue
 		}
-		if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".tsx") {
-			return nil
+		if err := extractDirectCodingBrowserTailwindClasses(file.Path, file.Content, classes); err != nil {
+			return nil, fmt.Errorf("extract assembled Tailwind utilities: %w", err)
 		}
-		source, err := os.ReadFile(candidate)
-		if err != nil {
-			return err
-		}
-		parser := treesitter.NewParser()
-		defer parser.Close()
-		if err := parser.SetLanguage(treesitter.NewLanguage(typescript.LanguageTSX())); err != nil {
-			return err
-		}
-		tree := parser.Parse(source, nil)
-		if tree == nil {
-			return fmt.Errorf("Tailwind source parser returned no tree for %s", candidate)
-		}
-		defer tree.Close()
-		root := tree.RootNode()
-		if root == nil || root.HasError() {
-			return fmt.Errorf("Tailwind source %s is not valid TSX", candidate)
-		}
-		extractor := directCodingBrowserPublicSurfaceExtractor{source: source}
-		var inspect func(*treesitter.Node) error
-		inspect = func(node *treesitter.Node) error {
-			if node == nil {
-				return nil
-			}
-			if node.Kind() == "jsx_attribute" && node.NamedChildCount() == 2 {
-				name := node.NamedChild(0)
-				if name != nil && extractor.nodeText(name) == "className" {
-					attribute, err := extractor.exactAttribute(node, "className")
-					if err != nil {
-						return err
-					}
-					for _, className := range strings.Fields(attribute.literal) {
-						if err := validateDirectCodingBrowserSafeTailwindClass(className); err != nil {
-							return err
-						}
-						classes[className] = struct{}{}
-					}
-				}
-			}
-			for index := uint(0); index < node.NamedChildCount(); index++ {
-				if err := inspect(node.NamedChild(index)); err != nil {
-					return err
-				}
-			}
-			return nil
-		}
-		return inspect(root)
-	})
-	if err != nil {
-		return nil, fmt.Errorf("extract assembled Tailwind utilities: %w", err)
 	}
 	ordered := make([]string, 0, len(classes))
 	for className := range classes {
@@ -147,6 +82,52 @@ func directCodingBrowserSourceTailwindClasses(sourceRoot string) ([]string, erro
 	}
 	sort.Strings(ordered)
 	return ordered, nil
+}
+
+func extractDirectCodingBrowserTailwindClasses(candidate string, source []byte, classes map[string]struct{}) error {
+	parser := treesitter.NewParser()
+	defer parser.Close()
+	if err := parser.SetLanguage(treesitter.NewLanguage(typescript.LanguageTSX())); err != nil {
+		return err
+	}
+	tree := parser.Parse(source, nil)
+	if tree == nil {
+		return fmt.Errorf("Tailwind source parser returned no tree for %s", candidate)
+	}
+	defer tree.Close()
+	root := tree.RootNode()
+	if root == nil || root.HasError() {
+		return fmt.Errorf("Tailwind source %s is not valid TSX", candidate)
+	}
+	extractor := directCodingBrowserPublicSurfaceExtractor{source: source}
+	var inspect func(*treesitter.Node) error
+	inspect = func(node *treesitter.Node) error {
+		if node == nil {
+			return nil
+		}
+		if node.Kind() == "jsx_attribute" && node.NamedChildCount() == 2 {
+			name := node.NamedChild(0)
+			if name != nil && extractor.nodeText(name) == "className" {
+				attribute, err := extractor.exactAttribute(node, "className")
+				if err != nil {
+					return err
+				}
+				for _, className := range strings.Fields(attribute.literal) {
+					if err := validateDirectCodingBrowserSafeTailwindClass(className); err != nil {
+						return err
+					}
+					classes[className] = struct{}{}
+				}
+			}
+		}
+		for index := uint(0); index < node.NamedChildCount(); index++ {
+			if err := inspect(node.NamedChild(index)); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return inspect(root)
 }
 
 func directCodingTailwindSelectorEscape(className string) string {

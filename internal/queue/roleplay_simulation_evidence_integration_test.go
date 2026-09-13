@@ -129,7 +129,7 @@ func TestSimulationReplayUsesExactPreparedInputAndAppliedState(t *testing.T) {
 				t.Fatal("transition committed without its terminal response")
 			}
 			assertState(fixture.initial, 1, 0, 0, beforeAuthority.SceneRevision)
-			operationID, err := NewLifecycleOperationID()
+			operationID, err := model.NewLifecycleOperationID()
 			if err != nil {
 				t.Fatal(err)
 			}

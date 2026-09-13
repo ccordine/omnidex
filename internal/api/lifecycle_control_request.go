@@ -13,7 +13,6 @@ import (
 	"github.com/gryph/omnidex/internal/exactjson"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/projectroot"
-	"github.com/gryph/omnidex/internal/queue"
 )
 
 const (
@@ -48,7 +47,7 @@ func decodeLifecycleFeedbackRequest(w http.ResponseWriter, r *http.Request) (fee
 	if err := decodeLifecycleControlObject(w, r, "lifecycle feedback request", &request); err != nil {
 		return feedbackRequest{}, err
 	}
-	operationID, err := queue.ParseLifecycleOperationID(string(request.OperationID))
+	operationID, err := model.ParseLifecycleOperationID(string(request.OperationID))
 	if err != nil {
 		return feedbackRequest{}, err
 	}
@@ -70,7 +69,7 @@ func decodeLifecycleCancelRequest(w http.ResponseWriter, r *http.Request) (cance
 	if err := decodeLifecycleControlObject(w, r, "lifecycle cancellation request", &request); err != nil {
 		return cancelRequest{}, err
 	}
-	operationID, err := queue.ParseLifecycleOperationID(string(request.OperationID))
+	operationID, err := model.ParseLifecycleOperationID(string(request.OperationID))
 	if err != nil {
 		return cancelRequest{}, err
 	}
@@ -148,7 +147,7 @@ func validateLifecycleWorkspaceRequest(
 	if err := model.ValidateChannelWorkspaceRoot(root.Value); err != nil {
 		return fmt.Errorf("lifecycle workspace_root: %w", err)
 	}
-	if err := projectroot.ValidateDirectoryIdentity(identity.Value); err != nil {
+	if err := projectroot.ValidateWorkspaceIdentity(identity.Value); err != nil {
 		return fmt.Errorf("lifecycle workspace_identity: %w", err)
 	}
 	return nil

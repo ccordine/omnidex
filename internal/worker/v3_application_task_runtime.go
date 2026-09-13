@@ -96,6 +96,9 @@ func (s *directCodingSession) runDirectCodingApplicationTaskLifecycle(
 		BuildBlock: generator.GenerateBlock,
 		VerifyTask: generator.VerifyTask,
 		FinalStage: generator.VerifyFinal,
+		PublishTask: func(accepted, isolated *directCodingProgram) error {
+			return s.publishVerifiedTaskArtifacts(accepted, isolated, generator.VerifyProgress)
+		},
 	}
 	lifecycleErr := runDirectCodingApplicationTaskLifecycle(
 		frozen, program,

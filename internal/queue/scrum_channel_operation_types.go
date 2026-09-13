@@ -18,10 +18,10 @@ const (
 )
 
 type ScrumChannelOperationRequest struct {
-	OperationID LifecycleOperationID `json:"operation_id"`
-	ProjectID   int64                `json:"project_id"`
-	CardID      string               `json:"card_id"`
-	Message     string               `json:"message"`
+	OperationID model.LifecycleOperationID `json:"operation_id"`
+	ProjectID   int64                      `json:"project_id"`
+	CardID      string                     `json:"card_id"`
+	Message     string                     `json:"message"`
 }
 
 type ScrumChannelEffect struct {
@@ -48,7 +48,7 @@ type ScrumChannelCardUpdate struct {
 type ScrumChannelCardBuilder func(DBScrumCard, model.Job) (ScrumChannelCardUpdate, error)
 
 type ScrumChannelOperationResult struct {
-	OperationID  LifecycleOperationID
+	OperationID  model.LifecycleOperationID
 	Card         DBScrumCard
 	Messages     []ScrumCardMessage
 	MessageStart int64
@@ -65,7 +65,7 @@ type scrumChannelOperationDescriptor struct {
 }
 
 func describeScrumChannelOperation(request ScrumChannelOperationRequest) (scrumChannelOperationDescriptor, error) {
-	if _, err := ParseLifecycleOperationID(string(request.OperationID)); err != nil {
+	if _, err := model.ParseLifecycleOperationID(string(request.OperationID)); err != nil {
 		return scrumChannelOperationDescriptor{}, err
 	}
 	if request.ProjectID <= 0 {

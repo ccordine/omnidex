@@ -84,11 +84,25 @@ func compileDirectCodingApplicationTaskBehavior(
 		strings.TrimSpace(context.Task.RequirementQuote) == "" {
 		return "", fmt.Errorf("application task context lacks one exact accepted requirement")
 	}
-	parts := []string{
+	local, err := compileDirectCodingApplicationTaskLocalBehavior(context, capabilities)
+	if err != nil {
+		return "", err
+	}
+	return strings.Join([]string{
 		"Delivery surface: " + string(context.Surface),
 		"Product context: " + context.ProductQuote,
-		"Exact user requirement: " + context.Task.RequirementQuote,
+		local,
+	}, "\n"), nil
+}
+
+func compileDirectCodingApplicationTaskLocalBehavior(
+	context assemblyline.ApplicationTaskContext,
+	capabilities []directCodingCapabilityBinding,
+) (string, error) {
+	if strings.TrimSpace(context.Task.RequirementQuote) == "" {
+		return "", fmt.Errorf("application task has no accepted local requirement")
 	}
+	parts := []string{"Exact user requirement: " + context.Task.RequirementQuote}
 	seen := make(map[string]struct{}, len(capabilities))
 	for _, capability := range capabilities {
 		purpose := strings.TrimSpace(capability.Purpose)

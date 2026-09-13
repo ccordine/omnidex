@@ -1,6 +1,9 @@
 package worker
 
-import "github.com/gryph/omnidex/internal/assemblyline"
+import (
+	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/queue"
+)
 
 type directCodingCompiledLanguageExecutor struct {
 	generator *directCodingLanguageSourceGenerator
@@ -29,6 +32,10 @@ func (executor *directCodingCompiledLanguageExecutor) VerifyTask(context assembl
 
 func (executor *directCodingCompiledLanguageExecutor) VerifyFinal(program *directCodingProgram) error {
 	return executor.workspace.VerifyFinal(program)
+}
+
+func (executor *directCodingCompiledLanguageExecutor) VerifyProgress(program *directCodingProgram) error {
+	return executor.workspace.verify(program, queue.VerificationIsolatedTask, false)
 }
 
 func (executor *directCodingCompiledLanguageExecutor) Close() error {

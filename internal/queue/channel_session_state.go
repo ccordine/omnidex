@@ -10,53 +10,35 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-type ChannelSessionJobState struct {
-	ID         int64     `json:"id"`
-	Status     string    `json:"status"`
-	Generation int64     `json:"generation"`
-	UpdatedAt  time.Time `json:"updated_at"`
-}
-
-type ChannelSessionState struct {
-	ChannelID                model.ChannelID         `json:"channel_id"`
-	WorkspaceRoot            string                  `json:"workspace_root"`
-	WorkspaceIdentity        string                  `json:"workspace_identity"`
-	ChannelUpdatedAt         time.Time               `json:"channel_updated_at"`
-	LatestMessageID          *int64                  `json:"latest_message_id,omitempty"`
-	LatestTurnOperationID    *LifecycleOperationID   `json:"latest_turn_operation_id,omitempty"`
-	LatestControlOperationID *LifecycleOperationID   `json:"latest_control_operation_id,omitempty"`
-	LatestJob                *ChannelSessionJobState `json:"latest_job,omitempty"`
-}
-
 // ChannelSessionState returns only identities which prove whether a caller's
 // persisted session snapshot is stale. It never returns transcript or steps.
 func (r *Repository) ChannelSessionState(
 	ctx context.Context,
 	channelID model.ChannelID,
 	workspaceIdentity string,
-) (ChannelSessionState, error) {
+) (model.ChannelSessionState, error) {
 	if ctx == nil || r == nil || r.pool == nil {
-		return ChannelSessionState{}, fmt.Errorf("channel session state requires PostgreSQL and context")
+		return model.ChannelSessionState{}, fmt.Errorf("channel session state requires PostgreSQL and context")
 	}
 	if err := channelID.Validate(); err != nil {
-		return ChannelSessionState{}, err
+		return model.ChannelSessionState{}, err
 	}
-	if err := projectroot.ValidateDirectoryIdentity(workspaceIdentity); err != nil {
-		return ChannelSessionState{}, fmt.Errorf("channel session workspace identity: %w", err)
+	if err := projectroot.ValidateClientWorkspaceIdentity(workspaceIdentity); err != nil {
+		return model.ChannelSessionState{}, fmt.Errorf("channel session workspace identity: %w", err)
 	}
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{
 		IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly,
 	})
 	if err != nil {
-		return ChannelSessionState{}, err
+		return model.ChannelSessionState{}, err
 	}
 	defer tx.Rollback(ctx)
 	state, err := channelSessionStateTx(ctx, tx, channelID, workspaceIdentity)
 	if err != nil {
-		return ChannelSessionState{}, err
+		return model.ChannelSessionState{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return ChannelSessionState{}, err
+		return model.ChannelSessionState{}, err
 	}
 	return state, nil
 }
@@ -66,14 +48,14 @@ func channelSessionStateTx(
 	tx pgx.Tx,
 	channelID model.ChannelID,
 	workspaceIdentity string,
-) (ChannelSessionState, error) {
+) (model.ChannelSessionState, error) {
 	if ctx == nil || tx == nil {
-		return ChannelSessionState{}, fmt.Errorf("channel session state transaction requires PostgreSQL and context")
+		return model.ChannelSessionState{}, fmt.Errorf("channel session state transaction requires PostgreSQL and context")
 	}
-	if err := projectroot.ValidateDirectoryIdentity(workspaceIdentity); err != nil {
-		return ChannelSessionState{}, fmt.Errorf("channel session workspace identity: %w", err)
+	if err := projectroot.ValidateClientWorkspaceIdentity(workspaceIdentity); err != nil {
+		return model.ChannelSessionState{}, fmt.Errorf("channel session workspace identity: %w", err)
 	}
-	var state ChannelSessionState
+	var state model.ChannelSessionState
 	state.WorkspaceIdentity = workspaceIdentity
 	var scope model.ChannelScope
 	var mode model.ChannelMode
@@ -162,68 +144,68 @@ func channelSessionStateTx(
 		&duplicateActiveJob,
 	)
 	if err != nil {
-		return ChannelSessionState{}, err
+		return model.ChannelSessionState{}, err
 	}
 	if scope != model.ChannelScopeUser || mode != model.ChannelModeAssistant {
-		return ChannelSessionState{}, fmt.Errorf("channel %q is not an assistant user session", channelID)
+		return model.ChannelSessionState{}, fmt.Errorf("channel %q is not an assistant user session", channelID)
 	}
 	if err := model.ValidateChannelWorkspaceRoot(state.WorkspaceRoot); err != nil {
-		return ChannelSessionState{}, fmt.Errorf("channel %q workspace root: %w", channelID, err)
+		return model.ChannelSessionState{}, fmt.Errorf("channel %q workspace root: %w", channelID, err)
 	}
 	if err := requireCLIChatSessionWorkspaceBinding(
 		state.ChannelID,
 		cliWorkspaceIdentity,
 		workspaceIdentity,
 	); err != nil {
-		return ChannelSessionState{}, err
+		return model.ChannelSessionState{}, err
 	}
 	if channelUpdatedAt.IsZero() {
-		return ChannelSessionState{}, fmt.Errorf("channel %q has no update authority", channelID)
+		return model.ChannelSessionState{}, fmt.Errorf("channel %q has no update authority", channelID)
 	}
 	if state.LatestMessageID != nil && *state.LatestMessageID < 1 {
-		return ChannelSessionState{}, fmt.Errorf("channel %q has an invalid latest message identity", channelID)
+		return model.ChannelSessionState{}, fmt.Errorf("channel %q has an invalid latest message identity", channelID)
 	}
 	if duplicateActiveJob {
-		return ChannelSessionState{}, fmt.Errorf("channel %q has multiple active jobs", channelID)
+		return model.ChannelSessionState{}, fmt.Errorf("channel %q has multiple active jobs", channelID)
 	}
 	if activeJobID != nil {
 		if *activeJobID < 1 {
-			return ChannelSessionState{}, fmt.Errorf("channel %q has an invalid active job identity", channelID)
+			return model.ChannelSessionState{}, fmt.Errorf("channel %q has an invalid active job identity", channelID)
 		}
 		if err := requireLifecycleWorkspaceAuthority(
 			model.Job{ID: *activeJobID, Pipeline: model.PipelineChat, Metadata: activeJobMetadata},
 			state.WorkspaceRoot,
 			workspaceIdentity,
 		); err != nil {
-			return ChannelSessionState{}, fmt.Errorf("channel %q active job workspace: %w", channelID, err)
+			return model.ChannelSessionState{}, fmt.Errorf("channel %q active job workspace: %w", channelID, err)
 		}
 	}
 	if latestTurnID != nil {
-		operationID, err := ParseLifecycleOperationID(*latestTurnID)
+		operationID, err := model.ParseLifecycleOperationID(*latestTurnID)
 		if err != nil {
-			return ChannelSessionState{}, err
+			return model.ChannelSessionState{}, err
 		}
 		state.LatestTurnOperationID = &operationID
 	}
 	if latestControlID != nil {
-		operationID, err := ParseLifecycleOperationID(*latestControlID)
+		operationID, err := model.ParseLifecycleOperationID(*latestControlID)
 		if err != nil {
-			return ChannelSessionState{}, err
+			return model.ChannelSessionState{}, err
 		}
 		state.LatestControlOperationID = &operationID
 	}
 	if latestJobID != nil || latestJobStatus != nil || latestJobGeneration != nil || latestJobUpdatedAt != nil {
 		if latestJobID == nil || latestJobStatus == nil || latestJobGeneration == nil || latestJobUpdatedAt == nil ||
 			*latestJobID < 1 || *latestJobGeneration < 1 || latestJobUpdatedAt.IsZero() {
-			return ChannelSessionState{}, fmt.Errorf("channel %q has incomplete latest job authority", channelID)
+			return model.ChannelSessionState{}, fmt.Errorf("channel %q has incomplete latest job authority", channelID)
 		}
 		switch *latestJobStatus {
 		case model.JobStatusPending, model.JobStatusRunning, model.JobStatusWaiting,
 			model.JobStatusCompleted, model.JobStatusFailed, model.JobStatusCanceled:
 		default:
-			return ChannelSessionState{}, fmt.Errorf("channel %q latest job has unregistered status %q", channelID, *latestJobStatus)
+			return model.ChannelSessionState{}, fmt.Errorf("channel %q latest job has unregistered status %q", channelID, *latestJobStatus)
 		}
-		state.LatestJob = &ChannelSessionJobState{
+		state.LatestJob = &model.ChannelSessionJobState{
 			ID: *latestJobID, Status: *latestJobStatus,
 			Generation: *latestJobGeneration, UpdatedAt: *latestJobUpdatedAt,
 		}

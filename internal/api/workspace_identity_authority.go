@@ -19,7 +19,7 @@ func requiredWorkspaceIdentityQuery(request *http.Request) (string, error) {
 	if len(values) != 1 {
 		return "", fmt.Errorf("workspace_identity must occur exactly once")
 	}
-	if err := projectroot.ValidateDirectoryIdentity(values[0]); err != nil {
+	if err := projectroot.ValidateClientWorkspaceIdentity(values[0]); err != nil {
 		return "", fmt.Errorf("workspace_identity: %w", err)
 	}
 	return values[0], nil
@@ -42,38 +42,21 @@ func requiredLifecycleWorkspaceQuery(request *http.Request) (string, string, err
 	if err := model.ValidateChannelWorkspaceRoot(root); err != nil {
 		return "", "", fmt.Errorf("workspace_root: %w", err)
 	}
-	if err := projectroot.ValidateDirectoryIdentity(identity); err != nil {
+	if err := projectroot.ValidateWorkspaceIdentity(identity); err != nil {
 		return "", "", fmt.Errorf("workspace_identity: %w", err)
 	}
 	return root, identity, nil
 }
 
-// requireServerWorkspaceIdentity proves that the server can reach the same
-// physical directory the client independently attested. Equal path strings
-// alone are never sufficient across a remote CORE_URL boundary.
-func (s *Server) requireServerWorkspaceIdentity(
+func (s *Server) requireClientWorkspaceIdentity(
+	ctx context.Context,
 	exactRoot string,
 	expectedIdentity string,
 ) error {
 	if s == nil {
 		return fmt.Errorf("server workspace identity authority is unavailable")
 	}
-	if err := projectroot.ValidateDirectoryIdentity(expectedIdentity); err != nil {
-		return fmt.Errorf("workspace identity: %w", err)
-	}
-	if err := s.hostDirectoryAccess.ValidateWorkspaceRoot(exactRoot); err != nil {
-		return fmt.Errorf("workspace root: %w", err)
-	}
-	actualIdentity, err := projectroot.DirectoryIdentity(exactRoot)
-	if err != nil {
-		return fmt.Errorf("attest server workspace identity: %w", err)
-	}
-	if actualIdentity != expectedIdentity {
-		return fmt.Errorf(
-			"server workspace identity differs from the exact client directory",
-		)
-	}
-	return nil
+	return s.workspaceConnections.Require(ctx, exactRoot, expectedIdentity)
 }
 
 func (s *Server) requireLifecycleWorkspaceIdentity(
@@ -102,7 +85,7 @@ func (s *Server) requireLifecycleWorkspaceIdentity(
 			"lifecycle workspace_root and workspace_identity must be supplied together",
 		)
 	}
-	if err := s.requireServerWorkspaceIdentity(root, identity); err != nil {
+	if err := s.requireJobWorkspaceIdentity(ctx, jobID, root, identity); err != nil {
 		return http.StatusConflict, err
 	}
 	return 0, nil

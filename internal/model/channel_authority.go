@@ -2,7 +2,6 @@ package model
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 	"unicode/utf8"
 )
@@ -158,13 +157,7 @@ func ValidateChannelWorkspaceRoot(root string) error {
 	if err := validateExactChannelText(root, "channel workspace root", MaxChannelWorkspaceRootBytes); err != nil {
 		return err
 	}
-	if !filepath.IsAbs(root) {
-		return fmt.Errorf("channel workspace root must be absolute")
-	}
-	if filepath.Clean(root) != root {
-		return fmt.Errorf("channel workspace root must be canonical")
-	}
-	return nil
+	return validateChannelWorkspacePath(root)
 }
 
 func ValidateChannelMessageContent(content string) error {

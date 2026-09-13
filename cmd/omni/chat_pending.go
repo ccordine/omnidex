@@ -6,15 +6,14 @@ import (
 
 	"github.com/gryph/omnidex/internal/client"
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/queue"
 )
 
 type pendingOperationResolution struct {
 	jobID       int64
-	operationID queue.LifecycleOperationID
+	operationID model.LifecycleOperationID
 	exactText   string
 	action      string
-	disposition queue.ChannelSessionTurnDisposition
+	disposition model.ChannelSessionTurnDisposition
 }
 
 func (session *chatSession) resolvePendingOperation() (*pendingOperationResolution, error) {
@@ -200,14 +199,14 @@ func pendingOperationCount(session *chatSession) int {
 	return count
 }
 
-func sessionControlKind(action string) queue.ChannelSessionControlKind {
+func sessionControlKind(action string) model.ChannelSessionControlKind {
 	switch action {
 	case "interrupt":
-		return queue.ChannelSessionControlInterrupt
+		return model.ChannelSessionControlInterrupt
 	case "redirect":
-		return queue.ChannelSessionControlReplan
+		return model.ChannelSessionControlReplan
 	case "cancel":
-		return queue.ChannelSessionControlCancel
+		return model.ChannelSessionControlCancel
 	default:
 		return ""
 	}

@@ -14,6 +14,7 @@ import (
 	"github.com/gryph/omnidex/internal/client"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/projectroot"
+	"github.com/gryph/omnidex/internal/workspacetransport"
 )
 
 const (
@@ -34,7 +35,7 @@ func main() {
 	}
 }
 
-func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+func run(args []string, stdin io.Reader, stdout, stderr io.Writer) (resultErr error) {
 	if len(args) == 2 && args[0] == "version" && args[1] == "--json" {
 		return writeVersionJSON(stdout)
 	}
@@ -44,23 +45,22 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	if _, _, err := requireChatTerminalStreams(stdin, stdout); err != nil {
 		return err
 	}
-	if err := requireDirectHostPathPlatform(); err != nil {
-		return err
-	}
-	invokingCWD, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("capture current working directory: %w", err)
-	}
-	clientCWD, err := projectroot.ResolvePhysicalDirectory(invokingCWD)
+	directory, err := projectroot.OpenInvokingDirectory()
 	if err != nil {
 		return fmt.Errorf("resolve current working directory authority: %w", err)
 	}
+	defer func() { resultErr = errors.Join(resultErr, directory.Close()) }()
+	clientCWD := directory.Path()
 	if err := model.ValidateChannelWorkspaceRoot(clientCWD); err != nil {
 		return fmt.Errorf("current working directory: %w", err)
 	}
-	workspaceIdentity, err := projectroot.DirectoryIdentity(clientCWD)
+	configRoot, err := os.UserConfigDir()
 	if err != nil {
-		return fmt.Errorf("attest current working directory identity: %w", err)
+		return fmt.Errorf("locate client configuration: %w", err)
+	}
+	clientID, err := loadClientInstallationIdentity(configRoot)
+	if err != nil {
+		return err
 	}
 	coreURL := strings.TrimSpace(os.Getenv("CORE_URL"))
 	if coreURL == "" {
@@ -77,11 +77,34 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(signals)
 
+	workspaceConnection, err := awaitChatRequest(ctx, signals,
+		func(context.Context) (*workspacetransport.Local, error) {
+			// The connection belongs to the session context. Completing this
+			// interruptible startup request must not close that connection.
+			return apiClient.OpenWorkspace(ctx, directory, clientID)
+		},
+	)
+	if errors.Is(err, errChatRequestInterrupted) || errors.Is(err, errChatTerminated) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer func() { resultErr = errors.Join(resultErr, workspaceConnection.Close()) }()
+	workspaceIdentity := workspaceConnection.Identity()
+	go func() {
+		select {
+		case <-workspaceConnection.Done():
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+
 	bootstrap, err := awaitChatRequest(
 		ctx,
 		signals,
 		func(requestContext context.Context) (chatBootstrap, error) {
-			return loadChatBootstrap(requestContext, apiClient, clientCWD, workspaceIdentity)
+			return loadChatBootstrap(requestContext, ctx, apiClient, clientCWD, workspaceIdentity)
 		},
 	)
 	if errors.Is(err, errChatRequestInterrupted) || errors.Is(err, errChatTerminated) {
@@ -103,11 +126,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		Console:           console,
 		Signals:           signals,
 	})
-	return errors.Join(sessionErr, console.Close())
+	return errors.Join(sessionErr, workspaceConnection.Err(), console.Close())
 }
 
 func loadChatBootstrap(
 	ctx context.Context,
+	lifetime context.Context,
 	apiClient *client.Client,
 	clientCWD string,
 	workspaceIdentity string,
@@ -116,7 +140,7 @@ func loadChatBootstrap(
 	if err != nil {
 		return chatBootstrap{}, err
 	}
-	stream, err := apiClient.OpenJobEvents(ctx, channel.ID, workspaceIdentity, nil)
+	stream, err := apiClient.OpenJobEvents(lifetime, channel.ID, workspaceIdentity, nil)
 	if err != nil {
 		return chatBootstrap{}, fmt.Errorf("open Omnidex realtime session: %w", err)
 	}

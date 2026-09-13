@@ -239,7 +239,7 @@ func scanRoleplayResponseReceiptRow(
 	row pgx.Row,
 	binding channelCompletionBinding,
 	response RoleplayResponseCompletion,
-	recordID LifecycleOperationID,
+	recordID model.LifecycleOperationID,
 ) (roleplayResponseReplayReceipt, error) {
 	var position int
 	var worldID, viewpointID, authority, channelID, role, content string
@@ -272,7 +272,7 @@ func requireRoleplayResponseCanonReplayTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	receipt roleplayResponseReplayReceipt,
-	recordID LifecycleOperationID,
+	recordID model.LifecycleOperationID,
 ) error {
 	var eventFacts, knowledgeFacts, memoryFacts []string
 	if err := tx.QueryRow(ctx, `

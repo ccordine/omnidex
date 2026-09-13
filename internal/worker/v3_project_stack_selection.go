@@ -7,9 +7,11 @@ import (
 )
 
 type directCodingProjectSelection struct {
-	Stack   directCodingProjectStack
-	Profile directCodingProjectVersionProfile
-	Dialect string
+	Stack            directCodingProjectStack
+	Profile          directCodingProjectVersionProfile
+	Dialect          string
+	ResultValueKinds directCodingResultValueKindPlan
+	InputSources     directCodingInputSourcePlan
 }
 
 func selectDirectCodingProject(

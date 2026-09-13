@@ -9,11 +9,10 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/queue"
 )
 
 func TestChatPlanReviewNoteReplansTheSamePersistedJob(t *testing.T) {
-	const workspaceIdentity = "directory_1_101"
+	const workspaceIdentity = "client_11111111111111111111111111111111_directory_1_101"
 	const jobID int64 = 84
 	const note = "Keep confirmation local and remove the speculative export leaf."
 	const selectedStatement = "The software lets a user confirm the item."
@@ -24,7 +23,7 @@ func TestChatPlanReviewNoteReplansTheSamePersistedJob(t *testing.T) {
 	workspaceRoot := "/tmp/cli-plan-review-note"
 	var guard sync.Mutex
 	var session *chatSession
-	var operationID queue.LifecycleOperationID
+	var operationID model.LifecycleOperationID
 	sessionReads := 0
 	replanRequests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -36,13 +35,13 @@ func TestChatPlanReviewNoteReplansTheSamePersistedJob(t *testing.T) {
 			sessionReads++
 			status := model.JobStatusWaiting
 			generation := int64(1)
-			var controls []queue.ChannelSessionControl
+			var controls []model.ChannelSessionControl
 			if replanRequests > 0 {
 				status = model.JobStatusRunning
 				generation = 2
-				controls = []queue.ChannelSessionControl{{
+				controls = []model.ChannelSessionControl{{
 					OperationID: operationID, JobID: jobID, Generation: generation,
-					Kind: queue.ChannelSessionControlReplan, Text: expectedFeedback,
+					Kind: model.ChannelSessionControlReplan, Text: expectedFeedback,
 					Status:    model.JobStatusRunning,
 					CreatedAt: time.Date(2026, time.September, 1, 15, 0, 3, 0, time.UTC),
 				}}
@@ -52,13 +51,13 @@ func TestChatPlanReviewNoteReplansTheSamePersistedJob(t *testing.T) {
 		case request.URL.Path == "/v1/jobs/84/replan":
 			replanRequests++
 			var body struct {
-				OperationID       queue.LifecycleOperationID `json:"operation_id"`
+				OperationID       model.LifecycleOperationID `json:"operation_id"`
 				Feedback          string                     `json:"feedback"`
 				WorkspaceRoot     string                     `json:"workspace_root"`
 				WorkspaceIdentity string                     `json:"workspace_identity"`
 			}
 			decodeChatPlanReviewJSON(t, request, &body)
-			if _, err := queue.ParseLifecycleOperationID(string(body.OperationID)); err != nil {
+			if _, err := model.ParseLifecycleOperationID(string(body.OperationID)); err != nil {
 				t.Errorf("replan operation ID: %v", err)
 			}
 			operationID = body.OperationID

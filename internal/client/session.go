@@ -13,7 +13,6 @@ import (
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/projectroot"
-	"github.com/gryph/omnidex/internal/queue"
 )
 
 const (
@@ -22,21 +21,21 @@ const (
 	// fixed envelope allowance covers channel/job/step structure outside the
 	// three independently bounded persisted history collections.
 	maxChatSessionResponseBytes int64 = 16*1024*1024 + 6*(int64(MaxChatSessionMessages*model.MaxChannelContentBytes)+
-		int64(queue.MaxChannelSessionTurns*model.MaxFreeFormTurnBytes)+
-		int64(queue.MaxChannelSessionControls*maxCancelReasonBytes))
+		int64(model.MaxChannelSessionTurns*model.MaxFreeFormTurnBytes)+
+		int64(model.MaxChannelSessionControls*maxCancelReasonBytes))
 )
 
 type ChatSessionSnapshot struct {
 	RealtimeCursor    uint64                        `json:"realtime_cursor"`
-	State             ChatSessionState              `json:"state"`
+	State             model.ChannelSessionState     `json:"state"`
 	Channel           model.Channel                 `json:"channel"`
 	WorkspaceIdentity string                        `json:"workspace_identity"`
 	Messages          []model.ChannelMessage        `json:"messages"`
 	NextBeforeID      *int64                        `json:"next_before_id,omitempty"`
 	HasMore           bool                          `json:"has_more"`
-	Turns             []queue.ChannelSessionTurn    `json:"turns"`
+	Turns             []model.ChannelSessionTurn    `json:"turns"`
 	TurnsTruncated    bool                          `json:"turns_truncated"`
-	Controls          []queue.ChannelSessionControl `json:"controls"`
+	Controls          []model.ChannelSessionControl `json:"controls"`
 	ControlsTruncated bool                          `json:"controls_truncated"`
 	ActiveJob         *model.JobDetails             `json:"active_job"`
 }
@@ -56,7 +55,7 @@ func (client *Client) ChatSession(
 			MaxChatSessionMessages,
 		)
 	}
-	if err := projectroot.ValidateDirectoryIdentity(workspaceIdentity); err != nil {
+	if err := projectroot.ValidateClientWorkspaceIdentity(workspaceIdentity); err != nil {
 		return ChatSessionSnapshot{}, fmt.Errorf("chat session workspace identity: %w", err)
 	}
 	var snapshot ChatSessionSnapshot
@@ -179,13 +178,13 @@ func validateChatSessionTurns(snapshot ChatSessionSnapshot) error {
 	if snapshot.Turns == nil {
 		return fmt.Errorf("chat session turns must be an array")
 	}
-	if len(snapshot.Turns) > queue.MaxChannelSessionTurns ||
-		snapshot.TurnsTruncated && len(snapshot.Turns) != queue.MaxChannelSessionTurns {
+	if len(snapshot.Turns) > model.MaxChannelSessionTurns ||
+		snapshot.TurnsTruncated && len(snapshot.Turns) != model.MaxChannelSessionTurns {
 		return fmt.Errorf("chat session turn truncation is contradictory")
 	}
-	seen := make(map[queue.LifecycleOperationID]struct{}, len(snapshot.Turns))
+	seen := make(map[model.LifecycleOperationID]struct{}, len(snapshot.Turns))
 	for index, turn := range snapshot.Turns {
-		if _, err := queue.ParseLifecycleOperationID(string(turn.OperationID)); err != nil {
+		if _, err := model.ParseLifecycleOperationID(string(turn.OperationID)); err != nil {
 			return fmt.Errorf("chat session turn %d: %w", index, err)
 		}
 		if _, duplicate := seen[turn.OperationID]; duplicate {
@@ -199,15 +198,15 @@ func validateChatSessionTurns(snapshot ChatSessionSnapshot) error {
 			return fmt.Errorf("chat session turn %q has invalid persisted authority", turn.OperationID)
 		}
 		switch turn.Disposition {
-		case queue.ChannelSessionTurnEnqueued:
+		case model.ChannelSessionTurnEnqueued:
 			if turn.Status != model.JobStatusPending {
 				return fmt.Errorf("chat session enqueue turn %q has status %q", turn.OperationID, turn.Status)
 			}
-		case queue.ChannelSessionTurnReplanned:
+		case model.ChannelSessionTurnReplanned:
 			if turn.Generation < 2 || turn.Status != model.JobStatusRunning {
 				return fmt.Errorf("chat session replan turn %q has contradictory authority", turn.OperationID)
 			}
-		case queue.ChannelSessionTurnFeedback:
+		case model.ChannelSessionTurnFeedback:
 			if turn.Status != model.JobStatusRunning && turn.Status != model.JobStatusCompleted {
 				return fmt.Errorf("chat session feedback turn %q has status %q", turn.OperationID, turn.Status)
 			}
@@ -222,7 +221,7 @@ func validateChatSessionTurns(snapshot ChatSessionSnapshot) error {
 		) {
 			return fmt.Errorf("chat session turns are not in canonical persisted order")
 		}
-		if turn.Disposition == queue.ChannelSessionTurnEnqueued {
+		if turn.Disposition == model.ChannelSessionTurnEnqueued {
 			if err := validateEnqueuedTurnMessage(snapshot.Messages, turn); err != nil {
 				return err
 			}
@@ -233,7 +232,7 @@ func validateChatSessionTurns(snapshot ChatSessionSnapshot) error {
 
 func validateEnqueuedTurnMessage(
 	messages []model.ChannelMessage,
-	turn queue.ChannelSessionTurn,
+	turn model.ChannelSessionTurn,
 ) error {
 	matches := 0
 	for _, message := range messages {
@@ -255,13 +254,13 @@ func validateChatSessionControls(snapshot ChatSessionSnapshot) error {
 	if snapshot.Controls == nil {
 		return fmt.Errorf("chat session controls must be an array")
 	}
-	if len(snapshot.Controls) > queue.MaxChannelSessionControls ||
-		snapshot.ControlsTruncated && len(snapshot.Controls) != queue.MaxChannelSessionControls {
+	if len(snapshot.Controls) > model.MaxChannelSessionControls ||
+		snapshot.ControlsTruncated && len(snapshot.Controls) != model.MaxChannelSessionControls {
 		return fmt.Errorf("chat session control truncation is contradictory")
 	}
-	seen := make(map[queue.LifecycleOperationID]struct{}, len(snapshot.Controls))
+	seen := make(map[model.LifecycleOperationID]struct{}, len(snapshot.Controls))
 	for index, control := range snapshot.Controls {
-		if _, err := queue.ParseLifecycleOperationID(string(control.OperationID)); err != nil {
+		if _, err := model.ParseLifecycleOperationID(string(control.OperationID)); err != nil {
 			return fmt.Errorf("chat session control %d: %w", index, err)
 		}
 		if _, duplicate := seen[control.OperationID]; duplicate {
@@ -275,15 +274,15 @@ func validateChatSessionControls(snapshot ChatSessionSnapshot) error {
 		}
 		maximum := maxObjectiveControlBytes
 		switch control.Kind {
-		case queue.ChannelSessionControlInterrupt:
+		case model.ChannelSessionControlInterrupt:
 			if control.Generation < 2 || control.Status != model.JobStatusWaiting {
 				return fmt.Errorf("chat session interrupt %q has contradictory authority", control.OperationID)
 			}
-		case queue.ChannelSessionControlReplan:
+		case model.ChannelSessionControlReplan:
 			if control.Generation < 2 || control.Status != model.JobStatusRunning {
 				return fmt.Errorf("chat session redirect %q has contradictory authority", control.OperationID)
 			}
-		case queue.ChannelSessionControlCancel:
+		case model.ChannelSessionControlCancel:
 			maximum = maxCancelReasonBytes
 			if control.Status != model.JobStatusCanceled {
 				return fmt.Errorf("chat session cancellation %q has status %q", control.OperationID, control.Status)

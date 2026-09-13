@@ -42,7 +42,7 @@ func compileDirectCodingProgram(
 		)
 	}
 	blueprint, staticFiles, err := stack.CompileSource(
-		directCodingPackageName, specification, workload, capabilities, project.Profile, targetTree, coverage,
+		directCodingPackageName, specification, workload, capabilities, project.Profile, targetTree, coverage, project.ResultValueKinds, project.InputSources,
 	)
 	if err != nil {
 		return directCodingProgram{}, err

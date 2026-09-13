@@ -74,7 +74,7 @@ func TestInventoryIdentityFollowsItsPreparedTurnWithoutContentHashes(t *testing.
 					}
 					previousInventoryID = wantID
 				}
-				operationID, err := NewLifecycleOperationID()
+				operationID, err := model.NewLifecycleOperationID()
 				if err != nil {
 					t.Fatal(err)
 				}

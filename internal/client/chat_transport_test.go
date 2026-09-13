@@ -13,10 +13,9 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/queue"
 )
 
-const testWorkspaceIdentity = "directory_1_101"
+const testWorkspaceIdentity = "client_11111111111111111111111111111111_directory_1_101"
 
 func TestCLIChatTransportPreservesWorkspaceAndReusesOneChannel(t *testing.T) {
 	t.Parallel()
@@ -48,7 +47,7 @@ func TestCLIChatTransportPreservesWorkspaceAndReusesOneChannel(t *testing.T) {
 				"operation_id":       string(firstOperation),
 			})
 			writeJSON(t, writer, http.StatusAccepted, SessionTurnReceipt{
-				OperationID: firstOperation, Disposition: queue.ChannelSessionTurnEnqueued,
+				OperationID: firstOperation, Disposition: model.ChannelSessionTurnEnqueued,
 				ChannelID: channel.ID, WorkspaceRoot: workspaceRoot,
 				WorkspaceIdentity: testWorkspaceIdentity, JobID: 41,
 				Status: model.JobStatusPending, Generation: 1,
@@ -66,7 +65,7 @@ func TestCLIChatTransportPreservesWorkspaceAndReusesOneChannel(t *testing.T) {
 				"operation_id":       string(secondOperation),
 			})
 			writeJSON(t, writer, http.StatusAccepted, SessionTurnReceipt{
-				OperationID: secondOperation, Disposition: queue.ChannelSessionTurnFeedback,
+				OperationID: secondOperation, Disposition: model.ChannelSessionTurnFeedback,
 				ChannelID: channel.ID, WorkspaceRoot: workspaceRoot,
 				WorkspaceIdentity: testWorkspaceIdentity, JobID: 41,
 				Status: model.JobStatusRunning, Generation: 1,
@@ -128,14 +127,14 @@ func TestCLIChatSessionReadsUseExactQueries(t *testing.T) {
 			)
 			writeJSON(t, writer, http.StatusOK, ChatSessionSnapshot{
 				RealtimeCursor: 7, Channel: channel,
-				State: ChatSessionState{
+				State: model.ChannelSessionState{
 					ChannelID: channel.ID, WorkspaceRoot: channel.WorkspaceRoot,
 					WorkspaceIdentity: testWorkspaceIdentity, ChannelUpdatedAt: channel.UpdatedAt,
 				},
 				WorkspaceIdentity: testWorkspaceIdentity,
 				Messages:          []model.ChannelMessage{},
-				Turns:             []queue.ChannelSessionTurn{},
-				Controls:          []queue.ChannelSessionControl{},
+				Turns:             []model.ChannelSessionTurn{},
+				Controls:          []model.ChannelSessionControl{},
 			})
 		case 2:
 			requireRequestAuthority(
@@ -143,7 +142,7 @@ func TestCLIChatSessionReadsUseExactQueries(t *testing.T) {
 				"/v1/channels/"+string(channel.ID)+"/session/state",
 				"workspace_identity="+testWorkspaceIdentity,
 			)
-			writeJSON(t, writer, http.StatusOK, ChatSessionState{
+			writeJSON(t, writer, http.StatusOK, model.ChannelSessionState{
 				ChannelID: channel.ID, WorkspaceRoot: workspaceRoot,
 				WorkspaceIdentity: testWorkspaceIdentity,
 				ChannelUpdatedAt:  channel.UpdatedAt,
@@ -217,9 +216,9 @@ func testCLIChannel(workspaceRoot string) model.Channel {
 	}
 }
 
-func testOperationID(t *testing.T, part string) queue.LifecycleOperationID {
+func testOperationID(t *testing.T, part string) model.LifecycleOperationID {
 	t.Helper()
-	operationID, err := queue.NewLifecycleOperationID()
+	operationID, err := model.NewLifecycleOperationID()
 	if err != nil {
 		t.Fatalf("create operation ID: %v", err)
 	}

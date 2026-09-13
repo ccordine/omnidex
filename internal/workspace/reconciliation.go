@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unicode/utf8"
 )
 
 const (
@@ -25,7 +26,7 @@ const (
 type DesiredFile struct {
 	Path             string
 	Present          bool
-	Content          []byte
+	Content          []byte `json:"-"`
 	Mode             uint32
 	MoveFrom         string
 	PreserveExisting bool
@@ -66,15 +67,15 @@ type PreparedReconciliation struct {
 	root       string
 	rootInfo   os.FileInfo
 	desired    []DesiredFile
+	expected   []File
 	applied    bool
 }
 
-func (fence *MutationFence) PrepareReconciliation(
+func (fence *MutationFence) Prepare(
 	ctx context.Context,
-	hostAccess HostDirectoryAccess,
-	root string,
 	desired []DesiredFile,
-) (*PreparedReconciliation, error) {
+	expected []File,
+) (Prepared, error) {
 	if fence == nil {
 		return nil, fmt.Errorf("workspace reconciliation requires one mutation fence")
 	}
@@ -86,9 +87,8 @@ func (fence *MutationFence) PrepareReconciliation(
 	}
 	fence.mu.Lock()
 	defer fence.mu.Unlock()
-	if root == "" || root != fence.root {
-		return nil, fmt.Errorf("workspace reconciliation root differs from its mutation fence")
-	}
+	root := fence.root
+	hostAccess := NewHostDirectoryAccess(root)
 	if _, err := fence.authoritativeRootLocked(); err != nil {
 		return nil, fmt.Errorf("attest fenced workspace reconciliation root: %w", err)
 	}
@@ -99,14 +99,28 @@ func (fence *MutationFence) PrepareReconciliation(
 	if !os.SameFile(fence.rootInfo, rootInfo) {
 		return nil, fmt.Errorf("workspace reconciliation root differs from its fenced authority")
 	}
-	normalized, err := validateDesiredFiles(desired)
+	normalized, retained, err := ValidateReconciliationFiles(desired, expected)
 	if err != nil {
 		return nil, err
 	}
 	return &PreparedReconciliation{
 		fence: fence, hostAccess: hostAccess, root: root,
-		rootInfo: fence.rootInfo, desired: normalized,
+		rootInfo: fence.rootInfo, desired: normalized, expected: retained,
 	}, nil
+}
+
+// ValidateReconciliationFiles retains the exact bounded inputs used by both
+// native preparation and transport. It does not inspect or mutate a filesystem.
+func ValidateReconciliationFiles(desired []DesiredFile, expected []File) ([]DesiredFile, []File, error) {
+	normalized, err := validateDesiredFiles(desired)
+	if err != nil {
+		return nil, nil, err
+	}
+	retained, err := cloneExpectedFiles(expected)
+	if err != nil {
+		return nil, nil, err
+	}
+	return normalized, retained, nil
 }
 
 func exactRootDirectory(root string) (os.FileInfo, error) {
@@ -203,7 +217,7 @@ func validateDesiredFiles(desired []DesiredFile) ([]DesiredFile, error) {
 }
 
 func validateRelativePath(value string) error {
-	if value == "" || value != strings.TrimSpace(value) || strings.Contains(value, "\\") || path.IsAbs(value) || path.Clean(value) != value || value == "." || value == ".." || strings.HasPrefix(value, "../") || strings.ContainsRune(value, '\x00') {
+	if value == "" || len(value) > 4096 || !utf8.ValidString(value) || value != strings.TrimSpace(value) || strings.Contains(value, "\\") || path.IsAbs(value) || path.Clean(value) != value || value == "." || value == ".." || strings.HasPrefix(value, "../") || strings.ContainsRune(value, '\x00') {
 		return fmt.Errorf("path %q must be one exact relative slash path", value)
 	}
 	for _, name := range strings.Split(value, "/") {

@@ -7,6 +7,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -231,7 +232,7 @@ func normalizeScrumCardMessageAppend(message ScrumCardMessageAppend) (ScrumCardM
 		return ScrumCardMessageAppend{}, fmt.Errorf("Scrum message status %q is not registered", message.Status)
 	}
 	if message.OperationID != "" {
-		if _, err := ParseLifecycleOperationID(message.OperationID); err != nil {
+		if _, err := model.ParseLifecycleOperationID(message.OperationID); err != nil {
 			return ScrumCardMessageAppend{}, err
 		}
 	}

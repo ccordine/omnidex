@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -132,7 +133,7 @@ func insertScrumChannelOperationTx(
 	descriptor scrumChannelOperationDescriptor,
 	command ScrumChannelOperationCommand,
 	result ScrumChannelOperationResult,
-	effectOperationID LifecycleOperationID,
+	effectOperationID model.LifecycleOperationID,
 ) error {
 	tag, err := tx.Exec(ctx, `
 		INSERT INTO scrum_channel_operations (

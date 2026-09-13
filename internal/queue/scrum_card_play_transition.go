@@ -242,7 +242,7 @@ func pauseRunningScrumCardTx(
 	if err != nil || jobID <= 0 || strconv.FormatInt(jobID, 10) != card.JobID {
 		return fmt.Errorf("running Scrum card %q has noncanonical job ID %q", card.ID, card.JobID)
 	}
-	operationID, err := NewLifecycleOperationID()
+	operationID, err := model.NewLifecycleOperationID()
 	if err != nil {
 		return err
 	}

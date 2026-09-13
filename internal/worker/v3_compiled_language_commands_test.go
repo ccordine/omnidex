@@ -27,9 +27,6 @@ func TestCompiledLanguageCommandsUseExactRegisteredTools(t *testing.T) {
 					if command.Timeout != defaultDirectCodingVerificationTimeout || !sort.StringsAreSorted(command.Environment) {
 						t.Fatalf("unbounded or unordered command: %+v", command)
 					}
-					if _, err := directCodingVerificationProcessEnvironment(command.Environment); err != nil {
-						t.Fatal(err)
-					}
 				}
 				var want [][]string
 				switch stackID {

@@ -4,17 +4,18 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
 )
 
 func reserveLifecycleOperationIdentityTx(
 	ctx context.Context,
 	tx pgx.Tx,
-	id LifecycleOperationID,
+	id model.LifecycleOperationID,
 	kind LifecycleOperationKind,
 	commandPayload []byte,
 ) (bool, error) {
-	if _, err := ParseLifecycleOperationID(string(id)); err != nil {
+	if _, err := model.ParseLifecycleOperationID(string(id)); err != nil {
 		return false, err
 	}
 	result, err := tx.Exec(ctx, `

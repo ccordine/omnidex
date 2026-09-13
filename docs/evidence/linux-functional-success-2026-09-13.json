@@ -1,0 +1,1407 @@
+{
+  "classification": "Linux ordinary-CLI functional diagnostic; contaminated for autonomy qualification",
+  "scope": "Assistant-selected request, ordinary CLI and explicit plan approval without semantic edits; source snapshot and fresh workspace; independent evaluation only after builder stopped. This is not a human-supplied held-out autonomy benchmark.",
+  "request": "Create a small Go command-line program that counts the Unicode characters in the text supplied as its argument.",
+  "capture": {
+    "scope": "Assistant-selected ordinary-request Linux functional smoke; excluded from human-request autonomy acceptance",
+    "parent_checkout_head": "f1552cbc867222a153609632163e59e02005e7fa",
+    "snapshot_commit": "4861afd33088f96317550153877dda48e89a43d3"
+  },
+  "run_directory": "/tmp/omnidex-linux-smoke.nk_ap7a3",
+  "started_at": "2026-09-13T10:50:53.23207+00:00",
+  "completed_at": "2026-09-13T10:54:00.21472+00:00",
+  "elapsed_seconds": 186.98265,
+  "operator_actions": [
+    {
+      "action": "Approve and freeze the sole generated plan leaf without semantic edits",
+      "keys": [
+        "Space",
+        "Enter",
+        "Enter"
+      ],
+      "job_id": 1,
+      "generation": 1,
+      "semantic_edits": 0,
+      "time": "2026-09-13T10:51:45.203100+00:00"
+    }
+  ],
+  "job_result": "Completed deterministic coding workflow: accepted_desired_files=5 accepted_absences=0 filesystem_delta=5 created=5 replaced=0 deleted=0 moved=0 verification=exact-workspace-state",
+  "model_calls": [
+    {
+      "id": 1,
+      "station": "conversation_objective_kind",
+      "iteration": 1,
+      "model": "qwen3.5:9b-q4_K_M",
+      "context_tokens": 8192,
+      "model_input": "Choose the workspace-changing description only when satisfying the instruction requires that side effect.\n\nObjective context:\n\nExact instruction:\nCreate a small Go command-line program that counts the Unicode characters in the text supplied as its argument.\n\nWhich description exactly characterizes the objective of this one instruction?\n\nA. Converse directly, including greetings and small talk, or answer without acquiring current external evidence.\n\nB. Satisfying the instruction requires changing a workspace and verifying the change.\n\nC. Produce narrative or roleplay text.\n\nAnswer with A or B or C.",
+      "model_input_bytes": 604,
+      "provider_request": {
+        "model": "qwen3.5:9b-q4_K_M",
+        "options": {
+          "num_ctx": 8192,
+          "num_predict": -1,
+          "stop": [
+            "\n"
+          ],
+          "temperature": 0
+        },
+        "prompt": "Choose the workspace-changing description only when satisfying the instruction requires that side effect.\n\nObjective context:\n\nExact instruction:\nCreate a small Go command-line program that counts the Unicode characters in the text supplied as its argument.\n\nWhich description exactly characterizes the objective of this one instruction?\n\nA. Converse directly, including greetings and small talk, or answer without acquiring current external evidence.\n\nB. Satisfying the instruction requires changing a workspace and verifying the change.\n\nC. Produce narrative or roleplay text.\n\nAnswer with A or B or C.",
+        "raw": false,
+        "shift": false,
+        "stream": false,
+        "think": false,
+        "truncate": false
+      },
+      "response": "B",
+      "output_tokens": 2,
+      "elapsed_seconds": 2.401186224,
+      "outcome": {
+        "call_evidence_id": 1,
+        "status": "accepted",
+        "validation_error": null,
+        "created_at": "2026-09-13T10:50:55.754783+00:00"
+      }
+    },
+    {
+      "id": 2,
+      "station": "application_requirement_inventory",
+      "iteration": 1,
+      "model": "qwen3.5:9b-q4_K_M",
+      "context_tokens": 8192,
+      "model_input": "What atomic finished-software runtime outcomes are required by this request and established facts? List one independent outcome per line, up to 30. If there are none, answer NO_RUNTIME_REQUIREMENT_CANDIDATES.\n\nInclude only outcomes grounded in the request and established facts. Do not add optional product scope.\n\nGenerate distinct semantic work or runtime outcomes, not speculative alternative implementation mechanisms. Each candidate must state exactly one independently testable runtime outcome: one behavior, user-visible element, observable quality, state or persistence behavior, or runtime data or output requirement. Different mechanisms for realizing the same outcome are not separate candidates. Split only independent outcomes; never enumerate modes, variants, cases, algorithms, or alternative ways to perform the same outcome.\n\nThe ordinary meaning of a purpose-denoting product or category name is request content. For each such named purpose, include one minimal end-to-end candidate containing only the literal core operation or governed result inherent in that name. Express the purpose noun as the simplest corresponding action and governed object. Do not add an input, parameter, criterion, destination, mechanism, interface, trigger, or qualifying phrase unless the request states it.\n\nWhen the literal purpose is to transform, read, extract, decode, calculate, or otherwise derive a governed value, state the minimal independently verifiable governed result instead of a bare activity. Express the value produced by the operation at the abstraction inherent in the purpose. Verifiable does not authorize a presentation or delivery channel: never add display, show, render, return, download, store, transmit, notify, an interface, an output format, or any other unstated mechanism. Never invent the result's format, algorithm, defaults, quality rules, or limits.\n\nA delivery surface or construction technology does not imply a runtime mechanism, interface, input source, or interaction. Do not add one unless the immutable request states it.\n\nPreserve the actor, action, governed object, modality, determining relation, and resulting observation that jointly define an outcome. Keep the software as the semantic subject of each capability outcome. If the request says the software lets, allows, or enables an actor to act, preserve that software-provided ability rather than asserting that the actor necessarily performs the action. An ability, permission, possibility, or enablement must remain that relation rather than becoming an assertion that the action necessarily occurs. State the runtime outcome itself; a topic, title, noun phrase, or feature label is not a runtime outcome. Preserve every genuinely separate runtime outcome as its own candidate. Do not duplicate, paraphrase, restate, or split the same core outcome into multiple candidates; a more explicit statement already represents its named core outcome.\n\nThe maximum candidate count is a safety ceiling, never a generation target. When the request has only one distinct runtime outcome, preserve it as one candidate rather than inventing multiple ways to implement it. When the request already states that atomic runtime outcome, that stated outcome is the candidate rather than a summary, abstraction, or generalized restatement.\n\nDo not add a generic trigger frame such as 'when invoked' or 'on request' unless the immutable request states that trigger.\n\nExclude bare product identity, build or create directions, delivery surface, language, framework, toolchain, packaging, testing, deployment, and other construction constraints. Do not turn customary implementation mechanisms or process steps into runtime outcomes.\n\nSoftware request:\nCreate a small Go command-line program that counts the Unicode characters in the text supplied as its argument.",
+      "model_input_bytes": 3843,
+      "provider_request": {
+        "model": "qwen3.5:9b-q4_K_M",
+        "options": {
+          "num_ctx": 8192,
+          "num_predict": -1,
+          "temperature": 0
+        },
+        "prompt": "What atomic finished-software runtime outcomes are required by this request and established facts? List one independent outcome per line, up to 30. If there are none, answer NO_RUNTIME_REQUIREMENT_CANDIDATES.\n\nInclude only outcomes grounded in the request and established facts. Do not add optional product scope.\n\nGenerate distinct semantic work or runtime outcomes, not speculative alternative implementation mechanisms. Each candidate must state exactly one independently testable runtime outcome: one behavior, user-visible element, observable quality, state or persistence behavior, or runtime data or output requirement. Different mechanisms for realizing the same outcome are not separate candidates. Split only independent outcomes; never enumerate modes, variants, cases, algorithms, or alternative ways to perform the same outcome.\n\nThe ordinary meaning of a purpose-denoting product or category name is request content. For each such named purpose, include one minimal end-to-end candidate containing only the literal core operation or governed result inherent in that name. Express the purpose noun as the simplest corresponding action and governed object. Do not add an input, parameter, criterion, destination, mechanism, interface, trigger, or qualifying phrase unless the request states it.\n\nWhen the literal purpose is to transform, read, extract, decode, calculate, or otherwise derive a governed value, state the minimal independently verifiable governed result instead of a bare activity. Express the value produced by the operation at the abstraction inherent in the purpose. Verifiable does not authorize a presentation or delivery channel: never add display, show, render, return, download, store, transmit, notify, an interface, an output format, or any other unstated mechanism. Never invent the result's format, algorithm, defaults, quality rules, or limits.\n\nA delivery surface or construction technology does not imply a runtime mechanism, interface, input source, or interaction. Do not add one unless the immutable request states it.\n\nPreserve the actor, action, governed object, modality, determining relation, and resulting observation that jointly define an outcome. Keep the software as the semantic subject of each capability outcome. If the request says the software lets, allows, or enables an actor to act, preserve that software-provided ability rather than asserting that the actor necessarily performs the action. An ability, permission, possibility, or enablement must remain that relation rather than becoming an assertion that the action necessarily occurs. State the runtime outcome itself; a topic, title, noun phrase, or feature label is not a runtime outcome. Preserve every genuinely separate runtime outcome as its own candidate. Do not duplicate, paraphrase, restate, or split the same core outcome into multiple candidates; a more explicit statement already represents its named core outcome.\n\nThe maximum candidate count is a safety ceiling, never a generation target. When the request has only one distinct runtime outcome, preserve it as one candidate rather than inventing multiple ways to implement it. When the request already states that atomic runtime outcome, that stated outcome is the candidate rather than a summary, abstraction, or generalized restatement.\n\nDo not add a generic trigger frame such as 'when invoked' or 'on request' unless the immutable request states that trigger.\n\nExclude bare product identity, build or create directions, delivery surface, language, framework, toolchain, packaging, testing, deployment, and other construction constraints. Do not turn customary implementation mechanisms or process steps into runtime outcomes.\n\nSoftware request:\nCreate a small Go command-line program that counts the Unicode characters in the text supplied as its argument.",
+        "raw": false,
+        "shift": false,
+        "stream": false,
+        "think": false,
+        "truncate": false
+      },
+      "response": "The software counts the Unicode characters in the text supplied as its argument.",
+      "output_tokens": 15,
+      "elapsed_seconds": 3.606079576,
+      "outcome": {
+        "call_evidence_id": 2,
+        "status": "accepted",
+        "validation_error": null,
+        "created_at": "2026-09-13T10:50:59.438851+00:00"
+      }
+    },
+    {
+      "id": 3,
+      "station": "application_requirement_candidate_authorization",
+      "iteration": 1,
+      "model": "qwen3.5:9b-q4_K_M",
+      "context_tokens": 8192,
+      "model_input": "Software request:\nCreate a small Go command-line program that counts the Unicode characters in the text supplied as its argument.\n\nCandidate:\nThe software counts the Unicode characters in the text supplied as its argument.\n\nIs every semantic detail in the candidate required by the software request and established facts? The candidate may describe only one requested part; it need not repeat other requirements or construction instructions. Judge the meaning, not the wording. Describing requested behavior as something the finished software does adds nothing.\n\nA. Every semantic detail in the candidate is grounded by the request and established facts.\n\nB. The candidate adds at least one semantic detail not grounded by the request and established facts.\n\nAnswer with A or B.",
+      "model_input_bytes": 778,
+      "provider_request": {
+        "model": "qwen3.5:9b-q4_K_M",
+        "options": {
+          "num_ctx": 8192,
+          "num_predict": -1,
+          "stop": [
+            "\n"
+          ],
+          "temperature": 0
+        },
+        "prompt": "Software request:\nCreate a small Go command-line program that counts the Unicode characters in the text supplied as its argument.\n\nCandidate:\nThe software counts the Unicode characters in the text supplied as its argument.\n\nIs every semantic detail in the candidate required by the software request and established facts? The candidate may describe only one requested part; it need not repeat other requirements or construction instructions. Judge the meaning, not the wording. Describing requested behavior as something the finished software does adds nothing.\n\nA. Every semantic detail in the candidate is grounded by the request and established facts.\n\nB. The candidate adds at least one semantic detail not grounded by the request and established facts.\n\nAnswer with A or B.",
+        "raw": false,
+        "shift": false,
+        "stream": false,
+        "think": false,
+        "truncate": false
+      },
+      "response": "A",
+      "output_tokens": 2,
+      "elapsed_seconds": 0.857121378,
+      "outcome": {
+        "call_evidence_id": 3,
+        "status": "accepted",
+        "validation_error": null,
+        "created_at": "2026-09-13T10:51:00.320058+00:00"
+      }
+    },
+    {
+      "id": 4,
+      "station": "application_requirement_candidate_kind",
+      "iteration": 1,
+      "model": "qwen3.5:9b-q4_K_M",
+      "context_tokens": 8192,
+      "model_input": "Requirement candidate:\nThe software counts the Unicode characters in the text supplied as its argument.\n\nDoes the candidate directly specify anything the finished software must do, show, accept, change, store, or produce while running? Runtime content includes a software behavior, observable result, user-visible element or quality, state or persistence behavior, or runtime data or output format. A subjectless imperative acting on runtime or user-provided data directly requires runtime content. A product or category name alone does not. Do not infer customary controls, variants, features, prerequisites, or presentation. Inspect only this candidate; do not infer another requirement or use surrounding context.\n\nA. The candidate directly states finished-software runtime content.\n\nB. The candidate does not directly state finished-software runtime content.\n\nAnswer with A or B.",
+      "model_input_bytes": 883,
+      "provider_request": {
+        "model": "qwen3.5:9b-q4_K_M",
+        "options": {
+          "num_ctx": 8192,
+          "num_predict": -1,
+          "stop": [
+            "\n"
+          ],
+          "temperature": 0
+        },
+        "prompt": "Requirement candidate:\nThe software counts the Unicode characters in the text supplied as its argument.\n\nDoes the candidate directly specify anything the finished software must do, show, accept, change, store, or produce while running? Runtime content includes a software behavior, observable result, user-visible element or quality, state or persistence behavior, or runtime data or output format. A subjectless imperative acting on runtime or user-provided data directly requires runtime content. A product or category name alone does not. Do not infer customary controls, variants, features, prerequisites, or presentation. Inspect only this candidate; do not infer another requirement or use surrounding context.\n\nA. The candidate directly states finished-software runtime content.\n\nB. The candidate does not directly state finished-software runtime content.\n\nAnswer with A or B.",
+        "raw": false,
+        "shift": false,
+        "stream": false,
+        "think": false,
+        "truncate": false
+      },
+      "response": "A",
+      "output_tokens": 2,
+      "elapsed_seconds": 0.87872118,
+      "outcome": {
+        "call_evidence_id": 4,
+        "status": "accepted",
+        "validation_error": null,
+        "created_at": "2026-09-13T10:51:01.243347+00:00"
+      }
+    },
+    {
+      "id": 5,
+      "station": "application_requirement_candidate_kind",
+      "iteration": 1,
+      "model": "qwen3.5:9b-q4_K_M",
+      "context_tokens": 8192,
+      "model_input": "Requirement candidate:\nThe software counts the Unicode characters in the text supplied as its argument.\n\nDoes the candidate explicitly say how or where the software must be constructed, implemented, packaged, delivered, run, deployed, or verified? A direction to build or create the software is construction content, including when runtime meaning is also present. Delivery surfaces, languages, frameworks, toolchains, versions, packaging, tree or named-artifact shapes, verification obligations, deployment obligations, and continued-availability obligations are construction or delivery content. A subject that merely refers to finished software while stating its behavior is not enough. Evaluate only whether this content exists, not the candidate as a whole. Inspect only this candidate; do not infer another requirement or use surrounding context.\n\nA. The candidate explicitly states construction or delivery content.\n\nB. The candidate does not explicitly state construction or delivery content.\n\nAnswer with A or B.",
+      "model_input_bytes": 1021,
+      "provider_request": {
+        "model": "qwen3.5:9b-q4_K_M",
+        "options": {
+          "num_ctx": 8192,
+          "num_predict": -1,
+          "stop": [
+            "\n"
+          ],
+          "temperature": 0
+        },
+        "prompt": "Requirement candidate:\nThe software counts the Unicode characters in the text supplied as its argument.\n\nDoes the candidate explicitly say how or where the software must be constructed, implemented, packaged, delivered, run, deployed, or verified? A direction to build or create the software is construction content, including when runtime meaning is also present. Delivery surfaces, languages, frameworks, toolchains, versions, packaging, tree or named-artifact shapes, verification obligations, deployment obligations, and continued-availability obligations are construction or delivery content. A subject that merely refers to finished software while stating its behavior is not enough. Evaluate only whether this content exists, not the candidate as a whole. Inspect only this candidate; do not infer another requirement or use surrounding context.\n\nA. The candidate explicitly states construction or delivery content.\n\nB. The candidate does not explicitly state construction or delivery content.\n\nAnswer with A or B.",
+        "raw": false,
+        "shift": false,
+        "stream": false,
+        "think": false,
+        "truncate": false
+      },
+      "response": "B",
+      "output_tokens": 2,
+      "elapsed_seconds": 0.952138793,
+      "outcome": {
+        "call_evidence_id": 5,
+        "status": "accepted",
+        "validation_error": null,
+        "created_at": "2026-09-13T10:51:02.229994+00:00"
+      }
+    },
+    {
+      "id": 6,
+      "station": "application_requirement_candidate_cardinality",
+      "iteration": 1,
+      "model": "qwen3.5:9b-q4_K_M",
+      "context_tokens": 8192,
+      "model_input": "Requirement candidate:\nThe software counts the Unicode characters in the text supplied as its argument.\n\nHow many independently testable runtime outcomes does this candidate describe? A runtime outcome is one concrete capability, observable behavior, user-visible element, observable quality, state or persistence behavior, or runtime data or output format. Count distinct concrete actions, elements, qualities, or outcomes separately. Operands, a condition or trigger, a determining relation, and the resulting output that jointly define one end-to-end behavior remain one outcome. A second observable response meaning is separate. Grammatical subjects, container wording, modifiers, and purpose clauses do not add outcomes by themselves.\n\nA. One independent runtime assertion is sufficient to test the complete candidate.\n\nB. Two or more independent runtime assertions are required to test the complete candidate.\n\nAnswer with A or B.",
+      "model_input_bytes": 936,
+      "provider_request": {
+        "model": "qwen3.5:9b-q4_K_M",
+        "options": {
+          "num_ctx": 8192,
+          "num_predict": -1,
+          "stop": [
+            "\n"
+          ],
+          "temperature": 0
+        },
+        "prompt": "Requirement candidate:\nThe software counts the Unicode characters in the text supplied as its argument.\n\nHow many independently testable runtime outcomes does this candidate describe? A runtime outcome is one concrete capability, observable behavior, user-visible element, observable quality, state or persistence behavior, or runtime data or output format. Count distinct concrete actions, elements, qualities, or outcomes separately. Operands, a condition or trigger, a determining relation, and the resulting output that jointly define one end-to-end behavior remain one outcome. A second observable response meaning is separate. Grammatical subjects, container wording, modifiers, and purpose clauses do not add outcomes by themselves.\n\nA. One independent runtime assertion is sufficient to test the complete candidate.\n\nB. Two or more independent runtime assertions are required to test the complete candidate.\n\nAnswer with A or B.",
+        "raw": false,
+        "shift": false,
+        "stream": false,
+        "think": false,
+        "truncate": false
+      },
+      "response": "A",
+      "output_tokens": 2,
+      "elapsed_seconds": 0.869821585,
+      "outcome": {
+        "call_evidence_id": 6,
+        "status": "accepted",
+        "validation_error": null,
+        "created_at": "2026-09-13T10:51:03.140551+00:00"
+      }
+    },
+    {
+      "id": 7,
+      "station": "application_requirement_candidate_result_relation",
+      "iteration": 1,
+      "model": "qwen3.5:9b-q4_K_M",
+      "context_tokens": 8192,
+      "model_input": "Requirement candidate:\nThe software counts the Unicode characters in the text supplied as its argument.\n\nDoes the candidate assert a derived runtime value? A value is derived when it is selected, ordered, transformed, read, extracted, decoded, hashed, grouped, aggregated, measured, calculated, or decided from inputs. A named result-bearing operation over its governed object qualifies even when phrased as an action. An action, control, state transition, event, message, artifact creation or availability, unchanged supplied data, trigger condition, or qualitative adjective alone does not create a derived value. Inspect only this candidate.\n\nA. The candidate asserts a derived runtime value.\n\nB. The candidate does not assert a derived runtime value.\n\nAnswer with A or B.",
+      "model_input_bytes": 775,
+      "provider_request": {
+        "model": "qwen3.5:9b-q4_K_M",
+        "options": {
+          "num_ctx": 8192,
+          "num_predict": -1,
+          "stop": [
+            "\n"
+          ],
+          "temperature": 0
+        },
+        "prompt": "Requirement candidate:\nThe software counts the Unicode characters in the text supplied as its argument.\n\nDoes the candidate assert a derived runtime value? A value is derived when it is selected, ordered, transformed, read, extracted, decoded, hashed, grouped, aggregated, measured, calculated, or decided from inputs. A named result-bearing operation over its governed object qualifies even when phrased as an action. An action, control, state transition, event, message, artifact creation or availability, unchanged supplied data, trigger condition, or qualitative adjective alone does not create a derived value. Inspect only this candidate.\n\nA. The candidate asserts a derived runtime value.\n\nB. The candidate does not assert a derived runtime value.\n\nAnswer with A or B.",
+        "raw": false,
+        "shift": false,
+        "stream": false,
+        "think": false,
+        "truncate": false
+      },
+      "response": "A",
+      "output_tokens": 2,
+      "elapsed_seconds": 0.835177096,
+      "outcome": {
+        "call_evidence_id": 7,
+        "status": "accepted",
+        "validation_error": null,
+        "created_at": "2026-09-13T10:51:04.011407+00:00"
+      }
+    },
+    {
+      "id": 8,
+      "station": "application_requirement_candidate_result_relation",
+      "iteration": 1,
+      "model": "qwen3.5:9b-q4_K_M",
+      "context_tokens": 8192,
+      "model_input": "Requirement candidate:\nThe software counts the Unicode characters in the text supplied as its argument.\n\nThe candidate requires a derived value. Does it name what to compute or measure? A named operation, operation family, or intrinsic measurable property specifies the rule; the concrete operands can be runtime inputs. A desired assessment without a named rule or measurable property does not. Inspect only this candidate.\n\nA. The candidate names the computation, operation family, or measurable property.\n\nB. The candidate leaves the computation or judgment rule unspecified.\n\nAnswer with A or B.",
+      "model_input_bytes": 599,
+      "provider_request": {
+        "model": "qwen3.5:9b-q4_K_M",
+        "options": {
+          "num_ctx": 8192,
+          "num_predict": -1,
+          "stop": [
+            "\n"
+          ],
+          "temperature": 0
+        },
+        "prompt": "Requirement candidate:\nThe software counts the Unicode characters in the text supplied as its argument.\n\nThe candidate requires a derived value. Does it name what to compute or measure? A named operation, operation family, or intrinsic measurable property specifies the rule; the concrete operands can be runtime inputs. A desired assessment without a named rule or measurable property does not. Inspect only this candidate.\n\nA. The candidate names the computation, operation family, or measurable property.\n\nB. The candidate leaves the computation or judgment rule unspecified.\n\nAnswer with A or B.",
+        "raw": false,
+        "shift": false,
+        "stream": false,
+        "think": false,
+        "truncate": false
+      },
+      "response": "A",
+      "output_tokens": 2,
+      "elapsed_seconds": 0.717500211,
+      "outcome": {
+        "call_evidence_id": 8,
+        "status": "accepted",
+        "validation_error": null,
+        "created_at": "2026-09-13T10:51:04.768725+00:00"
+      }
+    },
+    {
+      "id": 9,
+      "station": "application_product_context",
+      "iteration": 1,
+      "model": "qwen3.5:9b-q4_K_M",
+      "context_tokens": 8192,
+      "model_input": "What concise product or domain identity is explicitly established by this software request and its established facts?\n\nProduct context contains only the product identity, subject or domain, intended audience, and stated setting or purpose. Exclude requested qualities, capabilities, behaviors, user-visible elements, state or persistence, artifact or format constraints, accessibility or responsiveness, tests, build or deployment constraints, and implementation detail.\n\nSoftware request:\nCreate a small Go command-line program that counts the Unicode characters in the text supplied as its argument.",
+      "model_input_bytes": 601,
+      "provider_request": {
+        "model": "qwen3.5:9b-q4_K_M",
+        "options": {
+          "num_ctx": 8192,
+          "num_predict": -1,
+          "temperature": 0
+        },
+        "prompt": "What concise product or domain identity is explicitly established by this software request and its established facts?\n\nProduct context contains only the product identity, subject or domain, intended audience, and stated setting or purpose. Exclude requested qualities, capabilities, behaviors, user-visible elements, state or persistence, artifact or format constraints, accessibility or responsiveness, tests, build or deployment constraints, and implementation detail.\n\nSoftware request:\nCreate a small Go command-line program that counts the Unicode characters in the text supplied as its argument.",
+        "raw": false,
+        "shift": false,
+        "stream": false,
+        "think": false,
+        "truncate": false
+      },
+      "response": "Unicode character counter",
+      "output_tokens": 4,
+      "elapsed_seconds": 14.477986481,
+      "outcome": {
+        "call_evidence_id": 9,
+        "status": "accepted",
+        "validation_error": null,
+        "created_at": "2026-09-13T10:51:58.877085+00:00"
+      }
+    },
+    {
+      "id": 10,
+      "station": "application_classification",
+      "iteration": 1,
+      "model": "qwen3.5:9b-q4_K_M",
+      "context_tokens": 8192,
+      "model_input": "Software request:\nCreate a small Go command-line program that counts the Unicode characters in the text supplied as its argument.\n\nWhat kind of interface does the request describe?\n\nA. A browser app or web page.\n\nB. A command-line program or terminal interface.\n\nC. The request does not say what interface to use.\n\nD. Another interface, such as a native mobile or graphical desktop app, or a combination of interfaces.\n\nAnswer with A or B or C or D.",
+      "model_input_bytes": 449,
+      "provider_request": {
+        "model": "qwen3.5:9b-q4_K_M",
+        "options": {
+          "num_ctx": 8192,
+          "num_predict": -1,
+          "stop": [
+            "\n"
+          ],
+          "temperature": 0
+        },
+        "prompt": "Software request:\nCreate a small Go command-line program that counts the Unicode characters in the text supplied as its argument.\n\nWhat kind of interface does the request describe?\n\nA. A browser app or web page.\n\nB. A command-line program or terminal interface.\n\nC. The request does not say what interface to use.\n\nD. Another interface, such as a native mobile or graphical desktop app, or a combination of interfaces.\n\nAnswer with A or B or C or D.",
+        "raw": false,
+        "shift": false,
+        "stream": false,
+        "think": false,
+        "truncate": false
+      },
+      "response": "B",
+      "output_tokens": 2,
+      "elapsed_seconds": 0.561607521,
+      "outcome": {
+        "call_evidence_id": 10,
+        "status": "accepted",
+        "validation_error": null,
+        "created_at": "2026-09-13T10:51:59.45081+00:00"
+      }
+    },
+    {
+      "id": 11,
+      "station": "application_project_stack_constraint",
+      "iteration": 1,
+      "model": "qwen3.5:9b-q4_K_M",
+      "context_tokens": 8192,
+      "model_input": "Software request:\nCreate a small Go command-line program that counts the Unicode characters in the text supplied as its argument.\n\nWhich registered technical format and packaging shape, if any, is explicitly required by the software request? Select the unconstrained choice when the request establishes none. Select the no-suitable-format choice only when an explicit technical constraint conflicts with every registered format.\n\nA. Use this technical format and packaging shape: Go with a module manifest for a command-line application; source dialect: Go 1.24.0; qualified versions: go 1.24.0, go manifest >=1.24.0 <1.25.0\n\nB. Use this technical format and packaging shape: Modern ECMAScript modules on Node.js for a command-line application; source dialect: ECMAScript ES2022 modules on Node.js >=22.0.0; qualified versions: ecmascript ES2022, node >=22.0.0\n\nC. Use this technical format and packaging shape: Rust with Cargo for a command-line application; source dialect: Rust 2024 edition with rust-version 1.85; qualified versions: cargo lock 4, rust edition 2024, rust manifest 1.85.0, rust version 1.85\n\nD. Use this technical format and packaging shape: Java for a command-line application; source dialect: Java 21 source and class-file API release; qualified versions: java release 21\n\nE. The request does not establish a technical format or packaging shape.\n\nF. No registered technical format can satisfy an explicit technical constraint in the request.\n\nAnswer with A or B or C or D or E or F.",
+      "model_input_bytes": 1504,
+      "provider_request": {
+        "model": "qwen3.5:9b-q4_K_M",
+        "options": {
+          "num_ctx": 8192,
+          "num_predict": -1,
+          "stop": [
+            "\n"
+          ],
+          "temperature": 0
+        },
+        "prompt": "Software request:\nCreate a small Go command-line program that counts the Unicode characters in the text supplied as its argument.\n\nWhich registered technical format and packaging shape, if any, is explicitly required by the software request? Select the unconstrained choice when the request establishes none. Select the no-suitable-format choice only when an explicit technical constraint conflicts with every registered format.\n\nA. Use this technical format and packaging shape: Go with a module manifest for a command-line application; source dialect: Go 1.24.0; qualified versions: go 1.24.0, go manifest >=1.24.0 <1.25.0\n\nB. Use this technical format and packaging shape: Modern ECMAScript modules on Node.js for a command-line application; source dialect: ECMAScript ES2022 modules on Node.js >=22.0.0; qualified versions: ecmascript ES2022, node >=22.0.0\n\nC. Use this technical format and packaging shape: Rust with Cargo for a command-line application; source dialect: Rust 2024 edition with rust-version 1.85; qualified versions: cargo lock 4, rust edition 2024, rust manifest 1.85.0, rust version 1.85\n\nD. Use this technical format and packaging shape: Java for a command-line application; source dialect: Java 21 source and class-file API release; qualified versions: java release 21\n\nE. The request does not establish a technical format or packaging shape.\n\nF. No registered technical format can satisfy an explicit technical constraint in the request.\n\nAnswer with A or B or C or D or E or F.",
+        "raw": false,
+        "shift": false,
+        "stream": false,
+        "think": false,
+        "truncate": false
+      },
+      "response": "E",
+      "output_tokens": 2,
+      "elapsed_seconds": 1.078031582,
+      "outcome": {
+        "call_evidence_id": 11,
+        "status": "accepted",
+        "validation_error": null,
+        "created_at": "2026-09-13T10:52:00.543362+00:00"
+      }
+    },
+    {
+      "id": 12,
+      "station": "fragment_generation",
+      "iteration": 1,
+      "model": "qwen3.5:9b-q4_K_M",
+      "context_tokens": 8192,
+      "model_input": "The source dialect is Go 1.24.0.\n\nThese direct declarations are available:\ntype TaskInput struct {\n\tArguments     []string // Values the user supplies as command-line arguments, excluding the executable name.\n\tStandardInput string   // Redirected or piped text; empty during ordinary terminal invocation.\n}\n\ntype TaskResult struct {\n\tOutput   string            // Exact requested result text.\n\tError    string            // User-visible standard-error text.\n\tExitCode int               // Process status; zero means success.\n\tState    map[string]string // Reusable capability values.\n}\n\ntype CapabilityResults map[string]TaskResult\n\nExact user requirement: The software counts the Unicode characters in the text supplied as its argument.\n\nThese parameters and return constraints are in scope:\nfunc Feature001(input TaskInput, dependencies CapabilityResults) TaskResult\n\nWhat Go statements should execute inside this function?",
+      "model_input_bytes": 925,
+      "provider_request": {
+        "model": "qwen3.5:9b-q4_K_M",
+        "options": {
+          "num_ctx": 8192,
+          "num_predict": -1,
+          "temperature": 0
+        },
+        "prompt": "The source dialect is Go 1.24.0.\n\nThese direct declarations are available:\ntype TaskInput struct {\n\tArguments     []string // Values the user supplies as command-line arguments, excluding the executable name.\n\tStandardInput string   // Redirected or piped text; empty during ordinary terminal invocation.\n}\n\ntype TaskResult struct {\n\tOutput   string            // Exact requested result text.\n\tError    string            // User-visible standard-error text.\n\tExitCode int               // Process status; zero means success.\n\tState    map[string]string // Reusable capability values.\n}\n\ntype CapabilityResults map[string]TaskResult\n\nExact user requirement: The software counts the Unicode characters in the text supplied as its argument.\n\nThese parameters and return constraints are in scope:\nfunc Feature001(input TaskInput, dependencies CapabilityResults) TaskResult\n\nWhat Go statements should execute inside this function?",
+        "raw": false,
+        "shift": false,
+        "stream": false,
+        "think": false,
+        "truncate": false
+      },
+      "response": "Based on the requirement to count Unicode characters in the supplied text and the provided types, here is the implementation for `Feature001`.\n\n### Logic Analysis\n1.  **Input Handling**: The `input.Arguments` slice contains the command-line arguments. Since the requirement specifies \"the text supplied as its argument\" (singular), we assume the first element of `input.Arguments` is the target text. If the slice is empty, we handle it gracefully (e.g., return an error or count 0).\n2.  **Unicode Counting**: In Go, `len(string)` counts bytes, not characters. To count Unicode characters (code points), we must use `utf8.RuneCountInString()`.\n3.  **Result Construction**: We populate the `TaskResult` struct with the count in `Output`, an empty string in `Error`, `0` in `ExitCode`, and an empty map in `State`.\n4.  **Dependencies**: The `dependencies` parameter is available but not strictly necessary for this specific logic unless the counting logic needs to be cached or modified by external capabilities. We will ignore it for the core logic but accept it to satisfy the function signature.\n\n### Go Implementation\n\n```go\nimport (\n\t\"fmt\"\n\t\"unicode/utf8\"\n)\n\nfunc Feature001(input TaskInput, dependencies CapabilityResults) TaskResult {\n\t// 1. Extract the text from the first argument.\n\t// If no arguments are provided, we treat it as an empty string or return an error.\n\t// Based on typical CLI behavior, we assume the first arg is the text.\n\ttext := \"\"\n\tif len(input.Arguments) > 0 {\n\t\ttext = input.Arguments[0]\n\t}\n\n\t// 2. Count Unicode characters (Runes).\n\t// utf8.RuneCountInString returns the number of Unicode code points.\n\tcharCount := utf8.RuneCountInString(text)\n\n\t// 3. Construct the result.\n\tresult := TaskResult{\n\t\tOutput: fmt.Sprintf(\"Character count: %d\", charCount),\n\t\tError:  \"\",\n\t\tExitCode: 0,\n\t\tState:   make(map[string]string), // Initialize empty map as per type definition\n\t}\n\n\t// Optional: Store the count in State for reuse if needed\n\tresult.State[\"char_count\"] = fmt.Sprintf(\"%d\", charCount)\n\n\treturn result\n}\n```\n\n### Key Details\n*   **`utf8.RuneCountInString(text)`**: This is the critical function. It correctly handles multi-byte characters (like emojis or accented letters) by counting them as single characters, unlike `len(text)`.\n*   **`fmt.Sprintf`**: Used to format the output string as requested by the `Output` field definition.\n*   **`make(map[string]string)`**: Initializes the `State` map to avoid nil pointer issues, adhering to the `map[string]string` type definition.",
+      "output_tokens": 628,
+      "elapsed_seconds": 44.421293137,
+      "outcome": {
+        "call_evidence_id": 12,
+        "status": "accepted",
+        "validation_error": null,
+        "created_at": "2026-09-13T10:52:45.51636+00:00"
+      }
+    },
+    {
+      "id": 13,
+      "station": "fragment_generation",
+      "iteration": 1,
+      "model": "qwen3.5:9b-q4_K_M",
+      "context_tokens": 8192,
+      "model_input": "The source dialect is Go 1.24.0.\n\nThese direct declarations are available:\ntype TaskInput struct {\n\tArguments     []string // Values the user supplies as command-line arguments, excluding the executable name.\n\tStandardInput string   // Redirected or piped text; empty during ordinary terminal invocation.\n}\n\nProvide one concrete input for this behavior:\nExact user requirement: The software counts the Unicode characters in the text supplied as its argument.\n\nThese parameters and return constraints are in scope:\nfunc InputFeature001() TaskInput\n\nWhat Go statements should execute inside this function?",
+      "model_input_bytes": 603,
+      "provider_request": {
+        "model": "qwen3.5:9b-q4_K_M",
+        "options": {
+          "num_ctx": 8192,
+          "num_predict": -1,
+          "temperature": 0
+        },
+        "prompt": "The source dialect is Go 1.24.0.\n\nThese direct declarations are available:\ntype TaskInput struct {\n\tArguments     []string // Values the user supplies as command-line arguments, excluding the executable name.\n\tStandardInput string   // Redirected or piped text; empty during ordinary terminal invocation.\n}\n\nProvide one concrete input for this behavior:\nExact user requirement: The software counts the Unicode characters in the text supplied as its argument.\n\nThese parameters and return constraints are in scope:\nfunc InputFeature001() TaskInput\n\nWhat Go statements should execute inside this function?",
+        "raw": false,
+        "shift": false,
+        "stream": false,
+        "think": false,
+        "truncate": false
+      },
+      "response": "```go\nfunc InputFeature001() TaskInput {\n\t// Example: User supplies a sentence with mixed Unicode characters (e.g., emojis, accented letters)\n\t// The software will count the Unicode characters in this text.\n\tinputText := \"Hello, 世界！🌍 Привет мир! 🚀\"\n\n\treturn TaskInput{\n\t\tArguments:     []string{inputText},\n\t\tStandardInput: \"\", // Empty as per ordinary terminal invocation\n\t}\n}\n```",
+      "output_tokens": 109,
+      "elapsed_seconds": 8.098034338,
+      "outcome": {
+        "call_evidence_id": 13,
+        "status": "accepted",
+        "validation_error": null,
+        "created_at": "2026-09-13T10:52:53.631446+00:00"
+      }
+    },
+    {
+      "id": 14,
+      "station": "fragment_generation",
+      "iteration": 1,
+      "model": "qwen3.5:9b-q4_K_M",
+      "context_tokens": 8192,
+      "model_input": "The source dialect is Go 1.24.0.\n\nThese direct declarations are available:\ntype TaskInput struct {\n\tArguments     []string // Values the user supplies as command-line arguments, excluding the executable name.\n\tStandardInput string   // Redirected or piped text; empty during ordinary terminal invocation.\n}\ntype TaskResult struct {\n\tOutput   string            // Exact requested result text.\n\tError    string            // User-visible standard-error text.\n\tExitCode int               // Process status; zero means success.\n\tState    map[string]string // Reusable capability values.\n}\n\nReturn whether result satisfies this behavior for input:\nExact user requirement: The software counts the Unicode characters in the text supplied as its argument.\n\nThese parameters and return constraints are in scope:\nfunc SatisfiesFeature001(input TaskInput, result TaskResult) bool\n\nWhat Go statements should execute inside this function?",
+      "model_input_bytes": 925,
+      "provider_request": {
+        "model": "qwen3.5:9b-q4_K_M",
+        "options": {
+          "num_ctx": 8192,
+          "num_predict": -1,
+          "temperature": 0
+        },
+        "prompt": "The source dialect is Go 1.24.0.\n\nThese direct declarations are available:\ntype TaskInput struct {\n\tArguments     []string // Values the user supplies as command-line arguments, excluding the executable name.\n\tStandardInput string   // Redirected or piped text; empty during ordinary terminal invocation.\n}\ntype TaskResult struct {\n\tOutput   string            // Exact requested result text.\n\tError    string            // User-visible standard-error text.\n\tExitCode int               // Process status; zero means success.\n\tState    map[string]string // Reusable capability values.\n}\n\nReturn whether result satisfies this behavior for input:\nExact user requirement: The software counts the Unicode characters in the text supplied as its argument.\n\nThese parameters and return constraints are in scope:\nfunc SatisfiesFeature001(input TaskInput, result TaskResult) bool\n\nWhat Go statements should execute inside this function?",
+        "raw": false,
+        "shift": false,
+        "stream": false,
+        "think": false,
+        "truncate": false
+      },
+      "response": "To satisfy the requirement that the software counts the Unicode characters in the text supplied as its argument, the function must:\n\n1.  Access the input text from `input.Arguments`.\n2.  Count the number of runes (Unicode characters) in that text.\n3.  Store the count in `result.State` (as this is the designated place for reusable capability values).\n4.  Return `true` to indicate the feature is satisfied.\n\nHere is the Go code that should execute inside the `SatisfiesFeature001` function:\n\n```go\nfunc SatisfiesFeature001(input TaskInput, result TaskResult) bool {\n\t// Ensure we are counting the first argument if multiple are provided,\n\t// or handle the slice appropriately based on specific task logic.\n\t// Assuming the requirement applies to the first argument or the joined arguments.\n\t// Based on typical task patterns, we usually process the first argument or the slice.\n\t// Let's assume the text is the first argument or the slice itself.\n\t// If the requirement implies counting characters in the provided argument(s):\n\t\n\tvar textToCount string\n\t\n\tif len(input.Arguments) > 0 {\n\t\t// Join arguments with spaces if multiple, or take the first one.\n\t\t// Usually, for \"the text supplied\", it implies the content of the argument.\n\t\t// If the user supplies multiple arguments, we might join them or count the first.\n\t\t// Given the ambiguity, joining is a safe bet for \"the text\", \n\t\t// but strictly speaking, \"the argument\" (singular) suggests the first one.\n\t\t// Let's assume the first argument is the target text.\n\t\ttextToCount = input.Arguments[0]\n\t}\n\n\t// Count Unicode characters (runes)\n\trunes := []rune(textToCount)\n\tcount := len(runes)\n\n\t// Store the result in the State map\n\tresult.State[\"character_count\"] = fmt.Sprintf(\"%d\", count)\n\n\treturn true\n}\n```\n\n*Note: The code above assumes `fmt` is imported. If the task expects the count to be stored as a specific key defined elsewhere, adjust the key name accordingly. Also, if the requirement implies processing all arguments as a single text block, replace `input.Arguments[0]` with `strings.Join(input.Arguments, \" \")`.*\n\n**Refined version assuming standard task behavior (processing the first argument or joining them):**\n\n```go\nimport \"fmt\"\nimport \"strings\"\n\nfunc SatisfiesFeature001(input TaskInput, result TaskResult) bool {\n\t// Determine the text to count. \n\t// If the requirement is \"the text supplied\", and multiple arguments exist,\n\t// we typically join them or process the first. \n\t// Here we join them to treat the input as a single text block, \n\t// or strictly take the first if the spec implies a single argument.\n\t// Given \"the text supplied as its argument\" (singular), we take the first.\n\tif len(input.Arguments) == 0 {\n\t\tresult.State[\"character_count\"] = \"0\"\n\t\treturn true\n\t}\n\n\ttext := input.Arguments[0]\n\t\n\t// Count Unicode characters (runes)\n\tcount := len([]rune(text))\n\t\n\t// Store the result\n\tresult.State[\"character_count\"] = fmt.Sprintf(\"%d\", count)\n\t\n\treturn true\n}\n```",
+      "output_tokens": 732,
+      "elapsed_seconds": 51.699036607,
+      "outcome": {
+        "call_evidence_id": 14,
+        "status": "accepted",
+        "validation_error": null,
+        "created_at": "2026-09-13T10:53:45.348735+00:00"
+      }
+    }
+  ],
+  "context_metrics": {
+    "calls": 14,
+    "by_model": {
+      "qwen3.5:9b-q4_K_M": 14
+    },
+    "by_station": {
+      "conversation_objective_kind": 1,
+      "application_requirement_inventory": 1,
+      "application_requirement_candidate_authorization": 1,
+      "application_requirement_candidate_kind": 2,
+      "application_requirement_candidate_cardinality": 1,
+      "application_requirement_candidate_result_relation": 2,
+      "application_product_context": 1,
+      "application_classification": 1,
+      "application_project_stack_constraint": 1,
+      "fragment_generation": 3
+    },
+    "total_prompt_bytes": 14446,
+    "maximum_prompt_bytes": 3843
+  },
+  "verification_commands": [
+    {
+      "id": 1,
+      "job_id": 1,
+      "generation": 1,
+      "step_id": 3,
+      "step_attempt": 1,
+      "worker_id": "serial-worker",
+      "phase": "isolated_install",
+      "ordinal": 1,
+      "argv": [
+        "go",
+        "version"
+      ],
+      "environment": [
+        "GOLANG_VERSION=1.24.0",
+        "GOPATH=/go",
+        "GOTOOLCHAIN=local",
+        "PATH=/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      ],
+      "stdin_present": false,
+      "stdin": null,
+      "working_directory": "/workspace",
+      "container_id": "18af5f32972d35f3612a47b8e8d76caff3e39d989e9907d119e5ccbdf38f041d",
+      "container_image_id": "sha256:2d40d4fc278dad38be0777d5e2a88a2c6dee51b0b29c97a764fc6c6a11ca893c",
+      "container_exec_id": "58991b00dc8dafc679be2991fe92619c550823070c645e532d5707f743e9ed59",
+      "container_network_enabled": false,
+      "started_at": "2026-09-13T10:52:00.971486+00:00",
+      "finished_at": "2026-09-13T10:52:01.07342+00:00",
+      "duration_nanos": 101934000,
+      "exit_code": 0,
+      "launch_error": null,
+      "observation_error": null,
+      "stdout": "go version go1.24.0 linux/amd64\n",
+      "stdout_complete": true,
+      "stderr": "",
+      "stderr_complete": true,
+      "status": "succeeded",
+      "created_at": "2026-09-13T10:52:01.074351+00:00"
+    },
+    {
+      "id": 2,
+      "job_id": 1,
+      "generation": 1,
+      "step_id": 3,
+      "step_attempt": 1,
+      "worker_id": "serial-worker",
+      "phase": "isolated_task",
+      "ordinal": 2,
+      "argv": [
+        "/bin/sh",
+        "-c",
+        "rm -rf -- /workspace/* /workspace/.[!.]* /workspace/..?* /tmp/omnidex-go-output && mkdir -p /tmp/omnidex-go-output"
+      ],
+      "environment": [
+        "GOLANG_VERSION=1.24.0",
+        "GOPATH=/go",
+        "GOTOOLCHAIN=local",
+        "PATH=/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      ],
+      "stdin_present": false,
+      "stdin": null,
+      "working_directory": "/workspace",
+      "container_id": "18af5f32972d35f3612a47b8e8d76caff3e39d989e9907d119e5ccbdf38f041d",
+      "container_image_id": "sha256:2d40d4fc278dad38be0777d5e2a88a2c6dee51b0b29c97a764fc6c6a11ca893c",
+      "container_exec_id": "b8c953b851b2dd0588caca7275319675e5af497f397451ff89921014da0c7b63",
+      "container_network_enabled": false,
+      "started_at": "2026-09-13T10:53:45.352518+00:00",
+      "finished_at": "2026-09-13T10:53:45.492253+00:00",
+      "duration_nanos": 139735000,
+      "exit_code": 0,
+      "launch_error": null,
+      "observation_error": null,
+      "stdout": "",
+      "stdout_complete": true,
+      "stderr": "",
+      "stderr_complete": true,
+      "status": "succeeded",
+      "created_at": "2026-09-13T10:53:45.492591+00:00"
+    },
+    {
+      "id": 3,
+      "job_id": 1,
+      "generation": 1,
+      "step_id": 3,
+      "step_attempt": 1,
+      "worker_id": "serial-worker",
+      "phase": "isolated_task",
+      "ordinal": 3,
+      "argv": [
+        "gofmt",
+        "-d",
+        "--",
+        "feature001.go",
+        "feature001_test.go",
+        "runtime.go"
+      ],
+      "environment": [
+        "GOCACHE=/tmp/omnidex-go-cache",
+        "GOENV=off",
+        "GOFLAGS=-buildvcs=false -mod=readonly",
+        "GOLANG_VERSION=1.24.0",
+        "GOMODCACHE=/tmp/omnidex-go-modules",
+        "GOPATH=/go",
+        "GOPROXY=off",
+        "GOSUMDB=off",
+        "GOTELEMETRY=off",
+        "GOTOOLCHAIN=local",
+        "GOWORK=off",
+        "PATH=/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      ],
+      "stdin_present": false,
+      "stdin": null,
+      "working_directory": "/workspace",
+      "container_id": "18af5f32972d35f3612a47b8e8d76caff3e39d989e9907d119e5ccbdf38f041d",
+      "container_image_id": "sha256:2d40d4fc278dad38be0777d5e2a88a2c6dee51b0b29c97a764fc6c6a11ca893c",
+      "container_exec_id": "6ad60793ea5d905a008da703580b98dc1ec70a162e1e4cf1985cf16962c9cf5d",
+      "container_network_enabled": false,
+      "started_at": "2026-09-13T10:53:45.522458+00:00",
+      "finished_at": "2026-09-13T10:53:45.627412+00:00",
+      "duration_nanos": 104954000,
+      "exit_code": 0,
+      "launch_error": null,
+      "observation_error": null,
+      "stdout": "",
+      "stdout_complete": true,
+      "stderr": "",
+      "stderr_complete": true,
+      "status": "succeeded",
+      "created_at": "2026-09-13T10:53:45.62781+00:00"
+    },
+    {
+      "id": 4,
+      "job_id": 1,
+      "generation": 1,
+      "step_id": 3,
+      "step_attempt": 1,
+      "worker_id": "serial-worker",
+      "phase": "isolated_task",
+      "ordinal": 4,
+      "argv": [
+        "go",
+        "test",
+        "-count=1",
+        "-run",
+        "^TestFeature001$",
+        "./..."
+      ],
+      "environment": [
+        "GOCACHE=/tmp/omnidex-go-cache",
+        "GOENV=off",
+        "GOFLAGS=-buildvcs=false -mod=readonly",
+        "GOLANG_VERSION=1.24.0",
+        "GOMODCACHE=/tmp/omnidex-go-modules",
+        "GOPATH=/go",
+        "GOPROXY=off",
+        "GOSUMDB=off",
+        "GOTELEMETRY=off",
+        "GOTOOLCHAIN=local",
+        "GOWORK=off",
+        "PATH=/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      ],
+      "stdin_present": false,
+      "stdin": null,
+      "working_directory": "/workspace",
+      "container_id": "18af5f32972d35f3612a47b8e8d76caff3e39d989e9907d119e5ccbdf38f041d",
+      "container_image_id": "sha256:2d40d4fc278dad38be0777d5e2a88a2c6dee51b0b29c97a764fc6c6a11ca893c",
+      "container_exec_id": "518a9e61f84e530431e16b45350c6c9bed1d0b473c9d620191c4c49ea841bd6a",
+      "container_network_enabled": false,
+      "started_at": "2026-09-13T10:53:45.630497+00:00",
+      "finished_at": "2026-09-13T10:53:49.638524+00:00",
+      "duration_nanos": 4008027000,
+      "exit_code": 0,
+      "launch_error": null,
+      "observation_error": null,
+      "stdout": "ok  \texample.invalid/workload\t0.002s\n",
+      "stdout_complete": true,
+      "stderr": "",
+      "stderr_complete": true,
+      "status": "succeeded",
+      "created_at": "2026-09-13T10:53:49.639719+00:00"
+    },
+    {
+      "id": 5,
+      "job_id": 1,
+      "generation": 1,
+      "step_id": 3,
+      "step_attempt": 1,
+      "worker_id": "serial-worker",
+      "phase": "isolated_final",
+      "ordinal": 5,
+      "argv": [
+        "/bin/sh",
+        "-c",
+        "rm -rf -- /workspace/* /workspace/.[!.]* /workspace/..?* /tmp/omnidex-go-output && mkdir -p /tmp/omnidex-go-output"
+      ],
+      "environment": [
+        "GOLANG_VERSION=1.24.0",
+        "GOPATH=/go",
+        "GOTOOLCHAIN=local",
+        "PATH=/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      ],
+      "stdin_present": false,
+      "stdin": null,
+      "working_directory": "/workspace",
+      "container_id": "18af5f32972d35f3612a47b8e8d76caff3e39d989e9907d119e5ccbdf38f041d",
+      "container_image_id": "sha256:2d40d4fc278dad38be0777d5e2a88a2c6dee51b0b29c97a764fc6c6a11ca893c",
+      "container_exec_id": "6806c0f3d87fbd8f6bdba8e7463995346b87ce22777cceb922799545c9fa21a2",
+      "container_network_enabled": false,
+      "started_at": "2026-09-13T10:53:49.673884+00:00",
+      "finished_at": "2026-09-13T10:53:49.76501+00:00",
+      "duration_nanos": 91126000,
+      "exit_code": 0,
+      "launch_error": null,
+      "observation_error": null,
+      "stdout": "",
+      "stdout_complete": true,
+      "stderr": "",
+      "stderr_complete": true,
+      "status": "succeeded",
+      "created_at": "2026-09-13T10:53:49.765338+00:00"
+    },
+    {
+      "id": 6,
+      "job_id": 1,
+      "generation": 1,
+      "step_id": 3,
+      "step_attempt": 1,
+      "worker_id": "serial-worker",
+      "phase": "isolated_final",
+      "ordinal": 6,
+      "argv": [
+        "gofmt",
+        "-d",
+        "--",
+        "feature001.go",
+        "feature001_test.go",
+        "main.go",
+        "runtime.go"
+      ],
+      "environment": [
+        "GOCACHE=/tmp/omnidex-go-cache",
+        "GOENV=off",
+        "GOFLAGS=-buildvcs=false -mod=readonly",
+        "GOLANG_VERSION=1.24.0",
+        "GOMODCACHE=/tmp/omnidex-go-modules",
+        "GOPATH=/go",
+        "GOPROXY=off",
+        "GOSUMDB=off",
+        "GOTELEMETRY=off",
+        "GOTOOLCHAIN=local",
+        "GOWORK=off",
+        "PATH=/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      ],
+      "stdin_present": false,
+      "stdin": null,
+      "working_directory": "/workspace",
+      "container_id": "18af5f32972d35f3612a47b8e8d76caff3e39d989e9907d119e5ccbdf38f041d",
+      "container_image_id": "sha256:2d40d4fc278dad38be0777d5e2a88a2c6dee51b0b29c97a764fc6c6a11ca893c",
+      "container_exec_id": "14e32a5e652a54c25d45dcda0dd6efb1c5cf3c2d80f840dbb729c6f1b710558d",
+      "container_network_enabled": false,
+      "started_at": "2026-09-13T10:53:49.791988+00:00",
+      "finished_at": "2026-09-13T10:53:49.877706+00:00",
+      "duration_nanos": 85718000,
+      "exit_code": 0,
+      "launch_error": null,
+      "observation_error": null,
+      "stdout": "",
+      "stdout_complete": true,
+      "stderr": "",
+      "stderr_complete": true,
+      "status": "succeeded",
+      "created_at": "2026-09-13T10:53:49.878052+00:00"
+    },
+    {
+      "id": 7,
+      "job_id": 1,
+      "generation": 1,
+      "step_id": 3,
+      "step_attempt": 1,
+      "worker_id": "serial-worker",
+      "phase": "isolated_final",
+      "ordinal": 7,
+      "argv": [
+        "go",
+        "test",
+        "-count=1",
+        "./..."
+      ],
+      "environment": [
+        "GOCACHE=/tmp/omnidex-go-cache",
+        "GOENV=off",
+        "GOFLAGS=-buildvcs=false -mod=readonly",
+        "GOLANG_VERSION=1.24.0",
+        "GOMODCACHE=/tmp/omnidex-go-modules",
+        "GOPATH=/go",
+        "GOPROXY=off",
+        "GOSUMDB=off",
+        "GOTELEMETRY=off",
+        "GOTOOLCHAIN=local",
+        "GOWORK=off",
+        "PATH=/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      ],
+      "stdin_present": false,
+      "stdin": null,
+      "working_directory": "/workspace",
+      "container_id": "18af5f32972d35f3612a47b8e8d76caff3e39d989e9907d119e5ccbdf38f041d",
+      "container_image_id": "sha256:2d40d4fc278dad38be0777d5e2a88a2c6dee51b0b29c97a764fc6c6a11ca893c",
+      "container_exec_id": "868301549f9e56d40135e5a9a1a26a33b7c177d6bc2b1cd853d3acb5b68876b9",
+      "container_network_enabled": false,
+      "started_at": "2026-09-13T10:53:49.882757+00:00",
+      "finished_at": "2026-09-13T10:53:50.158159+00:00",
+      "duration_nanos": 275402000,
+      "exit_code": 0,
+      "launch_error": null,
+      "observation_error": null,
+      "stdout": "ok  \texample.invalid/workload\t0.001s\n",
+      "stdout_complete": true,
+      "stderr": "",
+      "stderr_complete": true,
+      "status": "succeeded",
+      "created_at": "2026-09-13T10:53:50.158551+00:00"
+    },
+    {
+      "id": 8,
+      "job_id": 1,
+      "generation": 1,
+      "step_id": 3,
+      "step_attempt": 1,
+      "worker_id": "serial-worker",
+      "phase": "isolated_final",
+      "ordinal": 8,
+      "argv": [
+        "go",
+        "vet",
+        "./..."
+      ],
+      "environment": [
+        "GOCACHE=/tmp/omnidex-go-cache",
+        "GOENV=off",
+        "GOFLAGS=-buildvcs=false -mod=readonly",
+        "GOLANG_VERSION=1.24.0",
+        "GOMODCACHE=/tmp/omnidex-go-modules",
+        "GOPATH=/go",
+        "GOPROXY=off",
+        "GOSUMDB=off",
+        "GOTELEMETRY=off",
+        "GOTOOLCHAIN=local",
+        "GOWORK=off",
+        "PATH=/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      ],
+      "stdin_present": false,
+      "stdin": null,
+      "working_directory": "/workspace",
+      "container_id": "18af5f32972d35f3612a47b8e8d76caff3e39d989e9907d119e5ccbdf38f041d",
+      "container_image_id": "sha256:2d40d4fc278dad38be0777d5e2a88a2c6dee51b0b29c97a764fc6c6a11ca893c",
+      "container_exec_id": "3e8e6a15450093f8878de0d8536627ebdf533be33d209fd3dfe58807f35cb150",
+      "container_network_enabled": false,
+      "started_at": "2026-09-13T10:53:50.162814+00:00",
+      "finished_at": "2026-09-13T10:53:50.926856+00:00",
+      "duration_nanos": 764042000,
+      "exit_code": 0,
+      "launch_error": null,
+      "observation_error": null,
+      "stdout": "",
+      "stdout_complete": true,
+      "stderr": "",
+      "stderr_complete": true,
+      "status": "succeeded",
+      "created_at": "2026-09-13T10:53:50.927383+00:00"
+    },
+    {
+      "id": 9,
+      "job_id": 1,
+      "generation": 1,
+      "step_id": 3,
+      "step_attempt": 1,
+      "worker_id": "serial-worker",
+      "phase": "isolated_final",
+      "ordinal": 9,
+      "argv": [
+        "go",
+        "build",
+        "-o",
+        "/tmp/omnidex-go-output/application",
+        "./..."
+      ],
+      "environment": [
+        "GOCACHE=/tmp/omnidex-go-cache",
+        "GOENV=off",
+        "GOFLAGS=-buildvcs=false -mod=readonly",
+        "GOLANG_VERSION=1.24.0",
+        "GOMODCACHE=/tmp/omnidex-go-modules",
+        "GOPATH=/go",
+        "GOPROXY=off",
+        "GOSUMDB=off",
+        "GOTELEMETRY=off",
+        "GOTOOLCHAIN=local",
+        "GOWORK=off",
+        "PATH=/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      ],
+      "stdin_present": false,
+      "stdin": null,
+      "working_directory": "/workspace",
+      "container_id": "18af5f32972d35f3612a47b8e8d76caff3e39d989e9907d119e5ccbdf38f041d",
+      "container_image_id": "sha256:2d40d4fc278dad38be0777d5e2a88a2c6dee51b0b29c97a764fc6c6a11ca893c",
+      "container_exec_id": "ebe8b36c25232b28bc3325cc64ca0160d5a2dff3608febd0467555d98d916963",
+      "container_network_enabled": false,
+      "started_at": "2026-09-13T10:53:50.942724+00:00",
+      "finished_at": "2026-09-13T10:53:51.368329+00:00",
+      "duration_nanos": 425605000,
+      "exit_code": 0,
+      "launch_error": null,
+      "observation_error": null,
+      "stdout": "",
+      "stdout_complete": true,
+      "stderr": "",
+      "stderr_complete": true,
+      "status": "succeeded",
+      "created_at": "2026-09-13T10:53:51.36909+00:00"
+    },
+    {
+      "id": 10,
+      "job_id": 1,
+      "generation": 1,
+      "step_id": 3,
+      "step_attempt": 1,
+      "worker_id": "serial-worker",
+      "phase": "host_install",
+      "ordinal": 10,
+      "argv": [
+        "go",
+        "version"
+      ],
+      "environment": [
+        "GOLANG_VERSION=1.24.0",
+        "GOPATH=/go",
+        "GOTOOLCHAIN=local",
+        "PATH=/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      ],
+      "stdin_present": false,
+      "stdin": null,
+      "working_directory": "/workspace",
+      "container_id": "f50db32a87c4270fefc237e619e3971bb883324274934f0ca0908f126bff3a07",
+      "container_image_id": "sha256:2d40d4fc278dad38be0777d5e2a88a2c6dee51b0b29c97a764fc6c6a11ca893c",
+      "container_exec_id": "dcf17c8c5a448df12d6b7776451f4375a54145093fabfadf707a175aef78b855",
+      "container_network_enabled": false,
+      "started_at": "2026-09-13T10:53:54.788277+00:00",
+      "finished_at": "2026-09-13T10:53:54.880776+00:00",
+      "duration_nanos": 92499000,
+      "exit_code": 0,
+      "launch_error": null,
+      "observation_error": null,
+      "stdout": "go version go1.24.0 linux/amd64\n",
+      "stdout_complete": true,
+      "stderr": "",
+      "stderr_complete": true,
+      "status": "succeeded",
+      "created_at": "2026-09-13T10:53:54.881296+00:00"
+    },
+    {
+      "id": 11,
+      "job_id": 1,
+      "generation": 1,
+      "step_id": 3,
+      "step_attempt": 1,
+      "worker_id": "serial-worker",
+      "phase": "host_final",
+      "ordinal": 11,
+      "argv": [
+        "/bin/sh",
+        "-c",
+        "rm -rf -- /workspace/* /workspace/.[!.]* /workspace/..?* /tmp/omnidex-go-output && mkdir -p /tmp/omnidex-go-output"
+      ],
+      "environment": [
+        "GOLANG_VERSION=1.24.0",
+        "GOPATH=/go",
+        "GOTOOLCHAIN=local",
+        "PATH=/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      ],
+      "stdin_present": false,
+      "stdin": null,
+      "working_directory": "/workspace",
+      "container_id": "f50db32a87c4270fefc237e619e3971bb883324274934f0ca0908f126bff3a07",
+      "container_image_id": "sha256:2d40d4fc278dad38be0777d5e2a88a2c6dee51b0b29c97a764fc6c6a11ca893c",
+      "container_exec_id": "02cb78e5553ba0dc0d661421da86f591ffa0bf0c7e177cef34ac6c5bffb4175a",
+      "container_network_enabled": false,
+      "started_at": "2026-09-13T10:53:54.885119+00:00",
+      "finished_at": "2026-09-13T10:53:54.97144+00:00",
+      "duration_nanos": 86321000,
+      "exit_code": 0,
+      "launch_error": null,
+      "observation_error": null,
+      "stdout": "",
+      "stdout_complete": true,
+      "stderr": "",
+      "stderr_complete": true,
+      "status": "succeeded",
+      "created_at": "2026-09-13T10:53:54.972001+00:00"
+    },
+    {
+      "id": 12,
+      "job_id": 1,
+      "generation": 1,
+      "step_id": 3,
+      "step_attempt": 1,
+      "worker_id": "serial-worker",
+      "phase": "host_final",
+      "ordinal": 12,
+      "argv": [
+        "gofmt",
+        "-d",
+        "--",
+        "feature001.go",
+        "feature001_test.go",
+        "main.go",
+        "runtime.go"
+      ],
+      "environment": [
+        "GOCACHE=/tmp/omnidex-go-cache",
+        "GOENV=off",
+        "GOFLAGS=-buildvcs=false -mod=readonly",
+        "GOLANG_VERSION=1.24.0",
+        "GOMODCACHE=/tmp/omnidex-go-modules",
+        "GOPATH=/go",
+        "GOPROXY=off",
+        "GOSUMDB=off",
+        "GOTELEMETRY=off",
+        "GOTOOLCHAIN=local",
+        "GOWORK=off",
+        "PATH=/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      ],
+      "stdin_present": false,
+      "stdin": null,
+      "working_directory": "/workspace",
+      "container_id": "f50db32a87c4270fefc237e619e3971bb883324274934f0ca0908f126bff3a07",
+      "container_image_id": "sha256:2d40d4fc278dad38be0777d5e2a88a2c6dee51b0b29c97a764fc6c6a11ca893c",
+      "container_exec_id": "cbc1b4a6d90d180023105af058791e639a9bb943b8b2111cd60627b2616c4d9b",
+      "container_network_enabled": false,
+      "started_at": "2026-09-13T10:53:54.997424+00:00",
+      "finished_at": "2026-09-13T10:53:55.087734+00:00",
+      "duration_nanos": 90310000,
+      "exit_code": 0,
+      "launch_error": null,
+      "observation_error": null,
+      "stdout": "",
+      "stdout_complete": true,
+      "stderr": "",
+      "stderr_complete": true,
+      "status": "succeeded",
+      "created_at": "2026-09-13T10:53:55.088213+00:00"
+    },
+    {
+      "id": 13,
+      "job_id": 1,
+      "generation": 1,
+      "step_id": 3,
+      "step_attempt": 1,
+      "worker_id": "serial-worker",
+      "phase": "host_final",
+      "ordinal": 13,
+      "argv": [
+        "go",
+        "test",
+        "-count=1",
+        "./..."
+      ],
+      "environment": [
+        "GOCACHE=/tmp/omnidex-go-cache",
+        "GOENV=off",
+        "GOFLAGS=-buildvcs=false -mod=readonly",
+        "GOLANG_VERSION=1.24.0",
+        "GOMODCACHE=/tmp/omnidex-go-modules",
+        "GOPATH=/go",
+        "GOPROXY=off",
+        "GOSUMDB=off",
+        "GOTELEMETRY=off",
+        "GOTOOLCHAIN=local",
+        "GOWORK=off",
+        "PATH=/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      ],
+      "stdin_present": false,
+      "stdin": null,
+      "working_directory": "/workspace",
+      "container_id": "f50db32a87c4270fefc237e619e3971bb883324274934f0ca0908f126bff3a07",
+      "container_image_id": "sha256:2d40d4fc278dad38be0777d5e2a88a2c6dee51b0b29c97a764fc6c6a11ca893c",
+      "container_exec_id": "7fc8f09991eabc4fb85f8abe40b5bb2c16ec3c57623bd31bb28ee439521b9ae0",
+      "container_network_enabled": false,
+      "started_at": "2026-09-13T10:53:55.090197+00:00",
+      "finished_at": "2026-09-13T10:53:58.870807+00:00",
+      "duration_nanos": 3780610000,
+      "exit_code": 0,
+      "launch_error": null,
+      "observation_error": null,
+      "stdout": "ok  \texample.invalid/workload\t0.001s\n",
+      "stdout_complete": true,
+      "stderr": "",
+      "stderr_complete": true,
+      "status": "succeeded",
+      "created_at": "2026-09-13T10:53:58.871324+00:00"
+    },
+    {
+      "id": 14,
+      "job_id": 1,
+      "generation": 1,
+      "step_id": 3,
+      "step_attempt": 1,
+      "worker_id": "serial-worker",
+      "phase": "host_final",
+      "ordinal": 14,
+      "argv": [
+        "go",
+        "vet",
+        "./..."
+      ],
+      "environment": [
+        "GOCACHE=/tmp/omnidex-go-cache",
+        "GOENV=off",
+        "GOFLAGS=-buildvcs=false -mod=readonly",
+        "GOLANG_VERSION=1.24.0",
+        "GOMODCACHE=/tmp/omnidex-go-modules",
+        "GOPATH=/go",
+        "GOPROXY=off",
+        "GOSUMDB=off",
+        "GOTELEMETRY=off",
+        "GOTOOLCHAIN=local",
+        "GOWORK=off",
+        "PATH=/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      ],
+      "stdin_present": false,
+      "stdin": null,
+      "working_directory": "/workspace",
+      "container_id": "f50db32a87c4270fefc237e619e3971bb883324274934f0ca0908f126bff3a07",
+      "container_image_id": "sha256:2d40d4fc278dad38be0777d5e2a88a2c6dee51b0b29c97a764fc6c6a11ca893c",
+      "container_exec_id": "570c698cb6099ca5a4faf4011ee584702e10e068538f19f7a9db72a36c03de31",
+      "container_network_enabled": false,
+      "started_at": "2026-09-13T10:53:58.873363+00:00",
+      "finished_at": "2026-09-13T10:53:59.516394+00:00",
+      "duration_nanos": 643031000,
+      "exit_code": 0,
+      "launch_error": null,
+      "observation_error": null,
+      "stdout": "",
+      "stdout_complete": true,
+      "stderr": "",
+      "stderr_complete": true,
+      "status": "succeeded",
+      "created_at": "2026-09-13T10:53:59.516934+00:00"
+    },
+    {
+      "id": 15,
+      "job_id": 1,
+      "generation": 1,
+      "step_id": 3,
+      "step_attempt": 1,
+      "worker_id": "serial-worker",
+      "phase": "host_final",
+      "ordinal": 15,
+      "argv": [
+        "go",
+        "build",
+        "-o",
+        "/tmp/omnidex-go-output/application",
+        "./..."
+      ],
+      "environment": [
+        "GOCACHE=/tmp/omnidex-go-cache",
+        "GOENV=off",
+        "GOFLAGS=-buildvcs=false -mod=readonly",
+        "GOLANG_VERSION=1.24.0",
+        "GOMODCACHE=/tmp/omnidex-go-modules",
+        "GOPATH=/go",
+        "GOPROXY=off",
+        "GOSUMDB=off",
+        "GOTELEMETRY=off",
+        "GOTOOLCHAIN=local",
+        "GOWORK=off",
+        "PATH=/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      ],
+      "stdin_present": false,
+      "stdin": null,
+      "working_directory": "/workspace",
+      "container_id": "f50db32a87c4270fefc237e619e3971bb883324274934f0ca0908f126bff3a07",
+      "container_image_id": "sha256:2d40d4fc278dad38be0777d5e2a88a2c6dee51b0b29c97a764fc6c6a11ca893c",
+      "container_exec_id": "53e0d3a0e651835058f719e0fb9b96a23fdff85cb94939ac874ef3edbe23da61",
+      "container_network_enabled": false,
+      "started_at": "2026-09-13T10:53:59.519273+00:00",
+      "finished_at": "2026-09-13T10:53:59.743087+00:00",
+      "duration_nanos": 223814000,
+      "exit_code": 0,
+      "launch_error": null,
+      "observation_error": null,
+      "stdout": "",
+      "stdout_complete": true,
+      "stderr": "",
+      "stderr_complete": true,
+      "status": "succeeded",
+      "created_at": "2026-09-13T10:53:59.743601+00:00"
+    }
+  ],
+  "independent_execution": {
+    "scope": "Independent evaluation after builder stopped; criteria unavailable to builder",
+    "platform": "Linux-7.0.10-arch1-1-x86_64-with-glibc2.43",
+    "commands": [
+      {
+        "command": [
+          "go",
+          "version"
+        ],
+        "cwd": "/tmp/omnidex-linux-smoke.nk_ap7a3/workspace",
+        "exit_code": 0,
+        "stdout": "go version go1.26.3-X:nodwarf5 linux/amd64\n",
+        "stderr": "",
+        "elapsed_seconds": 0.0073021219577640295
+      },
+      {
+        "command": [
+          "go",
+          "test",
+          "-count=1",
+          "./..."
+        ],
+        "cwd": "/tmp/omnidex-linux-smoke.nk_ap7a3/workspace",
+        "exit_code": 0,
+        "stdout": "ok  \texample.invalid/workload\t0.001s\n",
+        "stderr": "",
+        "elapsed_seconds": 0.1415198720060289
+      },
+      {
+        "command": [
+          "go",
+          "build",
+          "-buildvcs=false",
+          "-o",
+          "/tmp/omnidex-linux-smoke.nk_ap7a3/generated-application",
+          "."
+        ],
+        "cwd": "/tmp/omnidex-linux-smoke.nk_ap7a3/workspace",
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "elapsed_seconds": 0.11572683486156166
+      },
+      {
+        "command": [
+          "/tmp/omnidex-linux-smoke.nk_ap7a3/generated-application",
+          "hello"
+        ],
+        "cwd": "/tmp/omnidex-linux-smoke.nk_ap7a3/workspace",
+        "exit_code": 0,
+        "stdout": "Character count: 5\n",
+        "stderr": "",
+        "elapsed_seconds": 0.002641214057803154,
+        "expected_count": 5,
+        "passed": true
+      },
+      {
+        "command": [
+          "/tmp/omnidex-linux-smoke.nk_ap7a3/generated-application",
+          "é🙂漢"
+        ],
+        "cwd": "/tmp/omnidex-linux-smoke.nk_ap7a3/workspace",
+        "exit_code": 0,
+        "stdout": "Character count: 3\n",
+        "stderr": "",
+        "elapsed_seconds": 0.0009973731357604265,
+        "expected_count": 3,
+        "passed": true
+      },
+      {
+        "command": [
+          "/tmp/omnidex-linux-smoke.nk_ap7a3/generated-application",
+          ""
+        ],
+        "cwd": "/tmp/omnidex-linux-smoke.nk_ap7a3/workspace",
+        "exit_code": 0,
+        "stdout": "Character count: 0\n",
+        "stderr": "",
+        "elapsed_seconds": 0.000863201916217804,
+        "expected_count": 0,
+        "passed": true
+      },
+      {
+        "command": [
+          "/tmp/omnidex-linux-smoke.nk_ap7a3/generated-application",
+          "hello"
+        ],
+        "stdin": "open pseudo-terminal without EOF",
+        "expected_count": 5,
+        "exit_code": 0,
+        "stdout": "Character count: 5\n",
+        "stderr": "",
+        "passed": true,
+        "elapsed_seconds": 0.0009209699928760529
+      }
+    ],
+    "source_sha256": {
+      "feature001.go": "0f2536d9483205898001969d7528265fe5901b01af0db0b579bca74d6a91ce5e",
+      "feature001_test.go": "7dc608f46f936700f5b4478bfa46f4359105406328414ffc1c84fd304ffcd8cf",
+      "go.mod": "650daacda8e8284bff697ee549877878bed3c6897cfc8cca81faa8187a7d6711",
+      "main.go": "6a84134f3ed64f0b89c9a01be16e4bcd907af6b46d2af48aa39f4469b182fc3b",
+      "runtime.go": "69f4df092d90cb28db70c2129e40c4b1bad1aac98fd1f7b24087d221066d9c3b"
+    },
+    "source_unchanged": true,
+    "passed": true
+  },
+  "earlier_diagnostics": [
+    {
+      "directory": "/tmp/omnidex-linux-smoke.qu97v5xn",
+      "created_at": "2026-09-13T07:39:55.699633+00:00",
+      "status": "failed",
+      "error": "compile deterministic assembly: execute application workload task task_001: generate application task block feature.001: typescript fragment generation failed: validation defect has no code-proven mutable source span: TypeScript implementation candidate has no exact public interaction surface: browser public surface button requires exact type=\"button\"",
+      "calls": 12,
+      "published_files": 0,
+      "independent_execution_passed": null
+    },
+    {
+      "directory": "/tmp/omnidex-linux-smoke.prpd192j",
+      "created_at": "2026-09-13T08:03:34.124317+00:00",
+      "status": "failed",
+      "error": "compile deterministic assembly: execute application workload task task_001: generate application task block feature.001: go fragment generation failed: validation defect has no code-proven mutable source span: Go fragment comments and compiler directives are forbidden",
+      "calls": 12,
+      "published_files": 0,
+      "independent_execution_passed": null
+    },
+    {
+      "directory": "/tmp/omnidex-linux-smoke.zn8u9j11",
+      "created_at": "2026-09-13T08:17:17.77756+00:00",
+      "status": "running",
+      "error": null,
+      "calls": 12,
+      "published_files": 0,
+      "independent_execution_passed": null
+    },
+    {
+      "directory": "/tmp/omnidex-linux-smoke.hrca2tta",
+      "created_at": "2026-09-13T08:35:08.247741+00:00",
+      "status": "failed",
+      "error": "compile deterministic assembly: execute application workload task task_001: generate application task block acceptance.001: go fragment generation failed: validation defect has no code-proven mutable source span: Go source-body extraction: source response contains 5 fenced regions; exactly one is required for deterministic extraction",
+      "calls": 13,
+      "published_files": 0,
+      "independent_execution_passed": null
+    },
+    {
+      "directory": "/tmp/omnidex-linux-smoke.6kh9ds9d",
+      "created_at": "2026-09-13T09:17:38.511129+00:00",
+      "status": "failed",
+      "error": "compile deterministic assembly: execute application workload task task_001: generate application task block feature.001: go fragment generation failed: validation defect has no code-proven mutable source span: Go response contains 2 different bodies for the requested declaration",
+      "calls": 12,
+      "published_files": 0,
+      "independent_execution_passed": null
+    },
+    {
+      "directory": "/tmp/omnidex-linux-smoke.k_920lp3",
+      "created_at": "2026-09-13T09:25:30.388507+00:00",
+      "status": "failed",
+      "error": "compile deterministic assembly: execute application workload task task_001: generate application task block acceptance.001: go fragment generation failed: Go acceptance block acceptance.001 must observe Feature001 and check the accepted requirement with 1 direct result-field failure condition",
+      "calls": 15,
+      "published_files": 0,
+      "independent_execution_passed": null
+    },
+    {
+      "directory": "/tmp/omnidex-linux-smoke.ycu2jmhn",
+      "created_at": "2026-09-13T09:42:35.490119+00:00",
+      "status": "completed",
+      "error": null,
+      "calls": 13,
+      "published_files": 5,
+      "independent_execution_passed": false
+    },
+    {
+      "directory": "/tmp/omnidex-linux-smoke.6gaz7h5f",
+      "created_at": "2026-09-13T10:07:09.936236+00:00",
+      "status": "failed",
+      "error": "compile deterministic assembly: execute application workload task task_001: verify application task task_001: Docker experiment command exited 1",
+      "calls": 13,
+      "published_files": 0,
+      "independent_execution_passed": null
+    }
+  ],
+  "known_verification_defect": "The generated predicate assigns a computed value to result.State and returns constant true. Generated Go tests do not establish the requested behavior. Only the recorded independent post-build executions establish this narrow functional result."
+}

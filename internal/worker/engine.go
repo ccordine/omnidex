@@ -13,6 +13,7 @@ import (
 	"github.com/gryph/omnidex/internal/queue"
 	"github.com/gryph/omnidex/internal/websearch"
 	workspacefacts "github.com/gryph/omnidex/internal/workspace"
+	"github.com/gryph/omnidex/internal/workspacetransport"
 )
 
 const stepControlPollInterval = 300 * time.Millisecond
@@ -26,6 +27,7 @@ type Options struct {
 	PollInterval            string
 	InferenceContextTokens  string
 	HostDirectoryAccessRoot string
+	WorkspaceConnections    *workspacetransport.Hub
 	Logger                  *log.Logger
 	RuntimeEventSink        RuntimeEventSink
 }
@@ -37,6 +39,7 @@ type Service struct {
 	pollInterval           string
 	inferenceContextTokens string
 	hostDirectoryAccess    workspacefacts.HostDirectoryAccess
+	workspaceConnections   *workspacetransport.Hub
 	completeStep           stepCompleteFunc
 	failStep               stepFailFunc
 	logger                 *log.Logger
@@ -54,20 +57,14 @@ func New(
 	if repo == nil {
 		return nil, fmt.Errorf("worker repository is required")
 	}
-	hostDirectoryAccess, err := workspacefacts.NewHostDirectoryAccess(
-		opts.HostDirectoryAccessRoot,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("construct worker host directory access authority: %w", err)
-	}
-
 	svc := &Service{
 		repo:                   repo,
 		stationClient:          stationClient,
 		webSearch:              webSearch,
 		pollInterval:           opts.PollInterval,
 		inferenceContextTokens: opts.InferenceContextTokens,
-		hostDirectoryAccess:    hostDirectoryAccess,
+		hostDirectoryAccess:    workspacefacts.NewHostDirectoryAccess(opts.HostDirectoryAccessRoot),
+		workspaceConnections:   opts.WorkspaceConnections,
 		completeStep:           repo.CompleteStep,
 		failStep:               repo.FailStep,
 		logger:                 opts.Logger,

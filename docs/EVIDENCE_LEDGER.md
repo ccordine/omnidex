@@ -15,7 +15,10 @@ not a cross-start archive or migration obligation.
   refer to their persisted parent call and exact mutable span. Recovery uses the
   existing call, not a request hash or a model-returned identity.
 - `verification_command_evidence` records the commands that actually ran and their
-  observed output, exit status, timing, and workspace association.
+  observed output, exit status, timing, and workspace association. Docker executions
+  retain the exact daemon-observed container, image, and exec identities and
+  network state. Successful native-process records and networking outside the
+  two dependency-acquisition phases are rejected by code and PostgreSQL.
 - `database_evidence` records one completed database read: the inspected schema,
   typed relational plan, actual SQL and arguments, returned typed rows, PostgreSQL
   plan estimates, byte and row counts, acquisition time, and elapsed duration.
@@ -29,6 +32,167 @@ not a cross-start archive or migration obligation.
 
 Raw internal records are not automatically public job-history payloads. Evidence
 must be retrieved through the appropriate bounded, job-owned repository read.
+
+## CLI build boundary
+
+[Dependency checks](../cmd/omni/portability_dependencies_test.go) resolve the
+production CLI with C dependencies disabled and reject imports of the queue,
+database, worker, experiment, language-parser, or testing packages. Shared session
+state, history, control types, and operation identities have one definition in
+`internal/model`; the API, repository, and client consume those definitions.
+Test-only console helpers are excluded from the production executable.
+
+The CLI cross-builds with `CGO_ENABLED=0` for Linux amd64, macOS arm64, and Windows
+amd64. The Linux artifact executes `version --json`. Native directory identity
+adapters use Unix device/inode values or Windows volume/file identifiers. Actual
+macOS/Windows filesystem and terminal execution remain unverified.
+
+[Workspace transport integration](../internal/api/cli_workspace_transport_integration_test.go)
+opens an actual WebSocket from the CLI client while the service's configured
+host mount is unavailable. Two unrelated workspace fixtures bootstrap, retrieve
+history, submit unchanged ordinary turns to persisted jobs, and reconnect to the
+same channel. Directory replacement and disconnection reject subsequent access.
+[Filesystem boundary checks](../internal/api/cli_workspace_boundary_test.go)
+prevent session authority from consulting a matching server filesystem path.
+The persisted client installation identifier disambiguates local filesystem
+numbers; it contains no workspace index, source, job ledger, or history.
+[Path persistence checks](../internal/queue/cli_workspace_path_integration_test.go)
+exercise Windows drive/UNC and Unix paths against PostgreSQL and prove that
+different client installations cannot share a channel by presenting equal local
+filesystem numbers. These are protocol/storage checks, not native Windows runs.
+
+[Retained-directory checks](../internal/projectroot/directory_handle_test.go)
+open the actual invoking directory before resolving its display path or starting
+configuration/network setup. [Handshake replacement coverage](../internal/client/workspace_retained_directory_test.go)
+rejects a substituted directory before the connection can gain authority.
+The connection and CLI tests pass with race detection.
+[Bootstrap lifetime coverage](../cmd/omni/chat_bootstrap_lifetime_test.go)
+proves completing the bootstrap HTTP request does not close the realtime stream.
+
+[Client file transport checks](../internal/workspacetransport/files_test.go)
+read exact file bytes and ordered directory pages, prepare the existing workspace
+reconciler, and receive each verified change before the final operation result.
+Content uses binary chunks of at most 1 MiB, with the reconciler's existing
+32 MiB file and 256 MiB aggregate content bounds. Directory pages contain at most
+256 entries. Code rejects malformed, unrelated, or out-of-sequence operation
+fields and validates change events against the exact prepared files, move
+sources, and parent transitions. Repeated or unrequested changes fail explicitly.
+[Connection lifetime checks](../internal/workspacetransport/lifetime_test.go)
+keep attestation available while another acquisition waits and prove that
+disconnection releases the native directory lock.
+[Canceled acquisition coverage](../internal/workspacetransport/acquisition_cancellation_test.go)
+delays a grant until after cancellation and requires release of that exact grant;
+canceling a lock waiter does not close another owner's connection.
+[In-flight cancellation coverage](../internal/workspacetransport/inflight_cancellation_test.go)
+blocks a constructed prepared operation while holding a real native fence, then
+disconnects its caller and observes both cancellation and lock release. The socket
+reader remains active during filesystem work so connection loss cancels its
+operation context.
+Already decoded change evidence is retained before reporting transport failure.
+
+[The worker boundary](../internal/worker/client_workspace_boundary_test.go)
+rejects substituting a same-named server directory for a disconnected client job.
+[Worker publication checks](../internal/worker/client_workspace_publication_test.go)
+exercise the connected client while the configured server mount is unavailable;
+they preserve earlier verified files across a later conflict, retain user edits,
+and continue zero-delta publication without rewriting accepted files. Source
+checks forbid direct server file reads in the coding observation and publication
+consumers. The runtime supplies the worker with the API's actual connection hub;
+the persisted job transport selects client access or explicit server-local access.
+
+[Constructed client/Docker checks](../internal/worker/client_workspace_docker_integration_test.go)
+create an actual CLI connection, submit a turn through the ordinary API, acquire
+the resulting persisted job's exact client workspace, and run two supplied Go
+declaration fixtures through Docker verification, progressive publication, and
+verification of the published bytes. PostgreSQL retains the actual container
+command evidence. The fixture supplies the program and enters the task lifecycle
+directly; it does not prove intent interpretation or an autonomous build.
+Requirement intake uses lexical request context without acquiring filesystem
+authority. A fresh unsteered ordinary-request build remains unproven. Native
+mutation currently has a Linux adapter; macOS/Windows mutation adapters and
+native terminal/filesystem execution remain unfinished.
+
+## Workspace publication
+
+[Publication lifecycle checks](../internal/worker/v3_application_publication_lifecycle_test.go)
+require verified publication before the next task starts and retain accepted source
+after generation, verification, publication, or final-stage failure.
+[Document projection checks](../internal/worker/v3_application_publication_projection_test.go)
+defer incomplete shared documents and their dependents, then release complete
+documents after their remaining owners are accepted.
+
+[Real execution fixtures](../internal/worker/v3_application_publication_integration_test.go)
+record Node compiler/test commands in PostgreSQL and inspect the actual workspace
+before later generation starts. Failures in argument counting and text conversion
+leave their own files unpublished while independent verified tasks publish. Combined accepted source runs
+its tests before additional publication; incomplete jobs never reach final verification.
+[Registered compiler coverage](../internal/worker/v3_compiled_language_evidence_integration_test.go)
+also exercises publication followed by final host verification for JavaScript, Rust,
+and Java.
+
+[Reconciliation regressions](../internal/worker/v3_application_publication_workspace_test.go)
+cover zero-delta publication, edits after preparation, a partial write failure,
+unowned-file conflicts, protected move sources, and continuation without rewriting
+earlier accepted files. [TypeScript stage checks](../internal/worker/v3_coding_typescript_stage_source_integration_test.go)
+run successful commands that change source or package bytes and require explicit
+rejection before publication. These fixtures establish framework mechanics; they
+do not establish live-model quality, autonomous application building, or general
+existing-project support.
+
+## Docker experiments
+
+[Docker execution fixtures](../internal/experiment/docker_integration_test.go)
+run two unrelated byte-transfer and arithmetic examples in actual containers from
+one locally available immutable image. Code transfers exact input files, invokes
+the declared command, observes Docker's exec state, and collects only declared
+regular files. The fixtures check binary stdin and output, file permissions,
+absence of host mounts and ambient host environment values, nonzero exits,
+timeouts, stream bounds, invalid artifact links, and removal of each owned
+container after success or failure.
+
+[Archive checks](../internal/experiment/archive_test.go) reject malformed paths,
+duplicate or missing files, invalid permissions, and exceeded byte bounds before
+returning artifacts. [Ownership checks](../internal/experiment/ownership_test.go)
+prevent an unbound create response from authorizing removal of another container.
+[Stream checks](../internal/experiment/cli_test.go) exercise Go's optimized copy
+path so it cannot bypass the output limit.
+
+[Workspace fixtures](../internal/experiment/workspace_integration_test.go) retain
+files across separate commands, preserve them after an ordinary nonzero exit,
+and prevent further dispatch after a timeout destroys the experiment. These
+package tests pass with race detection.
+
+All five registered stacks now use this runner through the production task and
+publication lifecycle. Code acquires the registered technical image, executes
+inside one retained container, and stores each command's actual Docker identity
+and result in PostgreSQL. Their final workspace verification checks authoritative
+source bytes before and after verifying an exact copy inside Docker. The compiler
+fixtures install failing host-toolchain shims to prove those native executables
+are not used.
+
+[Acquisition fixtures](../internal/experiment/acquisition_integration_test.go)
+retain text and arithmetic data while disconnecting the container's network.
+Ordinary execution and additional file transfer are unavailable during acquisition;
+after sealing, code observes no remaining network attachment and acquisition
+cannot reopen. The registered browser stack installs its exact manifest/lockfile
+with scripts disabled, seals the network, and then accepts application source.
+
+[Go publication fixtures](../internal/worker/v3_coding_go_docker_publication_test.go)
+exercise text output and argument selection through focused tests, progressive
+publication, final compilation, and Docker verification of the written source.
+[Browser publication fixtures](../internal/worker/v3_browser_assembled_project_integration_test.go)
+exercise text and numeric state through real npm installation, TypeScript checking,
+DOM tests, production builds, and publication. Existing host `node_modules`, `dist`,
+and `.vite` directories retain their exact marker files. Incorrect runtime results
+fail before publication. The browser fixtures supply both implementation and
+expected assertions; they do not prove production oracle generation.
+
+[Artifact tree checks](../internal/experiment/archive_tree_test.go) cover bounded
+subtree collection and reject missing roots, links, and excess files. Browser
+builds collect their production artifacts as data and compare CSS with the exact
+assembled source. [Source absence checks](../internal/worker/v3_coding_docker_boundary_test.go)
+prevent the removed native verification runner from returning. General dependency
+acquisition, learned skills, and an autonomous application build remain unproven.
 
 ## Model-input boundaries
 
@@ -343,15 +507,20 @@ and publication retain the same item identity without hashing item content.
 ## Compiler and workspace execution
 
 [Real compiler fixtures](../internal/worker/v3_compiled_language_evidence_integration_test.go)
-execute JavaScript, Rust, and Java through the production task lifecycle, then its
-authoritative workspace commands, and retrieve their actual PostgreSQL records.
+execute JavaScript, Rust, and Java through the production task lifecycle, then
+verify an exact copy of the authoritative workspace in Docker and retrieve the
+actual PostgreSQL records.
 The workload is constructed explicitly and source generation returns fixed
 declarations; verification and cleanup use production code. They check command
-arguments, working directories, complete output streams, durations, and exit status.
+arguments, working directories, container/image/exec identities, complete output
+streams, durations, and exit status.
 Missing JavaScript imports and Rust/Java type defects fail at real execution before
 any authoritative write. Successful fixtures also execute their built CLI and check
-its exact output. Cleanup verifies that owned staging, compiler output, and caches
-are removed on success and failure.
+its exact output. Cleanup verifies that owned containers are removed on success
+and failure and that no native staging or compiler output remains.
+[Source observation fixtures](../internal/worker/v3_compiled_language_source_observation_test.go)
+require rejection when an otherwise successful container command changes checked
+source or manifest bytes.
 
 Those runs caught a Java helper missing from task projection and a reserved
 JavaScript entrypoint parameter. The fixed fixtures now compile and execute. The
@@ -383,24 +552,24 @@ all three test files. Dependency-bearing test context retains only the required
 capability meaning and observation interface, not another implementation.
 
 [Rust behavioral fixtures](../internal/worker/v3_coding_rust_behavior_integration_test.go)
-run separate arithmetic and text-transformation requirements through native Cargo
-tests and retrieve the actual PostgreSQL command records. Correct results pass;
+run separate arithmetic and text-transformation requirements through Cargo tests
+inside Docker and retrieve the actual PostgreSQL command records. Correct results pass;
 wrong results compile but produce assertion failures and exit 101 before accepted
 source or authoritative writes. The existing authoritative compiler fixtures also
-run the task-owned Rust tests against the written workspace.
+run the task-owned Rust tests against an exact copy of the written workspace.
 [Boundary tests](../internal/worker/v3_coding_rust_acceptance_test.go) and
 [body checks](../internal/worker/v3_coding_rust_acceptance_body_test.go)
 verify direct declarations, one ordinary-text body call, independent expected values,
 and failure before inference when the registered acceptance validator is absent.
 These tests exposed and fixed a parser error that treated associated-item names
-inside macro arguments as free values. Owned temporary source and Cargo output
+inside macro arguments as free values. Owned container source and Cargo output
 are removed on successful and failed execution.
 
 [Java behavioral fixtures](../internal/worker/v3_coding_java_behavior_integration_test.go)
 exercise arithmetic and text transformation through actual `java -ea` test classes.
 Correct results pass; wrong results compile but record `AssertionError` and exit 1
 before accepted source or authoritative writes. The authoritative compiler fixtures
-also execute these native tests against the written workspace.
+also execute these assertions in Docker against an exact copy of the written workspace.
 [Prompt boundaries](../internal/worker/v3_coding_java_acceptance_test.go) and
 [body checks](../internal/worker/v3_coding_java_acceptance_body_test.go) establish one
 ordinary-text test body, independent expectations, rejection of non-executed

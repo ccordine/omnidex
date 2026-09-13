@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 	"path"
-	"path/filepath"
+	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/modelcontext"
 )
 
@@ -56,14 +57,28 @@ func objectiveInstructionPathProvenance(
 }
 
 func objectiveRelativeArtifactPath(root, candidate string) (string, error) {
-	if filepath.IsAbs(candidate) {
-		relative, err := filepath.Rel(root, filepath.Clean(candidate))
-		if err != nil {
-			return "", err
+	if err := model.ValidateChannelWorkspaceRoot(root); err != nil {
+		return "", err
+	}
+	windows := !strings.HasPrefix(root, "/")
+	if windows {
+		root = strings.ReplaceAll(root, `\`, "/")
+		candidate = strings.ReplaceAll(candidate, `\`, "/")
+	}
+	absolute := strings.HasPrefix(candidate, "/")
+	if windows && strings.Contains(candidate, ":") {
+		if len(candidate) < 3 || candidate[1:3] != ":/" {
+			return "", fmt.Errorf("artifact path must not be drive-relative")
 		}
-		candidate = filepath.ToSlash(relative)
-	} else {
-		candidate = filepath.ToSlash(candidate)
+		absolute = true
+	}
+	if absolute {
+		candidate = cleanRootedObjectiveArtifactPath(candidate, windows)
+		var contained bool
+		candidate, contained = strings.CutPrefix(candidate, strings.TrimSuffix(root, "/")+"/")
+		if !contained {
+			return "", fmt.Errorf("artifact path is outside the authoritative workspace")
+		}
 	}
 	candidate = path.Clean(candidate)
 	if candidate == "." || candidate == ".." || path.IsAbs(candidate) ||
@@ -71,4 +86,20 @@ func objectiveRelativeArtifactPath(root, candidate string) (string, error) {
 		return "", fmt.Errorf("artifact path is outside the authoritative workspace")
 	}
 	return candidate, nil
+}
+
+func cleanRootedObjectiveArtifactPath(candidate string, windows bool) string {
+	if !windows {
+		return path.Clean(candidate)
+	}
+	if len(candidate) >= 3 && candidate[1:3] == ":/" {
+		return candidate[:2] + path.Clean(candidate[2:])
+	}
+	if strings.HasPrefix(candidate, "//") {
+		parts := strings.SplitN(candidate[2:], "/", 3)
+		if len(parts) == 3 {
+			return "//" + parts[0] + "/" + parts[1] + path.Clean("/"+parts[2])
+		}
+	}
+	return candidate
 }

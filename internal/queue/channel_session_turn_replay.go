@@ -12,7 +12,7 @@ func requireChannelSessionTurnEffectTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	command ChannelSessionTurnCommand,
-	disposition ChannelSessionTurnDisposition,
+	disposition model.ChannelSessionTurnDisposition,
 	job model.Job,
 	messageID *int64,
 	stepID *int64,
@@ -33,7 +33,7 @@ func requireChannelSessionTurnEffectTx(
 		return channelSessionReplayError(command.OperationID, "same-channel job")
 	}
 	switch disposition {
-	case ChannelSessionTurnEnqueued:
+	case model.ChannelSessionTurnEnqueued:
 		if messageID == nil || stepID != nil || job.CurrentGeneration != 1 ||
 			job.Instruction != command.Text {
 			return channelSessionReplayError(command.OperationID, "initial turn shape")
@@ -56,7 +56,7 @@ func requireChannelSessionTurnEffectTx(
 		if !valid {
 			return channelSessionReplayError(command.OperationID, "initial message and generation")
 		}
-	case ChannelSessionTurnReplanned:
+	case model.ChannelSessionTurnReplanned:
 		if messageID != nil || stepID != nil || job.CurrentGeneration < 2 {
 			return channelSessionReplayError(command.OperationID, "replan shape")
 		}
@@ -73,7 +73,7 @@ func requireChannelSessionTurnEffectTx(
 		if !valid {
 			return channelSessionReplayError(command.OperationID, "replan generation")
 		}
-	case ChannelSessionTurnFeedback:
+	case model.ChannelSessionTurnFeedback:
 		if messageID != nil || stepID == nil {
 			return channelSessionReplayError(command.OperationID, "feedback shape")
 		}
@@ -96,7 +96,7 @@ func requireChannelSessionTurnEffectTx(
 	return nil
 }
 
-func channelSessionReplayError(operationID LifecycleOperationID, subject string) error {
+func channelSessionReplayError(operationID model.LifecycleOperationID, subject string) error {
 	return fmt.Errorf(
 		"channel session operation %q has no exact persisted %s authority",
 		operationID,

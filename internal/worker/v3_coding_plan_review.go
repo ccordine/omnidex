@@ -16,7 +16,9 @@ func (r *nativeRuntimeV3) runDirectCodingPlanAction() error {
 	if err != nil {
 		return err
 	}
-	scope, err := r.svc.workspaceScopeForV3Job(r.claim.Job)
+	// Requirement intake uses only the request and lexical artifact identities.
+	// Actual filesystem access belongs to the first source consumer.
+	scope, err := workspaceAuthorityForV3Job(r.claim.Job)
 	if err != nil {
 		return err
 	}

@@ -2,6 +2,10 @@ package assemblyline
 
 func renderPortableApplicationJob(job PortableJob) (string, bool, error) {
 	switch job.Kind {
+	case WorkApplicationInputSource:
+		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationInputSourcePrompt))
+	case WorkApplicationResultValueKind:
+		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationResultValueKindPrompt))
 	case WorkApplicationProductContext:
 		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationProductContextPrompt))
 	case WorkApplicationRequirementInventory:

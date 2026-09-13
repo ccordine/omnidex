@@ -5,6 +5,20 @@ func applicationSemanticUncertaintyContract(
 ) (SemanticUncertaintyContract, bool) {
 	var contract SemanticUncertaintyContract
 	switch kind {
+	case WorkApplicationInputSource:
+		contract = semanticUncertaintyContract(kind,
+			"Which process input does this one accepted behavior require?",
+			"The input channel implied by natural language is not exactly determined by syntax or keyword matching.",
+			"Only one accepted local behavior and the registered process input channels.",
+			"One opaque choice identifying the required input channel.",
+			"DecodeApplicationInputSource binds the channel; code supplies only that channel as a typed function parameter.")
+	case WorkApplicationResultValueKind:
+		contract = semanticUncertaintyContract(kind,
+			"What kind of value does this one accepted behavior produce before presentation?",
+			"The value kind implied by a natural-language behavior cannot be inferred exactly by syntax or keyword matching.",
+			"Only one accepted local behavior and the registered value kinds.",
+			"One opaque choice identifying the value kind.",
+			"DecodeApplicationResultValueKind binds the kind; the adapter supplies typed declarations, result formatting, and comparisons.")
 	case WorkApplicationProductContext:
 		contract = semanticUncertaintyContract(kind,
 			"What concise product or domain identity is explicitly established by the immutable software request and established facts, excluding its requirements?",

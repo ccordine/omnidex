@@ -90,14 +90,14 @@ func TestTypeScriptBrowserGreenfieldAuthorityPreservesOrdinaryExistingFiles(t *t
 			name:        "maintenance tracker",
 			product:     "A maintenance tracker",
 			requirement: "Expose the current status of one scheduled maintenance task.",
-			existing:    []string{"src/feature001.tsx", "src/feature001.test.tsx"},
+			existing:    []string{"src/feature001.tsx", "src/feature001.test.tsx", "node_modules/marker.txt"},
 			wantTarget:  []string{"src/feature002.test.tsx", "src/feature002.tsx"},
 		},
 		{
 			name:        "text summarizer",
 			product:     "A text summarizer",
 			requirement: "Accept supplied text and expose one resulting summary.",
-			existing:    []string{"src/reference.txt"},
+			existing:    []string{"src/reference.txt", "dist/marker.txt", ".vite/marker.txt"},
 			wantTarget:  []string{"src/feature001.test.tsx", "src/feature001.tsx"},
 		},
 	}
@@ -134,7 +134,7 @@ func TestTypeScriptBrowserGreenfieldAuthorityPreservesOrdinaryExistingFiles(t *t
 }
 
 func TestTypeScriptBrowserGreenfieldAuthorityRejectsUnownedCollisions(t *testing.T) {
-	for _, relative := range []string{"package.json", "src/App.tsx", "node_modules/marker.txt"} {
+	for _, relative := range []string{"package.json", "src/App.tsx"} {
 		relative := relative
 		t.Run(relative, func(t *testing.T) {
 			root := t.TempDir()
@@ -179,7 +179,7 @@ func testResolveBrowserTargetAtRoot(
 		t.Fatalf("freeze fixture workload: %v", err)
 	}
 	stack, _ := testTypeScriptBrowserProject(t)
-	occupation, err := snapshotDirectCodingTargetTreeOccupation(root, stack)
+	occupation, err := snapshotDirectCodingTargetTreeOccupationAtRoot(root, stack)
 	if err != nil {
 		return assemblyline.TargetTree{}, err
 	}

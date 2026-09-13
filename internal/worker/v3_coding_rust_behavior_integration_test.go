@@ -61,7 +61,7 @@ func TestRustBehavioralFailuresStopBeforeWorkspaceWrites(t *testing.T) {
 					return &compiledLanguageBehaviorFixtureExecutor{directCodingProjectSourceGenerator: executor, declarations: declarations}, nil
 				}
 				session := &directCodingSession{root: root, program: &program, runtime: &nativeRuntimeV3{ctx: ctx, claim: claim, svc: &Service{repo: repository}}}
-				err = session.runDirectCodingApplicationTaskLifecycle(program.Workload, &program)
+				err = runIsolatedCompiledLanguageFixtureLifecycle(session, &program)
 				if (err != nil) != broken {
 					t.Fatalf("broken=%t lifecycle err=%v", broken, err)
 				}

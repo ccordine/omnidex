@@ -26,7 +26,7 @@ func TestCLIChatBootstrapStoresExactWorkspaceBindingAndReusesOneChannel(t *testi
 		t.Run(fmt.Sprintf("root-bytes-%d", len(root)), func(t *testing.T) {
 			pool, repository := freshLifecycleRepository(t, databaseURL)
 			ctx := context.Background()
-			identity := "directory_1_101"
+			identity := "client_11111111111111111111111111111111_directory_1_101"
 			type result struct {
 				channel model.Channel
 				err     error
@@ -65,7 +65,7 @@ func TestCLIChatBootstrapStoresExactWorkspaceBindingAndReusesOneChannel(t *testi
 			if err != nil {
 				t.Fatal(err)
 			}
-			replaced, err := repository.EnsureCLIChatSessionChannel(ctx, root, "directory_1_102")
+			replaced, err := repository.EnsureCLIChatSessionChannel(ctx, root, "client_11111111111111111111111111111111_directory_1_102")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -87,7 +87,7 @@ func TestCLIChatBootstrapRejectsContradictoryDuplicateBinding(t *testing.T) {
 	}
 	pool, repository := freshLifecycleRepository(t, databaseURL)
 	ctx := context.Background()
-	root, identity := "/tmp/duplicate-cli-binding", "directory_1_101"
+	root, identity := "/tmp/duplicate-cli-binding", "client_11111111111111111111111111111111_directory_1_101"
 	retained, err := repository.EnsureCLIChatSessionChannel(ctx, root, identity)
 	if err != nil {
 		t.Fatal(err)

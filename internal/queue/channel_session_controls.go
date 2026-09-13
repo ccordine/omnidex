@@ -3,37 +3,16 @@ package queue
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
 )
 
-const MaxChannelSessionControls = 200
-
-type ChannelSessionControlKind string
-
-const (
-	ChannelSessionControlInterrupt ChannelSessionControlKind = "interrupt"
-	ChannelSessionControlReplan    ChannelSessionControlKind = "replan"
-	ChannelSessionControlCancel    ChannelSessionControlKind = "cancel"
-)
-
-type ChannelSessionControl struct {
-	OperationID LifecycleOperationID      `json:"operation_id"`
-	Kind        ChannelSessionControlKind `json:"kind"`
-	Text        string                    `json:"text"`
-	JobID       int64                     `json:"job_id"`
-	Generation  int64                     `json:"generation"`
-	Status      string                    `json:"status"`
-	CreatedAt   time.Time                 `json:"created_at"`
-}
-
 func listChannelSessionControlsTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	channelID model.ChannelID,
-) ([]ChannelSessionControl, bool, error) {
+) ([]model.ChannelSessionControl, bool, error) {
 	rows, err := tx.Query(ctx, `
 		SELECT operation.operation_id,operation.kind,
 		       CASE operation.kind
@@ -48,7 +27,7 @@ func listChannelSessionControlsTx(
 		  AND operation.kind IN ('interrupt_job','replan_job','cancel_job')
 		ORDER BY operation.created_at DESC,operation.operation_id DESC
 		LIMIT $2
-	`, channelID, MaxChannelSessionControls+1)
+	`, channelID, model.MaxChannelSessionControls+1)
 	if err != nil {
 		return nil, false, fmt.Errorf(
 			"read channel %q session controls: %w",
@@ -57,9 +36,9 @@ func listChannelSessionControlsTx(
 		)
 	}
 	defer rows.Close()
-	controls := make([]ChannelSessionControl, 0, MaxChannelSessionControls+1)
+	controls := make([]model.ChannelSessionControl, 0, model.MaxChannelSessionControls+1)
 	for rows.Next() {
-		var control ChannelSessionControl
+		var control model.ChannelSessionControl
 		var kind LifecycleOperationKind
 		if err := rows.Scan(
 			&control.OperationID,
@@ -76,12 +55,12 @@ func listChannelSessionControlsTx(
 				err,
 			)
 		}
-		if _, err := ParseLifecycleOperationID(string(control.OperationID)); err != nil {
+		if _, err := model.ParseLifecycleOperationID(string(control.OperationID)); err != nil {
 			return nil, false, err
 		}
 		switch kind {
 		case LifecycleInterruptJob:
-			control.Kind = ChannelSessionControlInterrupt
+			control.Kind = model.ChannelSessionControlInterrupt
 			if _, err := validateInterruptFeedback(control.Text); err != nil {
 				return nil, false, err
 			}
@@ -93,7 +72,7 @@ func listChannelSessionControlsTx(
 				)
 			}
 		case LifecycleReplanJob:
-			control.Kind = ChannelSessionControlReplan
+			control.Kind = model.ChannelSessionControlReplan
 			if _, err := validateReplanFeedback(control.Text); err != nil {
 				return nil, false, err
 			}
@@ -105,7 +84,7 @@ func listChannelSessionControlsTx(
 				)
 			}
 		case LifecycleCancelJob:
-			control.Kind = ChannelSessionControlCancel
+			control.Kind = model.ChannelSessionControlCancel
 			if _, err := validateCancelReason(control.Text); err != nil {
 				return nil, false, err
 			}
@@ -134,9 +113,9 @@ func listChannelSessionControlsTx(
 	if err := rows.Err(); err != nil {
 		return nil, false, err
 	}
-	truncated := len(controls) > MaxChannelSessionControls
+	truncated := len(controls) > model.MaxChannelSessionControls
 	if truncated {
-		controls = controls[:MaxChannelSessionControls]
+		controls = controls[:model.MaxChannelSessionControls]
 	}
 	for left, right := 0, len(controls)-1; left < right; left, right = left+1, right-1 {
 		controls[left], controls[right] = controls[right], controls[left]

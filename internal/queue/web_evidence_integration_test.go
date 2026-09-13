@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/evidence"
+	"github.com/gryph/omnidex/internal/model"
 )
 
 func TestWebEvidenceRecordsHTTPValuesAndVerifiesCitations(t *testing.T) {
@@ -48,7 +49,7 @@ func TestWebEvidenceRecordsHTTPValuesAndVerifiesCitations(t *testing.T) {
 				t.Fatalf("an equal second fetch was collapsed into a content receipt: %#v / %v", second, err)
 			}
 			citation := webEvidenceCitation(t, stored, claim.Step.ID)
-			operationID, err := NewLifecycleOperationID()
+			operationID, err := model.NewLifecycleOperationID()
 			if err != nil {
 				t.Fatal(err)
 			}

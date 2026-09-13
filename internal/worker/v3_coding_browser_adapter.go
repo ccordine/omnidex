@@ -18,6 +18,8 @@ func compileGenericTypeScriptBrowserBlueprint(
 	profile directCodingProjectVersionProfile,
 	target assemblyline.TargetTree,
 	coverage assemblyline.ApplicationFileCoveragePlan,
+	_ directCodingResultValueKindPlan,
+	_ directCodingInputSourcePlan,
 ) (assemblyline.SourceBlueprint, []directCodingFileTask, error) {
 	contexts, err := directCodingApplicationTaskContexts(workload)
 	if err != nil {

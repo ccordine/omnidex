@@ -50,19 +50,15 @@ func TestParseNewFunctionBodyExtractsOneFencedDeclaration(t *testing.T) {
 	}
 }
 
-func TestParseNewFunctionBodyRejectsAmbiguousFencesWithoutSpanAuthority(t *testing.T) {
+func TestParseNewFunctionBodyProcessesAlternateWrappersInOrder(t *testing.T) {
 	t.Parallel()
-	_, err := ParseNewFunctionBody(
+	source, err := ParseNewFunctionBody(
 		"func Value() int",
 		nil,
 		"```go\nfunc One() int { return 1 }\n```\n```go\nfunc Two() int { return 2 }\n```",
 	)
-	if err == nil || !strings.Contains(err.Error(), "2 fenced regions") {
-		t.Fatalf("ambiguous Go extraction error=%v", err)
-	}
-	var violation *BodySpanViolation
-	if errors.As(err, &violation) {
-		t.Fatalf("ambiguous Go extraction authorized correction: %v", err)
+	if err != nil || !strings.Contains(source, "return 1") || strings.Contains(source, "One") || strings.Contains(source, "Two") {
+		t.Fatalf("first usable body=%q: %v", source, err)
 	}
 }
 

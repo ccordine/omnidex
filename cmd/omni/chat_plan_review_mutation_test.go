@@ -9,7 +9,6 @@ import (
 
 	"github.com/gryph/omnidex/internal/client"
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/queue"
 )
 
 func TestChatPlanReviewDecisionReusesOperationAfterAmbiguousTransport(t *testing.T) {
@@ -17,13 +16,13 @@ func TestChatPlanReviewDecisionReusesOperationAfterAmbiguousTransport(t *testing
 	plan := singleLeafPlanReviewFixture(t, jobID, 1)
 	var guard sync.Mutex
 	requests := 0
-	var firstOperation queue.LifecycleOperationID
+	var firstOperation model.LifecycleOperationID
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		guard.Lock()
 		defer guard.Unlock()
 		requests++
 		var body struct {
-			OperationID       queue.LifecycleOperationID        `json:"operation_id"`
+			OperationID       model.LifecycleOperationID        `json:"operation_id"`
 			Generation        int64                             `json:"generation"`
 			Revision          int64                             `json:"revision"`
 			WorkspaceRoot     string                            `json:"workspace_root"`

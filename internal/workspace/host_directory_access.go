@@ -11,41 +11,15 @@ import (
 
 const maxHostDirectoryAccessPathBytes = 4096
 
-// HostDirectoryAccess is one immutable host-path boundary. It validates
-// execution access only; it never rewrites the caller's exact workspace identity.
+// HostDirectoryAccess declares one immutable allowed path boundary. Filesystem
+// consumers validate its current directory and the requested workspace together;
+// constructing an unused capability performs no filesystem work.
 type HostDirectoryAccess struct {
-	root     string
-	rootInfo os.FileInfo
-	mountID  uint64
+	root string
 }
 
-func NewHostDirectoryAccess(root string) (HostDirectoryAccess, error) {
-	if err := validateHostAccessPath(root, "HOST_DIRECTORY_ACCESS_ROOT"); err != nil {
-		return HostDirectoryAccess{}, err
-	}
-	info, err := exactHostAccessDirectory(root, "HOST_DIRECTORY_ACCESS_ROOT")
-	if err != nil {
-		return HostDirectoryAccess{}, err
-	}
-	resolved, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		return HostDirectoryAccess{}, fmt.Errorf("resolve HOST_DIRECTORY_ACCESS_ROOT %q: %w", root, err)
-	}
-	if resolved != root {
-		return HostDirectoryAccess{}, fmt.Errorf(
-			"HOST_DIRECTORY_ACCESS_ROOT %q resolves to %q; configure the exact directory path",
-			root,
-			resolved,
-		)
-	}
-	if err := verifyOpenedHostAccessDirectory(root, ".", info); err != nil {
-		return HostDirectoryAccess{}, fmt.Errorf("open HOST_DIRECTORY_ACCESS_ROOT %q: %w", root, err)
-	}
-	mountID, err := verifyHostAccessMountBoundary(root, info)
-	if err != nil {
-		return HostDirectoryAccess{}, fmt.Errorf("attest HOST_DIRECTORY_ACCESS_ROOT %q: %w", root, err)
-	}
-	return HostDirectoryAccess{root: root, rootInfo: info, mountID: mountID}, nil
+func NewHostDirectoryAccess(root string) HostDirectoryAccess {
+	return HostDirectoryAccess{root: root}
 }
 
 // ValidateWorkspaceRoot proves that exactRoot currently resolves to an exact
@@ -57,8 +31,8 @@ func (access HostDirectoryAccess) ValidateWorkspaceRoot(exactRoot string) error 
 }
 
 func (access HostDirectoryAccess) captureWorkspaceRoot(exactRoot string) (os.FileInfo, error) {
-	if access.root == "" || access.rootInfo == nil || access.mountID == 0 {
-		return nil, fmt.Errorf("host directory access authority is unavailable")
+	if err := validateHostAccessPath(access.root, "HOST_DIRECTORY_ACCESS_ROOT"); err != nil {
+		return nil, err
 	}
 	if err := validateHostAccessPath(exactRoot, "client_cwd"); err != nil {
 		return nil, err
@@ -71,15 +45,12 @@ func (access HostDirectoryAccess) captureWorkspaceRoot(exactRoot string) (os.Fil
 	if err != nil {
 		return nil, err
 	}
-	if !os.SameFile(access.rootInfo, currentRoot) {
-		return nil, fmt.Errorf("HOST_DIRECTORY_ACCESS_ROOT %q changed after startup", access.root)
-	}
-	currentMountID, err := verifyHostAccessMountBoundary(access.root, access.rootInfo)
+	resolvedBoundary, err := filepath.EvalSymlinks(access.root)
 	if err != nil {
-		return nil, fmt.Errorf("re-attest HOST_DIRECTORY_ACCESS_ROOT %q: %w", access.root, err)
+		return nil, fmt.Errorf("resolve HOST_DIRECTORY_ACCESS_ROOT %q: %w", access.root, err)
 	}
-	if currentMountID != access.mountID {
-		return nil, fmt.Errorf("HOST_DIRECTORY_ACCESS_ROOT %q mount changed after startup", access.root)
+	if resolvedBoundary != access.root {
+		return nil, fmt.Errorf("HOST_DIRECTORY_ACCESS_ROOT %q resolves to %q; configure the exact directory path", access.root, resolvedBoundary)
 	}
 	requestedInfo, err := exactHostAccessDirectory(exactRoot, "client_cwd")
 	if err != nil {
@@ -99,7 +70,7 @@ func (access HostDirectoryAccess) captureWorkspaceRoot(exactRoot string) (os.Fil
 	if _, err := hostAccessRelativePath(access.root, resolved); err != nil {
 		return nil, fmt.Errorf("resolved client_cwd %q: %w", resolved, err)
 	}
-	if err := verifyOpenedHostAccessDirectory(access.root, relative, requestedInfo); err != nil {
+	if err := verifyOpenedHostAccessDirectory(access.root, relative, currentRoot, requestedInfo); err != nil {
 		return nil, fmt.Errorf("verify client_cwd %q within HOST_DIRECTORY_ACCESS_ROOT: %w", exactRoot, err)
 	}
 	return requestedInfo, nil
@@ -143,7 +114,7 @@ func hostAccessRelativePath(root, candidate string) (string, error) {
 	return relative, nil
 }
 
-func verifyOpenedHostAccessDirectory(root, relative string, expected os.FileInfo) (resultErr error) {
+func verifyOpenedHostAccessDirectory(root, relative string, expectedRoot, expected os.FileInfo) (resultErr error) {
 	rootFS, err := os.OpenRoot(root)
 	if err != nil {
 		return err
@@ -151,6 +122,13 @@ func verifyOpenedHostAccessDirectory(root, relative string, expected os.FileInfo
 	defer func() {
 		resultErr = errors.Join(resultErr, rootFS.Close())
 	}()
+	openedRoot, err := rootFS.Stat(".")
+	if err != nil {
+		return err
+	}
+	if !openedRoot.IsDir() || !os.SameFile(expectedRoot, openedRoot) {
+		return fmt.Errorf("opened host boundary differs from its observed directory")
+	}
 	directory, err := rootFS.Open(relative)
 	if err != nil {
 		return err

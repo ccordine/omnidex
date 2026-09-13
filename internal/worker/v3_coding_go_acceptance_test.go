@@ -31,140 +31,137 @@ func TestGoFocusedTargetTreeAllocatesOneImplementationAcceptancePair(t *testing.
 	}
 }
 
-func TestGoDocumentsOwnAcceptanceStructureAndPairPlacement(t *testing.T) {
-	program, _, ref, _ := goAcceptanceFixture(t)
-	if ref.Document.Path != "feature001_test.go" {
-		t.Fatalf("acceptance path=%q", ref.Document.Path)
-	}
-	if ref.Document.Preamble != "package main\n\nimport \"testing\"" {
-		t.Fatalf("acceptance preamble=%q", ref.Document.Preamble)
-	}
-	if ref.Block.Signature != "func TestFeature001(t *testing.T)" ||
-		ref.Block.Role != assemblyline.SourceBlockTaskVerification ||
-		ref.Block.TaskID != "task_001" {
-		t.Fatalf("acceptance block=%+v", ref.Block)
-	}
-	if !sameExactStrings(ref.Block.DependsOn, []string{"runtime.api", "feature.001"}) ||
-		!sameExactStrings(ref.Block.Capabilities, []string{"runtime.api", "feature.001"}) {
-		t.Fatalf("acceptance authority=%+v", ref.Block)
-	}
-	if !sameExactStrings(ref.Block.Globals, []string{"Fatal", "Fatalf", "Error", "Errorf"}) {
-		t.Fatalf("acceptance testing methods=%v", ref.Block.Globals)
-	}
-	runtime, exists := directCodingSourceBlueprintBlock(program.Source, "runtime.api")
-	if !exists || !strings.Contains(runtime.API, "Command-line arguments excluding") ||
-		!strings.Contains(runtime.API, "Complete standard-input text") ||
-		!strings.Contains(runtime.API, "Process status; zero means success") {
-		t.Fatalf("code-owned runtime field semantics=%q", runtime.API)
-	}
-	if name, err := directCodingGoTaskAcceptanceName(program, "task_001"); err != nil {
-		t.Fatal(err)
-	} else if name != "TestFeature001" {
-		t.Fatalf("acceptance name=%q", name)
-	}
-}
-
-func TestGoAcceptancePromptIsOneOrdinaryPathBlindBodyQuestion(t *testing.T) {
-	_, _, ref, input := goAcceptanceFixture(t)
-	job, err := assemblyline.NewFragmentGenerationJob(input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	prompt, err := assemblyline.RenderPortableJob(job)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, wanted := range []string{
-		"What Go statements implement this behavior?",
-		"func TestFeature001(t *testing.T)",
-		"Demonstrate this behavior by exercising Feature001",
-		"Exact user requirement: Write ready to standard output",
-		"Command-line arguments excluding the executable name",
-		"User-visible standard-output text",
-		"Process status; zero means success",
-	} {
-		if !strings.Contains(prompt, wanted) {
-			t.Fatalf("acceptance prompt omitted %q: %s", wanted, prompt)
-		}
-	}
-	for _, forbidden := range []string{
-		ref.Document.Path, "response schema", "response packet", "return json",
-		"preserve", "reproduce", "AST", "BEGIN_", "END_",
-	} {
-		if strings.Contains(strings.ToLower(prompt), strings.ToLower(forbidden)) {
-			t.Fatalf("acceptance prompt leaked %q: %s", forbidden, prompt)
-		}
-	}
-}
-
-func TestGoAcceptanceValidatesCodeOwnedDeclarationAroundOrdinaryBody(t *testing.T) {
+func TestGoDocumentsOwnTypedComparisonAndFormatting(t *testing.T) {
 	program, _, ref, input := goAcceptanceFixture(t)
-	body := `result := Feature001(TaskInput{}, CapabilityResults{})
-if result.Output != "ready" {
-	t.Fatalf("output = %q", result.Output)
-}`
-	declaration, err := validateDirectCodingGoFragment(input, body)
-	if err != nil {
-		t.Fatalf("validate ordinary body: %v", err)
+	if ref.Document.Path != "feature001_test.go" || ref.Block.Signature != "func ExpectedFeature001(arguments []string) string" {
+		t.Fatalf("expected-value block=%+v", ref)
 	}
-	if !strings.HasPrefix(declaration, "func TestFeature001(t *testing.T) {") {
-		t.Fatalf("code-owned declaration=%q", declaration)
-	}
-	if err := validateDirectCodingGoAcceptance(&program, ref, declaration); err != nil {
-		t.Fatalf("validate acceptance: %v", err)
-	}
-	program.Generated[ref.Block.ID] = declaration
-	assembly, err := directCodingAssemblyFromProgram(program)
-	if err != nil {
-		t.Fatalf("assemble code-owned Go documents: %v", err)
-	}
-	assembled := ""
-	for _, file := range assembly.Files {
-		if file.Path == "feature001_test.go" {
-			assembled = string(file.Content)
+	driver := goAcceptanceFixtureBlock(t, program, assemblyline.SourceBlockTaskSupport)
+	for _, source := range []string{"value001 := Feature001(input001)", "expected := ExpectedFeature001(input001)", "if value001 != expected"} {
+		if !strings.Contains(driver.Block.Static, source) {
+			t.Fatalf("driver omitted %q: %s", source, driver.Block.Static)
 		}
 	}
-	if !strings.HasPrefix(assembled, "package main\n\nimport \"testing\"\n\nfunc TestFeature001(t *testing.T) {") ||
-		!strings.Contains(assembled, `result := Feature001(TaskInput{}, CapabilityResults{})`) {
-		t.Fatalf("assembled code-owned acceptance document=%q", assembled)
+	if driver.Block.Generated() {
+		t.Fatal("test driver must be code-owned")
+	}
+	if input.Signature != ref.Block.Signature || len(input.Capabilities) != 0 {
+		t.Fatalf("expected-value context=%+v", input)
+	}
+	if name, err := directCodingGoTaskAcceptanceName(program, "task_001"); err != nil || name != "TestFeature001" {
+		t.Fatalf("test name=%q error=%v", name, err)
 	}
 }
 
-func TestGoAcceptanceRejectsUnprovenOrStructurallyInvalidBodies(t *testing.T) {
-	program, _, ref, _ := goAcceptanceFixture(t)
-	for name, source := range map[string]string{
-		"wrong declaration": `func TestSomethingElse(t *testing.T) {
-			result := Feature001(TaskInput{}, CapabilityResults{})
-			if result.Output != "ready" { t.Fatal("wrong") }
-		}`,
-		"no implementation call": `func TestFeature001(t *testing.T) { t.Fatal("missing") }`,
-		"detached failure": `func TestFeature001(t *testing.T) {
-			result := Feature001(TaskInput{}, CapabilityResults{})
-			_ = result
-			t.Fatal("detached")
-		}`,
-		"boolean shortcut": `func TestFeature001(t *testing.T) {
-			result := Feature001(TaskInput{}, CapabilityResults{})
-			if result.Output != "ready" || true { t.Fatal("tautology") }
-		}`,
-		"self comparison": `func TestFeature001(t *testing.T) {
-			result := Feature001(TaskInput{}, CapabilityResults{})
-			if result.Output == result.Output { t.Fatal("tautology") }
-		}`,
-		"nested proof": `func TestFeature001(t *testing.T) {
-			result := Feature001(TaskInput{}, CapabilityResults{})
-			if result.Output != "ready" { func() { t.Fatal("nested") }() }
-		}`,
-	} {
-		t.Run(name, func(t *testing.T) {
-			if err := validateDirectCodingGoAcceptance(&program, ref, source); err == nil {
-				t.Fatalf("accepted invalid source: %s", source)
+func TestGoValueQuestionsExposeOnlyTheirLocalResponsibility(t *testing.T) {
+	program, _, _, _ := goAcceptanceFixture(t)
+	for _, role := range []assemblyline.SourceBlockRole{assemblyline.SourceBlockTaskImplementation, assemblyline.SourceBlockTaskExample, assemblyline.SourceBlockTaskVerification} {
+		ref := goAcceptanceFixtureBlock(t, program, role)
+		input, err := directCodingGoFragmentInput(&program, ref)
+		if err != nil {
+			t.Fatal(err)
+		}
+		job, err := assemblyline.NewFragmentGenerationJob(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		prompt, err := assemblyline.RenderPortableJob(job)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, forbidden := range []string{ref.Document.Path, "TaskResult", "CapabilityResults", "Product context:", "Delivery surface:", "testing.T", "t.Fatalf", "State", "result.Output"} {
+			if strings.Contains(prompt, forbidden) {
+				t.Fatalf("%s leaked %q: %s", role, forbidden, prompt)
 			}
+		}
+		if !strings.Contains(prompt, input.Signature) || !strings.Contains(prompt, "Exact user requirement: Write ready to standard output") {
+			t.Fatalf("missing local value authority: %s", prompt)
+		}
+	}
+}
+
+func TestGoCodeOwnedDriverComparesTypedValues(t *testing.T) {
+	for _, fixture := range []struct {
+		name, behavior, implementation, example, expected string
+		kind                                              assemblyline.ApplicationResultValueKind
+	}{
+		{"numeric product", "Print the product of the two integer arguments.",
+			`left, _ := strconv.Atoi(arguments[0]); right, _ := strconv.Atoi(arguments[1]); return left * right`,
+			`return []string{"6", "7"}`,
+			`left, _ := strconv.Atoi(arguments[0]); right, _ := strconv.Atoi(arguments[1]); return left * right`, assemblyline.ApplicationResultInteger},
+		{"text enclosure", "Print the first argument surrounded by square brackets.",
+			`return "[" + arguments[0] + "]"`,
+			`return []string{"hello"}`,
+			`return "[" + arguments[0] + "]"`, assemblyline.ApplicationResultText},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			program, _, _, _ := goAcceptanceFixtureForBehavior(t, fixture.behavior, fixture.implementation, fixture.kind)
+			for _, value := range []struct {
+				role assemblyline.SourceBlockRole
+				body string
+			}{
+				{assemblyline.SourceBlockTaskExample, fixture.example}, {assemblyline.SourceBlockTaskVerification, fixture.expected},
+			} {
+				ref := goAcceptanceFixtureBlock(t, program, value.role)
+				input, err := directCodingGoFragmentInput(&program, ref)
+				if err != nil {
+					t.Fatal(err)
+				}
+				source, err := validateDirectCodingGoFragment(input, value.body)
+				if err != nil {
+					t.Fatal(err)
+				}
+				program.Generated[ref.Block.ID] = source
+			}
+			runLiveGoAcceptanceFixture(t, program, false)
+			program.Generated["feature.001"] = goWrongValueDeclaration(t, program)
+			runLiveGoAcceptanceFixture(t, program, true)
 		})
 	}
 }
 
+func goWrongValueDeclaration(t *testing.T, program directCodingProgram) string {
+	t.Helper()
+	block := goAcceptanceFixtureBlock(t, program, assemblyline.SourceBlockTaskImplementation)
+	wrong := `"incorrect"`
+	if program.Project.ResultValueKinds["requirement_001"] == assemblyline.ApplicationResultInteger {
+		wrong = "-999999"
+	}
+	return block.Block.Signature + " { return " + wrong + " }"
+}
+
+func goAcceptanceFixtureBlock(t *testing.T, program directCodingProgram, role assemblyline.SourceBlockRole) assemblyline.SourceBlockRef {
+	t.Helper()
+	for _, document := range program.Source.Documents {
+		for _, block := range document.Blocks {
+			if block.Role == role {
+				return assemblyline.SourceBlockRef{Document: document, Block: block}
+			}
+		}
+	}
+	t.Fatalf("fixture has no %s block", role)
+	return assemblyline.SourceBlockRef{}
+}
+
 func goAcceptanceFixture(t *testing.T) (
+	directCodingProgram,
+	assemblyline.ApplicationTaskContext,
+	assemblyline.SourceBlockRef,
+	assemblyline.FragmentGenerationInput,
+) {
+	return goAcceptanceFixtureForBehavior(t, "Write ready to standard output", `return "ready"`, assemblyline.ApplicationResultText)
+}
+
+func goAcceptanceFixtureForBehavior(t *testing.T, behavior, body string, kind assemblyline.ApplicationResultValueKind) (
+	directCodingProgram,
+	assemblyline.ApplicationTaskContext,
+	assemblyline.SourceBlockRef,
+	assemblyline.FragmentGenerationInput,
+) {
+	return goAcceptanceFixtureWithInput(t, behavior, body, kind, assemblyline.ApplicationInputArguments)
+}
+
+func goAcceptanceFixtureWithInput(t *testing.T, behavior, body string, kind assemblyline.ApplicationResultValueKind, channel assemblyline.ApplicationInputSource) (
 	directCodingProgram,
 	assemblyline.ApplicationTaskContext,
 	assemblyline.SourceBlockRef,
@@ -175,7 +172,7 @@ func goAcceptanceFixture(t *testing.T) (
 		Surface:      assemblyline.ApplicationSurfaceCommandLine,
 		ProductQuote: "small Go command",
 		Requirements: []assemblyline.Requirement{{
-			ID: "requirement_001", SourceQuote: "Write ready to standard output",
+			ID: "requirement_001", SourceQuote: behavior,
 		}},
 	}
 	workload, err := assemblyline.FreezeApplicationWorkload(specification)
@@ -203,7 +200,7 @@ func goAcceptanceFixture(t *testing.T) (
 		t.Fatal(err)
 	}
 	documents, err := genericGoCommandLineDocuments(
-		specification, contexts, directCodingCapabilityGraph{}, coverage,
+		specification, contexts, directCodingCapabilityGraph{}, coverage, directCodingResultValueKindPlan{"requirement_001": kind}, directCodingInputSourcePlan{"requirement_001": channel},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -215,14 +212,12 @@ func goAcceptanceFixture(t *testing.T) (
 		t.Fatal(err)
 	}
 	program := directCodingProgram{
-		Project:  directCodingProjectSelection{Stack: stack, Dialect: "Go"},
+		Project:  directCodingProjectSelection{Stack: stack, Dialect: "Go", ResultValueKinds: directCodingResultValueKindPlan{"requirement_001": kind}, InputSources: directCodingInputSourcePlan{"requirement_001": channel}},
 		Workload: workload, TargetTree: target, Coverage: coverage, Source: source,
-		Generated: map[string]string{
-			"feature.001": `func Feature001(input TaskInput, dependencies CapabilityResults) TaskResult {
-	return TaskResult{Output: "ready"}
-}`,
-		},
+		Generated: map[string]string{},
 	}
+	implementation := goAcceptanceFixtureBlock(t, program, assemblyline.SourceBlockTaskImplementation)
+	program.Generated["feature.001"] = implementation.Block.Signature + " {\n" + body + "\n}"
 	var ref assemblyline.SourceBlockRef
 	for _, document := range source.Documents {
 		for _, block := range document.Blocks {
@@ -234,7 +229,7 @@ func goAcceptanceFixture(t *testing.T) (
 	if ref.Block.ID == "" {
 		t.Fatal("Go acceptance fixture has no verification block")
 	}
-	input, err := directCodingLanguageFragmentInput(&program, ref, "go")
+	input, err := directCodingGoFragmentInput(&program, ref)
 	if err != nil {
 		t.Fatal(err)
 	}

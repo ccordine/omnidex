@@ -52,3 +52,23 @@ func TestObjectiveInstructionPathProvenanceRedactsEveryExplicitAdapterRecognized
 		t.Fatalf("unexpected direct-path redaction %q with %#v", redacted, identities)
 	}
 }
+
+func TestObjectiveRelativeArtifactPathsUseClientPathSyntax(t *testing.T) {
+	for _, fixture := range []struct{ root, candidate, want string }{
+		{`C:\work\source`, `C:\work\source\src\main.go`, "src/main.go"},
+		{`\\server\share\reports`, `\\server\share\reports\data\values.json`, "data/values.json"},
+		{`C:\work\source`, `src\main.go`, "src/main.go"},
+		{`C:\`, `C:\main.go`, "main.go"},
+		{"/work/source", "/work/source/src/main.go", "src/main.go"},
+	} {
+		got, err := objectiveRelativeArtifactPath(fixture.root, fixture.candidate)
+		if err != nil || got != fixture.want {
+			t.Errorf("relative path %q against %q = %q: %v, want %q", fixture.candidate, fixture.root, got, err, fixture.want)
+		}
+	}
+	for _, candidate := range []string{`C:\elsewhere\main.go`, `D:\work\source\main.go`, `..\main.go`, `C:main.go`, `C:\work\source\..\main.go`} {
+		if _, err := objectiveRelativeArtifactPath(`C:\work\source`, candidate); err == nil {
+			t.Errorf("accepted outside or drive-relative artifact %q", candidate)
+		}
+	}
+}

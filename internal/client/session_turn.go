@@ -7,12 +7,11 @@ import (
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/projectroot"
-	"github.com/gryph/omnidex/internal/queue"
 )
 
 type SessionTurnReceipt struct {
-	OperationID       queue.LifecycleOperationID          `json:"operation_id"`
-	Disposition       queue.ChannelSessionTurnDisposition `json:"disposition"`
+	OperationID       model.LifecycleOperationID          `json:"operation_id"`
+	Disposition       model.ChannelSessionTurnDisposition `json:"disposition"`
 	ChannelID         model.ChannelID                     `json:"channel_id"`
 	WorkspaceRoot     string                              `json:"workspace_root"`
 	WorkspaceIdentity string                              `json:"workspace_identity"`
@@ -26,7 +25,7 @@ func (client *Client) SubmitSessionTurn(
 	ctx context.Context,
 	channel model.Channel,
 	workspaceIdentity string,
-	operationID queue.LifecycleOperationID,
+	operationID model.LifecycleOperationID,
 	exactText string,
 ) (SessionTurnReceipt, error) {
 	if err := channel.ValidateStored(); err != nil {
@@ -36,10 +35,10 @@ func (client *Client) SubmitSessionTurn(
 		channel.DataSourceID != "" || channel.RoleplayViewpointCharacterID != "" {
 		return SessionTurnReceipt{}, fmt.Errorf("CLI chat channel has unsupported authority")
 	}
-	if _, err := queue.ParseLifecycleOperationID(string(operationID)); err != nil {
+	if _, err := model.ParseLifecycleOperationID(string(operationID)); err != nil {
 		return SessionTurnReceipt{}, err
 	}
-	if err := projectroot.ValidateDirectoryIdentity(workspaceIdentity); err != nil {
+	if err := projectroot.ValidateClientWorkspaceIdentity(workspaceIdentity); err != nil {
 		return SessionTurnReceipt{}, fmt.Errorf("session turn workspace identity: %w", err)
 	}
 	if err := ValidateSessionTurnText(exactText); err != nil {
@@ -49,7 +48,7 @@ func (client *Client) SubmitSessionTurn(
 		WorkspaceRoot     string                     `json:"workspace_root"`
 		WorkspaceIdentity string                     `json:"workspace_identity"`
 		Text              string                     `json:"text"`
-		OperationID       queue.LifecycleOperationID `json:"operation_id"`
+		OperationID       model.LifecycleOperationID `json:"operation_id"`
 	}{
 		WorkspaceRoot:     channel.WorkspaceRoot,
 		WorkspaceIdentity: workspaceIdentity,
@@ -83,7 +82,7 @@ func (client *Client) SubmitSessionTurn(
 func validateSessionTurnReceipt(
 	channel model.Channel,
 	workspaceIdentity string,
-	operationID queue.LifecycleOperationID,
+	operationID model.LifecycleOperationID,
 	exactText string,
 	receipt SessionTurnReceipt,
 ) error {
@@ -94,18 +93,18 @@ func validateSessionTurnReceipt(
 		return fmt.Errorf("session turn receipt differs from exact channel operation authority")
 	}
 	switch receipt.Disposition {
-	case queue.ChannelSessionTurnEnqueued:
+	case model.ChannelSessionTurnEnqueued:
 		if receipt.Status != model.JobStatusPending || receipt.UserMessage == nil ||
 			receipt.UserMessage.ID < 1 || receipt.UserMessage.ChannelID != channel.ID ||
 			receipt.UserMessage.Role != model.ChannelMessageRoleUser ||
 			receipt.UserMessage.Content != exactText {
 			return fmt.Errorf("session enqueue receipt differs from exact user turn")
 		}
-	case queue.ChannelSessionTurnReplanned:
+	case model.ChannelSessionTurnReplanned:
 		if receipt.Status != model.JobStatusRunning || receipt.UserMessage != nil {
 			return fmt.Errorf("session replan receipt has contradictory result authority")
 		}
-	case queue.ChannelSessionTurnFeedback:
+	case model.ChannelSessionTurnFeedback:
 		if receipt.Status != model.JobStatusRunning && receipt.Status != model.JobStatusCompleted {
 			return fmt.Errorf("session feedback receipt has unsupported status %q", receipt.Status)
 		}

@@ -18,7 +18,7 @@ func (client *Client) BootstrapCLIChatSession(
 	if err := model.ValidateChannelWorkspaceRoot(clientCWD); err != nil {
 		return model.Channel{}, fmt.Errorf("CLI current working directory: %w", err)
 	}
-	if err := projectroot.ValidateDirectoryIdentity(workspaceIdentity); err != nil {
+	if err := projectroot.ValidateClientWorkspaceIdentity(workspaceIdentity); err != nil {
 		return model.Channel{}, fmt.Errorf("CLI workspace identity: %w", err)
 	}
 	payload := struct {

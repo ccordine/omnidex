@@ -1,159 +1,87 @@
 package worker
 
 import (
-	"bytes"
-	"context"
 	"fmt"
-	"os"
-	"os/exec"
-	"strings"
 	"testing"
-	"time"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
-func TestTypeScriptBrowserExactAssemblyPassesRegisteredToolchain(t *testing.T) {
-	if os.Getenv("OMNIDEX_RUN_BROWSER_TOOLCHAIN_INTEGRATION") != "1" {
-		t.Skip("set OMNIDEX_RUN_BROWSER_TOOLCHAIN_INTEGRATION=1 to run the exact npm toolchain fixture")
-	}
-	for _, executable := range []string{"node", "npm"} {
-		if _, err := exec.LookPath(executable); err != nil {
-			t.Skipf("registered browser toolchain executable %s is unavailable: %v", executable, err)
-		}
-	}
-	program := testTypeScriptBrowserProgram(
-		t,
-		"A neutral state fixture",
-		"Expose one observable state after an explicit activation.",
-	)
-	taskID := program.Workload.Tasks[0].ID
-	implementationID, err := directCodingTaskBlockIDByRole(
-		program.Source, taskID, assemblyline.SourceBlockTaskImplementation,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	verificationID, err := directCodingTaskBlockIDByRole(
-		program.Source, taskID, assemblyline.SourceBlockTaskVerification,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	program.Generated[implementationID] = `function Feature001View({ state, capabilities, actions }: Feature001ViewProps): ReactElement {
+func TestTypeScriptBrowserExactAssemblyPassesRegisteredDockerToolchain(t *testing.T) {
+	for _, fixture := range []struct{ name, requirement, action, failedAction, output, expected string }{
+		{"text state", "Expose one observable state after an explicit activation.", "actions.set('state', 'active')", "actions.set('state', 'incorrect')", "String(state.state ?? '')", "active"},
+		{"numeric state", "Expose a numeric value after an explicit activation.", "actions.set('value', 12)", "actions.set('value', 13)", "String(state.value ?? '')", "12"},
+	} {
+		for _, broken := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/broken=%t", fixture.name, broken), func(t *testing.T) {
+				program := testTypeScriptBrowserProgram(t, "A constructed browser fixture", fixture.requirement)
+				taskID := program.Workload.Tasks[0].ID
+				implementationID, err := directCodingTaskBlockIDByRole(program.Source, taskID, assemblyline.SourceBlockTaskImplementation)
+				if err != nil {
+					t.Fatal(err)
+				}
+				verificationID, err := directCodingTaskBlockIDByRole(program.Source, taskID, assemblyline.SourceBlockTaskVerification)
+				if err != nil {
+					t.Fatal(err)
+				}
+				action := fixture.action
+				if broken {
+					action = fixture.failedAction
+				}
+				implementationBlock, exists := directCodingSourceBlueprintBlock(program.Source, implementationID)
+				if !exists {
+					t.Fatal("browser fixture lacks its implementation declaration")
+				}
+				program.Generated[implementationID] = fmt.Sprintf(`%s {
   return (
     <div className="grid gap-2 p-2">
-      <button type="button" onClick={() => actions.set('state', 'active')}>Activate state</button>
-      <output aria-label="Current state">{String(state.state ?? '')}</output>
+      <button type="button" onClick={() => %s}>Activate state</button>
+      <output aria-label="Current state">{%s}</output>
     </div>
   );
-}`
-	program.Generated[verificationID] = `async function VerifyFeature001(): Promise<void> {
+}`, implementationBlock.Signature, action, fixture.output)
+				program.Generated[verificationID] = fmt.Sprintf(`async function VerifyFeature001(): Promise<void> {
   fireEvent.click(screen.getByRole('button', { name: 'Activate state' }));
-  expect(screen.getByRole('status', { name: 'Current state' })).toHaveTextContent(/^active$/);
-}`
-	assembly, err := directCodingAssemblyFromProgram(program)
-	if err != nil {
-		t.Fatalf("assemble exact browser fixture: %v", err)
-	}
-	if err := validateDirectCodingProgramAssembly(program, assembly); err != nil {
-		t.Fatalf("validate exact browser fixture: %v", err)
-	}
-	root := t.TempDir()
-	for _, file := range assembly.Files {
-		if err := writeDirectCodingStageFile(root, file); err != nil {
-			t.Fatalf("materialize exact browser fixture: %v", err)
+  expect(screen.getByRole('status', { name: 'Current state' })).toHaveTextContent(/^%s$/);
+}`, fixture.expected)
+				records := runConstructedDockerPublicationFixture(t, program, broken, false)
+				installs := 0
+				for _, record := range records {
+					if len(record.Argv) > 1 && record.Argv[0] == "npm" && record.Argv[1] == "ci" {
+						installs++
+						if !*record.ContainerNetworkEnabled {
+							t.Fatal("dependency installation lacked observed acquisition network")
+						}
+					}
+				}
+				want := 2
+				if broken {
+					want = 1
+				}
+				if installs != want {
+					t.Fatalf("dependency installs=%d; want %d", installs, want)
+				}
+			})
 		}
-	}
-	cacheRoot, err := os.MkdirTemp("", "omnidex-browser-integration-cache-")
-	if err != nil {
-		t.Fatalf("create isolated integration cache: %v", err)
-	}
-	defer func() {
-		if err := os.RemoveAll(cacheRoot); err != nil {
-			t.Errorf("remove isolated integration cache: %v", err)
-		}
-	}()
-
-	for _, component := range []string{"node", "npm"} {
-		result := runExactBrowserIntegrationCommand(
-			t, root, directCodingToolchainVersionCommand(component),
-		)
-		if strings.TrimSpace(string(result.Stderr)) != "" {
-			t.Fatalf("%s version probe wrote stderr: %s", component, result.Stderr)
-		}
-		if err := validateDirectCodingToolchainVersion(
-			program.Project.Profile, component, result.Stdout,
-		); err != nil {
-			t.Fatal(err)
-		}
-	}
-	install, err := directCodingNPMInstallCommand(cacheRoot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	runExactBrowserIntegrationCommand(t, root, install)
-	for _, command := range directCodingImplementationStageCommands() {
-		runExactBrowserIntegrationCommand(t, root, command)
-	}
-	contextAuthority, err := assemblyline.ProjectApplicationTaskContext(
-		program.Workload, taskID,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	focused, err := directCodingApplicationTaskStageCommands(program, contextAuthority)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, command := range focused {
-		runExactBrowserIntegrationCommand(t, root, command)
-	}
-	for _, command := range directCodingFullTypeScriptStageCommands() {
-		runExactBrowserIntegrationCommand(t, root, command)
-	}
-	if err := validateDirectCodingBrowserProductionArtifacts(root); err != nil {
-		t.Fatalf("validate exact production browser artifacts: %v", err)
 	}
 }
 
-func runExactBrowserIntegrationCommand(
-	t *testing.T,
-	root string,
-	command directCodingVerificationCommand,
-) directCodingVerificationCommandResult {
-	t.Helper()
-	environment, err := directCodingVerificationProcessEnvironment(command.Environment)
-	if err != nil {
-		t.Fatalf("construct exact command environment: %v", err)
+// Only generation is supplied by the fixture. The production implementation
+// compiler, surface binding, task checks, publication, and final checks run.
+type browserDockerFixtureExecutor struct {
+	*directCodingTypeScriptProjectStageExecutor
+	declarations map[string]string
+}
+
+func (executor *browserDockerFixtureExecutor) GenerateBlock(context assemblyline.ApplicationTaskContext, stage *directCodingProgram, ref assemblyline.SourceBlockRef) (string, error) {
+	source := executor.declarations[ref.Block.ID]
+	switch ref.Block.Role {
+	case assemblyline.SourceBlockTaskImplementation:
+		return executor.closeImplementationBeforeVerification(stage, ref, source)
+	case assemblyline.SourceBlockTaskVerification:
+		if _, err := executor.bindBrowserPublicSurface(context, stage, ref); err != nil {
+			return "", err
+		}
 	}
-	timeout := command.Timeout
-	if timeout <= 0 {
-		timeout = 2 * time.Minute
-	}
-	commandContext, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	process := exec.CommandContext(commandContext, command.Argv[0], command.Argv[1:]...)
-	process.Dir = root
-	process.Env = environment
-	if command.Stdin != nil {
-		process.Stdin = bytes.NewReader(command.Stdin)
-	}
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	process.Stdout = &stdout
-	process.Stderr = &stderr
-	if err := process.Run(); err != nil {
-		t.Fatalf(
-			"exact browser command %s failed: %v\nstdout:\n%s\nstderr:\n%s",
-			fmt.Sprint(command.Argv), err, stdout.String(), stderr.String(),
-		)
-	}
-	if err := commandContext.Err(); err != nil {
-		t.Fatalf("exact browser command %v context ended: %v", command.Argv, err)
-	}
-	return directCodingVerificationCommandResult{
-		Stdout: append([]byte{}, stdout.Bytes()...),
-		Stderr: append([]byte{}, stderr.Bytes()...),
-	}
+	return source, nil
 }

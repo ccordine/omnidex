@@ -1,13 +1,18 @@
 package worker
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
+	"path"
+
+	"github.com/gryph/omnidex/internal/workspace"
 )
 
-func validateDirectCodingTypeScriptGreenfieldProgramRoot(
-	root string,
+func validateDirectCodingTypeScriptGreenfieldProgram(
+	ctx context.Context,
+	reader workspace.Reader,
 	program directCodingProgram,
 ) error {
 	if program.Project.Stack.ID != genericTypeScriptBrowserAdapter {
@@ -20,30 +25,33 @@ func validateDirectCodingTypeScriptGreenfieldProgramRoot(
 	for _, document := range program.Source.Documents {
 		paths = append(paths, document.Path)
 	}
-	if err := requireAbsentDirectCodingUnownedPaths(root, paths); err != nil {
+	if err := requireAbsentDirectCodingUnownedPaths(ctx, reader, paths); err != nil {
 		return fmt.Errorf("TypeScript browser greenfield authority: %w", err)
 	}
-	return requireAbsentDirectCodingGeneratedHostPaths(root)
+	return nil
 }
 
-func validateDirectCodingTypeScriptGreenfieldAssemblyRoot(
-	root string,
+func validateDirectCodingTypeScriptGreenfieldAssembly(
+	ctx context.Context,
+	reader workspace.Reader,
 	assembly directCodingAssembly,
 ) error {
 	paths := make([]string, len(assembly.Files))
 	for index, file := range assembly.Files {
 		paths[index] = file.Path
 	}
-	if err := requireAbsentDirectCodingUnownedPaths(root, paths); err != nil {
+	if err := requireAbsentDirectCodingUnownedPaths(ctx, reader, paths); err != nil {
 		return fmt.Errorf("TypeScript browser write authority: %w", err)
 	}
-	return requireAbsentDirectCodingGeneratedHostPaths(root)
+	return nil
 }
 
-func requireAbsentDirectCodingUnownedPaths(root string, paths []string) error {
-	rootInfo, err := os.Lstat(root)
-	if err != nil || !rootInfo.IsDir() || rootInfo.Mode()&os.ModeSymlink != 0 ||
-		!filepath.IsAbs(root) || filepath.Clean(root) != root {
+func requireAbsentDirectCodingUnownedPaths(ctx context.Context, reader workspace.Reader, paths []string) error {
+	if reader == nil {
+		return fmt.Errorf("greenfield observation requires acquired workspace access")
+	}
+	rootInfo, err := reader.Stat(ctx, ".")
+	if err != nil || rootInfo.Kind != workspace.EntryDirectory {
 		return fmt.Errorf("greenfield authority requires one canonical exact workspace root")
 	}
 	seen := make(map[string]struct{}, len(paths))
@@ -55,12 +63,12 @@ func requireAbsentDirectCodingUnownedPaths(root string, paths []string) error {
 			continue
 		}
 		seen[relative] = struct{}{}
-		if err := requireDirectCodingPathParentsSafe(root, relative); err != nil {
+		if err := requireDirectCodingPathParentsSafe(ctx, reader, relative); err != nil {
 			return err
 		}
-		_, err := os.Lstat(filepath.Join(root, filepath.FromSlash(relative)))
+		_, err := reader.Stat(ctx, relative)
 		switch {
-		case os.IsNotExist(err):
+		case errors.Is(err, os.ErrNotExist):
 			continue
 		case err != nil:
 			return fmt.Errorf("inspect unowned path %q: %w", relative, err)
@@ -74,42 +82,26 @@ func requireAbsentDirectCodingUnownedPaths(root string, paths []string) error {
 	return nil
 }
 
-func requireDirectCodingPathParentsSafe(root string, relative string) error {
-	parent := filepath.Dir(filepath.FromSlash(relative))
+func requireDirectCodingPathParentsSafe(ctx context.Context, reader workspace.Reader, relative string) error {
+	parent := path.Dir(relative)
 	for parent != "." {
-		info, err := os.Lstat(filepath.Join(root, parent))
+		info, err := reader.Stat(ctx, parent)
 		switch {
-		case os.IsNotExist(err):
+		case errors.Is(err, os.ErrNotExist):
 			// A missing child does not prove that an existing ancestor is safe.
 		case err != nil:
 			return fmt.Errorf("inspect parent of unowned path %q: %w", relative, err)
-		case info != nil && (!info.IsDir() || info.Mode()&os.ModeSymlink != 0):
+		case info.Kind != workspace.EntryDirectory:
 			return fmt.Errorf(
 				"parent %q of greenfield path %q is not one exact directory",
-				filepath.ToSlash(parent), relative,
+				parent, relative,
 			)
 		}
-		next := filepath.Dir(parent)
+		next := path.Dir(parent)
 		if next == parent {
 			return fmt.Errorf("greenfield path %q escaped its workspace parent", relative)
 		}
 		parent = next
-	}
-	return nil
-}
-
-func requireAbsentDirectCodingGeneratedHostPaths(root string) error {
-	present, err := snapshotDirectCodingGeneratedHostPaths(root)
-	if err != nil {
-		return err
-	}
-	for _, relative := range directCodingTypeScriptGeneratedHostPaths {
-		if present[relative] {
-			return fmt.Errorf(
-				"generated host path %q already exists; greenfield verification will not mutate unowned tool output",
-				relative,
-			)
-		}
 	}
 	return nil
 }

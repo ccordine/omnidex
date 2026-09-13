@@ -27,11 +27,23 @@ func (violation *UndeclaredIdentifierViolation) Error() string {
 }
 
 func validateIdentifiers(current, candidate *ast.FuncDecl, permitted []string) error {
+	allowed, err := identifierAuthority(current, permitted)
+	if err != nil {
+		return err
+	}
+	_, standardNodes, err := standardLibraryReferences(candidate, allowed)
+	if err != nil {
+		return err
+	}
+	return validateIdentifierReferences(candidate, allowed, standardNodes)
+}
+
+func identifierAuthority(current *ast.FuncDecl, permitted []string) (map[string]struct{}, error) {
 	allowed := functionInterfaceIdentifierSet(current)
 	for _, value := range permitted {
 		projected, err := permittedIdentifierSet(value)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		for identifier := range projected {
 			allowed[identifier] = struct{}{}
@@ -40,11 +52,25 @@ func validateIdentifiers(current, candidate *ast.FuncDecl, permitted []string) e
 	for _, identifier := range scanIdentifiers(predeclaredIdentifiers) {
 		allowed[identifier] = struct{}{}
 	}
+	return allowed, nil
+}
+
+func validateIdentifierReferences(candidate *ast.FuncDecl, allowed map[string]struct{}, standardNodes map[*ast.Ident]bool) error {
+	// A selector's member is resolved through its receiver's type by the
+	// compiler. It is not a free lexical name. The receiver remains subject
+	// to the ordinary scope check and package exports to the import index.
+	members := make(map[*ast.Ident]bool)
+	ast.Inspect(candidate, func(node ast.Node) bool {
+		if selector, ok := node.(*ast.SelectorExpr); ok {
+			members[selector.Sel] = true
+		}
+		return true
+	})
 	rejected := make(map[string]struct{})
 	locations := make([]UndeclaredIdentifierViolation, 0, 1)
 	ast.Inspect(candidate, func(node ast.Node) bool {
 		identifier, ok := node.(*ast.Ident)
-		if !ok || identifier.Name == "_" {
+		if !ok || identifier.Name == "_" || standardNodes[identifier] || members[identifier] {
 			return true
 		}
 		_, externallyAllowed := allowed[identifier.Name]

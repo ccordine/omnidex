@@ -71,7 +71,7 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 		return directCodingAssembly{}, err
 	}
 	currentTargetOccupation, err := snapshotDirectCodingTargetTreeOccupation(
-		s.root, selectedStack,
+		s.runtime.ctx, s.runtime.workspaceFence, selectedStack,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err
@@ -97,6 +97,18 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
+	if selectedStack.ResolveResultValueKinds != nil {
+		selection.ResultValueKinds, err = selectedStack.ResolveResultValueKinds(inputs.Runtime, inputs.RequirementModel, workload, inputs.Identities)
+		if err != nil {
+			return directCodingAssembly{}, err
+		}
+	}
+	if selectedStack.ResolveInputSources != nil {
+		selection.InputSources, err = selectedStack.ResolveInputSources(inputs.Runtime, inputs.RequirementModel, workload, inputs.Identities)
+		if err != nil {
+			return directCodingAssembly{}, err
+		}
+	}
 	program, err := compileDirectCodingProgram(
 		specification, workload, capabilities,
 		selection, targetTree, coverage, protected, required, deletions,
@@ -107,20 +119,18 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	program.RequirementRelations = requirementRelations
 	program.TargetTree = targetTree
 	program.Coverage = coverage
-	if err := validateDirectCodingTypeScriptGreenfieldProgramRoot(s.root, program); err != nil {
+	if err := validateDirectCodingTypeScriptGreenfieldProgram(s.runtime.ctx, s.runtime.workspaceFence, program); err != nil {
 		return directCodingAssembly{}, err
 	}
 	if err := s.bindDirectCodingProgramPathProvenance(program); err != nil {
 		return directCodingAssembly{}, err
 	}
-	if err := s.runDirectCodingApplicationTaskLifecycle(workload, &program); err != nil {
-		s.specification = &specification
-		s.program = &program
-		return directCodingAssembly{}, err
-	}
 	s.specification = &specification
 	s.program = &program
 	s.protectedPaths = directCodingProtectedPathSet(program.ProtectedPaths)
+	if err := s.runDirectCodingApplicationTaskLifecycle(workload, &program); err != nil {
+		return directCodingAssembly{}, err
+	}
 	assembly, err := directCodingAssemblyFromProgram(program)
 	if err != nil {
 		return directCodingAssembly{}, err

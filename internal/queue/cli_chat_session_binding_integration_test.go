@@ -6,6 +6,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 )
 
@@ -18,8 +19,8 @@ func TestCLIChatSessionRejectsReplacedIdentityBeforeHistoryOrEnqueue(t *testing.
 	_, repository := freshLifecycleRepository(t, databaseURL)
 	ctx := context.Background()
 	workspaceRoot := "/tmp/omnidex-cli-binding-" + lifecycleNonce(t)
-	identityA := "directory_1_101"
-	identityB := "directory_1_102"
+	identityA := "client_11111111111111111111111111111111_directory_1_101"
+	identityB := "client_11111111111111111111111111111111_directory_1_102"
 	channel, err := repository.EnsureCLIChatSessionChannel(ctx, workspaceRoot, identityA)
 	if err != nil {
 		t.Fatalf("create exact CLI session: %v", err)
@@ -40,7 +41,7 @@ func TestCLIChatSessionRejectsReplacedIdentityBeforeHistoryOrEnqueue(t *testing.
 	); !errors.Is(err, queue.ErrChannelSessionWorkspace) {
 		t.Fatalf("replaced-identity snapshot error = %v, want ErrChannelSessionWorkspace", err)
 	}
-	operationID, err := queue.NewLifecycleOperationID()
+	operationID, err := model.NewLifecycleOperationID()
 	if err != nil {
 		t.Fatalf("create session operation ID: %v", err)
 	}

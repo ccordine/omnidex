@@ -23,7 +23,9 @@ func ExtractFragmentGenerationSourceBody(job PortableJob, raw string) (string, e
 	}
 	switch input.Language {
 	case "go":
-		return gofragment.ExtractNewFunctionBodyResponse(input.Signature, raw)
+		permitted := append([]string(nil), input.Capabilities...)
+		permitted = append(permitted, input.PermittedSymbols...)
+		return gofragment.ExtractNewFunctionBodyResponse(input.Signature, permitted, raw)
 	case "typescript":
 		// TSX parses ordinary TypeScript declarations as a subset while also
 		// retaining JSX bodies. The exact document parser still validates the

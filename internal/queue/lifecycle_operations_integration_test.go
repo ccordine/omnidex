@@ -39,7 +39,7 @@ func TestFreshRuntimeSchemaCommitsIndependentTerminalLifecycleOperations(t *test
 		if claim == nil || claim.Job.ID != job.ID {
 			t.Fatalf("claimed job = %#v, want job %d", claim, job.ID)
 		}
-		operationID, err := queue.NewLifecycleOperationID()
+		operationID, err := model.NewLifecycleOperationID()
 		if err != nil {
 			t.Fatalf("construct failure operation identity: %v", err)
 		}
@@ -87,7 +87,7 @@ func TestFreshRuntimeSchemaCommitsIndependentTerminalLifecycleOperations(t *test
 		if err != nil {
 			t.Fatalf("attest cancellation workspace: %v", err)
 		}
-		operationID, err := queue.NewLifecycleOperationID()
+		operationID, err := model.NewLifecycleOperationID()
 		if err != nil {
 			t.Fatalf("construct cancellation operation identity: %v", err)
 		}

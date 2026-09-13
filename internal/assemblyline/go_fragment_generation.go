@@ -13,10 +13,7 @@ func BuildGoFragmentGenerationPrompt(input FragmentGenerationInput) (string, err
 		return "", fmt.Errorf("Go fragment generation does not support language %q", input.Language)
 	}
 	parts := []string{
-		"What Go statements implement this behavior?",
-		input.Behavior,
 		"The source dialect is " + input.Dialect + ".",
-		"These parameters and return constraints are in scope:\n" + input.Signature,
 	}
 	if len(input.Capabilities) > 0 {
 		parts = append(parts,
@@ -28,5 +25,10 @@ func BuildGoFragmentGenerationPrompt(input FragmentGenerationInput) (string, err
 			"These additional identifiers are available:\n"+strings.Join(input.PermittedSymbols, "\n"),
 		)
 	}
+	parts = append(parts,
+		input.Behavior,
+		"These parameters and return constraints are in scope:\n"+input.Signature,
+		"What Go statements should execute inside this function?",
+	)
 	return strings.Join(parts, "\n\n"), nil
 }

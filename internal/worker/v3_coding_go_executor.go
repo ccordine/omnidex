@@ -62,6 +62,10 @@ func (executor *directCodingGoProjectStageExecutor) VerifyFinal(
 	return executor.workspace.VerifyFinal(program)
 }
 
+func (executor *directCodingGoProjectStageExecutor) VerifyProgress(program *directCodingProgram) error {
+	return executor.workspace.VerifyProgress(program)
+}
+
 func (executor *directCodingGoProjectStageExecutor) Close() error {
 	if executor == nil || executor.workspace == nil {
 		return nil

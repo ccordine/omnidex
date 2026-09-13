@@ -2,21 +2,20 @@ package client
 
 import (
 	"context"
+	"github.com/gryph/omnidex/internal/model"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
-
-	"github.com/gryph/omnidex/internal/queue"
 )
 
 func TestCLIChatClientCarriesReplacedIdentityAcrossEverySessionBoundary(t *testing.T) {
 	t.Parallel()
 
 	const workspaceRoot = "/tmp/client-replaced-identity"
-	identityB := "directory_1_102"
+	identityB := "client_11111111111111111111111111111111_directory_1_102"
 	channel := testCLIChannel(workspaceRoot)
-	operationID, err := queue.NewLifecycleOperationID()
+	operationID, err := model.NewLifecycleOperationID()
 	if err != nil {
 		t.Fatalf("create operation ID: %v", err)
 	}

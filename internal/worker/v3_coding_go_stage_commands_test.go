@@ -82,15 +82,6 @@ func TestGoCommandEnvironmentIsCanonicalOfflineAndExternal(t *testing.T) {
 	if !sameExactStrings(environment, want) {
 		t.Fatalf("Go environment=%v; want %v", environment, want)
 	}
-	processEnvironment, err := directCodingVerificationProcessEnvironment(environment)
-	if err != nil {
-		t.Fatalf("runner rejected registered Go environment: %v", err)
-	}
-	for _, expected := range want {
-		if !containsExactString(processEnvironment, expected) {
-			t.Fatalf("process environment omits %q: %v", expected, processEnvironment)
-		}
-	}
 	for _, invalid := range []struct {
 		cache       string
 		moduleCache string

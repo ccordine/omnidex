@@ -13,7 +13,8 @@ const verificationCommandEvidenceColumns = `
 	commands.working_directory,commands.started_at,commands.finished_at,
 	commands.duration_nanos,commands.exit_code,commands.launch_error,commands.observation_error,
 	commands.stdout,commands.stdout_complete,commands.stderr,commands.stderr_complete,
-	commands.status,commands.created_at`
+	commands.status,commands.created_at,
+	commands.container_id,commands.container_image_id,commands.container_exec_id,commands.container_network_enabled`
 
 func (r *Repository) ListVerificationCommandEvidenceForJob(
 	ctx context.Context,
@@ -64,6 +65,7 @@ func scanVerificationCommandEvidence(
 	var argvJSON, environmentJSON []byte
 	var stdin []byte
 	var launchError, observationError *string
+	var containerID, imageID, execID *string
 	if err := scanner.Scan(
 		&item.ID, &item.Authority.JobID, &item.Authority.Generation,
 		&item.Authority.StepID, &item.Authority.Attempt, &item.Authority.WorkerID,
@@ -73,6 +75,7 @@ func scanVerificationCommandEvidence(
 		&item.ExitCode, &launchError, &observationError, &item.Stdout, &item.StdoutComplete,
 		&item.Stderr, &item.StderrComplete,
 		&item.Status, &item.CreatedAt,
+		&containerID, &imageID, &execID, &item.ContainerNetworkEnabled,
 	); err != nil {
 		return err
 	}
@@ -91,6 +94,15 @@ func scanVerificationCommandEvidence(
 	}
 	if observationError != nil {
 		item.ObservationError = *observationError
+	}
+	if containerID != nil {
+		item.ContainerID = *containerID
+	}
+	if imageID != nil {
+		item.ContainerImageID = *imageID
+	}
+	if execID != nil {
+		item.ContainerExecID = *execID
 	}
 	exactStdout := make([]byte, len(item.Stdout))
 	copy(exactStdout, item.Stdout)

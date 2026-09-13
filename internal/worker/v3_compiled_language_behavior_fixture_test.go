@@ -1,11 +1,26 @@
 package worker
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
+
+// These tests exercise the isolated compiler/test primitive. Workspace
+// publication is exercised separately through the production session boundary.
+func runIsolatedCompiledLanguageFixtureLifecycle(session *directCodingSession, program *directCodingProgram) error {
+	generator, err := program.Project.Stack.NewSourceGenerator(session, *program)
+	if err != nil {
+		return err
+	}
+	err = runDirectCodingApplicationTaskLifecycle(program.Workload, program, directCodingApplicationTaskLifecycleHooks{
+		BuildBlock: generator.GenerateBlock, VerifyTask: generator.VerifyTask, FinalStage: generator.VerifyFinal,
+		PublishTask: func(*directCodingProgram, *directCodingProgram) error { return nil },
+	})
+	return errors.Join(err, generator.Close())
+}
 
 type compiledLanguageBehaviorFixture struct {
 	requirement, implementation, verification string

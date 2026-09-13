@@ -7,7 +7,6 @@ import (
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/projectroot"
-	"github.com/gryph/omnidex/internal/queue"
 )
 
 const (
@@ -17,7 +16,7 @@ const (
 
 type lifecycleControlReceipt struct {
 	JobID       int64                      `json:"job_id"`
-	OperationID queue.LifecycleOperationID `json:"operation_id"`
+	OperationID model.LifecycleOperationID `json:"operation_id"`
 	Status      string                     `json:"status"`
 }
 
@@ -26,7 +25,7 @@ func (client *Client) SubmitFeedback(
 	channel model.Channel,
 	workspaceIdentity string,
 	jobID int64,
-	operationID queue.LifecycleOperationID,
+	operationID model.LifecycleOperationID,
 	feedback string,
 ) (model.Job, error) {
 	return client.feedbackControl(
@@ -40,7 +39,7 @@ func (client *Client) Interrupt(
 	channel model.Channel,
 	workspaceIdentity string,
 	jobID int64,
-	operationID queue.LifecycleOperationID,
+	operationID model.LifecycleOperationID,
 	feedback string,
 ) (model.Job, error) {
 	return client.feedbackControl(
@@ -54,7 +53,7 @@ func (client *Client) Replan(
 	channel model.Channel,
 	workspaceIdentity string,
 	jobID int64,
-	operationID queue.LifecycleOperationID,
+	operationID model.LifecycleOperationID,
 	feedback string,
 ) (model.Job, error) {
 	return client.feedbackControl(
@@ -68,7 +67,7 @@ func (client *Client) Cancel(
 	channel model.Channel,
 	workspaceIdentity string,
 	jobID int64,
-	operationID queue.LifecycleOperationID,
+	operationID model.LifecycleOperationID,
 	reason string,
 ) (model.Job, error) {
 	if err := validateLifecycleControl(
@@ -80,7 +79,7 @@ func (client *Client) Cancel(
 	return client.postLifecycleControl(
 		ctx, channel, workspaceIdentity, jobID, operationID, "cancel",
 		struct {
-			OperationID       queue.LifecycleOperationID `json:"operation_id"`
+			OperationID       model.LifecycleOperationID `json:"operation_id"`
 			Reason            string                     `json:"reason"`
 			WorkspaceRoot     string                     `json:"workspace_root"`
 			WorkspaceIdentity string                     `json:"workspace_identity"`
@@ -96,7 +95,7 @@ func (client *Client) feedbackControl(
 	channel model.Channel,
 	workspaceIdentity string,
 	jobID int64,
-	operationID queue.LifecycleOperationID,
+	operationID model.LifecycleOperationID,
 	action, feedback string,
 	maximum int,
 ) (model.Job, error) {
@@ -109,7 +108,7 @@ func (client *Client) feedbackControl(
 	return client.postLifecycleControl(
 		ctx, channel, workspaceIdentity, jobID, operationID, action,
 		struct {
-			OperationID       queue.LifecycleOperationID `json:"operation_id"`
+			OperationID       model.LifecycleOperationID `json:"operation_id"`
 			Feedback          string                     `json:"feedback"`
 			WorkspaceRoot     string                     `json:"workspace_root"`
 			WorkspaceIdentity string                     `json:"workspace_identity"`
@@ -125,7 +124,7 @@ func (client *Client) postLifecycleControl(
 	channel model.Channel,
 	workspaceIdentity string,
 	jobID int64,
-	operationID queue.LifecycleOperationID,
+	operationID model.LifecycleOperationID,
 	action string,
 	payload any,
 ) (model.Job, error) {
@@ -170,7 +169,7 @@ func validateLifecycleControl(
 	channel model.Channel,
 	workspaceIdentity string,
 	jobID int64,
-	operationID queue.LifecycleOperationID,
+	operationID model.LifecycleOperationID,
 	text, name string,
 	maximum int,
 ) error {
@@ -180,7 +179,7 @@ func validateLifecycleControl(
 	if jobID < 1 {
 		return fmt.Errorf("%s requires a positive job ID", name)
 	}
-	if _, err := queue.ParseLifecycleOperationID(string(operationID)); err != nil {
+	if _, err := model.ParseLifecycleOperationID(string(operationID)); err != nil {
 		return err
 	}
 	return validateLifecycleControlText(text, name, maximum)
@@ -193,7 +192,7 @@ func validateLifecycleWorkspace(channel model.Channel, workspaceIdentity string)
 	if channel.Scope != model.ChannelScopeUser || channel.Mode != model.ChannelModeAssistant {
 		return fmt.Errorf("lifecycle control requires one assistant user channel")
 	}
-	if err := projectroot.ValidateDirectoryIdentity(workspaceIdentity); err != nil {
+	if err := projectroot.ValidateClientWorkspaceIdentity(workspaceIdentity); err != nil {
 		return fmt.Errorf("lifecycle workspace identity: %w", err)
 	}
 	return nil

@@ -3,46 +3,48 @@ package worker
 import (
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/experiment"
 	"github.com/gryph/omnidex/internal/queue"
 )
 
-// The stage owns one temporary directory for source and compiler output. It
-// records actual stack commands; only owned behavioral assertions establish
-// behavioral observations, not compilation alone.
 type directCodingCompiledLanguageWorkspace struct {
 	root, source, output string
 	session              *directCodingSession
 	profile              directCodingProjectVersionProfile
+	experiment           *experiment.Workspace
 }
 
-func newDirectCodingCompiledLanguageWorkspace(session *directCodingSession, program directCodingProgram) (_ *directCodingCompiledLanguageWorkspace, resultErr error) {
-	if session == nil {
-		return nil, fmt.Errorf("compiled language stage requires one coding session")
+func newDirectCodingCompiledLanguageWorkspace(session *directCodingSession, program directCodingProgram) (*directCodingCompiledLanguageWorkspace, error) {
+	return openDirectCodingCompiledLanguageWorkspace(session, program, queue.VerificationIsolatedInstall)
+}
+
+func openDirectCodingCompiledLanguageWorkspace(session *directCodingSession, program directCodingProgram, phase queue.VerificationCommandPhase) (_ *directCodingCompiledLanguageWorkspace, resultErr error) {
+	if session == nil || session.runtime == nil || session.runtime.ctx == nil {
+		return nil, fmt.Errorf("compiled language stage requires one active coding session")
 	}
-	root, err := os.MkdirTemp("", "omnidex-compiled-stage-")
+	container, err := openDirectCodingExperiment(session, program.Project.Profile)
 	if err != nil {
 		return nil, err
 	}
 	workspace := &directCodingCompiledLanguageWorkspace{
-		root: root, source: filepath.Join(root, "source"), output: filepath.Join(root, "output"),
-		session: session, profile: program.Project.Profile,
+		root: experiment.WorkingDirectory, source: experiment.WorkingDirectory, output: "/tmp/omnidex-compiler-output",
+		session: session, profile: program.Project.Profile, experiment: container,
 	}
 	defer func() {
 		if resultErr != nil {
 			resultErr = errors.Join(resultErr, workspace.Close())
 		}
 	}()
-	if err := os.Mkdir(workspace.source, 0o700); err != nil {
-		return nil, err
-	}
-	if err := session.verifyCompiledLanguageToolchain(workspace.source, queue.VerificationIsolatedInstall, workspace.profile); err != nil {
+	if err := verifyDirectCodingCompiledLanguageToolchain(workspace.run, phase, workspace.profile); err != nil {
 		return nil, err
 	}
 	return workspace, nil
+}
+
+func (workspace *directCodingCompiledLanguageWorkspace) run(phase queue.VerificationCommandPhase, command directCodingVerificationCommand) (directCodingVerificationCommandResult, error) {
+	return workspace.session.runRecordedDockerVerificationCommand(workspace.experiment, phase, command)
 }
 
 func (workspace *directCodingCompiledLanguageWorkspace) VerifyTask(context assemblyline.ApplicationTaskContext, program *directCodingProgram) error {
@@ -68,9 +70,9 @@ func (workspace *directCodingCompiledLanguageWorkspace) VerifyFinal(program *dir
 	return workspace.verify(program, queue.VerificationIsolatedFinal, true)
 }
 
-func (workspace *directCodingCompiledLanguageWorkspace) verify(program *directCodingProgram, phase queue.VerificationCommandPhase, complete bool) error {
-	if workspace == nil || workspace.root == "" || program == nil || workspace.profile.ID != program.Project.Profile.ID {
-		return fmt.Errorf("compiled language verification requires its active stage and selected profile")
+func (workspace *directCodingCompiledLanguageWorkspace) verify(program *directCodingProgram, phase queue.VerificationCommandPhase, complete bool) (resultErr error) {
+	if workspace == nil || workspace.experiment == nil || program == nil || workspace.profile.ID != program.Project.Profile.ID {
+		return fmt.Errorf("compiled language verification requires its active Docker stage and selected profile")
 	}
 	assembly, err := directCodingAssemblyFromProgram(*program)
 	if err != nil {
@@ -84,48 +86,61 @@ func (workspace *directCodingCompiledLanguageWorkspace) verify(program *directCo
 	if err != nil {
 		return err
 	}
-	if err := os.RemoveAll(workspace.source); err != nil {
-		return fmt.Errorf("clear owned compilation stage: %w", err)
-	}
-	if err := os.Mkdir(workspace.source, 0o700); err != nil {
+	commands, err := directCodingCompiledLanguageCommands(workspace.profile, assembly, workspace.source, workspace.output, complete)
+	if err != nil {
 		return err
 	}
-	for _, file := range assembly.Files {
-		if err := writeDirectCodingStageFile(workspace.source, file); err != nil {
+	reset := directCodingVerificationCommand{
+		Argv:    []string{"/bin/sh", "-c", "rm -rf -- /workspace/* /workspace/.[!.]* /workspace/..?* /tmp/omnidex-compiler-output && mkdir -p /tmp/omnidex-compiler-output/classes"},
+		Timeout: defaultDirectCodingVerificationTimeout,
+	}
+	if _, err := workspace.run(phase, reset); err != nil {
+		return err
+	}
+	if err := workspace.experiment.Write(workspace.session.runtime.ctx, directCodingExperimentFiles(assembly)); err != nil {
+		return err
+	}
+	defer func() { resultErr = errors.Join(resultErr, workspace.validateSource(assembly)) }()
+	for _, command := range commands {
+		if _, err := workspace.run(phase, command); err != nil {
 			return err
 		}
 	}
-	return workspace.session.runCompiledLanguageVerification(workspace.source, workspace.output, phase, *program, assembly, complete)
+	return nil
+}
+
+func (workspace *directCodingCompiledLanguageWorkspace) validateSource(assembly directCodingAssembly) error {
+	return validateDirectCodingExperimentAssembly(workspace.session.runtime.ctx, workspace.experiment, assembly)
 }
 
 func (workspace *directCodingCompiledLanguageWorkspace) Close() error {
-	if workspace == nil || workspace.root == "" {
+	if workspace == nil {
 		return nil
 	}
-	if err := os.RemoveAll(workspace.root); err != nil {
-		return fmt.Errorf("remove owned compilation stage and output: %w", err)
+	if err := workspace.experiment.Close(); err != nil {
+		return err
 	}
+	workspace.experiment = nil
 	workspace.root, workspace.source, workspace.output = "", "", ""
 	return nil
 }
 
 func (session *directCodingSession) verifyAuthoritativeCompiledLanguageWorkspace(program directCodingProgram, assembly directCodingAssembly) (resultErr error) {
-	if err := session.runtime.svc.requireWorkspaceScopeForV3Job(session.runtime.claim.Job, session.root); err != nil {
+	if err := session.runtime.svc.requireWorkspaceScopeForV3Job(session.runtime.ctx, session.runtime.claim.Job, session.root); err != nil {
 		return err
 	}
 	if err := validateDirectCodingProgramAssembly(program, assembly); err != nil {
 		return err
 	}
-	if err := validateDirectCodingAssemblyAtRoot(session.root, assembly); err != nil {
+	if err := validateDirectCodingAssembly(session.runtime.ctx, session.runtime.workspaceFence, assembly); err != nil {
 		return err
 	}
-	output, err := os.MkdirTemp("", "omnidex-compiled-host-output-")
+	workspace, err := openDirectCodingCompiledLanguageWorkspace(session, program, queue.VerificationHostInstall)
 	if err != nil {
 		return err
 	}
-	defer func() { resultErr = errors.Join(resultErr, os.RemoveAll(output)) }()
-	if err := session.verifyCompiledLanguageToolchain(session.root, queue.VerificationHostInstall, program.Project.Profile); err != nil {
-		return err
-	}
-	return session.runCompiledLanguageVerification(session.root, output, queue.VerificationHostFinal, program, assembly, true)
+	defer func() {
+		resultErr = errors.Join(resultErr, workspace.Close(), validateDirectCodingAssembly(session.runtime.ctx, session.runtime.workspaceFence, assembly))
+	}()
+	return workspace.verify(&program, queue.VerificationHostFinal, true)
 }

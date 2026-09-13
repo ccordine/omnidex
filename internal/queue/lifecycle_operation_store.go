@@ -11,7 +11,7 @@ import (
 )
 
 type lifecycleOperationRecord struct {
-	ID                 LifecycleOperationID
+	ID                 model.LifecycleOperationID
 	JobID              int64
 	ObservedGeneration int64
 	ResultGeneration   int64

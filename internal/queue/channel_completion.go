@@ -89,7 +89,7 @@ func channelBindingForJob(job model.Job) (channelCompletionBinding, bool, error)
 		return channelCompletionBinding{}, false, fmt.Errorf("channel completion client_cwd: %w", err)
 	}
 	if metadataBinding.ClientWorkspaceIdentity != "" {
-		if err := projectroot.ValidateDirectoryIdentity(metadataBinding.ClientWorkspaceIdentity); err != nil {
+		if err := projectroot.ValidateClientWorkspaceIdentity(metadataBinding.ClientWorkspaceIdentity); err != nil {
 			return channelCompletionBinding{}, false, fmt.Errorf(
 				"channel completion client workspace identity: %w", err,
 			)

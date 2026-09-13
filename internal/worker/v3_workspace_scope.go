@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -45,20 +46,30 @@ func workspaceAuthorityForV3Job(job model.Job) (v3WorkspaceScope, error) {
 				err,
 			)
 		}
-		if err := projectroot.ValidateDirectoryIdentity(identity); err != nil {
+		validateIdentity := projectroot.ValidateDirectoryIdentity
+		if job.Pipeline == model.PipelineChat {
+			validateIdentity = projectroot.ValidateClientWorkspaceIdentity
+		}
+		if err := validateIdentity(identity); err != nil {
 			return v3WorkspaceScope{}, fmt.Errorf("workspace boundary client identity: %w", err)
 		}
 	}
 	return v3WorkspaceScope{Root: root, Identity: identity}, nil
 }
 
-func (s *Service) workspaceScopeForV3Job(job model.Job) (v3WorkspaceScope, error) {
+func (s *Service) workspaceScopeForV3Job(ctx context.Context, job model.Job) (v3WorkspaceScope, error) {
 	if s == nil {
 		return v3WorkspaceScope{}, fmt.Errorf("workspace service is unavailable")
 	}
 	scope, err := workspaceAuthorityForV3Job(job)
 	if err != nil {
 		return v3WorkspaceScope{}, err
+	}
+	if job.Pipeline == model.PipelineChat {
+		if err := s.workspaceConnections.Require(ctx, scope.Root, scope.Identity); err != nil {
+			return v3WorkspaceScope{}, fmt.Errorf("attest client job workspace: %w", err)
+		}
+		return scope, nil
 	}
 	if err := s.requireHostWorkspaceRoot(scope.Root); err != nil {
 		return v3WorkspaceScope{}, fmt.Errorf("bind job client_cwd %q: %w", scope.Root, err)
@@ -82,8 +93,8 @@ func (s *Service) workspaceScopeForV3Job(job model.Job) (v3WorkspaceScope, error
 	return scope, nil
 }
 
-func (s *Service) requireWorkspaceScopeForV3Job(job model.Job, expectedRoot string) error {
-	scope, err := s.workspaceScopeForV3Job(job)
+func (s *Service) requireWorkspaceScopeForV3Job(ctx context.Context, job model.Job, expectedRoot string) error {
+	scope, err := s.workspaceScopeForV3Job(ctx, job)
 	if err != nil {
 		return err
 	}

@@ -17,14 +17,20 @@ func (s *directCodingSession) ApplyAndVerify(
 		return fmt.Errorf("apply direct-coding workspace mutation requires one prepared transaction")
 	}
 	if err := s.runtime.svc.requireWorkspaceScopeForV3Job(
-		s.runtime.claim.Job,
+		s.runtime.ctx, s.runtime.claim.Job,
 		s.root,
 	); err != nil {
 		return fmt.Errorf("validate host workspace before reconciliation: %w", err)
 	}
+	if err := validateDirectCodingAssembly(s.runtime.ctx, s.runtime.workspaceFence, s.publishedAssembly); err != nil {
+		return fmt.Errorf("previously published workspace changed before reconciliation: %w", err)
+	}
 	result, err := prepared.reconciliation.ApplyVerified(
 		s.runtime.ctx,
-		s.observeVerifiedWorkspaceChange,
+		func(change workspacefacts.Change) {
+			s.retainVerifiedPublicationChange(change, prepared.expectedAssembly)
+			s.observeVerifiedWorkspaceChange(change)
+		},
 	)
 	prepared.result = result
 	if err != nil {
@@ -32,6 +38,9 @@ func (s *directCodingSession) ApplyAndVerify(
 			"workspace reconciliation stopped after %d applied changes: %w",
 			len(result.Changes), err,
 		)
+	}
+	if err := validateDirectCodingAssembly(s.runtime.ctx, s.runtime.workspaceFence, prepared.expectedAssembly); err != nil {
+		return fmt.Errorf("verify exact published workspace: %w", err)
 	}
 	if prepared.hostVerificationProgram != nil {
 		program := *prepared.hostVerificationProgram

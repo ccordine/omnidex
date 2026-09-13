@@ -6,7 +6,6 @@ import (
 
 	"github.com/gryph/omnidex/internal/client"
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/queue"
 )
 
 type chatRenderer struct {
@@ -61,14 +60,14 @@ func (renderer chatRenderer) messageTurnState(message model.ChannelMessage) erro
 	return renderer.console.WriteError(rendered.String())
 }
 
-func (renderer chatRenderer) sessionTurn(turn queue.ChannelSessionTurn) error {
+func (renderer chatRenderer) sessionTurn(turn model.ChannelSessionTurn) error {
 	label := "you>"
 	switch turn.Disposition {
-	case queue.ChannelSessionTurnReplanned:
+	case model.ChannelSessionTurnReplanned:
 		label = "you redirect>"
-	case queue.ChannelSessionTurnFeedback:
+	case model.ChannelSessionTurnFeedback:
 		label = "you follow-up>"
-	case queue.ChannelSessionTurnEnqueued:
+	case model.ChannelSessionTurnEnqueued:
 	default:
 		return fmt.Errorf("cannot render session turn disposition %q", turn.Disposition)
 	}
@@ -77,14 +76,14 @@ func (renderer chatRenderer) sessionTurn(turn queue.ChannelSessionTurn) error {
 	return renderer.console.WriteOutput(rendered.String())
 }
 
-func (renderer chatRenderer) sessionControl(control queue.ChannelSessionControl) error {
+func (renderer chatRenderer) sessionControl(control model.ChannelSessionControl) error {
 	label := "you control>"
 	switch control.Kind {
-	case queue.ChannelSessionControlInterrupt:
+	case model.ChannelSessionControlInterrupt:
 		label = "you /interrupt>"
-	case queue.ChannelSessionControlReplan:
+	case model.ChannelSessionControlReplan:
 		label = "you /redirect>"
-	case queue.ChannelSessionControlCancel:
+	case model.ChannelSessionControlCancel:
 		label = "you /cancel>"
 	default:
 		return fmt.Errorf("cannot render session control kind %q", control.Kind)

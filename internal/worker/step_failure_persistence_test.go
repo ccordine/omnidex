@@ -85,10 +85,7 @@ func TestWorkerLoopStopsAfterTerminalFailurePersistenceError(t *testing.T) {
 func invalidActionClaim(t *testing.T) (*model.ClaimedStep, workspacefacts.HostDirectoryAccess) {
 	t.Helper()
 	root := t.TempDir()
-	access, err := workspacefacts.NewHostDirectoryAccess("/tmp")
-	if err != nil {
-		t.Fatalf("construct test host directory authority: %v", err)
-	}
+	access := workspacefacts.NewHostDirectoryAccess("/tmp")
 	metadata, err := json.Marshal(map[string]string{"client_cwd": root})
 	if err != nil {
 		t.Fatalf("marshal job metadata: %v", err)

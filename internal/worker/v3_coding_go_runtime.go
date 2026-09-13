@@ -2,105 +2,95 @@ package worker
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
+const goCommandLineInputType = `type TaskInput struct {
+	Arguments     []string // Values the user supplies as command-line arguments, excluding the executable name.
+	StandardInput string   // Text for behavior that explicitly consumes redirected or piped input.
+}`
+
 func goCommandLineRuntimeDocument() assemblyline.SourceDocument {
-	const source = `type TaskInput struct {
-	Arguments     []string // Command-line arguments excluding the executable name.
-	StandardInput string   // Complete standard-input text.
-}
-
-type TaskResult struct {
-	Output   string            // User-visible standard-output text.
-	Error    string            // User-visible standard-error text.
-	ExitCode int               // Process status; zero means success.
-	State    map[string]string // Reusable capability values.
-}
-
-type CapabilityResults map[string]TaskResult`
 	return assemblyline.SourceDocument{
 		ID: "application_runtime", Path: "runtime.go", Preamble: "package main",
-		Blocks: []assemblyline.SourceBlock{{
-			ID: "runtime.api", Static: source, API: source,
-		}},
+		Blocks: []assemblyline.SourceBlock{{ID: "runtime.api", Static: goCommandLineInputType, API: goCommandLineInputType}},
 	}
 }
 
-func goCommandLineApplicationDocument(
-	requirements []assemblyline.Requirement,
-	capabilities directCodingCapabilityGraph,
-	order []string,
-	dependencies []string,
-) assemblyline.SourceDocument {
+func goCommandLineApplicationDocument(requirements []assemblyline.Requirement, capabilities directCodingCapabilityGraph, kinds directCodingResultValueKindPlan, order, dependencies []string, sources directCodingInputSourcePlan) (assemblyline.SourceDocument, error) {
+	source, err := goCommandLineApplicationSource(requirements, capabilities, kinds, order, sources)
+	if err != nil {
+		return assemblyline.SourceDocument{}, err
+	}
+	imports := []string{"\"fmt\"", "\"os\""}
+	if goNeedsStandardInput(sources) {
+		imports = append(imports, "\"io\"")
+	}
+	for _, requirement := range requirements {
+		if kinds[requirement.ID] != assemblyline.ApplicationResultText {
+			imports = append(imports, "\"strconv\"")
+			break
+		}
+	}
 	return assemblyline.SourceDocument{
 		ID: "application_entrypoint", Path: "main.go",
-		Preamble: "package main\n\nimport (\n\t\"fmt\"\n\t\"io\"\n\t\"os\"\n)",
-		Blocks: []assemblyline.SourceBlock{{
-			ID:        "application.run",
-			Static:    goCommandLineApplicationSource(requirements, capabilities, order),
-			API:       "func RunApplication(arguments []string, standardInput string) TaskResult\nfunc main()",
-			DependsOn: append([]string(nil), dependencies...),
-		}},
-	}
+		Preamble: "package main\n\nimport (\n" + strings.Join(imports, "\n") + "\n)",
+		Blocks: []assemblyline.SourceBlock{{ID: "application.run", Static: source,
+			API:       "func RunApplication(arguments []string, standardInput string) string\nfunc main()",
+			DependsOn: append([]string(nil), dependencies...)}},
+	}, nil
 }
 
-func goCommandLineApplicationSource(
-	requirements []assemblyline.Requirement,
-	capabilities directCodingCapabilityGraph,
-	order []string,
-) string {
-	indices := make(map[string]int, len(requirements))
-	for index, requirement := range requirements {
-		indices[requirement.ID] = index + 1
-	}
+func goCommandLineApplicationSource(requirements []assemblyline.Requirement, capabilities directCodingCapabilityGraph, kinds directCodingResultValueKindPlan, order []string, sources directCodingInputSourcePlan) (string, error) {
+	indices := goValueIndices(requirements)
+	invocations, _ := goValueInvocationLines(order, indices, capabilities, nil, sources)
 	var source strings.Builder
-	source.WriteString("func RunApplication(arguments []string, standardInput string) TaskResult {\n")
-	source.WriteString("\tinput := TaskInput{Arguments: arguments, StandardInput: standardInput}\n")
-	source.WriteString("\tresults := CapabilityResults{}\n")
-	source.WriteString("\tcombined := TaskResult{State: map[string]string{}}\n")
-	for _, requirementID := range order {
-		sequence := indices[requirementID]
-		source.WriteString(fmt.Sprintf("\tdirect%03d := CapabilityResults{\n", sequence))
-		for _, dependency := range capabilities[requirementID] {
-			dependencySequence := indices[dependency.RequirementID]
-			constant := fmt.Sprintf("Feature%03dCapability%03d", sequence, dependencySequence)
-			source.WriteString(fmt.Sprintf(
-				"\t\t%s: results[%s],\n", constant, strconv.Quote(dependency.CapabilityID),
-			))
+	source.WriteString("func RunApplication(arguments []string, standardInput string) string {\n")
+	for _, requirement := range requirements {
+		sequence := indices[requirement.ID]
+		expression := ""
+		switch sources[requirement.ID] {
+		case assemblyline.ApplicationInputArguments:
+			expression = "arguments"
+		case assemblyline.ApplicationInputStandardInput:
+			expression = "standardInput"
+		case assemblyline.ApplicationInputBoth:
+			expression = "TaskInput{Arguments: arguments, StandardInput: standardInput}"
+		case assemblyline.ApplicationInputNone:
+			continue
+		default:
+			return "", fmt.Errorf("Go input channel is unresolved")
 		}
-		source.WriteString("\t}\n")
-		source.WriteString(fmt.Sprintf(
-			"\tresult%03d := Feature%03d(input, direct%03d)\n", sequence, sequence, sequence,
-		))
-		source.WriteString(fmt.Sprintf(
-			"\tresults[%s] = result%03d\n", strconv.Quote(genericApplicationCapabilityID(sequence)), sequence,
-		))
-		source.WriteString(fmt.Sprintf("\tif result%03d.Output != \"\" {\n", sequence))
-		source.WriteString("\t\tif combined.Output != \"\" { combined.Output += \"\\n\" }\n")
-		source.WriteString(fmt.Sprintf("\t\tcombined.Output += result%03d.Output\n\t}\n", sequence))
-		source.WriteString(fmt.Sprintf("\tfor key, value := range result%03d.State { combined.State[key] = value }\n", sequence))
-		source.WriteString(fmt.Sprintf("\tif result%03d.ExitCode != 0 { combined.ExitCode = result%03d.ExitCode }\n", sequence, sequence))
-		source.WriteString(fmt.Sprintf("\tif result%03d.Error != \"\" {\n", sequence))
-		source.WriteString(fmt.Sprintf("\t\tcombined.Error = result%03d.Error\n", sequence))
-		source.WriteString("\t\tif combined.ExitCode == 0 { combined.ExitCode = 1 }\n\t\treturn combined\n\t}\n")
+		source.WriteString(fmt.Sprintf("input%03d := %s\n", sequence, expression))
 	}
-	source.WriteString("\treturn combined\n}\n\n")
-	source.WriteString(`func main() {
-	rawInput, err := io.ReadAll(os.Stdin)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "read standard input:", err)
-		os.Exit(1)
+	source.WriteString(strings.Join(invocations, "\n") + "\n")
+	source.WriteString("combined := \"\"\n")
+	for _, id := range order {
+		sequence := indices[id]
+		formatted, err := goCommandLineFormatValue(kinds[id], fmt.Sprintf("value%03d", sequence))
+		if err != nil {
+			return "", err
+		}
+		source.WriteString(fmt.Sprintf("output%03d := %s\n", sequence, formatted))
+		source.WriteString(fmt.Sprintf("if output%03d != \"\" { if combined != \"\" { combined += \"\\n\" }; combined += output%03d }\n", sequence, sequence))
 	}
-	result := RunApplication(os.Args[1:], string(rawInput))
-	if result.Output != "" { fmt.Fprintln(os.Stdout, result.Output) }
-	if result.Error != "" { fmt.Fprintln(os.Stderr, result.Error) }
-	if result.ExitCode != 0 { os.Exit(result.ExitCode) }
+	source.WriteString("return combined\n}\n\n")
+	source.WriteString("func main() {\nvar rawInput []byte\n")
+	if goNeedsStandardInput(sources) {
+		source.WriteString(`inputInfo, err := os.Stdin.Stat()
+if err != nil { fmt.Fprintln(os.Stderr, "inspect standard input:", err); os.Exit(1) }
+if inputInfo.Mode()&os.ModeCharDevice == 0 {
+ rawInput, err = io.ReadAll(os.Stdin)
+ if err != nil { fmt.Fprintln(os.Stderr, "read standard input:", err); os.Exit(1) }
+}
+`)
+	}
+	source.WriteString(`output := RunApplication(os.Args[1:], string(rawInput))
+if output != "" { fmt.Fprintln(os.Stdout, output) }
 }`)
-	return source.String()
+	return source.String(), nil
 }
 
 func goCommandLineRequirementOrder(
@@ -124,4 +114,13 @@ func goCommandLineRequirementOrder(
 		order = append(order, wave...)
 	}
 	return order, nil
+}
+
+func goNeedsStandardInput(sources directCodingInputSourcePlan) bool {
+	for _, source := range sources {
+		if source == assemblyline.ApplicationInputStandardInput || source == assemblyline.ApplicationInputBoth {
+			return true
+		}
+	}
+	return false
 }

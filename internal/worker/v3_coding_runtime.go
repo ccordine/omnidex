@@ -25,6 +25,7 @@ type directCodingSession struct {
 	plannedFiles               int
 	plannedDeletes             int
 	mutationJournal            []directCodingMutationJournalEntry
+	publishedAssembly          directCodingAssembly
 	pathProvenance             assemblyline.ArtifactIdentityProvenance
 	verificationCommandOrdinal int64
 }
@@ -120,7 +121,7 @@ func (r *nativeRuntimeV3) runDirectCodingSession(request directCodingRequest) (s
 	if r == nil || r.svc == nil {
 		return "", fmt.Errorf("direct coding runtime is unavailable")
 	}
-	scope, err := r.svc.workspaceScopeForV3Job(r.claim.Job)
+	scope, err := r.svc.workspaceScopeForV3Job(r.ctx, r.claim.Job)
 	if err != nil {
 		return "", err
 	}

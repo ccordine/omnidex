@@ -11,7 +11,6 @@ import (
 
 	"github.com/gryph/omnidex/internal/client"
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/queue"
 )
 
 type chatSessionConfig struct {
@@ -35,8 +34,8 @@ type chatSession struct {
 	renderer           chatRenderer
 	active             *model.JobDetails
 	messages           map[int64]model.ChannelMessage
-	turns              map[queue.LifecycleOperationID]queue.ChannelSessionTurn
-	controls           map[queue.LifecycleOperationID]queue.ChannelSessionControl
+	turns              map[model.LifecycleOperationID]model.ChannelSessionTurn
+	controls           map[model.LifecycleOperationID]model.ChannelSessionControl
 	pendingControl     *pendingControl
 	pendingTurn        *pendingSessionTurn
 	pendingPlan        *pendingPlanMutation
@@ -49,13 +48,13 @@ type chatSession struct {
 	signals            <-chan os.Signal
 	snapshotRevision   uint64
 	realtimeCursor     uint64
-	serverState        client.ChatSessionState
+	serverState        model.ChannelSessionState
 	lastPollError      string
 }
 
 type pendingSessionTurn struct {
 	exactText   string
-	operationID queue.LifecycleOperationID
+	operationID model.LifecycleOperationID
 }
 
 func runChatSession(config chatSessionConfig) (resultErr error) {
@@ -69,8 +68,8 @@ func runChatSession(config chatSessionConfig) (resultErr error) {
 		workspaceIdentity: config.WorkspaceIdentity,
 		renderer:          chatRenderer{console: config.Console},
 		messages:          make(map[int64]model.ChannelMessage),
-		turns:             make(map[queue.LifecycleOperationID]queue.ChannelSessionTurn),
-		controls:          make(map[queue.LifecycleOperationID]queue.ChannelSessionControl),
+		turns:             make(map[model.LifecycleOperationID]model.ChannelSessionTurn),
+		controls:          make(map[model.LifecycleOperationID]model.ChannelSessionControl),
 		signals:           config.Signals,
 	}
 	if err := session.renderer.banner(config.Channel); err != nil {
@@ -356,7 +355,7 @@ func (session *chatSession) acceptText(text string) error {
 
 func (session *chatSession) sessionTurnOperationID(
 	exactText string,
-) (queue.LifecycleOperationID, error) {
+) (model.LifecycleOperationID, error) {
 	if err := client.ValidateSessionTurnText(exactText); err != nil {
 		return "", err
 	}

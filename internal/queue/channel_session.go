@@ -16,11 +16,11 @@ const MaxChannelSessionMessages = 200
 type ChannelSessionSnapshot struct {
 	Channel           model.Channel
 	WorkspaceIdentity string
-	State             ChannelSessionState
+	State             model.ChannelSessionState
 	Transcript        model.ChannelMessagePage
-	Turns             []ChannelSessionTurn
+	Turns             []model.ChannelSessionTurn
 	TurnsTruncated    bool
-	Controls          []ChannelSessionControl
+	Controls          []model.ChannelSessionControl
 	ControlsTruncated bool
 	ActiveJob         *model.JobDetails
 }

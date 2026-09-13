@@ -16,6 +16,7 @@ func TestFreshSchemaExactGoProgramPassesRecordedFocusedAndFinalSieves(t *testing
 	if databaseURL == "" {
 		t.Skip("OMNI_TEST_DATABASE_URL is required for recorded Go sieve coverage")
 	}
+	rejectNativeCompiledLanguageTools(t)
 	_, repository := freshWorkerEvidenceRepository(t, databaseURL)
 	ctx := context.Background()
 	hostRoot := t.TempDir()
@@ -66,8 +67,10 @@ func TestFreshSchemaExactGoProgramPassesRecordedFocusedAndFinalSieves(t *testing
 		argv  []string
 	}{
 		{queue.VerificationIsolatedInstall, []string{"go", "version"}},
+		{queue.VerificationIsolatedTask, directCodingGoSourceResetCommand().Argv},
 		{queue.VerificationIsolatedTask, []string{"gofmt", "-d", "--", "feature001.go", "feature001_test.go", "runtime.go"}},
 		{queue.VerificationIsolatedTask, []string{"go", "test", "-count=1", "-run", "^TestFeature001$", "./..."}},
+		{queue.VerificationIsolatedFinal, directCodingGoSourceResetCommand().Argv},
 		{queue.VerificationIsolatedFinal, []string{"gofmt", "-d", "--", "feature001.go", "feature001_test.go", "main.go", "runtime.go"}},
 		{queue.VerificationIsolatedFinal, []string{"go", "test", "-count=1", "./..."}},
 		{queue.VerificationIsolatedFinal, []string{"go", "vet", "./..."}},
@@ -78,11 +81,18 @@ func TestFreshSchemaExactGoProgramPassesRecordedFocusedAndFinalSieves(t *testing
 	}
 	for index, expected := range want {
 		actual := evidence[index]
+		if actual.ContainerID == "" || actual.ContainerImageID == "" || actual.ContainerExecID == "" || actual.WorkingDirectory != "/workspace" {
+			t.Fatalf("Go command lacks Docker authority: %+v", actual)
+		}
 		if actual.Phase != expected.phase || !sameExactStrings(actual.Argv, expected.argv) ||
 			actual.Status != queue.VerificationCommandSucceeded {
 			t.Fatalf("Go command %d=%#v; want phase=%s argv=%v success", index+1, actual, expected.phase, expected.argv)
 		}
 	}
+	if err := workspace.Close(); err != nil {
+		t.Fatal(err)
+	}
+	assertCompiledLanguageContainersRemoved(t, evidence)
 }
 
 func testExactGoSieveProgram(t *testing.T) directCodingProgram {
@@ -126,7 +136,7 @@ func testExactGoSieveProgram(t *testing.T) directCodingProgram {
 	program, err := compileDirectCodingProgram(
 		specification, workload,
 		directCodingCapabilityGraph{"requirement_001": nil},
-		directCodingProjectSelection{Stack: stack, Profile: profile, Dialect: dialect},
+		directCodingProjectSelection{Stack: stack, Profile: profile, Dialect: dialect, ResultValueKinds: directCodingResultValueKindPlan{"requirement_001": assemblyline.ApplicationResultText}, InputSources: directCodingInputSourcePlan{"requirement_001": assemblyline.ApplicationInputArguments}},
 		target, coverage, nil, nil, nil,
 	)
 	if err != nil {
@@ -160,14 +170,8 @@ func testExactGoSieveProgram(t *testing.T) directCodingProgram {
 	if err != nil {
 		t.Fatal(err)
 	}
-	program.Generated["feature.001"] = `func Feature001(input TaskInput, dependencies CapabilityResults) TaskResult {
-	return TaskResult{Output: "ready"}
-}`
-	program.Generated["acceptance.001"] = `func TestFeature001(t *testing.T) {
-	result := Feature001(TaskInput{}, CapabilityResults{})
-	if result.Output != "ready" {
-		t.Fatalf("output = %q", result.Output)
-	}
-}`
+	program.Generated["feature.001"] = `func Feature001(arguments []string) string { return "ready" }`
+	program.Generated["acceptance.input.001"] = `func MakeExampleInputFeature001() []string { return []string{} }`
+	program.Generated["acceptance.001"] = `func ExpectedFeature001(arguments []string) string { return "ready" }`
 	return program
 }

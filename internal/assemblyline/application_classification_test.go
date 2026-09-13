@@ -21,8 +21,8 @@ func TestUnspecifiedApplicationSurfaceUsesCodeOwnedBrowserDefault(t *testing.T) 
 				t.Fatal(err)
 			}
 			for _, required := range []string{
-				"The request does not constrain its observable delivery surface.",
-				"A missing surface constraint is different from an explicit requirement outside the registered set",
+				"The request does not say what interface to use.",
+				"Another interface, such as a native mobile or graphical desktop app, or a combination of interfaces.",
 				"Answer with A or B or C or D.",
 			} {
 				if !strings.Contains(prompt, required) {

@@ -4,12 +4,13 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 	"github.com/jackc/pgx/v5"
 )
 
 type codingPlanDecisionsRequest struct {
-	OperationID       queue.LifecycleOperationID       `json:"operation_id"`
+	OperationID       model.LifecycleOperationID       `json:"operation_id"`
 	Generation        int64                            `json:"generation"`
 	Revision          int64                            `json:"revision"`
 	Decisions         []queue.CodingPlanDecisionChange `json:"decisions"`
@@ -18,7 +19,7 @@ type codingPlanDecisionsRequest struct {
 }
 
 type codingPlanFreezeRequest struct {
-	OperationID       queue.LifecycleOperationID `json:"operation_id"`
+	OperationID       model.LifecycleOperationID `json:"operation_id"`
 	Generation        int64                      `json:"generation"`
 	Revision          int64                      `json:"revision"`
 	WorkspaceRoot     lifecycleWorkspaceValue    `json:"workspace_root,omitempty"`
@@ -31,7 +32,7 @@ func (s *Server) writeCurrentCodingPlan(w http.ResponseWriter, r *http.Request, 
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := s.requireServerWorkspaceIdentity(workspaceRoot, workspaceIdentity); err != nil {
+	if err := s.requireJobWorkspaceIdentity(r.Context(), jobID, workspaceRoot, workspaceIdentity); err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
@@ -68,7 +69,7 @@ func (s *Server) applyCodingPlanDecisions(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := s.requireServerWorkspaceIdentity(
+	if err := s.requireJobWorkspaceIdentity(r.Context(), jobID,
 		request.WorkspaceRoot.Value, request.WorkspaceIdentity.Value,
 	); err != nil {
 		writeError(w, http.StatusConflict, err.Error())
@@ -105,7 +106,7 @@ func (s *Server) freezeCodingPlan(w http.ResponseWriter, r *http.Request, jobID 
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := s.requireServerWorkspaceIdentity(
+	if err := s.requireJobWorkspaceIdentity(r.Context(), jobID,
 		request.WorkspaceRoot.Value, request.WorkspaceIdentity.Value,
 	); err != nil {
 		writeError(w, http.StatusConflict, err.Error())

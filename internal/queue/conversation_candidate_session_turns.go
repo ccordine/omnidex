@@ -20,7 +20,7 @@ const (
 )
 
 type conversationFollowup struct {
-	operationID LifecycleOperationID
+	operationID model.LifecycleOperationID
 	generation  int64
 	phase       int
 	kind        conversationFollowupKind
@@ -41,12 +41,12 @@ func loadConversationSessionFollowupsTx(
 		WHERE channel_id=$1 AND job_id=$2
 		ORDER BY generation DESC,phase DESC,created_at DESC,operation_id DESC
 		LIMIT $3
-	`, channelID, jobID, MaxChannelSessionTurns+1)
+	`, channelID, jobID, model.MaxChannelSessionTurns+1)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	followups := make([]conversationFollowup, 0, MaxChannelSessionTurns+1)
+	followups := make([]conversationFollowup, 0, model.MaxChannelSessionTurns+1)
 	for rows.Next() {
 		var followup conversationFollowup
 		if err := rows.Scan(
@@ -68,11 +68,11 @@ func loadConversationSessionFollowupsTx(
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	if len(followups) > MaxChannelSessionTurns {
+	if len(followups) > model.MaxChannelSessionTurns {
 		return nil, fmt.Errorf(
 			"conversation job %d exceeds the explicit %d-event follow-up context bound",
 			jobID,
-			MaxChannelSessionTurns,
+			model.MaxChannelSessionTurns,
 		)
 	}
 	for left, right := 0, len(followups)-1; left < right; left, right = left+1, right-1 {
@@ -90,7 +90,7 @@ func loadConversationSessionFollowupsTx(
 }
 
 func validateConversationFollowup(followup conversationFollowup) error {
-	if _, err := ParseLifecycleOperationID(string(followup.operationID)); err != nil {
+	if _, err := model.ParseLifecycleOperationID(string(followup.operationID)); err != nil {
 		return err
 	}
 	if followup.generation < 1 || followup.createdAt.IsZero() {

@@ -2,6 +2,12 @@ package assemblyline
 
 func portableApplicationResponseMaximum(job PortableJob) (int, bool, error) {
 	switch job.Kind {
+	case WorkApplicationInputSource:
+		maximum, err := opaqueModelChoiceBuilderResponseMaximum(applicationInputSourceChoices)
+		return maximum, true, err
+	case WorkApplicationResultValueKind:
+		maximum, err := opaqueModelChoiceBuilderResponseMaximum(applicationResultValueKindChoices)
+		return maximum, true, err
 	case WorkApplicationProductContext:
 		return maxApplicationProductBytes, true, nil
 	case WorkApplicationRequirementInventory:

@@ -218,9 +218,9 @@ func TestOpenSourceCorrectionExtractsOneFencedReplacement(t *testing.T) {
 	if corrected != "return left + right;" {
 		t.Fatalf("fenced replacement splice=%q", corrected)
 	}
-	_, err = correction.Apply("```typescript\nleft\n```\n```typescript\nright\n```")
-	if err == nil || !strings.Contains(err.Error(), "2 fenced regions") {
-		t.Fatalf("ambiguous replacement extraction error=%v", err)
+	candidates, err := correction.ApplyCandidates("```typescript\nleft\n```\n```typescript\nright\n```")
+	if err != nil || len(candidates) != 2 || candidates[0] != "return left;" || candidates[1] != "return right;" {
+		t.Fatalf("ordered replacement splices=%v error=%v", candidates, err)
 	}
 }
 

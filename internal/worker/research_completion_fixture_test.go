@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/evidence"
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 )
 
@@ -21,7 +22,7 @@ func assertResearchWorkflowCompletion(t *testing.T, run researchWorkflowFixture,
 		records[index].JobID = run.claim.Job.ID
 		records[index].StepID = run.claim.Step.ID
 	}
-	operation, err := queue.NewLifecycleOperationID()
+	operation, err := model.NewLifecycleOperationID()
 	if err != nil {
 		t.Fatal(err)
 	}

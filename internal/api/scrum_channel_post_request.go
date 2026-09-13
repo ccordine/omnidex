@@ -11,7 +11,6 @@ import (
 
 	"github.com/gryph/omnidex/internal/exactjson"
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/queue"
 )
 
 // The decoded user turn is bounded to 4 KiB. The transport bound also permits
@@ -19,7 +18,7 @@ import (
 const maxScrumChannelPostBodyBytes int64 = 32 * 1024
 
 type scrumChannelPostRequest struct {
-	OperationID queue.LifecycleOperationID `json:"operation_id"`
+	OperationID model.LifecycleOperationID `json:"operation_id"`
 	Message     string                     `json:"message"`
 }
 
@@ -57,7 +56,7 @@ func decodeScrumChannelPostRequest(
 	if err := requireJSONEOF(decoder, "Scrum channel POST"); err != nil {
 		return scrumChannelPostRequest{}, err
 	}
-	operationID, err := queue.ParseLifecycleOperationID(string(request.OperationID))
+	operationID, err := model.ParseLifecycleOperationID(string(request.OperationID))
 	if err != nil {
 		return scrumChannelPostRequest{}, err
 	}

@@ -7,7 +7,6 @@ import (
 	"net/url"
 
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/queue"
 )
 
 type CodingPlanDecisionChange struct {
@@ -48,7 +47,7 @@ func (client *Client) DecideCodingPlan(
 	channel model.Channel,
 	workspaceIdentity string,
 	jobID int64,
-	operationID queue.LifecycleOperationID,
+	operationID model.LifecycleOperationID,
 	generation int64,
 	revision int64,
 	decisions []CodingPlanDecisionChange,
@@ -62,7 +61,7 @@ func (client *Client) DecideCodingPlan(
 		return model.CodingPlan{}, err
 	}
 	payload := struct {
-		OperationID       queue.LifecycleOperationID `json:"operation_id"`
+		OperationID       model.LifecycleOperationID `json:"operation_id"`
 		Generation        int64                      `json:"generation"`
 		Revision          int64                      `json:"revision"`
 		WorkspaceRoot     string                     `json:"workspace_root"`
@@ -89,7 +88,7 @@ func (client *Client) FreezeCodingPlan(
 	channel model.Channel,
 	workspaceIdentity string,
 	jobID int64,
-	operationID queue.LifecycleOperationID,
+	operationID model.LifecycleOperationID,
 	generation int64,
 	revision int64,
 ) (CodingPlanFreezeReceipt, error) {
@@ -99,7 +98,7 @@ func (client *Client) FreezeCodingPlan(
 		return CodingPlanFreezeReceipt{}, err
 	}
 	payload := struct {
-		OperationID       queue.LifecycleOperationID `json:"operation_id"`
+		OperationID       model.LifecycleOperationID `json:"operation_id"`
 		Generation        int64                      `json:"generation"`
 		Revision          int64                      `json:"revision"`
 		WorkspaceRoot     string                     `json:"workspace_root"`
@@ -147,14 +146,14 @@ func validateCodingPlanMutation(
 	channel model.Channel,
 	workspaceIdentity string,
 	jobID int64,
-	operationID queue.LifecycleOperationID,
+	operationID model.LifecycleOperationID,
 	generation int64,
 	revision int64,
 ) error {
 	if err := validateCodingPlanAuthority(channel, workspaceIdentity, jobID); err != nil {
 		return err
 	}
-	if _, err := queue.ParseLifecycleOperationID(string(operationID)); err != nil {
+	if _, err := model.ParseLifecycleOperationID(string(operationID)); err != nil {
 		return err
 	}
 	if generation < 1 || revision < 1 {

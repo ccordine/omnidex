@@ -12,8 +12,8 @@ func TestCLIChatSessionBindingRequiresExactWorkspaceIdentity(t *testing.T) {
 	t.Parallel()
 
 	const workspaceRoot = "/tmp/cli-chat-session-binding"
-	identityA := "directory_1_101"
-	identityB := "directory_1_102"
+	identityA := "client_11111111111111111111111111111111_directory_1_101"
+	identityB := "client_11111111111111111111111111111111_directory_1_102"
 	id, err := projectroot.NewCLIChatChannelID()
 	if err != nil {
 		t.Fatal(err)
@@ -39,7 +39,7 @@ func TestCLIChatSessionBindingRequiresExactWorkspaceIdentity(t *testing.T) {
 func TestCLIChatSessionBindingPreservesNonCLIAssistantChannels(t *testing.T) {
 	t.Parallel()
 
-	identity := "directory_1_103"
+	identity := "client_11111111111111111111111111111111_directory_1_103"
 	if err := requireCLIChatSessionWorkspaceBinding(
 		model.ChannelID("ordinary-assistant-channel"),
 		nil,
@@ -55,7 +55,7 @@ func TestCLIChatSessionBindingRejectsMissingOrContradictoryStoredValues(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	identity := "directory_1_101"
+	identity := "client_11111111111111111111111111111111_directory_1_101"
 	invalid := "unparsed-directory"
 	for _, test := range []struct {
 		id    model.ChannelID

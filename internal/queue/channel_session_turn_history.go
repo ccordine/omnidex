@@ -3,29 +3,16 @@ package queue
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
 )
 
-const MaxChannelSessionTurns = 200
-
-type ChannelSessionTurn struct {
-	OperationID LifecycleOperationID          `json:"operation_id"`
-	Disposition ChannelSessionTurnDisposition `json:"disposition"`
-	Text        string                        `json:"text"`
-	JobID       int64                         `json:"job_id"`
-	Generation  int64                         `json:"generation"`
-	Status      string                        `json:"status"`
-	CreatedAt   time.Time                     `json:"created_at"`
-}
-
 func listChannelSessionTurnsTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	channelID model.ChannelID,
-) ([]ChannelSessionTurn, bool, error) {
+) ([]model.ChannelSessionTurn, bool, error) {
 	rows, err := tx.Query(ctx, `
 		SELECT operation_id,disposition,text,job_id,generation,status,created_at
 		FROM (
@@ -50,7 +37,7 @@ func listChannelSessionTurnsTx(
 		) AS history
 		ORDER BY created_at DESC,operation_id DESC
 		LIMIT $2
-	`, channelID, MaxChannelSessionTurns+1)
+	`, channelID, model.MaxChannelSessionTurns+1)
 	if err != nil {
 		return nil, false, fmt.Errorf(
 			"read channel %q session turn history: %w",
@@ -59,9 +46,9 @@ func listChannelSessionTurnsTx(
 		)
 	}
 	defer rows.Close()
-	turns := make([]ChannelSessionTurn, 0, MaxChannelSessionTurns+1)
+	turns := make([]model.ChannelSessionTurn, 0, model.MaxChannelSessionTurns+1)
 	for rows.Next() {
-		var turn ChannelSessionTurn
+		var turn model.ChannelSessionTurn
 		if err := rows.Scan(
 			&turn.OperationID,
 			&turn.Disposition,
@@ -73,7 +60,7 @@ func listChannelSessionTurnsTx(
 		); err != nil {
 			return nil, false, err
 		}
-		if _, err := ParseLifecycleOperationID(string(turn.OperationID)); err != nil {
+		if _, err := model.ParseLifecycleOperationID(string(turn.OperationID)); err != nil {
 			return nil, false, err
 		}
 		if err := validateChannelSessionTurnDisposition(turn.Disposition); err != nil {
@@ -103,9 +90,9 @@ func listChannelSessionTurnsTx(
 	if err := rows.Err(); err != nil {
 		return nil, false, err
 	}
-	truncated := len(turns) > MaxChannelSessionTurns
+	truncated := len(turns) > model.MaxChannelSessionTurns
 	if truncated {
-		turns = turns[:MaxChannelSessionTurns]
+		turns = turns[:model.MaxChannelSessionTurns]
 	}
 	for left, right := 0, len(turns)-1; left < right; left, right = left+1, right-1 {
 		turns[left], turns[right] = turns[right], turns[left]

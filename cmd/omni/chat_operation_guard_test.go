@@ -11,7 +11,6 @@ import (
 
 	"github.com/gryph/omnidex/internal/client"
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/queue"
 )
 
 func TestWhitespaceInterruptUsesCanonicalDefaultReason(t *testing.T) {
@@ -160,10 +159,10 @@ func newChatOperationTestSession(t *testing.T, baseURL string) *chatSession {
 			CreatedAt:     now,
 			UpdatedAt:     now,
 		},
-		workspaceIdentity: "directory_1_101",
+		workspaceIdentity: "client_11111111111111111111111111111111_directory_1_101",
 		signals:           make(chan os.Signal),
 		messages:          make(map[int64]model.ChannelMessage),
-		turns:             make(map[queue.LifecycleOperationID]queue.ChannelSessionTurn),
-		controls:          make(map[queue.LifecycleOperationID]queue.ChannelSessionControl),
+		turns:             make(map[model.LifecycleOperationID]model.ChannelSessionTurn),
+		controls:          make(map[model.LifecycleOperationID]model.ChannelSessionControl),
 	}
 }

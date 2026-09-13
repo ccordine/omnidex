@@ -25,6 +25,7 @@ func TestCompiledLanguagesRecordRealStageAndHostResults(t *testing.T) {
 				name = stackID + "/compiler-failure"
 			}
 			t.Run(name, func(t *testing.T) {
+				rejectNativeCompiledLanguageTools(t)
 				_, repository := freshWorkerEvidenceRepository(t, databaseURL)
 				ctx := context.Background()
 				root := t.TempDir()
@@ -36,10 +37,7 @@ func TestCompiledLanguagesRecordRealStageAndHostResults(t *testing.T) {
 				if err != nil || claim == nil || claim.Job.ID != job.ID {
 					t.Fatalf("claim=%#v err=%v", claim, err)
 				}
-				access, err := workspacefacts.NewHostDirectoryAccess("/tmp")
-				if err != nil {
-					t.Fatal(err)
-				}
+				access := workspacefacts.NewHostDirectoryAccess("/tmp")
 				program := testCompiledLanguageVerificationProgram(t, stackID)
 				if broken {
 					breakCompiledLanguageFixture(&program)
@@ -49,25 +47,28 @@ func TestCompiledLanguagesRecordRealStageAndHostResults(t *testing.T) {
 					runtimeEventChannels: make(map[int64]runtimeEventChannelBinding),
 				}}
 				session := &directCodingSession{runtime: runtime, root: root, program: &program}
+				if err := runtime.acquireWorkspaceMutationFence(root); err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() {
+					if err := runtime.releaseWorkspaceMutationFence(); err != nil {
+						t.Error(err)
+					}
+				})
 				scratchParent := t.TempDir()
 				t.Setenv("TMPDIR", scratchParent)
 				bodies := program.Generated
 				program.Generated = make(map[string]string)
 				factory := program.Project.Stack.NewSourceGenerator
-				var scratch string
 				program.Project.Stack.NewSourceGenerator = func(session *directCodingSession, selected directCodingProgram) (directCodingProjectSourceGenerator, error) {
 					generator, err := factory(session, selected)
 					if err != nil {
 						return nil, err
 					}
 					executor := generator.(*directCodingCompiledLanguageExecutor)
-					scratch = executor.workspace.root
 					return &compiledLanguageFixtureExecutor{directCodingCompiledLanguageExecutor: executor, bodies: bodies}, nil
 				}
 				t.Cleanup(func() {
-					if _, err := os.Stat(scratch); !os.IsNotExist(err) {
-						t.Errorf("compiler scratch directory remains: %s, %v", scratch, err)
-					}
 					if entries, err := os.ReadDir(scratchParent); err != nil || len(entries) != 0 {
 						t.Errorf("compiler output or stage cache remains: %v, %v", entries, err)
 					}
@@ -89,14 +90,6 @@ func TestCompiledLanguagesRecordRealStageAndHostResults(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if err := runtime.acquireWorkspaceMutationFence(root); err != nil {
-						t.Fatal(err)
-					}
-					t.Cleanup(func() {
-						if err := runtime.releaseWorkspaceMutationFence(); err != nil {
-							t.Error(err)
-						}
-					})
 					prepared, err := session.PrepareAssembly(assembly)
 					if err != nil {
 						t.Fatal(err)
@@ -133,8 +126,8 @@ func TestCompiledLanguagesRecordRealStageAndHostResults(t *testing.T) {
 					if record.Status != want {
 						t.Fatalf("command %v status=%s; want %s", record.Argv, record.Status, want)
 					}
-					if directCodingVerificationPhaseUsesHostRoot(record.Phase) && record.WorkingDirectory != root {
-						t.Fatal("host command evidence refers to a staging directory")
+					if record.WorkingDirectory != "/workspace" || record.ContainerID == "" || record.ContainerImageID == "" || record.ContainerExecID == "" {
+						t.Fatal("compiled command evidence lacks its actual Docker execution authority")
 					}
 					if broken && directCodingVerificationPhaseUsesHostRoot(record.Phase) {
 						t.Fatal("failed stage reached host commands")
@@ -149,6 +142,7 @@ func TestCompiledLanguagesRecordRealStageAndHostResults(t *testing.T) {
 				if !broken && (phases[queue.VerificationIsolatedFinal] == 0 || phases[queue.VerificationHostFinal] == 0) {
 					t.Fatal("successful assembly skipped final or authoritative commands")
 				}
+				assertCompiledLanguageContainersRemoved(t, records)
 			})
 		}
 	}
@@ -173,7 +167,7 @@ func (executor *compiledLanguageFixtureExecutor) VerifyFinal(program *directCodi
 	// requirement understanding or production behavioral acceptance.
 	workspace := executor.workspace
 	command := compiledLanguageFixtureRunCommand(program.Project.Stack.ID, workspace.output)
-	result, err := workspace.session.runRecordedVerificationCommand(workspace.source, queue.VerificationIsolatedFinal, command)
+	result, err := workspace.run(queue.VerificationIsolatedFinal, command)
 	if err != nil || string(result.Stdout) != "ready\n" || len(result.Stderr) != 0 {
 		return fmt.Errorf("compiled fixture output=%q stderr=%q err=%v", result.Stdout, result.Stderr, err)
 	}

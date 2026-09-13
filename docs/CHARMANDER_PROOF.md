@@ -1,7 +1,8 @@
 # Omnidex autonomy proof ledger
 
-Updated: 2026-09-08  
-Status: **not yet proven**
+Updated: 2026-09-13
+
+Status: **Linux Go CLI functionality demonstrated; general autonomy not yet proven**
 
 ## Honest result
 
@@ -10,6 +11,105 @@ No current run is being claimed as proof that Omnidex can build an unfamiliar ap
 Earlier Go CLI runs are invalid as autonomy evidence for the current goal. They used registered application shapes and deterministic product adapters, invoked zero fragment workers, and therefore measured adapter rendering rather than general construction. Their generated projects and historical measurements must not be cited as proof of Omnidex autonomy.
 
 The dependent simulation integration proves a narrow API integration and deterministic simulation boundary. It does not prove that Omnidex built that project.
+
+## Linux minimal-context diagnostic — verified, 2026-09-13
+
+The ordinary `omni chat` boundary produced a working application from a fresh
+workspace using the unchanged diagnostic request below. The frozen build completed
+in 293.518 seconds, with 16 local model calls, 15 successful verification commands,
+and five published files. Codex approved the sole generated plan leaf without
+edits and supplied no intermediate specification, correction, or source.
+
+Code resolved input-channel and result-type semantics through separate bounded
+calls. The three source calls then received only their local behavior and exact
+signature: 327 bytes for the implementation, 370 for example input, and 357 for
+the expected value. They received no capability declarations, paths, project
+context, observed result, test methods, or workflow state. All three passed on
+their first attempt. Code supplied argument passing, formatting, comparisons,
+compilation, verification, and publication. Total prompt input was 13,845 bytes;
+the largest intake prompt was 3,843 bytes.
+
+Independent execution after completion returned `5` for `hello`, `3` for
+`é🙂漢`, and `0` for empty text. An open Linux pseudo-terminal without EOF also
+completed. Source hashes remained unchanged. In a separate copied workspace,
+changing the observed integer made the code-owned comparison fail with an actual
+behavior mismatch; this evaluator check never entered the production build.
+
+This is **contaminated for autonomy qualification** because Codex selected the
+diagnostic request and operated plan approval. It demonstrates the current narrow
+Linux Go CLI path, not arbitrary applications or other operating systems. Broader
+application construction and post-compiler semantic correction remain unqualified.
+
+[Exact calls, process evidence, independent executions, and prior diagnostics](evidence/linux-minimal-context-success-2026-09-13.json)
+are retained with adjacent raw-provider and generated-project archives.
+[Framework checks](evidence/linux-minimal-context-framework-checks-2026-09-13.json)
+record the full repository suite, Docker publication fixtures, live numeric/text
+qualification, and the intervening failures without treating fixtures as autonomy.
+
+## Linux functional diagnostic — independent execution passed, 2026-09-13
+
+An ordinary `omni chat` request produced a working Go command-line application
+from a fresh workspace. The frozen source snapshot completed generation,
+Docker verification, and publication in 186.983 seconds, using 14 local model
+calls and publishing five files. No generated source or intermediate specification
+was supplied by Codex. The sole generated plan leaf was approved without edits.
+
+Independent execution after the builder stopped confirmed argument counts of 5
+for `hello`, 3 for `é🙂漢`, and 0 for empty text. An open pseudo-terminal without
+EOF also completed successfully. Published source hashes remained unchanged.
+
+The generated predicate returned constant `true`, so its passing generated tests
+are not evidence of behavioral verification. The independent executions establish
+only this narrow functional result. The later minimal-context diagnostic above
+replaces the generated predicate with a code-owned typed comparison. It also
+removes the unused input channel that caused a subsequent independently detected
+failure despite passing generated tests.
+
+This remains **contaminated for autonomy qualification** because Codex selected
+the smoke request. It does establish that the Linux production request path can
+produce an application that performs the requested operation. It does not qualify
+arbitrary applications, other languages, or other operating systems.
+
+[Exact calls, commands, independent executions, earlier failures, and known defect](evidence/linux-functional-success-2026-09-13.json)
+are retained with the generated project archive and raw provider evidence.
+
+## Linux ordinary CLI diagnostic — failed, 2026-09-13
+
+The current Linux server and CLI built successfully through the supported build
+scripts, including the production GUI. The actual `omni chat` terminal then ran
+from a fresh directory against a dedicated fresh PostgreSQL schema and live local
+Ollama models. Its captured source remained unchanged throughout execution.
+
+The request was: “Create a small Go command-line program that counts the Unicode
+characters in the text supplied as its argument.”
+
+**Contaminated for autonomy qualification:** Codex selected this initial smoke
+request. This is diagnostic evidence of the ordinary production path, excluded
+from the human-request autonomy acceptance sequence. No intermediate specification,
+correction, or generated file was supplied during execution.
+
+The runtime correctly classified the request as coding. Its inventory returned
+“The software counts the Unicode characters in the text supplied as its argument.”
+The candidate-authorization station then answered `B`, meaning the candidate added
+unrequested meaning. The candidate directly restates the requested runtime behavior;
+this is an observed semantic false negative. Code discarded it and entered an empty
+plan review requiring user guidance.
+
+- Result: `waiting_input` after 20.683 seconds; no functional application.
+- Live calls: 3, all `qwen3.5:9b-q4_K_M`; 5,725 total prompt bytes, 3,843 maximum.
+- Source-generation calls, workload verification commands, and files written: 0.
+- The CLI connected, retained the invoking directory, submitted the ordinary turn,
+  and streamed real progress. Construction and publication were never reached.
+- The client and dedicated server were stopped after this observation. The dedicated
+  database container was removed after exporting its evidence.
+
+[Exact call envelopes, provider responses, transcript, and stopped state](evidence/linux-functional-smoke-2026-09-13.json)
+are retained. The complete source snapshot and database export remain in
+`/tmp/omnidex-linux-smoke._li4gmhp`.
+
+This failed intake run is historical. The later functional diagnostic above
+reached independent Linux execution; generated-verifier quality remains a measured
+limitation. Constructed fixture passes alone are not ordinary-request evidence.
 
 ## Foundation verified so far
 

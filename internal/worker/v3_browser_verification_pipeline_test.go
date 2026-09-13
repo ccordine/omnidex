@@ -64,7 +64,7 @@ func TestTypeScriptBrowserCompilerOwnsIndependentVerificationLeaves(t *testing.T
 			blueprint, staticFiles, err := compileGenericTypeScriptBrowserBlueprint(
 				fixture.name, specification, workload,
 				directCodingCapabilityGraph{"requirement_001": nil},
-				profile, target, coverage,
+				profile, target, coverage, nil, nil,
 			)
 			if err != nil {
 				t.Fatalf("compile browser blueprint: %v", err)

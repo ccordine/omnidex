@@ -32,7 +32,7 @@ func (r *Repository) applyChannelSessionTurnTx(
 		}
 		return channelSessionTurnResult(
 			command,
-			ChannelSessionTurnEnqueued,
+			model.ChannelSessionTurnEnqueued,
 			job,
 			&message,
 			true,
@@ -48,7 +48,7 @@ func (r *Repository) applyChannelSessionTurnTx(
 	}
 	authoritativeJobID := job.ID
 
-	disposition := ChannelSessionTurnReplanned
+	disposition := model.ChannelSessionTurnReplanned
 	var resultStepID *int64
 	var err error
 	switch job.Status {
@@ -73,7 +73,7 @@ func (r *Repository) applyChannelSessionTurnTx(
 		case jobGenerationPurposeInterrupt:
 			job, err = applyChannelSessionReplanTx(ctx, tx, command, job)
 		case jobGenerationPurposeInitial, jobGenerationPurposeReplan:
-			disposition = ChannelSessionTurnFeedback
+			disposition = model.ChannelSessionTurnFeedback
 			var stepID int64
 			job, stepID, err = applyChannelSessionFeedbackTx(ctx, tx, command, job)
 			if err == nil {
@@ -159,7 +159,7 @@ func applyChannelSessionFeedbackTx(
 
 func channelSessionTurnResult(
 	command ChannelSessionTurnCommand,
-	disposition ChannelSessionTurnDisposition,
+	disposition model.ChannelSessionTurnDisposition,
 	job model.Job,
 	message *model.ChannelMessage,
 	applied bool,

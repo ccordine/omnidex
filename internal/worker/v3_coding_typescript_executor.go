@@ -94,6 +94,15 @@ func (executor *directCodingTypeScriptProjectStageExecutor) VerifyFinal(
 	)
 }
 
+func (executor *directCodingTypeScriptProjectStageExecutor) VerifyProgress(program *directCodingProgram) error {
+	return executor.workspace.Verify(program, directCodingVerificationPhaseIsolatedTask,
+		[]directCodingVerificationCommand{
+			directCodingNPMVerificationCommand("run", "typecheck"),
+			directCodingNPMVerificationCommand("test"),
+		},
+	)
+}
+
 func (executor *directCodingTypeScriptProjectStageExecutor) Close() error {
 	if executor == nil || executor.workspace == nil {
 		return nil

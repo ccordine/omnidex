@@ -13,15 +13,15 @@ const defaultChannelSessionMessageLimit = 100
 
 type channelSessionResponse struct {
 	RealtimeCursor    uint64                        `json:"realtime_cursor"`
-	State             queue.ChannelSessionState     `json:"state"`
+	State             model.ChannelSessionState     `json:"state"`
 	WorkspaceIdentity string                        `json:"workspace_identity"`
 	Channel           model.Channel                 `json:"channel"`
 	Messages          []model.ChannelMessage        `json:"messages"`
 	NextBeforeID      *int64                        `json:"next_before_id,omitempty"`
 	HasMore           bool                          `json:"has_more"`
-	Turns             []queue.ChannelSessionTurn    `json:"turns"`
+	Turns             []model.ChannelSessionTurn    `json:"turns"`
 	TurnsTruncated    bool                          `json:"turns_truncated"`
-	Controls          []queue.ChannelSessionControl `json:"controls"`
+	Controls          []model.ChannelSessionControl `json:"controls"`
 	ControlsTruncated bool                          `json:"controls_truncated"`
 	ActiveJob         *model.JobDetails             `json:"active_job"`
 }
@@ -60,7 +60,7 @@ func (s *Server) getChannelSession(
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := s.requireServerWorkspaceIdentity(
+	if err := s.requireClientWorkspaceIdentity(r.Context(),
 		channel.WorkspaceRoot,
 		workspaceIdentity,
 	); err != nil {

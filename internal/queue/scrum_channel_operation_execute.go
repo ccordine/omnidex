@@ -86,7 +86,7 @@ func (r *Repository) ExecuteScrumChannelOperation(
 	}
 	effectOperationID := command.Request.OperationID
 	if command.Effect.Kind != ScrumChannelStartJob {
-		effectOperationID, err = NewLifecycleOperationID()
+		effectOperationID, err = model.NewLifecycleOperationID()
 		if err != nil {
 			return ScrumChannelOperationResult{}, err
 		}
@@ -130,7 +130,7 @@ func (r *Repository) executeScrumChannelEffectTx(
 	command ScrumChannelOperationCommand,
 	card DBScrumCard,
 	lockedMetadata scrum.JobMetadata,
-	operationID LifecycleOperationID,
+	operationID model.LifecycleOperationID,
 ) (model.Job, error) {
 	effect := command.Effect
 	if effect.Kind != ScrumChannelStartJob {
@@ -184,7 +184,7 @@ func executeScrumChannelReplanTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	command ScrumChannelOperationCommand,
-	operationID LifecycleOperationID,
+	operationID model.LifecycleOperationID,
 ) (model.Job, error) {
 	replan, err := normalizeReplanJobCommand(ReplanJobCommand{
 		OperationID: operationID, JobID: command.Effect.JobID, Feedback: command.Request.Message,
@@ -207,7 +207,7 @@ func executeScrumChannelFeedbackTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	command ScrumChannelOperationCommand,
-	operationID LifecycleOperationID,
+	operationID model.LifecycleOperationID,
 ) (model.Job, error) {
 	feedback, err := normalizeSubmitFeedbackCommand(SubmitJobFeedbackCommand{
 		OperationID: operationID, JobID: command.Effect.JobID, Feedback: command.Request.Message,

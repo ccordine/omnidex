@@ -121,7 +121,40 @@ source cannot invoke arbitrary browser host APIs; no host-capability wrapper or
 application host-driver workflow is registered.
 
 The command-line stacks provide their task-neutral runtime and entrypoint.
-Go uses tests, vet, and build. JavaScript syntax-checks every assembled module,
+Go derives standard-library imports from exact qualified references using a
+code-owned public-symbol index generated from Go 1.24.0 on Linux amd64. The index
+is technical adapter data and is never model context. Local names retain their
+lexical authority; unknown members and ambiguous package references fail. Code
+inserts imports before calculating document spans, and the isolated compiler
+checks the resulting API use. The index generator is
+`internal/gofragment/cmd/stdlib-index`; its output is
+`internal/gofragment/stdlib_go124_linux_amd64.txt`.
+
+Go uses tests, vet, and build. One local semantic leaf determines the result's
+value kind; code maps it to a supported text, integer, decimal, or Boolean type.
+Another separate local leaf determines the required process input channel.
+Code supplies argument values as `[]string`, standard-input text as `string`,
+or both fields only when both channels are required. An implementation body
+computes its result value. Code owns its declaration, direct dependency
+parameters, invocation order, and standard-output formatting. This
+adapter currently requires one supported value per accepted requirement; it does
+not establish support for arbitrary structured results or side effects.
+
+Two separate bounded bodies supply an example input and an independently required
+value. No-input behavior requires no example-generation call, and code reads
+standard input only when an accepted requirement needs it. Code constructs the
+test driver and compares the observed and required typed values. The expected-value
+call receives the local behavior and exact signature, including only its required
+input channel and direct dependency values. It never receives the observed result, implementation source, testing
+methods, product description, or document paths. No model writes the comparison
+or decides whether a test passes. For a deterministically located source defect,
+returned correction alternatives are spliced and validated in order inside the
+same retained generation job; accepted bytes outside the span remain unchanged.
+Go receiver members are resolved by the compiler rather than mistaken for free
+lexical identifiers. Validation checks the retained, parsed Go declaration after
+ordinary comments have been removed; executable path literals remain subject to
+the source boundary.
+JavaScript syntax-checks every assembled module,
 loads the implementation graph, and runs the exact task-owned Node test files.
 Rust runs locked offline Cargo library checks and task-owned tests, then builds
 the complete application. Java uses strict compilation for the selected release,
@@ -167,9 +200,28 @@ Omission alone never authorizes deletion.
 
 Every assembled file passes its selected leaf validator and the stack's current
 checks before the authoritative write gate. Code validates again before mutation
-and reruns those checks against the actual workspace afterward. Compiler output
-and caches remain in owned temporary directories which are removed on success or
-failure; source bytes are checked directly after commands, without content hashes.
+and reruns those checks against an exact copy of the actual workspace afterward.
+All five registered stacks verify in Docker, checking authoritative host source
+before and after verification. Their compiler output and dependencies
+stay inside an owned container shared by sequential commands; the container is
+removed after success or failure. Code records the image, container, and exec
+identities and observed network state along with each actual command result.
+The browser stack transfers only its exact manifest and lockfile during dependency
+acquisition and disables installation scripts. Code disconnects the acquisition
+network and verifies that no network attachment remains before transferring
+application source or executing application commands. The other registered stacks
+start offline. No host compiler, dependency install, or generated-output cleanup
+path remains; existing host dependency and build directories retain their contents.
+Source bytes are checked directly after commands, without content hashes.
+Workspace access is selected from the persisted job transport. CLI jobs read and
+publish through the exact live client connection, using a directory handle opened
+before client setup. Explicit server-local coding jobs use their configured host
+directory authority. Both transports use the same bounded reader contract and
+workspace reconciler; a missing client connection has no server-path substitute.
+Publication reports each verified mutation, checks retained file bytes before
+new writes, and preserves observed partial success when a later operation fails.
+The native mutation adapter currently supports Linux. macOS/Windows CLI builds
+do not establish native mutation support or platform execution evidence.
 Unsupported surfaces or artifacts fail; no old adapter, universal coder, or guessed
 fallback remains available.
 

@@ -71,6 +71,14 @@ func projectDirectCodingApplicationTaskStage(
 		StaticFiles: staticFiles,
 		Generated:   generated,
 	}
+	files, err := program.Coverage.FilesForTask(context.Task.TaskID)
+	if err != nil {
+		return zero, err
+	}
+	stage.TargetTree.Paths = make([]string, 0, len(files))
+	for _, file := range files {
+		stage.TargetTree.Paths = append(stage.TargetTree.Paths, file.Path)
+	}
 	if err := stack.ValidateBlueprint(stage.Source); err != nil {
 		return zero, fmt.Errorf("validate application task stage: %w", err)
 	}

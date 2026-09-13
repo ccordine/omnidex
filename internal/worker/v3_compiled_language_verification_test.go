@@ -10,7 +10,7 @@ import (
 
 func TestRegisteredSourceExecutorsRequireStagedVerification(t *testing.T) {
 	contract := reflect.TypeFor[directCodingProjectSourceGenerator]()
-	for _, method := range []string{"VerifyTask", "VerifyFinal", "Close"} {
+	for _, method := range []string{"VerifyTask", "VerifyProgress", "VerifyFinal", "Close"} {
 		if _, exists := contract.MethodByName(method); !exists {
 			t.Errorf("registered source executor can omit %s", method)
 		}

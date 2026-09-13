@@ -146,20 +146,29 @@ func TestVerificationCommandEvidenceContainsResultsWithoutHashReceipts(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(raw), "sha256") || strings.Contains(string(raw), "digest") {
-		t.Fatalf("command result carries redundant hash receipts: %s", raw)
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatal(err)
+	}
+	for name := range fields {
+		if strings.Contains(name, "sha256") || strings.Contains(name, "digest") {
+			t.Fatalf("command result carries redundant hash receipts: %s", raw)
+		}
 	}
 }
 
 func verificationCommandFixture() VerificationCommandEvidence {
 	started := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+	networkEnabled := false
 	return VerificationCommandEvidence{
 		Authority: model.StepAttemptAuthority{
 			JobID: 1, Generation: 1, StepID: 2, Attempt: 1, WorkerID: "fixture-worker",
 		},
 		Phase: VerificationIsolatedTask, Ordinal: 1,
 		Argv: []string{"go", "test", "./..."}, Environment: []string{"GOCACHE=/tmp/cache"},
-		WorkingDirectory: "/tmp/project", StartedAt: started,
+		WorkingDirectory: "/workspace", StartedAt: started,
+		ContainerID: strings.Repeat("a", 64), ContainerImageID: "sha256:" + strings.Repeat("b", 64),
+		ContainerExecID: strings.Repeat("c", 64), ContainerNetworkEnabled: &networkEnabled,
 		FinishedAt: started.Add(125 * time.Millisecond),
 		Stdout:     []byte("ok\n"), StdoutComplete: true,
 		Stderr: []byte{}, StderrComplete: true,

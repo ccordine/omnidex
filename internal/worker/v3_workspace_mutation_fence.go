@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/gryph/omnidex/internal/model"
 	workspacefacts "github.com/gryph/omnidex/internal/workspace"
 )
 
@@ -20,7 +21,19 @@ func (r *nativeRuntimeV3) acquireWorkspaceMutationFence(root string) error {
 		}
 		return nil
 	}
-	fence, err := workspacefacts.AcquireMutationFence(r.ctx, root)
+	scope, err := r.svc.workspaceScopeForV3Job(r.ctx, r.claim.Job)
+	if err != nil {
+		return err
+	}
+	if scope.Root != root {
+		return fmt.Errorf("workspace acquisition differs from its exact job root")
+	}
+	var fence workspacefacts.Access
+	if r.claim.Job.Pipeline == model.PipelineChat {
+		fence, err = r.svc.workspaceConnections.Acquire(r.ctx, scope.Root, scope.Identity)
+	} else {
+		fence, err = workspacefacts.AcquireMutationFence(r.ctx, root)
+	}
 	if err != nil {
 		return err
 	}

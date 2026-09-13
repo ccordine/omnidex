@@ -9,7 +9,7 @@ import (
 
 type chatStatePollResult struct {
 	snapshotRevision uint64
-	state            client.ChatSessionState
+	state            model.ChannelSessionState
 	err              error
 }
 

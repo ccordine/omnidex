@@ -19,17 +19,17 @@ const (
 )
 
 type lifecycleOperationDescriptor struct {
-	ID      LifecycleOperationID
+	ID      model.LifecycleOperationID
 	Kind    LifecycleOperationKind
 	Payload []byte
 }
 
 func describeLifecycleOperation(
-	id LifecycleOperationID,
+	id model.LifecycleOperationID,
 	kind LifecycleOperationKind,
 	command any,
 ) (lifecycleOperationDescriptor, error) {
-	if _, err := ParseLifecycleOperationID(string(id)); err != nil {
+	if _, err := model.ParseLifecycleOperationID(string(id)); err != nil {
 		return lifecycleOperationDescriptor{}, err
 	}
 	if !registeredLifecycleOperationKind(kind) {
@@ -261,7 +261,7 @@ func validateLifecycleWorkspaceBinding(root, identity string) error {
 	if err := model.ValidateChannelWorkspaceRoot(root); err != nil {
 		return fmt.Errorf("lifecycle workspace root: %w", err)
 	}
-	if err := projectroot.ValidateDirectoryIdentity(identity); err != nil {
+	if err := projectroot.ValidateWorkspaceIdentity(identity); err != nil {
 		return fmt.Errorf("lifecycle workspace identity: %w", err)
 	}
 	return nil

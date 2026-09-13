@@ -34,7 +34,7 @@ func failClaimedStepCommand(claim *model.ClaimedStep, failure string) (queue.Fai
 func claimedStepLifecycleOperationID(
 	claim *model.ClaimedStep,
 	kind queue.LifecycleOperationKind,
-) (queue.LifecycleOperationID, error) {
+) (model.LifecycleOperationID, error) {
 	if claim == nil || claim.Job.ID <= 0 || claim.Step.ID <= 0 || claim.Step.Generation <= 0 ||
 		claim.Step.JobID != claim.Job.ID || claim.Step.Generation != claim.Job.CurrentGeneration ||
 		claim.Authority.JobID != claim.Job.ID || claim.Authority.Generation != claim.Step.Generation ||

@@ -19,7 +19,7 @@ func requireCLIChatSessionWorkspaceBinding(
 		return nil
 	}
 	if !projectroot.IsCLIChatChannelID(channelID) || boundWorkspaceIdentity == nil ||
-		projectroot.ValidateDirectoryIdentity(*boundWorkspaceIdentity) != nil ||
+		projectroot.ValidateClientWorkspaceIdentity(*boundWorkspaceIdentity) != nil ||
 		*boundWorkspaceIdentity != workspaceIdentity {
 		return fmt.Errorf(
 			"%w: CLI channel %q differs from the exact workspace identity binding",

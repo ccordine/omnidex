@@ -29,10 +29,11 @@ func generateDirectCodingGoBlock(
 		return "", fmt.Errorf("Go source block %s differs from frozen task authority", ref.Block.ID)
 	}
 	if ref.Block.Role != assemblyline.SourceBlockTaskImplementation &&
-		ref.Block.Role != assemblyline.SourceBlockTaskVerification {
+		ref.Block.Role != assemblyline.SourceBlockTaskVerification &&
+		ref.Block.Role != assemblyline.SourceBlockTaskExample {
 		return "", fmt.Errorf("Go source generator cannot build task role %q", ref.Block.Role)
 	}
-	input, err := directCodingLanguageFragmentInput(stage, ref, "go")
+	input, err := directCodingGoFragmentInput(stage, ref)
 	if err != nil {
 		return "", err
 	}
@@ -40,27 +41,50 @@ func generateDirectCodingGoBlock(
 	if err != nil {
 		return "", err
 	}
-	validate := validateDirectCodingGoFragment
-	if ref.Block.Role == assemblyline.SourceBlockTaskVerification {
-		validate = func(input assemblyline.FragmentGenerationInput, body string) (string, error) {
-			declaration, parseErr := validateDirectCodingGoFragment(input, body)
-			if parseErr != nil {
-				return "", parseErr
-			}
-			if validationErr := validateDirectCodingGoAcceptance(stage, ref, declaration); validationErr != nil {
-				return "", validationErr
-			}
-			return declaration, nil
-		}
-	}
 	runtime := directCodingWorkerRuntime(generator.session)
 	runtime.MaxAttempts = assemblyline.MaxSourceBodyAttempts
 	return runDirectCodingLanguageFragmentWorker(runtime, modelName, directCodingLanguageGenerationJob{
-		Subject: ref.Block.ID, Input: input, Validate: validate,
+		Subject: ref.Block.ID, Input: input, Validate: validateDirectCodingGoFragment,
 	})
 }
 
+func directCodingGoFragmentInput(stage *directCodingProgram, ref assemblyline.SourceBlockRef) (assemblyline.FragmentGenerationInput, error) {
+	input, err := directCodingLanguageFragmentInput(stage, ref, "go")
+	if err != nil {
+		return input, err
+	}
+	return input, nil
+}
+
 func validateDirectCodingGoFragment(
+	input assemblyline.FragmentGenerationInput,
+	candidate string,
+) (string, error) {
+	validated, err := validateDirectCodingGoFragmentSyntax(input, candidate)
+	var defect *assemblyline.SourceBodyDefect
+	if !errors.As(err, &defect) {
+		return validated, err
+	}
+	start, end, err := defect.MutableRange(candidate)
+	if err != nil {
+		return "", err
+	}
+	replacements, err := directCodingGoIdentifierChoices(input, candidate, candidate[start:end], start)
+	if err != nil {
+		return "", fmt.Errorf("enumerate exact Go identifier replacements: %w", err)
+	}
+	if len(replacements) == 0 {
+		return "", defect
+	}
+	bound, err := defect.WithIdentifierReplacements(replacements)
+	if err != nil {
+		return "", err
+	}
+	return "", bound
+}
+
+// Trial validation locates a defect without recursively enumerating repairs.
+func validateDirectCodingGoFragmentSyntax(
 	input assemblyline.FragmentGenerationInput,
 	candidate string,
 ) (string, error) {
@@ -74,13 +98,6 @@ func validateDirectCodingGoFragment(
 	if !errors.As(err, &located) {
 		return "", err
 	}
-	failed := candidate[located.StartByte:located.EndByte]
-	replacements, replacementErr := directCodingGoIdentifierChoices(
-		input, candidate, failed, located.StartByte,
-	)
-	if replacementErr != nil {
-		return "", fmt.Errorf("enumerate exact Go identifier replacements: %w", replacementErr)
-	}
 	if located.StartByte == 0 && located.EndByte == len(candidate) {
 		return "", err
 	}
@@ -90,7 +107,7 @@ func validateDirectCodingGoFragment(
 		located.EndByte,
 		"Which available value has the meaning required at this unresolved reference?",
 		err,
-		replacements,
+		nil,
 	)
 	if defectErr != nil {
 		return "", fmt.Errorf("map exact Go identifier to implementation body: %w", defectErr)

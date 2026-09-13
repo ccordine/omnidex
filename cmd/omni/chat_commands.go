@@ -7,7 +7,6 @@ import (
 
 	"github.com/gryph/omnidex/internal/client"
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/queue"
 )
 
 const ctrlCInterruptReason = "User interrupted the active objective from omni chat."
@@ -24,8 +23,8 @@ func parseChatCommand(line string) (name, text string, command bool) {
 	return body[:delimiter], body[delimiter+1:], true
 }
 
-func newOperationID() (queue.LifecycleOperationID, error) {
-	return queue.NewLifecycleOperationID()
+func newOperationID() (model.LifecycleOperationID, error) {
+	return model.NewLifecycleOperationID()
 }
 
 type pendingControl struct {
@@ -33,7 +32,7 @@ type pendingControl struct {
 	action        string
 	exactText     string
 	locallyEchoed bool
-	operationID   queue.LifecycleOperationID
+	operationID   model.LifecycleOperationID
 }
 
 func (session *chatSession) controlOperationID(
@@ -41,7 +40,7 @@ func (session *chatSession) controlOperationID(
 	action string,
 	exactText string,
 	locallyEchoed bool,
-) (queue.LifecycleOperationID, error) {
+) (model.LifecycleOperationID, error) {
 	if session.pendingTurn != nil {
 		return "", fmt.Errorf("session turn %q remains unresolved", session.pendingTurn.operationID)
 	}

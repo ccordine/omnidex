@@ -1,15 +1,16 @@
-//go:build !linux
+//go:build !linux && !darwin && !windows
 
 package projectroot
 
 import (
 	"fmt"
+	"os"
 	"runtime"
 )
 
-func DirectoryIdentity(_ string) (string, error) {
+func directoryIdentityForHandle(_ *os.File) (string, error) {
 	return "", fmt.Errorf(
-		"direct host-directory identity attestation is unsupported on %s",
+		"directory identity attestation is unsupported on %s",
 		runtime.GOOS,
 	)
 }

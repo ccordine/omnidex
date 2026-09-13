@@ -6,7 +6,6 @@ import (
 
 	"github.com/gryph/omnidex/internal/client"
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/queue"
 )
 
 type planMutationKind string
@@ -21,7 +20,7 @@ type pendingPlanMutation struct {
 	jobID       int64
 	generation  int64
 	revision    int64
-	operationID queue.LifecycleOperationID
+	operationID model.LifecycleOperationID
 	leafID      model.CodingPlanLeafID
 	decision    model.CodingPlanDecision
 }

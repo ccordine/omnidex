@@ -7,25 +7,17 @@ import (
 	"github.com/gryph/omnidex/internal/projectroot"
 )
 
-type ChannelSessionTurnDisposition string
-
-const (
-	ChannelSessionTurnEnqueued  ChannelSessionTurnDisposition = "enqueued"
-	ChannelSessionTurnReplanned ChannelSessionTurnDisposition = "replanned"
-	ChannelSessionTurnFeedback  ChannelSessionTurnDisposition = "feedback_submitted"
-)
-
 type ChannelSessionTurnCommand struct {
-	OperationID       LifecycleOperationID `json:"operation_id"`
-	ChannelID         model.ChannelID      `json:"channel_id"`
-	WorkspaceRoot     string               `json:"workspace_root"`
-	WorkspaceIdentity string               `json:"workspace_identity"`
-	Text              string               `json:"text"`
+	OperationID       model.LifecycleOperationID `json:"operation_id"`
+	ChannelID         model.ChannelID            `json:"channel_id"`
+	WorkspaceRoot     string                     `json:"workspace_root"`
+	WorkspaceIdentity string                     `json:"workspace_identity"`
+	Text              string                     `json:"text"`
 }
 
 type ChannelSessionTurnResult struct {
-	OperationID       LifecycleOperationID
-	Disposition       ChannelSessionTurnDisposition
+	OperationID       model.LifecycleOperationID
+	Disposition       model.ChannelSessionTurnDisposition
 	ChannelID         model.ChannelID
 	WorkspaceRoot     string
 	WorkspaceIdentity string
@@ -37,7 +29,7 @@ type ChannelSessionTurnResult struct {
 func normalizeChannelSessionTurnCommand(
 	command ChannelSessionTurnCommand,
 ) (ChannelSessionTurnCommand, error) {
-	operationID, err := ParseLifecycleOperationID(string(command.OperationID))
+	operationID, err := model.ParseLifecycleOperationID(string(command.OperationID))
 	if err != nil {
 		return ChannelSessionTurnCommand{}, err
 	}
@@ -47,7 +39,7 @@ func normalizeChannelSessionTurnCommand(
 	if err := model.ValidateChannelWorkspaceRoot(command.WorkspaceRoot); err != nil {
 		return ChannelSessionTurnCommand{}, err
 	}
-	if err := projectroot.ValidateDirectoryIdentity(command.WorkspaceIdentity); err != nil {
+	if err := projectroot.ValidateClientWorkspaceIdentity(command.WorkspaceIdentity); err != nil {
 		return ChannelSessionTurnCommand{}, fmt.Errorf("channel session workspace identity: %w", err)
 	}
 	if err := model.ValidateChannelMessage(model.ChannelMessageRoleUser, command.Text); err != nil {
@@ -57,9 +49,9 @@ func normalizeChannelSessionTurnCommand(
 	return command, nil
 }
 
-func validateChannelSessionTurnDisposition(disposition ChannelSessionTurnDisposition) error {
+func validateChannelSessionTurnDisposition(disposition model.ChannelSessionTurnDisposition) error {
 	switch disposition {
-	case ChannelSessionTurnEnqueued, ChannelSessionTurnReplanned, ChannelSessionTurnFeedback:
+	case model.ChannelSessionTurnEnqueued, model.ChannelSessionTurnReplanned, model.ChannelSessionTurnFeedback:
 		return nil
 	default:
 		return fmt.Errorf("unregistered channel session turn disposition %q", disposition)

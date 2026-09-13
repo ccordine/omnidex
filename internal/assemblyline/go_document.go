@@ -26,7 +26,7 @@ func ComposeGoDocument(
 	}
 
 	var source strings.Builder
-	preamble, err := formatGoPreamble(composeSourceDocumentPreamble(document))
+	preamble, err := goDocumentPreambleWithImports(document, composition)
 	if err != nil {
 		return ComposedSourceDocument{}, fmt.Errorf("format Go document %s preamble: %w", document.ID, err)
 	}
@@ -75,14 +75,6 @@ func ComposeGoDocument(
 	return ComposedSourceDocument{
 		ID: document.ID, Path: document.Path, Source: assembled, Spans: spans,
 	}, nil
-}
-
-func formatGoPreamble(source string) (string, error) {
-	formatted, err := format.Source([]byte(strings.TrimSpace(source) + "\n"))
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(formatted)), nil
 }
 
 func formatGoDeclaration(source string) (string, error) {

@@ -13,7 +13,7 @@ import (
 func channelSessionTurnOperationExistsTx(
 	ctx context.Context,
 	tx pgx.Tx,
-	operationID LifecycleOperationID,
+	operationID model.LifecycleOperationID,
 ) (bool, error) {
 	var exists bool
 	if err := tx.QueryRow(ctx, `
@@ -36,7 +36,7 @@ func loadChannelSessionTurnOperationTx(
 	command ChannelSessionTurnCommand,
 	authority lockedChannelTurnAuthority,
 ) (ChannelSessionTurnResult, bool, error) {
-	var disposition ChannelSessionTurnDisposition
+	var disposition model.ChannelSessionTurnDisposition
 	var jobID, resultGeneration int64
 	var messageID, stepID *int64
 	var resultJobJSON []byte
@@ -88,15 +88,15 @@ func loadChannelSessionTurnOperationTx(
 	); err != nil {
 		return ChannelSessionTurnResult{}, false, err
 	}
-	if disposition == ChannelSessionTurnFeedback && stepID == nil ||
-		disposition != ChannelSessionTurnFeedback && stepID != nil {
+	if disposition == model.ChannelSessionTurnFeedback && stepID == nil ||
+		disposition != model.ChannelSessionTurnFeedback && stepID != nil {
 		return ChannelSessionTurnResult{}, false, fmt.Errorf(
 			"channel session operation %q has contradictory step authority",
 			command.OperationID,
 		)
 	}
 	var message *model.ChannelMessage
-	if disposition == ChannelSessionTurnEnqueued {
+	if disposition == model.ChannelSessionTurnEnqueued {
 		if messageID == nil {
 			return ChannelSessionTurnResult{}, false, fmt.Errorf(
 				"channel session enqueue %q has no user message",

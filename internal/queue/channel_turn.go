@@ -361,7 +361,7 @@ func validateChannelTurnMetadata(binding channelTurnMetadata) error {
 		return fmt.Errorf("channel job metadata client_cwd: %w", err)
 	}
 	if binding.ClientWorkspaceIdentity != "" {
-		if err := projectroot.ValidateDirectoryIdentity(binding.ClientWorkspaceIdentity); err != nil {
+		if err := projectroot.ValidateClientWorkspaceIdentity(binding.ClientWorkspaceIdentity); err != nil {
 			return fmt.Errorf("channel job metadata client workspace identity: %w", err)
 		}
 	}
