@@ -2,6 +2,10 @@ package catalog
 
 var providerDefinitions = []Definition{
 	{
+		ID: "codex", DisplayName: "Codex", Protocol: ProtocolCodex,
+		EnvironmentPrefix: "CODEX", SupportsExactPreparedStations: true,
+	},
+	{
 		ID: "ollama", DisplayName: "Ollama", Protocol: ProtocolOllama,
 		EnvironmentPrefix:             "OLLAMA",
 		DefaultEmbeddingModel:         "nomic-embed-text",
@@ -10,7 +14,7 @@ var providerDefinitions = []Definition{
 	{
 		ID: "openai", DisplayName: "OpenAI", Protocol: ProtocolOpenAICompatible,
 		EnvironmentPrefix: "OPENAI",
-		DefaultBaseURL: "https://api.openai.com/v1", DefaultEmbeddingModel: "text-embedding-3-small",
+		DefaultBaseURL:    "https://api.openai.com/v1", DefaultEmbeddingModel: "text-embedding-3-small",
 		SupportsEmbeddings: true,
 	},
 	{
@@ -21,23 +25,23 @@ var providerDefinitions = []Definition{
 	{
 		ID: "xai", DisplayName: "xAI", Protocol: ProtocolOpenAICompatible,
 		EnvironmentPrefix: "XAI",
-		DefaultBaseURL: "https://api.x.ai/v1",
+		DefaultBaseURL:    "https://api.x.ai/v1",
 	},
 	{
 		ID: "google", DisplayName: "Google Gemini", Protocol: ProtocolGoogle,
 		EnvironmentPrefix: "GOOGLE",
-		DefaultBaseURL: "https://generativelanguage.googleapis.com/v1beta", DefaultEmbeddingModel: "text-embedding-004",
+		DefaultBaseURL:    "https://generativelanguage.googleapis.com/v1beta", DefaultEmbeddingModel: "text-embedding-004",
 		SupportsEmbeddings: true,
 	},
 	{
 		ID: "anthropic", DisplayName: "Anthropic", Protocol: ProtocolAnthropic,
 		EnvironmentPrefix: "ANTHROPIC",
-		DefaultBaseURL: "https://api.anthropic.com/v1",
+		DefaultBaseURL:    "https://api.anthropic.com/v1",
 	},
 	{
 		ID: "huggingface", DisplayName: "Hugging Face", Protocol: ProtocolHuggingFace,
 		EnvironmentPrefix: "HUGGINGFACE",
-		DefaultBaseURL: "https://router.huggingface.co", DefaultEmbeddingModel: "sentence-transformers/all-mpnet-base-v2",
+		DefaultBaseURL:    "https://router.huggingface.co", DefaultEmbeddingModel: "sentence-transformers/all-mpnet-base-v2",
 		SupportsEmbeddings: true,
 	},
 	compatibleDefinition("deepseek", "DeepSeek", "DEEPSEEK", "https://api.deepseek.com", false),
@@ -62,7 +66,7 @@ var providerDefinitions = []Definition{
 	compatibleDefinition("tokenhub", "Tencent TokenHub", "TOKENHUB", "https://tokenhub.tencentmaas.com/v1", false),
 	{
 		ID: "compatible", DisplayName: "Custom OpenAI-compatible", Protocol: ProtocolOpenAICompatible,
-		EnvironmentPrefix: "COMPATIBLE",
+		EnvironmentPrefix:  "COMPATIBLE",
 		SupportsEmbeddings: true, RequiresBaseURL: true,
 	},
 }
@@ -71,6 +75,6 @@ func compatibleDefinition(id, displayName, environmentPrefix, baseURL string, su
 	return Definition{
 		ID: id, DisplayName: displayName, Protocol: ProtocolOpenAICompatible,
 		EnvironmentPrefix: environmentPrefix,
-		DefaultBaseURL: baseURL, SupportsEmbeddings: supportsEmbeddings, ChineseService: true,
+		DefaultBaseURL:    baseURL, SupportsEmbeddings: supportsEmbeddings, ChineseService: true,
 	}
 }

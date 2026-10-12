@@ -33,9 +33,11 @@ subsystems to restore. When those terms describe task state or active context in
 other design documents, they do not authorize duplicate tables, event frameworks,
 or model-managed memory.
 
-PostgreSQL is authoritative during one service lifecycle. Startup recreates the
-dedicated schema from [database/setup.sql](../database/setup.sql). Internal records
-are not an archive, migration obligation, or restart-recovery contract.
+PostgreSQL retains authoritative task, context, and evidence state across service
+restarts. [database/setup.sql](../database/setup.sql) initializes an absent dedicated
+schema once. Startup preserves an existing owned runtime schema and rejects
+incompatible state without deleting it. The existing queue reconciles expired
+execution leases and reuses accepted evidence after a process restart.
 
 ## Request and task continuity
 
@@ -154,7 +156,7 @@ consumer used the resulting value. A generated ID, digest, populated table, or m
 activity count cannot establish that the objective was accomplished.
 
 Framework tests must cover deterministic zero-call cases, minimal semantic calls,
-bounds, changed relevant values, exact same-runtime reuse, and startup reset.
+bounds, changed relevant values, exact accepted-evidence reuse, and preserving restart.
 Repository-scale claims additionally require equal relevant work surrounded by
 increasing unrelated source without growing model-visible context.
 

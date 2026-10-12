@@ -255,7 +255,7 @@ Domain Skills Are Learned Data, Not Repository Features
 
 Omnidex must not accumulate product-domain abilities in Go source, checked-in prompts, static skill folders, or adapter branches. Audio production, drawing, simulation, accounting, calendars, and every other workload domain belong outside the Omnidex implementation.
 
-When Omnidex needs a reusable ability that is not already available, it must be able to synthesize a narrowly scoped skill through bounded model jobs, validate that skill with code, and persist the accepted skill in PostgreSQL for the current service/database lifecycle. Later jobs in that same lifecycle may retrieve the smallest relevant accepted skills from the registry; the next service startup discards it with all other internal state. Natural-language skill matching is a narrow semantic-model job; it must not be replaced with keyword or phrase heuristics.
+When Omnidex needs a reusable ability that is not already available, it must be able to synthesize a narrowly scoped skill through bounded model jobs, validate that skill with code, and persist the accepted skill in PostgreSQL across service restarts. Later jobs may retrieve the smallest relevant accepted skills from the registry while their authority remains valid. Natural-language skill matching is a narrow semantic-model job; it must not be replaced with keyword or phrase heuristics.
 
 Code owns skill identity, schemas, version numbers, lifecycle state, tool permissions, dependency edges, validation, test evidence, activation, retrieval limits, and database writes. Models may propose only the small semantic or instructional fields that code cannot derive. A proposed skill is unavailable until its schema, boundaries, and executable checks pass. Rejected skill candidates remain rejected; there is no silent fallback to a checked-in domain skill or general-purpose agent.
 
@@ -572,12 +572,12 @@ Do not duplicate lifecycle checks in controllers.
 
 ⸻
 
-12. Use One Fresh Omnidex Database Setup
+12. Use One Authoritative Omnidex Database Setup
 
 `database/setup.sql` is the sole authoritative definition of Omnidex's internal
-PostgreSQL schema. Every build carries that one current setup file, and every
-Omnidex service startup drops and recreates the configured dedicated schema from
-it. Any previous internal schema and rows are intentionally discarded.
+PostgreSQL schema. Every build carries that one current setup file. Initialize
+an absent dedicated schema once; preserve existing task, context, and evidence
+rows on service restart. Reject incompatible existing state without mutation.
 
 Do not add internal migration directories, numbered migration files, migration
 ledgers, manifests, digests, hashes, reversible upgrades, or in-place upgrade
@@ -596,10 +596,10 @@ State and Data Rules
 
 13. PostgreSQL for Current Server-Authoritative State
 
-Use PostgreSQL as the authoritative store while the current Omnidex service is
-running. Omnidex makes no promise that its internal rows survive a process or
-service startup: startup recreates the dedicated schema from
-`database/setup.sql` and begins empty.
+Use PostgreSQL as the authoritative store across service and process restarts.
+Startup must preserve internal tasks, accepted work, context, and evidence.
+`database/setup.sql` initializes an absent dedicated schema; the existing queue
+owns lease recovery and evidence reuse after restart.
 
 Schema should be explicit.
 
@@ -1013,9 +1013,9 @@ Before reporting completion, verify:
 * Stimulus is only used for interactions/bridges.
 * RecyclrJS is used appropriately for realtime/page bridge behavior.
 * RecyclrJS singleton remains body-scoped for full-page behavior.
-* PostgreSQL is authoritative for the current running service, without a cross-start preservation claim.
+* PostgreSQL remains authoritative across service restarts.
 * Redis is used only for appropriate ephemeral/realtime state.
-* `database/setup.sql` is the sole Omnidex internal schema source and a fresh startup discards previous internal state.
+* `database/setup.sql` remains the sole internal schema source; startup preserves existing state.
 * Internal migrations, manifests, hashes, and in-place upgrade paths were not added.
 * Any generated workload migration remains workload-owned and adapter-produced.
 * Middleware is used for lifecycle concerns.

@@ -48,11 +48,26 @@ func ValidateExactPreparedGenerationForRequest(
 	prepared PreparedModel,
 	generation PreparedGeneration,
 ) error {
+	if generation.Protocol != prepared.Protocol {
+		return fmt.Errorf("provider generation differs from the frozen request protocol")
+	}
 	if err := validateExactPreparedRequest(prepared); err != nil {
 		return fmt.Errorf("validate exact prepared generation request: %w", err)
 	}
 	if err := generation.validateSuccessfulContentEvidence(); err != nil {
 		return err
+	}
+	if prepared.Protocol == ExactPreparedProtocolCodexV1 {
+		_, native, err := decodeCodexCapture(generation.ProviderResponseCapture)
+		if err != nil || native.Model != prepared.BaseModel {
+			return fmt.Errorf("Codex response differs from the frozen model route")
+		}
+		if len(prepared.RetainedProviderContext) != 0 {
+			parent, err := ParseCodexContinuation(prepared.RetainedProviderContext)
+			if err != nil || parent.ThreadID != native.ThreadID || parent.TurnID == native.TurnID {
+				return fmt.Errorf("Codex response differs from its original continuation")
+			}
+		}
 	}
 	if err := ValidateExactPreparedNativeUsage(
 		prepared.ContextTokens,

@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 )
@@ -35,9 +36,24 @@ type PreparedModel struct {
 	ContextTokens   int
 	// RetainedContext contains only token IDs returned by the exact parent
 	// source-generation response. Independent station calls leave it nil.
-	RetainedContext     []int
-	Temperature         *ExactPreparedTemperature
-	RawTextStopSequence string
+	RetainedContext         []int
+	RetainedProviderContext json.RawMessage
+	RetainProviderContext   bool
+	Temperature             *ExactPreparedTemperature
+	RawTextStopSequence     string
+}
+
+// NativeRequestPreparer declares provider-specific controls before the queue
+// freezes the exact request. It cannot dispatch inference or execute work.
+type NativeRequestPreparer interface {
+	PrepareExactRequest(PreparedModel) (PreparedModel, error)
+}
+
+func PrepareNativeRequest(client ExactStationClient, prepared PreparedModel) (PreparedModel, error) {
+	if native, ok := client.(NativeRequestPreparer); ok {
+		return native.PrepareExactRequest(prepared)
+	}
+	return prepared, nil
 }
 
 func ValidateResponseContract(prepared PreparedModel) error {

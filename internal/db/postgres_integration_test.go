@@ -12,10 +12,10 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func TestRuntimeStartupDiscardsPriorInternalSchemaAndRows(t *testing.T) {
+func TestRuntimeStartupPreservesPriorInternalSchemaAndRows(t *testing.T) {
 	databaseURL := os.Getenv("OMNI_TEST_DATABASE_URL")
 	if databaseURL == "" {
-		t.Skip("OMNI_TEST_DATABASE_URL is required for fresh startup coverage")
+		t.Skip("OMNI_TEST_DATABASE_URL is required for preserving startup coverage")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -36,24 +36,28 @@ func TestRuntimeStartupDiscardsPriorInternalSchemaAndRows(t *testing.T) {
 		CREATE TABLE obsolete_layout (value text);
 		INSERT INTO obsolete_layout VALUES ('old internal data');
 		INSERT INTO projects (location,name,description)
-		VALUES ('/tmp/startup-test-project','previous run','discard on startup');
+		VALUES ('/fixture/startup-test-project','previous run','retain on startup');
 	`); err != nil {
 		t.Fatal(err)
 	}
-	reset, err := db.ConnectRuntime(ctx, databaseURL, schema, database.SetupSQL())
+	resumed, err := db.ConnectRuntime(ctx, databaseURL, schema, database.SetupSQL())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer reset.Close()
+	defer resumed.Close()
 	var projects int
 	var obsolete *string
-	if err := reset.QueryRow(ctx, `SELECT count(*) FROM projects`).Scan(&projects); err != nil {
+	if err := resumed.QueryRow(ctx, `SELECT count(*) FROM projects`).Scan(&projects); err != nil {
 		t.Fatal(err)
 	}
-	if err := reset.QueryRow(ctx, `SELECT to_regclass($1)::text`, schema+".obsolete_layout").Scan(&obsolete); err != nil {
+	if err := resumed.QueryRow(ctx, `SELECT to_regclass($1)::text`, schema+".obsolete_layout").Scan(&obsolete); err != nil {
 		t.Fatal(err)
 	}
-	if projects != 0 || obsolete != nil {
-		t.Fatalf("startup retained internal state: projects=%d obsolete=%v", projects, obsolete)
+	if projects != 1 || obsolete == nil {
+		t.Fatalf("startup lost internal state: projects=%d retained_table=%v", projects, obsolete)
+	}
+	var value string
+	if err := resumed.QueryRow(ctx, `SELECT value FROM obsolete_layout`).Scan(&value); err != nil || value != "old internal data" {
+		t.Fatalf("restart changed retained data: %q, %v", value, err)
 	}
 }

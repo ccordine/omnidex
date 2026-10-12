@@ -444,10 +444,9 @@ The server owns the selected locale. `Accept-Language` seeds the first visit; `?
 
 ## State and UI boundaries
 
-- PostgreSQL owns jobs, steps, projects, cards, messages, and memories while the
-  current core is running. Development startup deliberately discards that state:
-  the core drops and recreates the exact configured runtime schema from
-  `database/setup.sql` every time it starts.
+- PostgreSQL owns jobs, steps, projects, cards, messages, and memories across
+  restarts. `database/setup.sql` initializes an absent dedicated schema once;
+  restarting preserves existing state and accepted execution evidence.
 - Redis owns ephemeral coordination, progress, pub/sub, locks, and realtime fanout.
 - The server owns lifecycle and mutation truth.
 - RecyclrJS is the page-scoped realtime bridge.
@@ -481,12 +480,10 @@ cp .env.example .env
 
 Open `http://localhost:8090`.
 
-Omnidex currently has no internal database migration or data-upgrade path. Every
-core startup drops and recreates the exact non-public schema named by
-`DATABASE_SCHEMA` from [database/setup.sql](database/setup.sql). All existing
-Omnidex rows in that schema are intentionally discarded. Use a dedicated schema
-whose contents may be destroyed; never point Omnidex at a schema whose data must
-survive.
+Use one dedicated, non-public `DATABASE_SCHEMA`. An absent schema is initialized
+from [database/setup.sql](database/setup.sql); an existing owned runtime schema is
+preserved on restart. Incompatible existing state fails without deletion and
+requires explicit preserving maintenance.
 
 The default compose topology keeps PostgreSQL and Redis on the internal backend network. The core API is the normal host-facing service.
 `up.sh` and `down.sh` require `DOCKER_CONTEXT=default`, clear ambient Docker
@@ -528,9 +525,17 @@ explicit deployment environment to be a regular file, and then swaps the finishe
 checkout into `~/.omnidex`. `.env.example` is a template and is never silently
 promoted to active authority. An existing install's regular `.env` is preserved
 byte-for-byte; supplying `--env-file` during replacement is rejected. This
-environment-file rule does not preserve database state: when the installed server
-next starts, it rebuilds the configured Omnidex schema from `database/setup.sql`
-and discards its old rows.
+environment-file rule also preserves database state: startup initializes an absent
+schema from `database/setup.sql` and retains existing jobs, evidence, and context.
+
+For native persistent operation from the existing checkout, build both binaries,
+then run `scripts/install-native.sh <codex-executable> <model> <postgres-bin> <valkey-server>`.
+It installs user services without copying source. The existing Codex sign-in owns
+authentication; PostgreSQL owns durable task state. See
+[persistent task execution](docs/CODEX_TASK_EXECUTION.md).
+Open the native UI at `http://127.0.0.1:18090`, or run `~/.local/bin/omnidex chat`
+from the intended workspace. The native launcher uses the installed server URL
+and leaves existing CLI installations intact.
 
 From any directory, update the installed host checkout and binaries with:
 

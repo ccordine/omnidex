@@ -32,8 +32,10 @@ func prepareExactStationCall(
 		Prompt:          call.Prompt,
 		MaxOutputTokens: call.MaxOutputTokens, OutputLimitMode: llm.ExactPreparedOutputLimitExplicit,
 		ContextTokens: call.ContextTokens, RawTextStopSequence: stop,
-		Temperature:     temperature,
-		RetainedContext: slices.Clone(call.RetainedContext),
+		Temperature:             temperature,
+		RetainedContext:         slices.Clone(call.RetainedContext),
+		RetainedProviderContext: slices.Clone(call.RetainedProviderContext),
+		RetainProviderContext:   call.WorkKind == assemblyline.WorkFragmentGeneration,
 	}, nil
 }
 

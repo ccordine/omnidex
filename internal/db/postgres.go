@@ -155,10 +155,7 @@ func installRuntimeSchema(
 		return fmt.Errorf("runtime schema %q is not owned by the database user", runtimeSchema)
 	}
 	if exists {
-		if _, err := tx.Exec(ctx, `DROP SCHEMA `+
-			pgx.Identifier{runtimeSchema}.Sanitize()+` CASCADE`); err != nil {
-			return fmt.Errorf("reset dedicated runtime schema: %w", err)
-		}
+		return preserveRuntimeSchema(ctx, tx, runtimeSchema)
 	}
 	if _, err := tx.Exec(ctx, `CREATE SCHEMA `+
 		pgx.Identifier{runtimeSchema}.Sanitize()+` AUTHORIZATION CURRENT_USER`); err != nil {
@@ -178,6 +175,31 @@ func installRuntimeSchema(
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit authoritative runtime schema: %w", err)
+	}
+	return nil
+}
+
+// A service restart is not authority to erase jobs, evidence, or accepted work.
+// Existing schemas must identify the current runtime boundary; incompatible
+// state fails without mutation and requires explicit preserving maintenance.
+func preserveRuntimeSchema(ctx context.Context, tx pgx.Tx, schema string) error {
+	var ready bool
+	if err := tx.QueryRow(ctx, `SELECT
+		to_regclass($1) IS NOT NULL AND to_regclass($2) IS NOT NULL AND
+		to_regclass($3) IS NOT NULL AND to_regclass($4) IS NOT NULL AND
+		EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid=to_regclass($3)
+		AND contype='c' AND position('omnidex.codex-app-server-request.v1' in pg_get_constraintdef(oid))>0)`,
+		pgx.Identifier{schema, "jobs"}.Sanitize(),
+		pgx.Identifier{schema, "job_steps"}.Sanitize(),
+		pgx.Identifier{schema, "llm_call_evidence"}.Sanitize(),
+		pgx.Identifier{schema, "step_completion_evidence_sets"}.Sanitize()).Scan(&ready); err != nil {
+		return fmt.Errorf("inspect retained runtime schema: %w", err)
+	}
+	if !ready {
+		return fmt.Errorf("existing runtime schema %q is incompatible; its state was preserved", schema)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit preserving runtime bootstrap: %w", err)
 	}
 	return nil
 }

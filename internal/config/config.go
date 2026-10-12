@@ -18,6 +18,8 @@ type Config struct {
 	DatabaseURL             string
 	DatabaseSchema          string
 	LLMProvider             string
+	CodexCommand            string
+	CodexDirectory          string
 	EmbeddingProvider       string
 	ProviderModels          map[string]ProviderModelConfig
 	OllamaBaseURL           string
@@ -63,6 +65,8 @@ func Load() (Config, error) {
 		DatabaseURL:             os.Getenv("DATABASE_URL"),
 		DatabaseSchema:          getenv("DATABASE_SCHEMA", db.DefaultRuntimeSchema),
 		LLMProvider:             provider,
+		CodexCommand:            getenv("CODEX_COMMAND", "codex"),
+		CodexDirectory:          getenv("CODEX_DIRECTORY", "."),
 		EmbeddingProvider:       embeddingProvider,
 		ProviderModels:          providerModels,
 		OllamaBaseURL:           getenv("OLLAMA_BASE_URL", ""),

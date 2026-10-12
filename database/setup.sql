@@ -1,5 +1,5 @@
 -- Omnidex authoritative fresh-database setup.
--- The runtime resets its dedicated schema before executing this file.
+-- The runtime applies this definition once and preserves its schema on restart.
 -- This is a current-state definition, not an incremental migration.
 
 --
@@ -41,7 +41,7 @@ CREATE TABLE llm_call_evidence (
         model <> '' AND model=btrim(model) AND octet_length(model) <= 512
     ),
     protocol text NOT NULL CHECK (
-        protocol='omnidex.ollama-plain-completion-request.v4'
+        protocol IN ('omnidex.ollama-plain-completion-request.v4','omnidex.codex-app-server-request.v1')
     ),
     model_input text NOT NULL CHECK (btrim(model_input) <> ''),
     model_input_bytes integer NOT NULL CHECK (
@@ -202,6 +202,9 @@ DECLARE
 	request_context jsonb;
 BEGIN
 	request_context := (convert_from(NEW.provider_request,'UTF8')::json -> 'context')::jsonb;
+	IF NEW.protocol='omnidex.codex-app-server-request.v1' THEN
+		request_context := (convert_from(NEW.provider_request,'UTF8')::json -> 'continuation')::jsonb;
+	END IF;
 	IF NEW.iteration=1 AND request_context IS NOT NULL THEN
 		RAISE EXCEPTION 'initial LLM call cannot inherit model context';
 	END IF;
@@ -269,10 +272,17 @@ BEGIN
 		      prior_call.prior_outcome_status<>'rejected' THEN
 			RAISE EXCEPTION 'iterative LLM call parent was not a rejected successful response';
 		END IF;
-		IF jsonb_typeof(request_context) IS DISTINCT FROM 'array' THEN
+		IF NEW.protocol='omnidex.codex-app-server-request.v1' THEN
+			IF jsonb_typeof(request_context) IS DISTINCT FROM 'object' OR
+			   request_context IS DISTINCT FROM jsonb_build_object(
+			       'threadId', convert_from(prior_call.prior_raw_response,'UTF8')::jsonb #>> '{thread,result,thread,id}',
+			       'turnId', convert_from(prior_call.prior_raw_response,'UTF8')::jsonb #>> '{turn,result,turn,id}',
+			       'model', convert_from(prior_call.prior_raw_response,'UTF8')::jsonb #>> '{thread,result,model}') THEN
+				RAISE EXCEPTION 'source correction model context differs from its exact parent response';
+			END IF;
+		ELSIF jsonb_typeof(request_context) IS DISTINCT FROM 'array' THEN
 			RAISE EXCEPTION 'source correction requires retained model context';
-		END IF;
-		IF jsonb_array_length(request_context) NOT BETWEEN 1 AND NEW.context_tokens OR
+		ELSIF jsonb_array_length(request_context) NOT BETWEEN 1 AND NEW.context_tokens OR
 		   request_context IS DISTINCT FROM
 		       (convert_from(prior_call.prior_raw_response,'UTF8')::json -> 'context')::jsonb THEN
 			RAISE EXCEPTION 'source correction model context differs from its exact parent response';

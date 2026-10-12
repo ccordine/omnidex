@@ -77,6 +77,11 @@ func validateSelectedProviderEndpoint(provider string, cfg Config, label string)
 		return fmt.Errorf("%s is invalid: %w", label, err)
 	}
 	switch definition.Protocol {
+	case catalog.ProtocolCodex:
+		if cfg.CodexCommand == "" || cfg.CodexDirectory == "" {
+			return fmt.Errorf("Codex executable and working directory must be configured")
+		}
+		return nil
 	case catalog.ProtocolOllama:
 		return validateProviderBaseURL(definition, cfg.OllamaBaseURL, label)
 	case catalog.ProtocolOpenAICompatible:
@@ -106,6 +111,8 @@ func validateSelectedProviderCredential(provider string, cfg Config, label strin
 	}
 	var value string
 	switch definition.Protocol {
+	case catalog.ProtocolCodex:
+		return nil // The installed Codex owns its existing sign-in credentials.
 	case catalog.ProtocolOllama:
 		return nil
 	case catalog.ProtocolOpenAICompatible:

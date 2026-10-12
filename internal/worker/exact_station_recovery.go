@@ -98,7 +98,7 @@ func (s *Service) recoverExactPortableStationEvidence(
 		evidence.StepID != authority.StepID ||
 		evidence.WorkKind != string(job.Kind) || evidence.Scope != wantedScope ||
 		evidence.RequestedModel != modelName || evidence.Model != modelName ||
-		evidence.Protocol != string(llm.ExactPreparedProtocolPlainCompletionV4) {
+		llm.ExactPreparedProtocol(evidence.Protocol).Validate() != nil {
 		return nil, fmt.Errorf(
 			"persisted portable work %s differs from its current job, kind, scope, immutable model route, or raw provider protocol",
 			job.Kind,
