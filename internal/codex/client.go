@@ -39,7 +39,7 @@ func (client *Client) PrepareExactRequest(prepared llm.PreparedModel) (llm.Prepa
 
 func (client *Client) GeneratePreparedExact(parent context.Context, prepared llm.PreparedModel) (llm.PreparedGeneration, error) {
 	result := llm.PreparedGeneration{Schema: llm.PreparedGenerationSchemaV1, Protocol: prepared.Protocol,
-		ProviderRequestDisposition: llm.ProviderRequestNotDispatched}
+		ProviderRequestDisposition: llm.ProviderRequestNotDispatched, ProviderResponseDisposition: llm.ProviderResponseTransportError}
 	if prepared.Protocol != llm.ExactPreparedProtocolCodexV1 {
 		return result, fmt.Errorf("Codex requires its registered native request protocol")
 	}

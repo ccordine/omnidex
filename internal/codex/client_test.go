@@ -102,6 +102,9 @@ func TestInstalledCodexCancellation(t *testing.T) {
 	if err == nil || result.ProviderRequestDisposition != llm.ProviderRequestNotDispatched || result.ProviderDone {
 		t.Fatal("canceled request was dispatched or claimed completion")
 	}
+	if err := result.ValidateInvocationEvidence(); err != nil {
+		t.Fatalf("canceled request has invalid failure evidence: %v", err)
+	}
 }
 
 func TestInstalledCodexProcessCancellation(t *testing.T) {

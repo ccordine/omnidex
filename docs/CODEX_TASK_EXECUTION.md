@@ -29,7 +29,7 @@ The user requested implementation first and verification at the end. The request
 for permanence supersedes the previous reset-on-start database policy; update
 that project contract without altering the owner's global prime directive.
 
-State: implemented, verified and installed; Git delivery and cleanup in progress.
+State: implemented, verified, delivered, installed and cleaned.
 Actual signed-in Codex generation, process-exit continuation, pre-dispatch
 cancellation and running-process cancellation passed. Original native receipts
 reported 7050/7075 input tokens and 9 visible output tokens per retained turn.
@@ -60,6 +60,19 @@ launcher uses the same runtime URL and preserves the old omni installation.
 Native task enforcement applies to requests executed by Omnidex; an unrelated
 Codex chat or process does not become ledger-controlled merely by installing it.
 No new development copy or worktree has been created.
+
+Delivery: implementation commit 2ac81e23 plus the final pre-dispatch failure
+receipt correction on this branch; pushed to the existing origin. One PR:
+https://github.com/ccordine/omnidex/pull/5 (base main).
+The final cancellation check validates its original not-dispatched failure
+receipt rather than leaving an incomplete opening after process-start failure.
+All pre-existing CHANGELOG and stateless-inference work remains uncommitted.
+
+Cleanup: disposable PostgreSQL fixture removed; generated protocol schemas,
+package downloads and verification logs/receipt retired. Only required native
+binaries, durable database/session state, user units and launcher remain.
+Existing shared caches, Codex-owned retained contexts, old installations and
+unrelated services were preserved.
 
 Resource ownership: Go/compiler checks use the established ignored bin directory,
 two build workers, one heavy operation at a time. Task fixtures are disposable
