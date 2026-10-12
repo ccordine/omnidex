@@ -30,6 +30,7 @@ func renderAgentAssignment(call codingagent.Assignment) (string, error) {
 		return "", fmt.Errorf("unknown agent role")
 	}
 	if call.Role == codingagent.Review || call.Role == codingagent.OverallReview {
+		instruction += " Omnidex mechanically limits execution source writes to each task's write_files through its validated writer; native source mounts are read-only. Files outside those grants cannot be changed by this job's execution. Assess unchanged-file obligations against that enforced boundary; do not require before/after history for files this execution cannot write."
 		references, err := json.Marshal(agentReviewReferences(call))
 		if err != nil {
 			return "", err

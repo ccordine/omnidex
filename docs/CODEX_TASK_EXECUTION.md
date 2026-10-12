@@ -46,7 +46,14 @@ exact. PTY dimensions are explicit and failure diagnostics are bounded.
 A fresh two-task PTY acceptance run is active from frozen source.
 No separate Charmeleon gauntlet executable is registered; the relevant application,
 queue/step lifecycle, workspace, pause, cancellation and real-terminal checks are the
-applicable proof. No original intake/planner shortcut is introduced.
+applicable proof. Those targeted Charmeleon application/step, replay, cancel and
+workspace gauntlets passed. No original intake/planner shortcut is introduced.
+A subsequent review paused requesting checksum history for an unchanged file outside
+all task write grants. The native review context now states the actual code-enforced
+read-only/writer boundary; the independent preserved-file assertion remains unchanged.
+Current ordinary two-task PTY run is active from frozen source. Source d1b57e1d
+is pushed in draft PR https://github.com/ccordine/omnidex/pull/7; the final boundary
+fact and compact failure diagnostics are pending commit.
 
 ## Completed task: governed agent execution
 
