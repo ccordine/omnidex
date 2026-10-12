@@ -1,6 +1,6 @@
 # Persistent task execution with Codex
 
-## Active task: governed agent execution
+## Completed task: governed agent execution
 
 Authoritative root: /home/gryph/Projects/tools/omnidex.
 Branch: feat/governed-agent-mode, based on 2fb65541 and stacked on provider PR #5.
@@ -41,20 +41,32 @@ effort (including max/ultra), Fast/priority, Save, Refresh and reload persistenc
 Managed update succeeded on the existing signed-in Codex 0.162.1 installation.
 Production routes remain unchanged; retained production rows match the baseline.
 
-Qualification: one completed producer failed the independent numeric holdout.
-Generic review instructions now require independent declared-range checks. An ultra
-review then correctly paused because the fixture had no explicit output-overflow
-policy. The qualification request now specifies signed infinity for unrepresentable
-results; all earlier holdout assertions remain, with overflow checks added. No
-workload-specific hints entered production prompts. The fresh ordinary request uses
-high-effort review and advertised priority tiers; native ultra routing was observed
-in the preceding run. Source is frozen. Producer, holdout and preserving runtime
-restart must pass; final evidence and cleanup remain. Scoped prompt regressions,
-race checks and vet passed; corrected native binaries are activated.
+Qualification: PASS on source 0eea5f26, 2026-10-12. The ordinary production
+request passed original intake, task planning, three narrow execution/review pairs
+and overall review: 8 retained native calls, 783.602 seconds. Independent holdout
+passed actual results, return types, inverse consistency, representable large
+integers/floats, signed overflow and invalid-input exceptions. A preserving runtime
+restart retained the same completion calls. No intermediate plan, feedback or
+application edits were injected. The request explicitly declares overflow behavior;
+all earlier holdout assertions remain, with overflow checks added. Generic production
+prompts contain no workload hints. Reviewer used high effort and advertised priority;
+ultra routing was observed in the preceding legitimate question-producing run.
 
-Delivery: draft stacked PR https://github.com/ccordine/omnidex/pull/6.
-Installed production behavior: 5b1ab835. Qualification-only clarification pending.
-Do not mark ready until complete native qualification and cleanup pass.
+Delivered: commits pushed to feat/governed-agent-mode; stacked PR
+https://github.com/ccordine/omnidex/pull/6, based on provider PR #5. Installed production
+behavior is 5b1ab835; 0eea5f26 changes only qualification/documentation. All three native
+units are active/enabled and readiness passes. Production routes remain unchanged.
+Original jobs, messages, calls, receipts, outcomes and completion rows match the
+pre-activation baseline byte-for-byte after the final preserving activation.
+Installed binary SHA-256:
+- bin/omnidex: 5c5977fca5e58b158c795839cb5816888995fa049ae4a95bd600effe81f9badd
+- bin/omni: aaf48e4d5942a1ca0ddb4fdf470645ba09d94001b1ba677d666bbf70c347be9c
+
+Cleaned: task-owned PostgreSQL fixture/container, request schemas/files, browser
+profile/script, generated protocol, stale/native tool caches and PR-body scratch
+retired. Candidate binaries were activated. No task-owned processes or disposable
+resources remain. Pre-existing owner changes and shared caches remain preserved.
+Stages: implemented, verified, delivered, installed, cleaned. No remaining task work.
 
 Resources: generated installed protocol under bin/agent-protocol, at most 32 MiB,
 removed after qualification. Native task tool caches are under
