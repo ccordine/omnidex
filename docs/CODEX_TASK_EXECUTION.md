@@ -1,59 +1,57 @@
 # Persistent task execution with Codex
 
-## Active task: terminal Agents in the invoking directory
+## Completed task: terminal Agents in the invoking directory
 
 Root: /home/gryph/Projects/tools/omnidex. Branch: feat/local-cli-agent-chat,
-based on main 1169030c. Goal: plain omni chat runs scoped Agents directly from any
-local directory on this device: request, original Charmeleon research/planning,
-scoped execution, independent verification, recap, then another task in the same
-terminal. Deliver a solid MVP through the relevant gauntlets, then stop; subsequent
-self-improvement will be performed through Omnidex, not added to this task.
+based on main 1169030c. Goal: plain omni chat in the invoking local directory;
+original Charmeleon research/planning, scoped execution, independent verification,
+recap, then another task in the same terminal. Deliver a proven MVP, then stop.
+Future self-improvement is a subsequent task performed through Omnidex.
 
-Acceptance: CLI chooses Agents for new jobs and freezes mode in idempotent turns;
-server uses existing saved Codex role settings; exact live local-client/physical
-workspace binding allows native execution outside the static service root while
-foreign/unbound jobs retain existing restrictions; terminal questions resume the
-same job; existing cancellation/replan and mutation fences stay intact; installed
-omni resolves to the current CLI; a real existing-project terminal update passes;
-affected checks, preserving activation, scoped PR and cleanup complete.
+Implemented: terminal turns explicitly select Agents and retain exact mode/operation
+identity on retry; new jobs freeze saved Codex routes; active jobs retain theirs.
+The existing local client/physical-directory binding and live transport permit native
+execution outside the static host boundary. Direct/foreign jobs retain their prior
+restrictions. Native calls cancel on disconnect; reconnect does not restore old
+access. Existing transport mutation fences and original-content guards remain.
+Original plan pauses and execution questions project through the same transaction;
+questions/responses, cancellation and replanning work in the terminal. Recaps derive
+only observed written files, accepted tasks and passed checks. Safe native review
+references restore exact criteria/IDs, including quotes; original frames are retained.
+Review receives the real mechanically enforced write boundary. No intake shortcut,
+raw-goal execution context, alternate ledger or broad filesystem grant was added.
 
-Constraints: preserve original Charmeleon intake, narrow job contexts and owner
-uncommitted inference work. No global filesystem grant, alternate ledger, source
-copy/worktree, broad model context or unrelated feature work. One source branch.
-Source implemented first; affected verification at the end. Existing native install
-and credentials are retained. Resources before creation: one ignored
-bin/cli-agent-qualification fixture set (32 MiB, retired on completion), two candidate
-binaries (256 MiB, activated then retired), and one disposable PostgreSQL container
-(512 MiB RAM, two CPUs, 1 GiB tmpfs, auto-removed). One local compiler operation,
-two workers. Actual native inference uses one producer, no overall deadline.
+Verified: PASS on source bae3f234, 2026-10-12. Installed plain omni chat ran in a real
+PTY, in an existing project directory with spaces outside the configured hostroot.
+Two successive ordinary tasks completed in one session in 203.959 seconds. Both
+modified actual source/tests, passed independent behavior checks, preserved keep.txt,
+and displayed their recap. No browser, intermediate plan injection or manual source
+correction was used. The original Charmeleon objective/application/step lifecycle
+remained authoritative. Relevant application/lifecycle, replay, question/plan-pause,
+replan/cancel and exact workspace/lifetime gauntlets passed, as did affected package,
+PostgreSQL/race checks, vet and native builds. This proves the observed terminal MVP;
+general application-building autonomy is not inferred from these checks.
 
-State: implemented terminal Agents dispatch, exact mode/retry identity, paused-question
-projection/rendering, live local-directory ownership and disconnect cancellation,
-observed-file/check recap and managed CLI PATH binding. Focused failing reproductions
-preceded fixes. Affected cmd/client/codingagent/transport/API/queue/worker race checks
-passed. Original-plan-pause regression passed against PostgreSQL with the race detector.
-Full CLI/client/codingagent/runtime package checks, affected vet and builds passed.
-One task-owned red-test cache, bin/terminal-chat-go-cache (129 MiB observed, 512 MiB
-budget), will be retired after checks. Current binaries and CLI launchers are activated. The authoritative operation
-validator from setup.sql was replaced transactionally in the retained runtime schema;
-Normal descriptors remain unchanged. No job/data/config/credential rows were changed.
-The isolated PostgreSQL fixture was recycled after completed tests before native
-qualification. The first real PTY run reached original intake, frozen planning and
-existing-file execution, then native review rejected a quoted criterion in its strict
-output-schema enum (400 invalid_json_schema). Safe code-owned reference mapping is
-implemented and unit/race/vet checked in the native adapter; portable criteria and original wire evidence stay
-exact. PTY dimensions are explicit and failure diagnostics are bounded.
-A fresh two-task PTY acceptance run is active from frozen source.
-No separate Charmeleon gauntlet executable is registered; the relevant application,
-queue/step lifecycle, workspace, pause, cancellation and real-terminal checks are the
-applicable proof. Those targeted Charmeleon application/step, replay, cancel and
-workspace gauntlets passed. No original intake/planner shortcut is introduced.
-A subsequent review paused requesting checksum history for an unchanged file outside
-all task write grants. The native review context now states the actual code-enforced
-read-only/writer boundary; the independent preserved-file assertion remains unchanged.
-Current ordinary two-task PTY run is active from frozen source. Source d1b57e1d
-is pushed in draft PR https://github.com/ccordine/omnidex/pull/7; the final boundary
-fact and compact failure diagnostics are pending commit.
+Delivered: source commits d1b57e1d and bae3f234 pushed in
+https://github.com/ccordine/omnidex/pull/7 (base main). Corrected binaries are active;
+recognized old omni and ~/.local/bin/omni resolve to the single native launcher.
+Config and Codex sign-in are retained; normal CLI initialization created its local
+client identifier. All three native services are active/enabled; readiness passes.
+The current operation validator from setup.sql was replaced transactionally without
+resetting rows; Normal descriptors remain identical. Existing production jobs,
+messages, calls, receipts, outcomes and completion rows match the before-activation
+baseline. All 12 pre-existing stateless-inference/CHANGELOG files match their hashes.
+Installed SHA-256:
+- bin/omnidex: 316531258f10d32747f6953928a4d1e50772efa339a6d4824e9ec32c67d72a2e
+- bin/omni: 687abdfc8554116630febe54a4c23d72af4d3deeb96518a485b20617cb659dd2
+
+Cleaned: fixture schemas/requests, real PTY processes, 129 MiB task compiler cache,
+PR-body scratch and the isolated PostgreSQL container retired. Candidates activated.
+Resource budgets were declared before creation: bin/cli-agent-qualification 32 MiB,
+candidates 256 MiB, one PostgreSQL fixture 512 MiB/two CPUs/1 GiB tmpfs, one compiler
+operation/two workers, task cache 512 MiB. No task-owned disposables remain; shared
+caches and owner work preserved. Implemented, verified, delivered, installed, cleaned.
+No remaining MVP work. Stop; use Omnidex for the next explicitly requested task.
 
 ## Completed task: governed agent execution
 
