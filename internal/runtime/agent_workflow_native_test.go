@@ -141,10 +141,15 @@ func TestInstalledAgentWorkflowOrdinaryRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	holdout := `import math,runpy
+from fractions import Fraction
 m=runpy.run_path("temperature.py"); c=m["celsius_to_fahrenheit"]; f=m["fahrenheit_to_celsius"]
 assert type(c(0)) is float and type(f(32)) is float
 for v in (-123.5,-40,0,37,100,500.25):
+ assert math.isclose(c(v),v*9/5+32,rel_tol=1e-12,abs_tol=1e-10)
+ assert math.isclose(f(v),(v-32)*5/9,rel_tol=1e-12,abs_tol=1e-10)
  assert math.isclose(f(c(v)),v,rel_tol=1e-12,abs_tol=1e-10)
+assert math.isclose(f(2*10**308),float(Fraction(2*10**308-32)*Fraction(5,9)),rel_tol=1e-12)
+assert math.isclose(f(1e308),1e308*(5/9),rel_tol=1e-12)
 for fn in (c,f):
  for v in (True,False,"20",None,[],{}):
   try: fn(v)

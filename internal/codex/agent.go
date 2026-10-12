@@ -54,7 +54,7 @@ func (client *Client) Run(parent context.Context, call codingagent.Assignment, w
 	turnOptions := map[string]any{"threadId": result.ThreadID,
 		"input": []any{map[string]string{"type": "text", "text": prompt}}, "model": call.Route.Model,
 		"permissions": "omnidex-task", "approvalPolicy": "never", "summary": "none",
-		"outputSchema": agentOutputSchema(call.Role)}
+		"outputSchema": agentOutputSchema(call)}
 	applyAgentInferenceOptions(turnOptions, call.Route)
 	raw, err = connection.call("turn/start", turnOptions, &turn)
 	if err != nil {

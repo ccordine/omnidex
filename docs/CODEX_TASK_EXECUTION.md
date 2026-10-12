@@ -80,8 +80,15 @@ original error frame. It now honors the native willRetry flag within the same tu
 retains original retry/failure frames, and surfaces bounded terminal diagnostics.
 Protocol regressions passed. A fresh ordinary native run is underway using the
 advertised priority tier for task planning/execution/review; retained production
-settings stay low/default. The full producer/holdout/restart result and resource
-cleanup remain before ready.
+settings stay low/default. That run completed native planning, first task acceptance and targeted correction,
+but task-2 review repeatedly paraphrased/combined the exact criterion label and its
+valid numeric finding was structurally rejected. The task-owned run was canceled
+through its real cancellation API after reproducing that nonconvergence; cleanup
+completed. Native review output schemas are being constrained to code-owned exact
+criterion/task references (bound parent outcomes for overall review). Semantic
+observations remain free text. Holdout now checks actual conversion values and
+finite numeric edge cases, rather than inverse consistency alone. Fresh complete
+producer/holdout/restart qualification and cleanup remain before ready.
 
 Resources: generated installed protocol under bin/agent-protocol, at most 32 MiB,
 removed after qualification. Native task tool caches are under
