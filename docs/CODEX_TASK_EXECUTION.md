@@ -2,99 +2,57 @@
 
 ## Active task: governed agent execution
 
-Root: /home/gryph/Projects/tools/omnidex. Branch: feat/governed-agent-mode,
-based on 2fb65541; the prior provider/persistence PR remains its intended base.
-Goal: add explicit Normal and Agents coding modes. Agents mode finalizes a plan,
-dispatches narrowly scoped environment-capable execution jobs, uses an independent
-reviewer to return concrete findings/questions, repeats only unresolved work, and
-performs an overall review before completion. The existing queue remains authority.
+Authoritative root: /home/gryph/Projects/tools/omnidex.
+Branch: feat/governed-agent-mode, based on 2fb65541 and stacked on provider PR #5.
+Goal: implement Normal/Agents coding modes with narrow execution, independent
+review/correction, overall review and durable code-owned task/evidence state.
 
-Acceptance: consumed mode selection; frozen task/file/check contracts; replaceable
-executor/reviewer providers; enforced tool/file boundaries; durable task/run/review
-state and cancellation/recovery; finding-driven correction and persisted questions;
-overall review and real verification; existing Normal behavior preserved; actual
-Codex environment execution and independent review qualified; scoped PR and cleanup.
+Acceptance: mode selection; frozen task/file/check contracts; replaceable providers;
+enforced scope and read-only review; durable questions, findings, cancellation and
+recovery; completion guarded by observed checks and exact requirement coverage;
+existing Normal/Charmeleon intake preserved; per-role Codex models, effort and Fast,
+model refresh and managed CLI updates; actual native qualification; preserving
+installation activation, one scoped PR and task-resource cleanup.
 
-User authorization explicitly supersedes semantic-only restrictions for Agents
-mode. Normal mode retains those restrictions. No development copies/worktrees,
-unrelated owner changes, or Daemonet work. Implementation first, affected tests
-at the end. State: portable scoped planner/executor/reviewer contracts, native
-Codex sandbox calls, durable queue records and mode selection are implemented.
-Atomic plan finalization, question replay, completion gates, environment ownership
-and disposable tool caches are complete. Native Codex inspected files, performed
-governed source edits, passed deterministic checks, and reviewed in a fresh thread.
-Its file-root sandbox cannot grant individual writable files safely; execution
-therefore uses read-only native source mounts and the typed omnidex_write_file
-tool through the existing mutation fence, with exact original-content validation.
-Planning/review grants no writer. Native running-command cancellation passed.
-Controller/component and affected queue/SQL checks passed, including preservation
-of rejected requirements, same-generation answers, stale pause/generation rejection,
-historical replay, cancellation/replan during pending resume, and completion guards.
-Browser mode selection, pause/answer/reload and lifecycle controls pass their
-affected checks. The owner added independent per-role Codex model/effort/speed
-selection, model refresh and managed CLI updates. Those controls, live discovery,
-typed saved settings and new-job configuration snapshots are implemented; 115
-frontend tests and type checks pass. Native discovery reports 10 models, with
-efforts through max/ultra and Fast/priority advertised by this installation.
+Authorization: Agents may use the granted environment. Normal retains semantic-only
+restrictions. No source copies/worktrees, owner-file changes or Daemonet work.
+No overall qualification deadline. Narrow execution/task review receive only the
+assigned task, relevant files/checks/findings/answers; parent context is rejected.
+Task decomposition receives finalized requirements, resolved artifact bindings,
+literal construction facts and code-owned runtime authority, never the original
+request. Original Charmeleon requirement intake remains unchanged. Overall review
+alone receives the original objective. Native source mounts are read-only; execution
+edits use the existing Omnidex mutation fence with exact original-content validation.
 
-The original Charmeleon requirement intake, authorization sieve and carried
-decisions remain authoritative. Native task decomposition receives only finalized
-approved criteria and its file catalog, never the original request. Execution and
-task review reject parent objectives/workloads/requirements and unrelated files,
-checks/findings; answered context is scoped to the assigned step. Overall outcome
-review alone receives the original objective. A proposed intake shortcut was
-removed before delivery. The first ordinary qualification reached an artificial
-six-minute test deadline during original intake. Per owner direction, the fresh
-unsteered qualification now has no overall deadline and Go's test timeout is off.
-The second qualification completed intake but paused at task decomposition because
-artifact bindings, construction constraints and supported runtime/file authority
-were missing. Original intake context is now snapshotted with the frozen criteria.
-A separate bounded semantic leaf extracts only literal construction constraints;
-the planner receives those facts, resolved artifact values and code-owned runtime
-capabilities. Narrow execution/review still receive only their assigned task.
-Queue snapshot/replay checks and affected Go suites passed. A real browser check
-also exposed extra native catalog metadata rejected by the frontend DTO parser;
-that exact contract mismatch is fixed and focused settings checks pass.
-Source is frozen for a fresh ordinary-request native qualification with no overall
-deadline. Final UI/core builds are activated in the retained native installation. Actual
-Chromium verified Normal/Agents keyboard selection and 1280/375px layouts, all
-three live model/effort/speed controls (including max, ultra and Fast/priority),
-Save, Refresh and reload persistence. Production routes remained identical when
-saved. All six affected Go suites passed with the race detector. The next unsteered qualification completed intake, native planning and source
-execution, then independent task review paused over an unrequested historical
-TDD proof criterion. Task-planning acceptance provenance is being corrected:
-implementation methodology must not become additional acceptance unless required.
-Final review also identified two bounded guards: completion must reuse the existing
-narrow-context validator, and installed updates must serialize with all native-job
-admission/resume paths and include Normal Codex jobs in the idle check. These exact
-fixes are implemented; queue guard regressions and real PostgreSQL admission
-serialization checks for both Normal and Agents passed. The managed updater
-completed successfully on the existing signed-in installation, which remains
-Codex 0.162.1. A fresh ordinary qualification is running from frozen source;
-Source commit: bae509dd. Delivered as draft stacked PR
-https://github.com/ccordine/omnidex/pull/6, based on the retained provider PR #5.
-Actual PostgreSQL API/race checks, current builds and vet pass. That qualification
-finished intake but the native planner stopped on an inference notification. The
-adapter treated every native error as terminal and returned before retaining the
-original error frame. It now honors the native willRetry flag within the same turn,
-retains original retry/failure frames, and surfaces bounded terminal diagnostics.
-Protocol regressions passed. A fresh ordinary native run is underway using the
-advertised priority tier for task planning/execution/review; retained production
-settings stay low/default. That run completed native planning, first task acceptance and targeted correction,
-but task-2 review repeatedly paraphrased/combined the exact criterion label and its
-valid numeric finding was structurally rejected. The task-owned run was canceled
-through its real cancellation API after reproducing that nonconvergence; cleanup
-completed. Native review output schemas are constrained to code-owned exact
-criterion/task references (bound parent outcomes for overall review). Semantic
-observations remain free text. Holdout now checks actual conversion values and
-finite numeric edge cases, rather than inverse consistency alone. The subsequent run completed every narrow task and review, then overall
-verification failed because the command adapter relabeled OverallReview as narrow
-Review. The adapter now preserves the overall scope and strips write access;
-execution checks still become read-only review of the same task. Narrow guards
-remain enforced. Real native source editing, independent review, sandbox/env
-isolation and running-command cancellation passed again (74.217s), as did scoped
-projection regressions and affected race checks. A fresh full ordinary qualification
-is running from frozen source; final evidence and cleanup remain before ready.
+Implemented: provider contracts, native sandbox/tool adapter, independent fresh
+review turns, exact criterion-reference schemas, scoped correction/question replay,
+durable queue completion gates, cancellation/recovery, mode and settings UI, live
+model catalog, saved per-role routes and serialized managed updates/job admission.
+Native retry notifications retain the same turn and original frames. Verification
+preserves overall scope while stripping write access. Review now explicitly runs
+independent checks over declared input classes/ranges and representation boundaries.
+
+Verified: affected Go suites/race checks/vet; isolated PostgreSQL queue/API admission,
+replay, question, completion and settings checks; frontend suites/type checks and
+UI/core/CLI builds. Actual native source edits, fresh independent review, sandbox/env
+isolation and running-command cancellation passed (latest complete check 74.217s).
+Actual Chromium checked keyboard mode selection, desktop/mobile layouts, live model,
+effort (including max/ultra), Fast/priority, Save, Refresh and reload persistence.
+Managed update succeeded on the existing signed-in Codex 0.162.1 installation.
+Production routes remain unchanged; retained production rows match the baseline.
+
+Qualification: the preceding ordinary request completed all execution and reviews,
+but an independent holdout exposed a finite numeric boundary error missed by review.
+The generic independent-review instruction was strengthened without workload hints
+or additional requirements. A fresh ordinary request is running with reviewer ultra
+and advertised priority tiers; the original request and holdout are unchanged.
+Source is frozen during this run. Completion requires producer, holdout and preserving
+runtime restart to pass; final evidence and cleanup remain. Scoped prompt regressions,
+race checks and vet passed; corrected native binaries are activated.
+
+Delivery: draft stacked PR https://github.com/ccordine/omnidex/pull/6.
+Latest committed source before the final prompt correction: a31c8588.
+Do not mark ready until complete native qualification and cleanup pass.
 
 Resources: generated installed protocol under bin/agent-protocol, at most 32 MiB,
 removed after qualification. Native task tool caches are under

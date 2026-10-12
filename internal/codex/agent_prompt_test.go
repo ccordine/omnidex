@@ -62,3 +62,40 @@ func TestAgentReviewPreservesExplicitAcceptanceWithoutAddingProcess(t *testing.T
 		}
 	}
 }
+
+func TestAgentReviewRequiresIndependentDeclaredRangeChecks(t *testing.T) {
+	task := codingagent.Task{ID: "t1", Acceptance: []string{"All declared inputs produce the specified result."}}
+	for _, role := range []codingagent.Role{codingagent.Review, codingagent.OverallReview} {
+		call := codingagent.Assignment{Role: role, Task: &task}
+		if role == codingagent.OverallReview {
+			call.Task, call.Workload = nil, &codingagent.Workload{Tasks: []codingagent.Task{task}}
+		}
+		prompt, err := renderAgentAssignment(call)
+		if err != nil {
+			t.Fatal(err)
+		}
+		instruction, assignment, _ := strings.Cut(prompt, "\n\nAssignment:\n")
+		var decoded codingagent.Assignment
+		if err := json.Unmarshal([]byte(assignment), &decoded); err != nil {
+			t.Fatal(err)
+		}
+		if len(decoded.WriteFiles) != 0 || decoded.Objective != nil {
+			t.Fatal("independent checks enlarged the reviewer authority or context")
+		}
+		if !strings.Contains(instruction, "Execute independent") || !strings.Contains(instruction, "declared input classes and ranges") {
+			t.Fatal("review may accept supplied examples without checking declared coverage")
+		}
+		if role == codingagent.Review {
+			for _, boundary := range []string{"representation boundaries, overflow and underflow", "formula operation order", "These checks verify existing criteria and add no requirements"} {
+				if !strings.Contains(instruction, boundary) {
+					t.Fatalf("task review omitted its existing-behavior check boundary: %s", boundary)
+				}
+			}
+			if decoded.Task == nil || !reflect.DeepEqual(decoded.Task.Acceptance, task.Acceptance) {
+				t.Fatal("independent review changed frozen task criteria")
+			}
+		} else if decoded.Workload == nil || !reflect.DeepEqual(decoded.Workload.Tasks[0].Acceptance, task.Acceptance) {
+			t.Fatal("integration review changed frozen task criteria")
+		}
+	}
+}
