@@ -1,5 +1,42 @@
 # Persistent task execution with Codex
 
+## Completed task: compose typed text and terminal paste
+
+Root: /home/gryph/Projects/tools/omnidex. Branch: fix/terminal-mixed-paste,
+based on main a6fa6ffc. Goal: accept typing, multiline paste and editing as one
+exact terminal message. The pasted Daemonet request was rejected, not executed.
+Acceptance: preserve mixed text, CR/LF/tab, Unicode, cursor edits, paste provenance,
+command protection, existing byte/control/authority boundaries and the next turn;
+verify real terminal submission; activate the CLI; scoped commit/push/one PR.
+Implemented: the edited terminal line is the sole content authority. Reversible
+CR/LF/tab projections preserve cursor edits and display safe one-cell glyphs;
+the raw-paste buffer and mixed-input rejection are removed. Typed LF ends its
+own turn, retaining the correct paste provenance across subsequent turns.
+
+Verified on source 21897e25, 2026-10-12: seven mixed-input editor cases and the
+exact-byte-boundary case failed before implementation. A separate LF provenance
+reproduction failed before its fix. The full CLI package passes under the race
+detector, as do vet and the native CLI build. Both candidate and installed launcher
+passed a real PTY check from daemonet-org against a private protocol fixture:
+exactly two POSTs carried mixed CRLF/tab text and pasted /exit; typed /exit quit
+with exit 0. Editing/history, literal glyph collisions, unsafe control/UTF-8
+rejection, limits, CR/LF/CRLF boundaries and existing plan-input checks pass.
+This is terminal/protocol evidence; no production job or inference was executed.
+
+Delivered: source 21897e25 pushed to fix/terminal-mixed-paste in
+https://github.com/ccordine/omnidex/pull/8 (base main). The CLI was atomically
+activated at bin/omni; existing launchers resolve to it. SHA-256:
+2f20fe9f7e27b0764f7b3a215dda08ffd22069d01dacf6fabbd77d8eb9f29e47.
+Core readiness remains healthy; no core restart, settings edit or database
+mutation was performed. Owner inference files and CHANGELOG remain outside
+the task and publication.
+
+Cleaned: private server/sockets/PTY child and isolated client config retired;
+the two task scratch files and empty bin/paste-qualification directory removed.
+Candidate activated. Declared budgets: scratch 32 MiB, candidate 128 MiB, one
+compiler operation/two workers. Shared caches preserved. All four completion
+stages are satisfied; stop.
+
 ## Completed task: terminal Agents in the invoking directory
 
 Root: /home/gryph/Projects/tools/omnidex. Branch: feat/local-cli-agent-chat,
