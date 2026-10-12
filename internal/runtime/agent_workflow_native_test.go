@@ -160,7 +160,7 @@ for fn in (c,f):
   except ValueError: pass
   else: raise AssertionError("accepted a nonfinite number")
 print("holdout passed")`
-	checks, err := client.ExecuteChecks(ctx, codingagent.Assignment{JobID: receipt.Job.ID, Generation: details.Job.CurrentGeneration, Role: codingagent.Review, Root: root, ReadFiles: files, Route: codingagent.Route{Provider: "codex", Model: modelName}}, []codingagent.Check{{ID: "independent-holdout", Argv: []string{"python3", "-B", "-c", holdout}}})
+	checks, err := client.ExecuteChecks(ctx, codingagent.Assignment{JobID: receipt.Job.ID, Generation: details.Job.CurrentGeneration, Role: codingagent.OverallReview, Root: root, ReadFiles: files, Route: codingagent.Route{Provider: "codex", Model: modelName}}, []codingagent.Check{{ID: "independent-holdout", Argv: []string{"python3", "-B", "-c", holdout}}})
 	if err != nil || len(checks) != 1 || checks[0].ExitCode != 0 {
 		t.Fatalf("stopped producer failed holdout: %+v %v", checks, err)
 	}

@@ -84,11 +84,17 @@ settings stay low/default. That run completed native planning, first task accept
 but task-2 review repeatedly paraphrased/combined the exact criterion label and its
 valid numeric finding was structurally rejected. The task-owned run was canceled
 through its real cancellation API after reproducing that nonconvergence; cleanup
-completed. Native review output schemas are being constrained to code-owned exact
+completed. Native review output schemas are constrained to code-owned exact
 criterion/task references (bound parent outcomes for overall review). Semantic
 observations remain free text. Holdout now checks actual conversion values and
-finite numeric edge cases, rather than inverse consistency alone. Fresh complete
-producer/holdout/restart qualification and cleanup remain before ready.
+finite numeric edge cases, rather than inverse consistency alone. The subsequent run completed every narrow task and review, then overall
+verification failed because the command adapter relabeled OverallReview as narrow
+Review. The adapter now preserves the overall scope and strips write access;
+execution checks still become read-only review of the same task. Narrow guards
+remain enforced. Real native source editing, independent review, sandbox/env
+isolation and running-command cancellation passed again (74.217s), as did scoped
+projection regressions and affected race checks. A fresh full ordinary qualification
+is running from frozen source; final evidence and cleanup remain before ready.
 
 Resources: generated installed protocol under bin/agent-protocol, at most 32 MiB,
 removed after qualification. Native task tool caches are under

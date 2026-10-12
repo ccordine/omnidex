@@ -11,9 +11,8 @@ import (
 // ExecuteChecks invokes the native sandbox directly. No model is asked to run
 // or interpret a command whose arguments are already frozen by Omnidex.
 func (client *Client) ExecuteChecks(parent context.Context, scope codingagent.Assignment, checks []codingagent.Check) ([]codingagent.CheckResult, error) {
-	scope.WriteFiles = nil
-	scope.Role = codingagent.Review
-	if err := validateAgentAssignment(scope); err != nil {
+	scope, err := readOnlyCheckScope(scope)
+	if err != nil {
 		return nil, err
 	}
 	ctx, cancel := context.WithTimeout(parent, client.timeout)
@@ -57,4 +56,16 @@ func (client *Client) ExecuteChecks(parent context.Context, scope codingagent.As
 		results = append(results, codingagent.CheckResult{ID: check.ID, ExitCode: *response.ExitCode, Output: response.Stdout + response.Stderr})
 	}
 	return results, nil
+}
+
+func readOnlyCheckScope(scope codingagent.Assignment) (codingagent.Assignment, error) {
+	switch scope.Role {
+	case codingagent.Execute:
+		scope.Role = codingagent.Review
+	case codingagent.Review, codingagent.OverallReview:
+	default:
+		return scope, fmt.Errorf("deterministic checks require a task or overall review scope")
+	}
+	scope.WriteFiles = nil
+	return scope, validateAgentAssignment(scope)
 }
