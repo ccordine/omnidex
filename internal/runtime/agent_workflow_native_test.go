@@ -68,7 +68,7 @@ func TestInstalledAgentWorkflowOrdinaryRequest(t *testing.T) {
 	workers := make(chan error, 1)
 	go func() { defer close(workers); workers <- runtime.worker.Start(runtime.context) }()
 	defer func() { runtime.cancel(); <-workers }()
-	request := map[string]any{"coding_mode": "agents", "metadata": map[string]string{"client_cwd": root}, "instruction": "Build a dependency-free Python module temperature.py with celsius_to_fahrenheit(value) and fahrenheit_to_celsius(value). Each accepts finite int or float values, returns a float, and raises ValueError for NaN/infinity or TypeError for booleans and nonnumbers. Include automated tests and a short README showing usage."}
+	request := map[string]any{"coding_mode": "agents", "metadata": map[string]string{"client_cwd": root}, "instruction": "Build a dependency-free Python module temperature.py with celsius_to_fahrenheit(value) and fahrenheit_to_celsius(value). Each accepts finite int or float values, returns a float, and raises ValueError for NaN/infinity or TypeError for booleans and nonnumbers. For finite inputs, return a finite float when the mathematical result is within finite float range; otherwise return infinity with the result's sign rather than raising an overflow error. Include automated tests and a short README showing usage."}
 	body, _ := json.Marshal(request)
 	response, err := http.Post(server.URL+"/v1/jobs", "application/json", bytes.NewReader(body))
 	if err != nil {
@@ -150,7 +150,11 @@ for v in (-123.5,-40,0,37,100,500.25):
  assert math.isclose(f(c(v)),v,rel_tol=1e-12,abs_tol=1e-10)
 assert math.isclose(f(2*10**308),float(Fraction(2*10**308-32)*Fraction(5,9)),rel_tol=1e-12)
 assert math.isclose(f(1e308),1e308*(5/9),rel_tol=1e-12)
+assert c(1e308)==math.inf and c(-1e308)==-math.inf
 for fn in (c,f):
+ for v in (10**309,-10**309):
+  result=fn(v)
+  assert type(result) is float and result==(math.inf if v>0 else -math.inf)
  for v in (True,False,"20",None,[],{}):
   try: fn(v)
   except TypeError: pass

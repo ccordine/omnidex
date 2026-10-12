@@ -41,17 +41,19 @@ effort (including max/ultra), Fast/priority, Save, Refresh and reload persistenc
 Managed update succeeded on the existing signed-in Codex 0.162.1 installation.
 Production routes remain unchanged; retained production rows match the baseline.
 
-Qualification: the preceding ordinary request completed all execution and reviews,
-but an independent holdout exposed a finite numeric boundary error missed by review.
-The generic independent-review instruction was strengthened without workload hints
-or additional requirements. A fresh ordinary request is running with reviewer ultra
-and advertised priority tiers; the original request and holdout are unchanged.
-Source is frozen during this run. Completion requires producer, holdout and preserving
-runtime restart to pass; final evidence and cleanup remain. Scoped prompt regressions,
+Qualification: one completed producer failed the independent numeric holdout.
+Generic review instructions now require independent declared-range checks. An ultra
+review then correctly paused because the fixture had no explicit output-overflow
+policy. The qualification request now specifies signed infinity for unrepresentable
+results; all earlier holdout assertions remain, with overflow checks added. No
+workload-specific hints entered production prompts. The fresh ordinary request uses
+high-effort review and advertised priority tiers; native ultra routing was observed
+in the preceding run. Source is frozen. Producer, holdout and preserving runtime
+restart must pass; final evidence and cleanup remain. Scoped prompt regressions,
 race checks and vet passed; corrected native binaries are activated.
 
 Delivery: draft stacked PR https://github.com/ccordine/omnidex/pull/6.
-Latest committed source before the final prompt correction: a31c8588.
+Installed production behavior: 5b1ab835. Qualification-only clarification pending.
 Do not mark ready until complete native qualification and cleanup pass.
 
 Resources: generated installed protocol under bin/agent-protocol, at most 32 MiB,
