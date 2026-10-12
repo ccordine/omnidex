@@ -71,7 +71,17 @@ fixes are implemented; queue guard regressions and real PostgreSQL admission
 serialization checks for both Normal and Agents passed. The managed updater
 completed successfully on the existing signed-in installation, which remains
 Codex 0.162.1. A fresh ordinary qualification is running from frozen source;
-one stacked PR and cleanup remain.
+Source commit: bae509dd. Delivered as draft stacked PR
+https://github.com/ccordine/omnidex/pull/6, based on the retained provider PR #5.
+Actual PostgreSQL API/race checks, current builds and vet pass. That qualification
+finished intake but the native planner stopped on an inference notification. The
+adapter treated every native error as terminal and returned before retaining the
+original error frame. It now honors the native willRetry flag within the same turn,
+retains original retry/failure frames, and surfaces bounded terminal diagnostics.
+Protocol regressions passed. A fresh ordinary native run is underway using the
+advertised priority tier for task planning/execution/review; retained production
+settings stay low/default. The full producer/holdout/restart result and resource
+cleanup remain before ready.
 
 Resources: generated installed protocol under bin/agent-protocol, at most 32 MiB,
 removed after qualification. Native task tool caches are under
@@ -92,6 +102,8 @@ and module cache (read-only, excluding VCS credentials), and existing selected
 workspace dependency directories. Authentication remains outside command grants.
 Source and
 durable native services remain in the established authoritative locations.
+
+## Completed foundation (historical)
 
 Authoritative workspace: /home/gryph/Projects/tools/omnidex.
 Branch: feat/codex-persistent-task-execution, based on 82add43f.

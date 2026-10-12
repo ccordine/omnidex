@@ -103,7 +103,9 @@ func TestInstalledAgentWorkflowOrdinaryRequest(t *testing.T) {
 			break
 		}
 		if details.Job.Status == model.JobStatusFailed || details.Job.Status == model.JobStatusWaiting || details.Job.Status == model.JobStatusCanceled {
-			t.Fatalf("unsteered producer stopped as %s: %s; steps=%+v", details.Job.Status, details.Job.Error, details.Steps)
+			var assignment json.RawMessage
+			_ = runtime.pool.QueryRow(ctx, `SELECT jsonb_build_object('role',payload_json->>'role','task',payload_json->'assignment'->'task') FROM evidence WHERE job_id=$1 AND kind='coding_agent' AND payload_json->>'phase'='call_opened' ORDER BY id DESC LIMIT 1`, receipt.Job.ID).Scan(&assignment)
+			t.Fatalf("unsteered producer stopped as %s: %s; steps=%+v; assigned responsibility=%s", details.Job.Status, details.Job.Error, details.Steps, assignment)
 		}
 		select {
 		case <-ctx.Done():

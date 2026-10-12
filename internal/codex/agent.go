@@ -79,17 +79,9 @@ func (client *Client) Run(parent context.Context, call codingagent.Assignment, w
 			}
 			continue
 		}
-		if err := validateAgentItems(frame, call.Role, items); err != nil {
-			return result, err
-		}
-		finished, err := collectAgentFrame(frame, connection.lastFrame, &result)
+		finished, err := consumeAgentFrame(frame, connection.lastFrame, &result, call.Role, items, event)
 		if err != nil {
 			return result, err
-		}
-		if agentEvidenceMethod(frame.Method) {
-			if err := recordAgentFrame(&result, connection.lastFrame, event); err != nil {
-				return result, err
-			}
 		}
 		if finished {
 			if len(items) > 0 {
