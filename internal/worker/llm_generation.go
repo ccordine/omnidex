@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
@@ -11,17 +12,18 @@ import (
 )
 
 type exactStationCall struct {
-	WorkInput          string
-	RootCallEvidenceID int64
-	WorkKind           assemblyline.WorkKind
-	Iteration          int
-	ParentCallID       int64
-	Prompt             string
-	ContextTokens      int
-	MaxOutputTokens    int
-	SingleLine         bool
-	SourceCorrection   *assemblyline.SourceBodyCorrectionEvidence
-	RetainedContext    []int
+	WorkInput               string
+	RootCallEvidenceID      int64
+	WorkKind                assemblyline.WorkKind
+	Iteration               int
+	ParentCallID            int64
+	Prompt                  string
+	ContextTokens           int
+	MaxOutputTokens         int
+	SingleLine              bool
+	SourceCorrection        *assemblyline.SourceBodyCorrectionEvidence
+	RetainedContext         []int
+	RetainedProviderContext json.RawMessage
 }
 
 type exactStationExecution struct {
@@ -172,7 +174,7 @@ func (s *Service) executeExactPortableStationCorrection(
 		persisted.StepID != authority.StepID ||
 		persisted.WorkKind != string(job.Kind) || persisted.Iteration != previous.Iteration ||
 		persisted.Model != modelName || persisted.RequestedModel != modelName ||
-		persisted.Protocol != string(llm.ExactPreparedProtocolPlainCompletionV4) ||
+		llm.ExactPreparedProtocol(persisted.Protocol).Validate() != nil ||
 		persisted.Candidate != previous.Candidate ||
 		persisted.Status != queue.LLMCallSucceeded || persisted.Outcome == nil ||
 		persisted.Outcome.Status != queue.LLMCallRejected {
@@ -190,9 +192,7 @@ func (s *Service) executeExactPortableStationCorrection(
 			"persisted exact station model context is invalid: %w", err,
 		)
 	}
-	retainedContext, err := llm.DecodeExactPreparedRetainedContext(
-		llm.ExactPreparedProtocol(persisted.Protocol), persisted.RawResponse, contextTokens,
-	)
+	retainedContext, providerContext, err := retainedStationContext(persisted, contextTokens)
 	if err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
 			"restore source correction model context from parent call %d: %w", persisted.ID, err,
@@ -213,13 +213,24 @@ func (s *Service) executeExactPortableStationCorrection(
 		WorkKind: job.Kind, Iteration: previous.Iteration + 1,
 		ParentCallID: previous.CallEvidenceID, Prompt: prompt,
 		ContextTokens: contextTokens, MaxOutputTokens: maxOutputTokens,
-		SingleLine:       opaqueCorrection,
-		SourceCorrection: &correctionEvidence,
-		RetainedContext:  retainedContext,
+		SingleLine:              opaqueCorrection,
+		SourceCorrection:        &correctionEvidence,
+		RetainedContext:         retainedContext,
+		RetainedProviderContext: providerContext,
 	}
 	prepared, err := prepareExactStationCall(call, modelName, nil)
 	if err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, err
 	}
 	return s.dispatchExactStationCall(ctx, authority, call, prepared)
+}
+
+func retainedStationContext(parent queue.LLMCallEvidence, contextTokens int) ([]int, json.RawMessage, error) {
+	protocol := llm.ExactPreparedProtocol(parent.Protocol)
+	if protocol == llm.ExactPreparedProtocolCodexV1 {
+		context, err := llm.DecodeCodexRetainedContext(parent.RawResponse)
+		return nil, context, err
+	}
+	context, err := llm.DecodeExactPreparedRetainedContext(protocol, parent.RawResponse, contextTokens)
+	return context, nil, err
 }

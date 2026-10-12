@@ -18,6 +18,11 @@ func (s *Service) dispatchExactStationCall(
 	call exactStationCall,
 	prepared llm.PreparedModel,
 ) (assemblyline.PortableResult, exactStationExecution, error) {
+	var preparationErr error
+	prepared, preparationErr = llm.PrepareNativeRequest(s.stationClient, prepared)
+	if preparationErr != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, preparationErr
+	}
 	if call.Iteration == 1 && call.RootCallEvidenceID != 0 ||
 		call.Iteration > 1 && call.RootCallEvidenceID < 1 {
 		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf("station call has invalid initial-call lineage")

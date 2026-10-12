@@ -10,6 +10,7 @@ type Protocol string
 
 const (
 	ProtocolOllama           Protocol = "ollama"
+	ProtocolCodex            Protocol = "codex"
 	ProtocolOpenAICompatible Protocol = "openai-compatible"
 	ProtocolAzure            Protocol = "azure"
 	ProtocolGoogle           Protocol = "google"

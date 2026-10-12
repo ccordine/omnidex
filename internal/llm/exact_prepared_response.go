@@ -56,6 +56,9 @@ func DecodeExactPreparedResponseForProtocol(
 	if err := protocol.Validate(); err != nil {
 		return ExactPreparedResponse{}, err
 	}
+	if protocol == ExactPreparedProtocolCodexV1 {
+		return decodeCodexPreparedResponse(status, body)
+	}
 	return decodeExactPreparedResponse(status, body)
 }
 

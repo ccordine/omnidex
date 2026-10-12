@@ -98,13 +98,13 @@ func constructedPublicationRuntime(t *testing.T, repository *queue.Repository, c
 // verifier. They do not test interpretation or autonomous construction.
 func TestClientWorkspacePublishesDockerVerifiedSource(t *testing.T) {
 	for _, fixture := range []struct{ name, body, check string }{
-		{"text output", `return TaskResult{Output: "ready"}`, `result := Feature001(TaskInput{}, CapabilityResults{}); if result.Output != "ready" { t.Fatal(result.Output) }`},
-		{"argument selection", `return TaskResult{Output: input.Arguments[1]}`, `result := Feature001(TaskInput{Arguments: []string{"left", "right"}}, CapabilityResults{}); if result.Output != "right" { t.Fatal(result.Output) }`},
+		{"text output", `return "ready"`, `return "ready"`},
+		{"argument selection", `if len(arguments) < 2 { return "" }; return arguments[1]`, `if len(arguments) < 2 { return "" }; return arguments[1]`},
 	} {
 		t.Run(fixture.name, func(t *testing.T) {
 			program := testExactGoSieveProgram(t)
-			program.Generated["feature.001"] = "func Feature001(input TaskInput, dependencies CapabilityResults) TaskResult {\n" + fixture.body + "\n}"
-			program.Generated["acceptance.001"] = "func TestFeature001(t *testing.T) {\n" + fixture.check + "\n}"
+			program.Generated["feature.001"] = "func Feature001(arguments []string) string {\n" + fixture.body + "\n}"
+			program.Generated["acceptance.001"] = "func ExpectedFeature001(arguments []string) string {\n" + fixture.check + "\n}"
 			runConstructedDockerPublicationFixture(t, program, false, true)
 		})
 	}

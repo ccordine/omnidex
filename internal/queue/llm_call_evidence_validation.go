@@ -84,10 +84,10 @@ func normalizeLLMCallOpening(record LLMCallOpeningRecord) (normalizedLLMCallOpen
 		)
 	}
 	isLineageRoot := record.Iteration == 1
-	if isLineageRoot && record.Prepared.RetainedContext != nil {
+	if isLineageRoot && (record.Prepared.RetainedContext != nil || len(record.Prepared.RetainedProviderContext) != 0) {
 		return normalizedLLMCallOpening{}, fmt.Errorf("initial LLM call cannot inherit model context")
 	}
-	if !isLineageRoot && len(record.Prepared.RetainedContext) == 0 {
+	if !isLineageRoot && len(record.Prepared.RetainedContext) == 0 && len(record.Prepared.RetainedProviderContext) == 0 {
 		return normalizedLLMCallOpening{}, fmt.Errorf("source correction requires retained model context")
 	}
 	if isLineageRoot {

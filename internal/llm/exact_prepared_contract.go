@@ -42,6 +42,7 @@ const (
 )
 
 type ProviderGenerationUsage struct {
+	ReasoningEvalCount      int   `json:"reasoning_eval_count,omitempty"`
 	PromptEvalCount         int   `json:"prompt_eval_count"`
 	EvalCount               int   `json:"eval_count"`
 	TotalDurationNanos      int64 `json:"total_duration_nanos"`
@@ -78,7 +79,7 @@ func (usage ProviderGenerationUsage) ValidateSuccessful() error {
 }
 
 func (usage ProviderGenerationUsage) Validate() error {
-	if usage.PromptEvalCount < 0 || usage.EvalCount < 0 {
+	if usage.PromptEvalCount < 0 || usage.EvalCount < 0 || usage.ReasoningEvalCount < 0 {
 		return fmt.Errorf("exact prepared provider token counts cannot be negative")
 	}
 	return nil
@@ -88,7 +89,7 @@ func (generation PreparedGeneration) Validate() error {
 	if err := generation.validateSuccessfulContentEvidence(); err != nil {
 		return err
 	}
-	if generation.ProviderDoneReason != "stop" {
+	if generation.ProviderDoneReason != "stop" && generation.ProviderDoneReason != "completed" {
 		return fmt.Errorf("exact prepared generation content is invalid")
 	}
 	return nil
@@ -107,7 +108,7 @@ func (generation PreparedGeneration) validateSuccessfulContentEvidence() error {
 		len(generation.Content) > MaxExactPreparedModelContentBytes ||
 		!utf8.ValidString(generation.Content) || strings.ContainsRune(generation.Content, 0) ||
 		!generation.ProviderDonePresent || !generation.ProviderDone ||
-		(generation.ProviderDoneReason != "stop" && generation.ProviderDoneReason != "length") ||
+		!validPreparedDoneReason(generation.Protocol, generation.ProviderDoneReason) ||
 		!generation.UsagePresent {
 		return fmt.Errorf("exact prepared generation content is invalid")
 	}
@@ -160,7 +161,7 @@ func (generation PreparedGeneration) ValidateProviderResponseReceipt() error {
 		return fmt.Errorf("provider response claims a request that was not fully dispatched")
 	}
 	if !registeredProviderResponseDisposition(generation.ProviderResponseDisposition) ||
-		generation.ProviderHTTPStatus < 100 || generation.ProviderHTTPStatus > 599 ||
+		!validPreparedResponseStatus(generation.Protocol, generation.ProviderHTTPStatus) ||
 		generation.ProviderResponseBytes < 0 || generation.ProviderResponseCapturedBytes < 0 ||
 		generation.ProviderResponseCapturedBytes >
 			MaxExactPreparedProviderResponseBytes+maxExactPreparedProviderBoundaryBytes ||
@@ -192,12 +193,11 @@ func (generation PreparedGeneration) ValidateProviderResponseReceipt() error {
 	parsedFinal := generation.ProviderResponseDisposition == ProviderResponseSucceeded ||
 		generation.ProviderResponseDisposition == ProviderResponseEmptyContent
 	if parsedFinal &&
-		(generation.ProviderHTTPStatus < 200 || generation.ProviderHTTPStatus >= 300 ||
+		(!validPreparedSuccessStatus(generation.Protocol, generation.ProviderHTTPStatus) ||
 			!generation.ProviderContentEncoding.IsIdentity() ||
 			!generation.ProviderResponseComplete ||
 			(!generation.ProviderDonePresent && generation.ProviderDone) ||
-			(generation.ProviderDoneReason != "" && generation.ProviderDoneReason != "stop" &&
-				generation.ProviderDoneReason != "length") || generation.Usage.Validate() != nil) {
+			(generation.ProviderDoneReason != "" && !validPreparedDoneReason(generation.Protocol, generation.ProviderDoneReason)) || generation.Usage.Validate() != nil) {
 		return fmt.Errorf("successful provider response receipt is incomplete")
 	}
 	if !parsedFinal &&

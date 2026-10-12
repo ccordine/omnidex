@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/gryph/omnidex/internal/codex"
 	"github.com/gryph/omnidex/internal/config"
 	"github.com/gryph/omnidex/internal/googleai"
 	"github.com/gryph/omnidex/internal/huggingface"
@@ -33,6 +34,8 @@ func newExactStationProvider(
 		return nil, err
 	}
 	switch definition.Protocol {
+	case catalog.ProtocolCodex:
+		return codex.New(cfg.CodexCommand, cfg.CodexDirectory, timeout)
 	case catalog.ProtocolOllama:
 		return ollama.New(
 			cfg.OllamaBaseURL, "", "", timeout,

@@ -36,11 +36,14 @@ func main() {
 }
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) (resultErr error) {
+	if len(args) == 2 && args[0] == "model-env" {
+		return writeModelEnvironment(stdout, args[1])
+	}
 	if len(args) == 2 && args[0] == "version" && args[1] == "--json" {
 		return writeVersionJSON(stdout)
 	}
 	if len(args) != 1 || args[0] != "chat" {
-		return fmt.Errorf("usage: omni chat | omni version --json")
+		return fmt.Errorf("usage: omni chat | omni version --json | omni model-env <model>")
 	}
 	if _, _, err := requireChatTerminalStreams(stdin, stdout); err != nil {
 		return err

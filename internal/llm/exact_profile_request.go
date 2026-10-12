@@ -37,6 +37,9 @@ func ExactPreparedRequestBytes(prepared PreparedModel) ([]byte, error) {
 	if err := validateExactPreparedRequest(prepared); err != nil {
 		return nil, err
 	}
+	if prepared.Protocol == ExactPreparedProtocolCodexV1 {
+		return codexPreparedRequestBytes(prepared)
+	}
 	prompt, err := ExactPreparedRequestModelInput(prepared)
 	if err != nil {
 		return nil, err

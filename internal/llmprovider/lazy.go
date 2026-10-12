@@ -47,6 +47,14 @@ func (resolver *lazyExactStationResolver) GeneratePreparedExact(
 	return client.GeneratePreparedExact(ctx, prepared)
 }
 
+func (resolver *lazyExactStationResolver) PrepareExactRequest(prepared llm.PreparedModel) (llm.PreparedModel, error) {
+	client, err := resolver.resolve()
+	if err != nil {
+		return llm.PreparedModel{}, err
+	}
+	return llm.PrepareNativeRequest(client, prepared)
+}
+
 func (resolver *lazyExactStationResolver) resolve() (llm.ExactStationClient, error) {
 	if resolver == nil {
 		return nil, fmt.Errorf("lazy exact station resolver is uninitialized")

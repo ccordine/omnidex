@@ -21,11 +21,12 @@ type ExactPreparedProtocol string
 
 const (
 	ExactPreparedProtocolPlainCompletionV4 ExactPreparedProtocol = "omnidex.ollama-plain-completion-request.v4"
+	ExactPreparedProtocolCodexV1           ExactPreparedProtocol = "omnidex.codex-app-server-request.v1"
 )
 
 func (protocol ExactPreparedProtocol) Validate() error {
 	switch protocol {
-	case ExactPreparedProtocolPlainCompletionV4:
+	case ExactPreparedProtocolPlainCompletionV4, ExactPreparedProtocolCodexV1:
 		return nil
 	default:
 		return fmt.Errorf("exact prepared protocol is not registered")
@@ -58,6 +59,12 @@ func ExactPreparedRequestModelInput(prepared PreparedModel) (string, error) {
 func validateExactPreparedRequest(prepared PreparedModel) error {
 	if err := prepared.Protocol.Validate(); err != nil {
 		return err
+	}
+	if prepared.Protocol == ExactPreparedProtocolCodexV1 {
+		return validateCodexPreparedRequest(prepared)
+	}
+	if len(prepared.RetainedProviderContext) != 0 {
+		return fmt.Errorf("Ollama request contains another provider's continuation")
 	}
 	if err := prepared.OutputLimitMode.Validate(); err != nil {
 		return err
@@ -149,7 +156,9 @@ func ValidateExactPreparedNativeUsage(
 			usage.EvalCount, maxOutputTokens,
 		)
 	}
-	if usage.PromptEvalCount > contextTokens-usage.EvalCount {
+	if usage.ReasoningEvalCount < 0 || usage.ReasoningEvalCount > contextTokens ||
+		usage.EvalCount > contextTokens-usage.ReasoningEvalCount ||
+		usage.PromptEvalCount > contextTokens-usage.EvalCount-usage.ReasoningEvalCount {
 		return fmt.Errorf(
 			"exact provider aggregate native context exceeded: prompt_tokens=%d output_tokens=%d native_context=%d",
 			usage.PromptEvalCount, usage.EvalCount, contextTokens,
