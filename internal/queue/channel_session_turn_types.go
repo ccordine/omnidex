@@ -3,6 +3,7 @@ package queue
 import (
 	"fmt"
 
+	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/projectroot"
 )
@@ -13,6 +14,7 @@ type ChannelSessionTurnCommand struct {
 	WorkspaceRoot     string                     `json:"workspace_root"`
 	WorkspaceIdentity string                     `json:"workspace_identity"`
 	Text              string                     `json:"text"`
+	CodingMode        codingagent.Mode           `json:"coding_mode,omitempty"`
 }
 
 type ChannelSessionTurnResult struct {
@@ -44,6 +46,15 @@ func normalizeChannelSessionTurnCommand(
 	}
 	if err := model.ValidateChannelMessage(model.ChannelMessageRoleUser, command.Text); err != nil {
 		return ChannelSessionTurnCommand{}, err
+	}
+	switch command.CodingMode {
+	case "", codingagent.Normal:
+		command.CodingMode = ""
+	case codingagent.Agents:
+	default:
+		return ChannelSessionTurnCommand{}, fmt.Errorf(
+			"%w: unknown coding mode %q", ErrChannelSessionTurnInvalid, command.CodingMode,
+		)
 	}
 	command.OperationID = operationID
 	return command, nil

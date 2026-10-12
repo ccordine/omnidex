@@ -1,5 +1,53 @@
 # Persistent task execution with Codex
 
+## Active task: terminal Agents in the invoking directory
+
+Root: /home/gryph/Projects/tools/omnidex. Branch: feat/local-cli-agent-chat,
+based on main 1169030c. Goal: plain omni chat runs scoped Agents directly from any
+local directory on this device: request, original Charmeleon research/planning,
+scoped execution, independent verification, recap, then another task in the same
+terminal. Deliver a solid MVP through the relevant gauntlets, then stop; subsequent
+self-improvement will be performed through Omnidex, not added to this task.
+
+Acceptance: CLI chooses Agents for new jobs and freezes mode in idempotent turns;
+server uses existing saved Codex role settings; exact live local-client/physical
+workspace binding allows native execution outside the static service root while
+foreign/unbound jobs retain existing restrictions; terminal questions resume the
+same job; existing cancellation/replan and mutation fences stay intact; installed
+omni resolves to the current CLI; a real existing-project terminal update passes;
+affected checks, preserving activation, scoped PR and cleanup complete.
+
+Constraints: preserve original Charmeleon intake, narrow job contexts and owner
+uncommitted inference work. No global filesystem grant, alternate ledger, source
+copy/worktree, broad model context or unrelated feature work. One source branch.
+Source implemented first; affected verification at the end. Existing native install
+and credentials are retained. Resources before creation: one ignored
+bin/cli-agent-qualification fixture set (32 MiB, retired on completion), two candidate
+binaries (256 MiB, activated then retired), and one disposable PostgreSQL container
+(512 MiB RAM, two CPUs, 1 GiB tmpfs, auto-removed). One local compiler operation,
+two workers. Actual native inference uses one producer, no overall deadline.
+
+State: implemented terminal Agents dispatch, exact mode/retry identity, paused-question
+projection/rendering, live local-directory ownership and disconnect cancellation,
+observed-file/check recap and managed CLI PATH binding. Focused failing reproductions
+preceded fixes. Affected cmd/client/codingagent/transport/API/queue/worker race checks
+passed. Original-plan-pause regression passed against PostgreSQL with the race detector.
+Full CLI/client/codingagent/runtime package checks, affected vet and builds passed.
+One task-owned red-test cache, bin/terminal-chat-go-cache (129 MiB observed, 512 MiB
+budget), will be retired after checks. Current binaries and CLI launchers are activated. The authoritative operation
+validator from setup.sql was replaced transactionally in the retained runtime schema;
+Normal descriptors remain unchanged. No job/data/config/credential rows were changed.
+The isolated PostgreSQL fixture was recycled after completed tests before native
+qualification. The first real PTY run reached original intake, frozen planning and
+existing-file execution, then native review rejected a quoted criterion in its strict
+output-schema enum (400 invalid_json_schema). Safe code-owned reference mapping is
+implemented and unit/race/vet checked in the native adapter; portable criteria and original wire evidence stay
+exact. PTY dimensions are explicit and failure diagnostics are bounded.
+A fresh two-task PTY acceptance run is active from frozen source.
+No separate Charmeleon gauntlet executable is registered; the relevant application,
+queue/step lifecycle, workspace, pause, cancellation and real-terminal checks are the
+applicable proof. No original intake/planner shortcut is introduced.
+
 ## Completed task: governed agent execution
 
 Authoritative root: /home/gryph/Projects/tools/omnidex.

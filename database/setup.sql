@@ -817,7 +817,8 @@ BEGIN
     IF NOT FOUND OR NEW.kind<>'channel_session_turn' OR
        jsonb_typeof(payload)<>'object' OR
        NOT (payload ?& ARRAY['operation_id','channel_id','workspace_root','workspace_identity','text']) OR
-       (payload - ARRAY['operation_id','channel_id','workspace_root','workspace_identity','text'])<>'{}'::jsonb OR
+       (payload - ARRAY['operation_id','channel_id','workspace_root','workspace_identity','text','coding_mode'])<>'{}'::jsonb OR
+       (payload ? 'coding_mode' AND payload->'coding_mode' IS DISTINCT FROM '"agents"'::jsonb) OR
        payload->>'operation_id'<>NEW.operation_id OR
        payload->>'channel_id'<>NEW.channel_id OR
        payload->>'workspace_identity' !~ '^client_[0-9a-f]{32}_directory_(0|[1-9][0-9]{0,19})_[1-9][0-9]{0,19}$' OR

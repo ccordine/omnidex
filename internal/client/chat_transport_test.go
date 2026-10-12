@@ -45,6 +45,7 @@ func TestCLIChatTransportPreservesWorkspaceAndReusesOneChannel(t *testing.T) {
 				"workspace_identity": testWorkspaceIdentity,
 				"text":               "Track scheduled maintenance.",
 				"operation_id":       string(firstOperation),
+				"coding_mode":        "normal",
 			})
 			writeJSON(t, writer, http.StatusAccepted, SessionTurnReceipt{
 				OperationID: firstOperation, Disposition: model.ChannelSessionTurnEnqueued,
@@ -63,6 +64,7 @@ func TestCLIChatTransportPreservesWorkspaceAndReusesOneChannel(t *testing.T) {
 				"workspace_identity": testWorkspaceIdentity,
 				"text":               "Keep the existing notes visible.",
 				"operation_id":       string(secondOperation),
+				"coding_mode":        "normal",
 			})
 			writeJSON(t, writer, http.StatusAccepted, SessionTurnReceipt{
 				OperationID: secondOperation, Disposition: model.ChannelSessionTurnFeedback,

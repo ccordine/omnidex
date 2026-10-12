@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/client"
+	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/model"
 )
 
@@ -55,6 +56,7 @@ type chatSession struct {
 type pendingSessionTurn struct {
 	exactText   string
 	operationID model.LifecycleOperationID
+	codingMode  codingagent.Mode
 }
 
 func runChatSession(config chatSessionConfig) (resultErr error) {
@@ -327,6 +329,7 @@ func (session *chatSession) acceptText(text string) error {
 				session.workspaceIdentity,
 				operationID,
 				text,
+				session.pendingTurn.codingMode,
 			)
 		},
 	)
@@ -379,7 +382,9 @@ func (session *chatSession) sessionTurnOperationID(
 	if err != nil {
 		return "", err
 	}
-	session.pendingTurn = &pendingSessionTurn{exactText: exactText, operationID: operationID}
+	session.pendingTurn = &pendingSessionTurn{
+		exactText: exactText, operationID: operationID, codingMode: codingagent.Agents,
+	}
 	return operationID, nil
 }
 

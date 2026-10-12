@@ -105,11 +105,19 @@ questions pause the same durable job until answered. Overall review checks the
 original objective and integration before completion. Restart preserves the
 plan, accepted tasks, questions and original native receipts.
 
-Select **Agents** in a local CLI-bound assistant conversation, or submit
+Run **omni chat** from the local directory you want to work on. Terminal turns
+use Agents, show progress and concrete questions, and return a recap of written
+files and passed checks. After completion, the next message starts a new task in
+the same project. No browser is required. Native execution uses only the exact
+live local CLI directory; disconnecting ends its workspace access.
+
+Alternatively, select **Agents** in a local CLI-bound assistant conversation, or submit
 `coding_mode: "agents"` to `POST /v1/jobs` with the selected workspace in
 `metadata.client_cwd`. The native service must own that workspace under
 `HOST_DIRECTORY_ACCESS_ROOT`; a remote directory with the same name grants no
-access. Normal is the default. The API also accepts `coding_mode: "normal"`.
+access. Unbound API jobs retain that configured boundary. Normal remains the
+default for ordinary web/API turns; terminal turns explicitly choose Agents.
+The API also accepts `coding_mode: "normal"`.
 
 `CODING_PLANNER_PROVIDER/MODEL`, `CODING_EXECUTOR_PROVIDER/MODEL` and
 `CODING_REVIEWER_PROVIDER/MODEL` configure the independent roles at startup.
@@ -565,9 +573,11 @@ then run `scripts/install-native.sh <codex-executable> <model> <postgres-bin> <v
 It installs user services without copying source. The existing Codex sign-in owns
 authentication; PostgreSQL owns durable task state. See
 [persistent task execution](docs/CODEX_TASK_EXECUTION.md).
-Open the native UI at `http://127.0.0.1:18090`, or run `~/.local/bin/omnidex chat`
-from the intended workspace. The native launcher uses the installed server URL
-and leaves existing CLI installations intact.
+Run `omni chat` from the intended local directory. The native installer binds
+the managed CLI launchers to the current binary and retained server URL, including
+a recognized older Omnidex CLI that would otherwise shadow it on PATH. Configuration,
+identity and application data are preserved. The optional native UI is at
+`http://127.0.0.1:18090`.
 
 From any directory, update the installed host checkout and binaries with:
 

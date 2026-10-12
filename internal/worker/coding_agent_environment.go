@@ -88,7 +88,11 @@ func (environment *codingAgentEnvironment) PrepareFiles(ctx context.Context, tas
 		if err != nil {
 			return err
 		}
-		if _, err := prepared.ApplyVerified(ctx, nil); err != nil {
+		result, err := prepared.ApplyVerified(ctx, nil)
+		if err != nil {
+			return err
+		}
+		if err := environment.recordWrittenFiles(ctx, result); err != nil {
 			return err
 		}
 	}
@@ -126,6 +130,22 @@ func (environment *codingAgentEnvironment) WriteFile(ctx context.Context, edit c
 	if err != nil {
 		return err
 	}
-	_, err = prepared.ApplyVerified(ctx, nil)
+	result, err := prepared.ApplyVerified(ctx, nil)
+	if err != nil {
+		return err
+	}
+	return environment.recordWrittenFiles(ctx, result)
+}
+
+func (environment *codingAgentEnvironment) recordWrittenFiles(ctx context.Context, result workspace.ReconciliationResult) error {
+	if len(result.Changes) == 0 {
+		return nil
+	}
+	files := make([]string, len(result.Changes))
+	for index, change := range result.Changes {
+		files[index] = change.Path
+	}
+	_, err := environment.runtime.svc.repo.CodingAgentEvidence(environment.runtime.claim.Authority).Append(ctx,
+		codingagent.Entry{Generation: environment.runtime.claim.Authority.Generation, Phase: "files_written", WrittenFiles: files})
 	return err
 }

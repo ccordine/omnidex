@@ -117,7 +117,11 @@ func currentJobDetailsTx(ctx context.Context, tx pgx.Tx, jobID int64) (model.Job
 	}
 	stepsRows.Close()
 
-	return model.JobDetails{Job: job, Steps: steps}, nil
+	pause, err := readCurrentCodingAgentPauseTx(ctx, tx, job, steps)
+	if err != nil {
+		return model.JobDetails{}, err
+	}
+	return model.JobDetails{Job: job, Steps: steps, AgentPause: pause}, nil
 }
 
 func (r *Repository) GetStepRuntimeState(ctx context.Context, jobID, stepID int64) (string, string, error) {
