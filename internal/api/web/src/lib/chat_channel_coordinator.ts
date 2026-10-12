@@ -1,5 +1,6 @@
 import { readJSON } from "./api";
 import { fetchChannelTranscript } from "./channel_api";
+import type { CodingMode } from "./channel_api";
 import {
   ChatChannelCreationFlow,
   type ChannelIdentityFactory,
@@ -16,6 +17,7 @@ import {
 import { t } from "./i18n";
 import type { StatusTone } from "./types";
 import type { RoleplayTurnInput } from "./roleplay_turn_input";
+import type { AgentChannelState } from "./coding_agent_channel_contract";
 
 export interface ChatChannelHost extends ChatChannelCreationFlowHost {
   hasNetworkURL(): boolean;
@@ -91,6 +93,10 @@ export class ChatChannelCoordinator {
   }
 
   hasSelection(): boolean { return this.selectedChannelID.length > 0; }
+
+  onAgentTurnChange(handler: () => void): void { this.turns.onAgentTurnChange(handler); }
+  agentTurnState(): AgentChannelState | undefined { return this.turns.agentTurnState(this.selectedChannelID); }
+  disconnectAgentTurns(): void { this.turns.disconnectAgentTurns(); }
 
   setNetworkURL(url: string): void {
     if (!this.host.hasNetworkURL()) return;
@@ -244,6 +250,7 @@ export class ChatChannelCoordinator {
     try {
       const page = await fetchChannelTranscript(channelID, { beforeID, requiredMessageID });
       await this.host.renderTranscriptBundle(page.html.bundle, beforeID !== undefined);
+      if (beforeID === undefined) await this.turns.recoverAgentTurn(channelID, page.latest_user_turn);
     } catch (error) {
       this.host.setStatus(t("channel.statusUnavailableOne"), "error");
       this.host.addEvent("channel_transcript_failed", { channel_id: channelID, error: errorMessage(error) });
@@ -272,12 +279,12 @@ export class ChatChannelCoordinator {
     }
   }
 
-  async createAndSubmit(prompt: string): Promise<NeutralChannelSubmitResult> {
+  async createAndSubmit(prompt: string, codingMode: CodingMode = "normal"): Promise<NeutralChannelSubmitResult> {
     return this.transitions.run(async () => {
       if (this.selectedChannelID) throw new Error("Neutral channel creation requires neutral channel authority.");
       await this.creation.create();
       if (!this.host.roleplayConfigured()) return { kind: "roleplay_setup_required" };
-      return { kind: "submitted", turn: await this.acceptTurnLocked(prompt) };
+      return { kind: "submitted", turn: await this.acceptTurnLocked(prompt, undefined, codingMode) };
     });
   }
 
@@ -285,8 +292,8 @@ export class ChatChannelCoordinator {
     await this.transitions.run(() => this.creation.create());
   }
 
-  async submit(prompt: string, roleplayTurn?: RoleplayTurnInput): Promise<ChatChannelTurnReceipt> {
-		return this.transitions.run(() => this.acceptTurnLocked(prompt, roleplayTurn));
+  async submit(prompt: string, roleplayTurn?: RoleplayTurnInput, codingMode: CodingMode = "normal"): Promise<ChatChannelTurnReceipt> {
+    return this.transitions.run(() => this.acceptTurnLocked(prompt, roleplayTurn, codingMode));
   }
 
   async reconcileTurn(receipt: ChatChannelTurnReceipt): Promise<void> {
@@ -296,10 +303,13 @@ export class ChatChannelCoordinator {
   private async acceptTurnLocked(
     prompt: string,
     roleplayTurn?: RoleplayTurnInput,
+    codingMode: CodingMode = "normal",
   ): Promise<ChatChannelTurnReceipt> {
     const channelID = this.selectedChannelID;
     if (!channelID) throw new Error("A channel must be selected before sending a channel message.");
-    return roleplayTurn === undefined
+    return codingMode === "agents"
+      ? this.turns.accept(channelID, prompt, roleplayTurn, codingMode)
+      : roleplayTurn === undefined
       ? this.turns.accept(channelID, prompt)
       : this.turns.accept(channelID, prompt, roleplayTurn);
   }

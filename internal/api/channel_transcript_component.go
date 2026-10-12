@@ -22,10 +22,17 @@ type channelTranscriptHTML struct {
 }
 
 type channelTranscriptResponse struct {
-	ChannelID    model.ChannelID       `json:"channel_id"`
-	NextBeforeID *int64                `json:"next_before_id,omitempty"`
-	HasMore      bool                  `json:"has_more"`
-	HTML         channelTranscriptHTML `json:"html"`
+	ChannelID      model.ChannelID            `json:"channel_id"`
+	NextBeforeID   *int64                     `json:"next_before_id,omitempty"`
+	HasMore        bool                       `json:"has_more"`
+	HTML           channelTranscriptHTML      `json:"html"`
+	LatestUserTurn *channelTranscriptUserTurn `json:"latest_user_turn,omitempty"`
+}
+
+type channelTranscriptUserTurn struct {
+	MessageID int64  `json:"message_id"`
+	JobID     int64  `json:"job_id"`
+	Status    string `json:"status"`
 }
 
 func neutralChannelTranscriptComponent() chatComponentPage {
@@ -65,9 +72,21 @@ func channelTranscriptResponseFor(
 	}
 	bundle := renderRecyclrTemplateHTML(channelTranscriptMessagesTarget, markup, location) +
 		renderRecyclrTemplateHTML(channelTranscriptPaginationTarget, renderChannelTranscriptPagination(page), "innerHTML")
+	var latestTurn *channelTranscriptUserTurn
+	if !prepend {
+		for _, message := range page.Messages {
+			if message.Role == model.ChannelMessageRoleUser {
+				latestTurn = nil
+				if message.Turn != nil {
+					latestTurn = &channelTranscriptUserTurn{MessageID: message.ID, JobID: message.Turn.JobID, Status: message.Turn.Status}
+				}
+			}
+		}
+	}
 	return channelTranscriptResponse{
 		ChannelID: channelID, NextBeforeID: page.NextBeforeID, HasMore: page.HasMore,
-		HTML: channelTranscriptHTML{Bundle: bundle},
+		HTML:           channelTranscriptHTML{Bundle: bundle},
+		LatestUserTurn: latestTurn,
 	}, nil
 }
 

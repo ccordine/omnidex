@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/scrum"
 )
@@ -59,6 +60,13 @@ const (
 )
 
 func (r *nativeRuntimeV3) runDirectCodingAction() error {
+	configuration, err := codingagent.ConfigurationFromMetadata(r.claim.Job.Metadata)
+	if err != nil {
+		return err
+	}
+	if configuration.Mode == codingagent.Agents {
+		return r.runAgentCodingAction(configuration)
+	}
 	request, err := r.directCodingRequest()
 	if err != nil {
 		return err

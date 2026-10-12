@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"github.com/gryph/omnidex/internal/codingagent"
 	"os"
 
 	"github.com/gryph/omnidex/internal/db"
@@ -20,6 +21,7 @@ type Config struct {
 	LLMProvider             string
 	CodexCommand            string
 	CodexDirectory          string
+	CodingAgents            codingagent.Configuration
 	EmbeddingProvider       string
 	ProviderModels          map[string]ProviderModelConfig
 	OllamaBaseURL           string
@@ -90,6 +92,10 @@ func Load() (Config, error) {
 		UISessionTTL:            getenv("UI_SESSION_TTL", "30m"),
 		InferenceContextTokens:  getenv("INFERENCE_CONTEXT_TOKENS", "8192"),
 	}
+	cfg.CodingAgents = codingagent.Configuration{Mode: codingagent.Normal,
+		Planner:  codingagent.Route{Provider: getenv("CODING_PLANNER_PROVIDER", "codex"), Model: getenv("CODING_PLANNER_MODEL", modelAuthority.Config().Get("coding_requirements_model")), Effort: getenv("CODING_PLANNER_EFFORT", "low"), ServiceTier: getenv("CODING_PLANNER_SERVICE_TIER", "default")},
+		Executor: codingagent.Route{Provider: getenv("CODING_EXECUTOR_PROVIDER", "codex"), Model: getenv("CODING_EXECUTOR_MODEL", modelAuthority.Config().Get("coding_fragment_model")), Effort: getenv("CODING_EXECUTOR_EFFORT", "low"), ServiceTier: getenv("CODING_EXECUTOR_SERVICE_TIER", "default")},
+		Reviewer: codingagent.Route{Provider: getenv("CODING_REVIEWER_PROVIDER", "codex"), Model: getenv("CODING_REVIEWER_MODEL", modelAuthority.Config().Get("conversation_response_model")), Effort: getenv("CODING_REVIEWER_EFFORT", "low"), ServiceTier: getenv("CODING_REVIEWER_SERVICE_TIER", "default")}}
 
 	return cfg, nil
 }

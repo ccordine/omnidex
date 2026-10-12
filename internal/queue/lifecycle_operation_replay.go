@@ -54,8 +54,19 @@ func requireSubmitFeedbackReplayTx(
 	record lifecycleOperationRecord,
 	command SubmitJobFeedbackCommand,
 ) error {
-	if record.StepID == nil ||
-		record.ResultStepStatus == nil || *record.ResultStepStatus != model.StepStatusCompleted {
+	if command.ExpectedGeneration != nil && *command.ExpectedGeneration != record.ObservedGeneration {
+		return lifecycleReplayStateError(record.ID, "feedback observed generation")
+	}
+	if record.StepID == nil || record.ResultStepStatus == nil {
+		return lifecycleReplayStateError(record.ID, "feedback step result")
+	}
+	if *record.ResultStepStatus == model.StepStatusRunning {
+		if record.ResultJobStatus != model.JobStatusRunning || record.ResultGeneration != record.ObservedGeneration {
+			return lifecycleReplayStateError(record.ID, "scoped-agent resume result")
+		}
+		return requireCodingAgentAnswerReplayTx(ctx, tx, record.JobID, *record.StepID, record.ObservedGeneration, record.ID, command.Feedback, command.ExpectedWaitingAttempt)
+	}
+	if *record.ResultStepStatus != model.StepStatusCompleted {
 		return lifecycleReplayStateError(record.ID, "feedback step result")
 	}
 	if err := requireLifecycleStepTx(

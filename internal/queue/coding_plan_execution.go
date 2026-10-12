@@ -78,8 +78,7 @@ func (r *Repository) LoadFrozenCodingPlan(
 		if err := rows.Scan(
 			&leaf.Leaf.ID, &leaf.Leaf.Statement,
 			&leaf.Leaf.Decision,
-			&leaf.ResultRelation.Schema,
-			&leaf.ResultRelation.Relation,
+			&leaf.ResultRelation.Schema, &leaf.ResultRelation.Relation,
 		); err != nil {
 			return FrozenCodingPlan{}, err
 		}

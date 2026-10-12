@@ -17,7 +17,8 @@ func PortableResponseFramingForWorkKind(
 	kind WorkKind,
 ) (PortableResponseFraming, error) {
 	switch kind {
-	case WorkApplicationProductContext,
+	case WorkApplicationConstructionContext,
+		WorkApplicationProductContext,
 		WorkApplicationRequirementInventory,
 		WorkDatabaseQueryPurposeInventory,
 		WorkApplicationRequirementCandidatePartition,

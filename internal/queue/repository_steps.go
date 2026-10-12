@@ -88,6 +88,9 @@ func (r *Repository) completeStep(
 			lockedAttempt.JobStatus, lockedAttempt.StepStatus,
 		), nil)
 	}
+	if err := requireCodingAgentCompletionTx(ctx, tx, job, command.StepID); err != nil {
+		return err
+	}
 	if objectiveEvidencePayloads != nil {
 		if err := insertObjectiveCompletionEvidenceTx(ctx, tx, command, objectiveEvidencePayloads); err != nil {
 			return err

@@ -2,11 +2,17 @@ package queue
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
 )
+
+var ErrJobFeedbackWaitingAttempt = errors.New("feedback differs from its observed waiting attempt")
+
+var ErrJobFeedbackGeneration = errors.New("feedback generation differs from its observed job")
 
 func (r *Repository) SubmitJobFeedback(ctx context.Context, command SubmitJobFeedbackCommand) (LifecycleJobResult, error) {
 	command, err := normalizeSubmitFeedbackCommand(command)
@@ -64,7 +70,10 @@ func submitJobFeedbackTx(
 	if err != nil {
 		return LifecycleJobResult{}, err
 	}
-	stepStatus := model.StepStatusCompleted
+	var stepStatus string
+	if err := tx.QueryRow(ctx, `SELECT status FROM job_steps WHERE id=$1 AND job_id=$2`, stepID, job.ID).Scan(&stepStatus); err != nil {
+		return LifecycleJobResult{}, err
+	}
 	if err := insertLifecycleOperationTx(ctx, tx, descriptor, lifecycleOperationRecord{
 		ID: descriptor.ID, JobID: command.JobID, ObservedGeneration: job.CurrentGeneration,
 		ResultGeneration: job.CurrentGeneration, StepID: &stepID,
@@ -82,6 +91,16 @@ func applyJobFeedbackTx(
 	command SubmitJobFeedbackCommand,
 	job model.Job,
 ) (model.Job, int64, error) {
+	configuration, err := codingagent.ConfigurationFromMetadata(job.Metadata)
+	if err != nil {
+		return model.Job{}, 0, err
+	}
+	if configuration.Mode == codingagent.Agents && command.ExpectedGeneration == nil {
+		return model.Job{}, 0, fmt.Errorf("Agents feedback requires expected_generation")
+	}
+	if command.ExpectedGeneration != nil && *command.ExpectedGeneration != job.CurrentGeneration {
+		return model.Job{}, 0, fmt.Errorf("%w: observed %d, current %d", ErrJobFeedbackGeneration, *command.ExpectedGeneration, job.CurrentGeneration)
+	}
 	if job.Status != model.JobStatusWaiting {
 		return model.Job{}, 0, fmt.Errorf(
 			"%w: job %d status is %q, expected %q",
@@ -128,8 +147,9 @@ func applyJobFeedbackTx(
 
 	var stepID int64
 	var stepAction string
-	err := tx.QueryRow(ctx, `
-		SELECT job_steps.id,job_steps.action
+	var waitingAttempt int64
+	err = tx.QueryRow(ctx, `
+		SELECT job_steps.id,job_steps.action,job_steps.current_attempt
 		FROM job_steps, jobs
 		WHERE job_steps.job_id = $1
 		  AND jobs.id = job_steps.job_id
@@ -139,15 +159,25 @@ func applyJobFeedbackTx(
 		ORDER BY job_steps.sort_index ASC, job_steps.id ASC
 		FOR UPDATE OF job_steps
 		LIMIT 1
-	`, command.JobID, model.StepStatusWaiting).Scan(&stepID, &stepAction)
+	`, command.JobID, model.StepStatusWaiting).Scan(&stepID, &stepAction, &waitingAttempt)
 	if err != nil {
 		return model.Job{}, 0, err
+	}
+	if configuration.Mode == codingagent.Agents && command.ExpectedWaitingAttempt == nil {
+		return model.Job{}, 0, fmt.Errorf("Agents feedback requires expected_waiting_attempt")
+	}
+	if command.ExpectedWaitingAttempt != nil && *command.ExpectedWaitingAttempt != waitingAttempt {
+		return model.Job{}, 0, fmt.Errorf("%w: observed %d, current %d", ErrJobFeedbackWaitingAttempt, *command.ExpectedWaitingAttempt, waitingAttempt)
 	}
 	if stepAction == "v3_coding_plan" {
 		return model.Job{}, 0, fmt.Errorf(
 			"%w: coding plan review accepts only persisted plan decisions, freeze, or same-job replan",
 			ErrStepNotWritable,
 		)
+	}
+	if stepAction == "v3_coding" && configuration.Mode == codingagent.Agents {
+		resumed, err := resumeCodingAgentQuestionTx(ctx, tx, job, stepID, command)
+		return resumed, stepID, err
 	}
 
 	stepUpdate, err := tx.Exec(ctx, `

@@ -1,5 +1,98 @@
 # Persistent task execution with Codex
 
+## Active task: governed agent execution
+
+Root: /home/gryph/Projects/tools/omnidex. Branch: feat/governed-agent-mode,
+based on 2fb65541; the prior provider/persistence PR remains its intended base.
+Goal: add explicit Normal and Agents coding modes. Agents mode finalizes a plan,
+dispatches narrowly scoped environment-capable execution jobs, uses an independent
+reviewer to return concrete findings/questions, repeats only unresolved work, and
+performs an overall review before completion. The existing queue remains authority.
+
+Acceptance: consumed mode selection; frozen task/file/check contracts; replaceable
+executor/reviewer providers; enforced tool/file boundaries; durable task/run/review
+state and cancellation/recovery; finding-driven correction and persisted questions;
+overall review and real verification; existing Normal behavior preserved; actual
+Codex environment execution and independent review qualified; scoped PR and cleanup.
+
+User authorization explicitly supersedes semantic-only restrictions for Agents
+mode. Normal mode retains those restrictions. No development copies/worktrees,
+unrelated owner changes, or Daemonet work. Implementation first, affected tests
+at the end. State: portable scoped planner/executor/reviewer contracts, native
+Codex sandbox calls, durable queue records and mode selection are implemented.
+Atomic plan finalization, question replay, completion gates, environment ownership
+and disposable tool caches are complete. Native Codex inspected files, performed
+governed source edits, passed deterministic checks, and reviewed in a fresh thread.
+Its file-root sandbox cannot grant individual writable files safely; execution
+therefore uses read-only native source mounts and the typed omnidex_write_file
+tool through the existing mutation fence, with exact original-content validation.
+Planning/review grants no writer. Native running-command cancellation passed.
+Controller/component and affected queue/SQL checks passed, including preservation
+of rejected requirements, same-generation answers, stale pause/generation rejection,
+historical replay, cancellation/replan during pending resume, and completion guards.
+Browser mode selection, pause/answer/reload and lifecycle controls pass their
+affected checks. The owner added independent per-role Codex model/effort/speed
+selection, model refresh and managed CLI updates. Those controls, live discovery,
+typed saved settings and new-job configuration snapshots are implemented; 115
+frontend tests and type checks pass. Native discovery reports 10 models, with
+efforts through max/ultra and Fast/priority advertised by this installation.
+
+The original Charmeleon requirement intake, authorization sieve and carried
+decisions remain authoritative. Native task decomposition receives only finalized
+approved criteria and its file catalog, never the original request. Execution and
+task review reject parent objectives/workloads/requirements and unrelated files,
+checks/findings; answered context is scoped to the assigned step. Overall outcome
+review alone receives the original objective. A proposed intake shortcut was
+removed before delivery. The first ordinary qualification reached an artificial
+six-minute test deadline during original intake. Per owner direction, the fresh
+unsteered qualification now has no overall deadline and Go's test timeout is off.
+The second qualification completed intake but paused at task decomposition because
+artifact bindings, construction constraints and supported runtime/file authority
+were missing. Original intake context is now snapshotted with the frozen criteria.
+A separate bounded semantic leaf extracts only literal construction constraints;
+the planner receives those facts, resolved artifact values and code-owned runtime
+capabilities. Narrow execution/review still receive only their assigned task.
+Queue snapshot/replay checks and affected Go suites passed. A real browser check
+also exposed extra native catalog metadata rejected by the frontend DTO parser;
+that exact contract mismatch is fixed and focused settings checks pass.
+Source is frozen for a fresh ordinary-request native qualification with no overall
+deadline. Final UI/core builds are activated in the retained native installation. Actual
+Chromium verified Normal/Agents keyboard selection and 1280/375px layouts, all
+three live model/effort/speed controls (including max, ultra and Fast/priority),
+Save, Refresh and reload persistence. Production routes remained identical when
+saved. All six affected Go suites passed with the race detector. The next unsteered qualification completed intake, native planning and source
+execution, then independent task review paused over an unrequested historical
+TDD proof criterion. Task-planning acceptance provenance is being corrected:
+implementation methodology must not become additional acceptance unless required.
+Final review also identified two bounded guards: completion must reuse the existing
+narrow-context validator, and installed updates must serialize with all native-job
+admission/resume paths and include Normal Codex jobs in the idle check. These exact
+fixes are implemented; queue guard regressions and real PostgreSQL admission
+serialization checks for both Normal and Agents passed. The managed updater
+completed successfully on the existing signed-in installation, which remains
+Codex 0.162.1. A fresh ordinary qualification is running from frozen source;
+one stacked PR and cleanup remain.
+
+Resources: generated installed protocol under bin/agent-protocol, at most 32 MiB,
+removed after qualification. Native task tool caches are under
+bin/agent-runtime/call-*; one call at a time, two workers, bounded by the existing
+request lifetime and workspace/artifact limits, removed on call exit. Disposable
+qualification fixtures use bin/agent-qualification and bin/agent-test-fixtures
+(32 MiB, removed at completion)
+and one isolated auto-removed PostgreSQL test container (512 MiB RAM, two CPUs).
+One headless Chromium profile and UI qualification script/output may use that
+same ignored qualification directory (128 MiB, one browser, removed after checks).
+One core/CLI candidate binary set uses bin/omnidex-agents-candidate and
+bin/omni-agents-candidate (256 MiB total, retired when activated). Native provider
+qualification uses one process at a time; local compilation uses two workers and
+one compiler check/build at a time. Test resources retire after actual completion
+or explicit cancellation rather than an arbitrary whole-job time cutoff.
+Native runtime inputs include the resolved Codex executable, installed Go tools
+and module cache (read-only, excluding VCS credentials), and existing selected
+workspace dependency directories. Authentication remains outside command grants.
+Source and
+durable native services remain in the established authoritative locations.
+
 Authoritative workspace: /home/gryph/Projects/tools/omnidex.
 Branch: feat/codex-persistent-task-execution, based on 82add43f.
 

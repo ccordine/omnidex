@@ -1,7 +1,11 @@
 import { sendChannelMessage } from "./channel_api";
+import type { CodingMode } from "./channel_api";
 import { t } from "./i18n";
 import type { StatusTone } from "./types";
 import type { RoleplayTurnInput } from "./roleplay_turn_input";
+import { CodingAgentChannelTurn } from "./coding_agent_channel_turn";
+import type { ChannelTranscriptPage } from "./types";
+import type { AgentChannelState } from "./coding_agent_channel_contract";
 
 export type ChatChannelTurnReceipt = {
   channelID: string;
@@ -22,19 +26,45 @@ export interface ChatChannelTurnHost {
 }
 
 export class ChatChannelTurnCoordinator {
-  constructor(private readonly host: ChatChannelTurnHost) {}
+  private readonly agents: CodingAgentChannelTurn;
+
+  constructor(private readonly host: ChatChannelTurnHost) {
+    this.agents = new CodingAgentChannelTurn((channelID, error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      this.host.addEvent("agent_job_refresh_failed", { channel_id: channelID, error: message });
+      if (this.host.isSelected(channelID)) this.host.setStatus(message, "error");
+    });
+  }
+
+  onAgentTurnChange(handler: () => void): void { this.agents.onChange(handler); }
+  agentTurnState(channelID: string): AgentChannelState | undefined { return this.agents.state(channelID); }
+  recoverAgentTurn(channelID: string, turn: ChannelTranscriptPage["latest_user_turn"]): Promise<void> { return this.agents.recover(channelID, turn); }
+  disconnectAgentTurns(): void { this.agents.disconnect(); }
 
   async accept(
     channelID: string,
     prompt: string,
     roleplayTurn?: RoleplayTurnInput,
+    codingMode: CodingMode = "normal",
   ): Promise<ChatChannelTurnReceipt> {
+    const active = this.agents.state(channelID);
+    if (active?.status === "waiting_input") {
+      const jobID = await this.agents.answer(channelID, prompt, codingMode);
+      return {
+        channelID, jobID,
+        acceptedTranscript: this.host.loadTranscript(channelID),
+        completion: this.agents.watch(channelID, jobID, active.authority),
+      };
+    }
+    if (active) throw new Error("Wait for the current Agents job before sending another message.");
     this.host.setActivityLabel(t("channel.working"));
     this.host.setStatus(t("status.working"), "active");
     this.host.renderProgressActivity(t("channel.working"));
-    const payload = roleplayTurn === undefined
-      ? await sendChannelMessage(channelID, prompt)
-      : await sendChannelMessage(channelID, prompt, roleplayTurn);
+    const payload = codingMode === "agents"
+      ? await sendChannelMessage(channelID, prompt, roleplayTurn, codingMode)
+      : roleplayTurn === undefined
+        ? await sendChannelMessage(channelID, prompt)
+        : await sendChannelMessage(channelID, prompt, roleplayTurn);
     const jobID = requirePositiveJobID(payload.job.id);
     this.host.addEvent("channel_message", {
       channel_id: channelID,
@@ -45,7 +75,7 @@ export class ChatChannelTurnCoordinator {
       channelID,
       jobID,
       acceptedTranscript: this.loadAcceptedTranscript(channelID, payload.user_message.id, jobID),
-      completion: this.host.waitForJob(jobID),
+      completion: codingMode === "agents" ? this.agents.watch(channelID, jobID, undefined, payload.user_message.id) : this.host.waitForJob(jobID),
     };
   }
 

@@ -34,8 +34,10 @@ func (s *Server) enqueueJob(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("coding enqueue client_cwd: %v", err))
 		return
 	}
-	job, err := s.repo.EnqueueCodingJob(
-		r.Context(), request.Instruction, request.Metadata.ClientCWD,
+	s.codingAgentsMu.RLock()
+	defer s.codingAgentsMu.RUnlock()
+	job, err := s.repo.EnqueueCodingJobMode(
+		r.Context(), request.Instruction, request.Metadata.ClientCWD, request.CodingMode,
 	)
 	if err != nil {
 		status := http.StatusInternalServerError

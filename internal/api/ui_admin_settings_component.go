@@ -34,6 +34,26 @@ func renderUIAdminIngest() string {
 		`<button type="submit" class="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950">Upload and study</button></form>`
 }
 
+func renderUIAdminCodingAgents() string {
+	var body strings.Builder
+	body.WriteString(`<div data-controller="coding-agent-settings" data-action="coding-agent-settings:status->admin#receiveStatus" class="space-y-4">`)
+	body.WriteString(`<p class="text-xs text-zinc-500">Applies to new jobs. Codex models come from your account; Refresh reloads the catalog. Update changes the installed Codex CLI.</p>`)
+	body.WriteString(`<div class="space-y-3">`)
+	for _, role := range []struct{ key, label string }{{"planner", "Task planner"}, {"executor", "Executor"}, {"reviewer", "Reviewer"}} {
+		body.WriteString(`<fieldset class="grid min-w-0 gap-3 rounded-lg border border-white/10 p-3 sm:grid-cols-3"><legend class="px-1 text-sm text-zinc-300">` + role.label + `</legend>`)
+		for _, field := range []struct{ key, label string }{{"model", "Model"}, {"effort", "Effort"}, {"service_tier", "Speed"}} {
+			action := `change->coding-agent-settings#changed`
+			if field.key == "model" {
+				action = `change->coding-agent-settings#modelChanged`
+			}
+			body.WriteString(`<label class="min-w-0 text-xs text-zinc-500">` + field.label + `<select disabled data-agent-role="` + role.key + `" data-agent-field="` + field.key + `" data-action="` + action + `" aria-label="` + role.label + ` ` + field.label + `" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-cyan-300/50 disabled:opacity-50"></select></label>`)
+		}
+		body.WriteString(`</fieldset>`)
+	}
+	body.WriteString(`</div><div class="flex flex-wrap items-center gap-2"><button type="button" disabled data-coding-agent-settings-target="save" data-action="coding-agent-settings#save" class="rounded-md bg-cyan-300 px-3 py-2 text-sm font-semibold text-zinc-950 disabled:opacity-50">Save</button><button type="button" data-coding-agent-settings-target="refresh" data-action="coding-agent-settings#refresh" class="rounded-md border border-white/10 px-3 py-2 text-sm text-zinc-100 disabled:opacity-50">Refresh</button><button type="button" disabled data-coding-agent-settings-target="update" data-action="coding-agent-settings#update" class="rounded-md border border-white/10 px-3 py-2 text-sm text-zinc-100 disabled:opacity-50">Update</button><span data-coding-agent-settings-target="version" class="text-xs text-zinc-500"></span></div><p data-coding-agent-settings-target="status" role="status" aria-live="polite" class="text-sm text-zinc-400">Loading…</p></div>`)
+	return body.String()
+}
+
 func renderUIConfigFields(fields []map[string]any, prefix string) string {
 	var body strings.Builder
 	body.WriteString(`<div class="grid gap-4 lg:grid-cols-2">`)

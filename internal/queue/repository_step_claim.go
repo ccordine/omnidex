@@ -45,8 +45,9 @@ func (r *Repository) ClaimNextStep(ctx context.Context, workerID string) (*model
 		                  AND attempts.generation=candidate.generation
 		                  AND attempts.step_id=candidate.id
 		                  AND attempts.attempt=candidate.current_attempt
-		                  AND attempts.status=$5
-		                  AND attempts.expires_at<=$6
+		                  AND ((attempts.status=$5 AND attempts.expires_at<=$6)
+		                       OR (attempts.status='waiting_input' AND candidate.action='v3_coding'
+                           AND jobs.metadata->'coding_execution'->>'mode'='agents'))
 		            ))
 		        )
 		        AND NOT EXISTS (
@@ -91,8 +92,9 @@ func (r *Repository) ClaimNextStep(ctx context.Context, workerID string) (*model
 		            AND attempts.generation=s.generation
 		            AND attempts.step_id=s.id
 		            AND attempts.attempt=s.current_attempt
-		            AND attempts.status=$6
-		            AND attempts.expires_at<=$7
+		            AND ((attempts.status=$6 AND attempts.expires_at<=$7)
+		                 OR (attempts.status='waiting_input' AND s.action='v3_coding'
+                     AND j.metadata->'coding_execution'->>'mode'='agents'))
 		      ))
 		  )
 		  AND NOT EXISTS (
@@ -124,21 +126,33 @@ func (r *Repository) ClaimNextStep(ctx context.Context, workerID string) (*model
 		return nil, fmt.Errorf("%w: pending step %d has attempt %d", ErrStepNotWritable, step.ID, previousAttempt)
 	}
 	if step.Status == model.StepStatusRunning {
-		result, err := tx.Exec(ctx, `
+		var previousStatus model.StepAttemptStatus
+		if err := tx.QueryRow(ctx, `SELECT status FROM job_step_attempts WHERE step_id=$1 AND attempt=$2`, step.ID, previousAttempt).Scan(&previousStatus); err != nil {
+			return nil, err
+		}
+		if previousStatus == model.StepAttemptActive {
+			result, err := tx.Exec(ctx, `
 			UPDATE job_step_attempts
 			SET status=$5,finished_at=$6
 			WHERE job_id=$1 AND generation=$2 AND step_id=$3 AND attempt=$4
 			  AND status=$7 AND expires_at<=$6
 		`, step.JobID, step.Generation, step.ID, previousAttempt,
-			model.StepAttemptExpired, databaseNow, model.StepAttemptActive)
-		if err != nil {
-			return nil, err
-		}
-		if result.RowsAffected() != 1 {
-			return nil, staleStepAttemptError(model.StepAttemptAuthority{
-				JobID: step.JobID, Generation: step.Generation, StepID: step.ID,
-				Attempt: previousAttempt, WorkerID: step.WorkerID,
-			}, "expired attempt lost reclaim authority", nil)
+				model.StepAttemptExpired, databaseNow, model.StepAttemptActive)
+			if err != nil {
+				return nil, err
+			}
+			if result.RowsAffected() != 1 {
+				return nil, staleStepAttemptError(model.StepAttemptAuthority{
+					JobID: step.JobID, Generation: step.Generation, StepID: step.ID,
+					Attempt: previousAttempt, WorkerID: step.WorkerID,
+				}, "expired attempt lost reclaim authority", nil)
+			}
+		} else if previousStatus == model.StepAttemptWaiting {
+			if err := requireCodingAgentResumeClaimTx(ctx, tx, step.JobID, step.ID, step.Generation, previousAttempt); err != nil {
+				return nil, err
+			}
+		} else {
+			return nil, fmt.Errorf("step cannot reclaim terminal attempt %q", previousStatus)
 		}
 	}
 	attemptNumber := previousAttempt + 1

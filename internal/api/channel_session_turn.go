@@ -71,6 +71,8 @@ func (s *Server) postChannelSessionTurn(
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.codingAgentsMu.RLock()
+	defer s.codingAgentsMu.RUnlock()
 	result, err := s.repo.SubmitChannelSessionTurn(
 		r.Context(),
 		queue.ChannelSessionTurnCommand{

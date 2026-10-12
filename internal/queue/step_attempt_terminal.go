@@ -69,6 +69,15 @@ func terminalizeStepAttemptsForAuthorityChangeTx(
 			return err
 		}
 		if result.RowsAffected() != 1 {
+			var status model.StepAttemptStatus
+			if err := tx.QueryRow(ctx, `SELECT status FROM job_step_attempts WHERE job_id=$1 AND generation=$2 AND step_id=$3 AND attempt=$4 AND worker_id=$5`, jobID, generation, state.id, state.attempt, state.worker).Scan(&status); err != nil {
+				return err
+			}
+			if status == model.StepAttemptWaiting {
+				if err := requireCodingAgentResumeClaimTx(ctx, tx, jobID, state.id, generation, state.attempt); err == nil {
+					continue
+				}
+			}
 			return fmt.Errorf("%w: running step %d active attempt changed", ErrStaleStepAttempt, state.id)
 		}
 	}

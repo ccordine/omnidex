@@ -18,6 +18,7 @@ type ObserveRealtimeJobOptions<T> = {
   load: () => Promise<RealtimeJobSnapshot<T>>;
   onUpdate?: (snapshot: RealtimeJobSnapshot<T>) => void | Promise<void>;
   timeoutMs?: number;
+  stopOnWaitingInput?: boolean;
 };
 
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
@@ -67,7 +68,7 @@ export function observeRealtimeJob<T>(options: ObserveRealtimeJobOptions<T>): Re
       const normalized = { ...snapshot, status };
       await onUpdate?.(normalized);
       if (settled) return;
-      if (status === "completed") {
+      if (status === "completed" || options.stopOnWaitingInput === true && status === "waiting_input") {
         complete(normalized);
         return;
       }

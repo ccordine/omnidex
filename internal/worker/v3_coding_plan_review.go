@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 )
@@ -12,6 +13,10 @@ import (
 var errCodingPlanReviewPending = errors.New("coding plan is waiting for user review")
 
 func (r *nativeRuntimeV3) runDirectCodingPlanAction() error {
+	configuration, err := codingagent.ConfigurationFromMetadata(r.claim.Job.Metadata)
+	if err != nil {
+		return err
+	}
 	request, err := r.directCodingRequest()
 	if err != nil {
 		return err
@@ -79,12 +84,24 @@ func (r *nativeRuntimeV3) runDirectCodingPlanAction() error {
 		}
 		writes[index] = write
 	}
-	plan, err := r.svc.repo.StoreCodingPlanReview(r.ctx, queue.StoreCodingPlanReviewCommand{
+	command := queue.StoreCodingPlanReviewCommand{
 		Authority: r.claim.Authority,
 		Leaves:    writes,
-	})
+	}
+	if configuration.Mode == codingagent.Agents {
+		bindings := make([]codingagent.ArtifactBinding, len(inputs.Identities))
+		for i, identity := range inputs.Identities {
+			bindings[i] = codingagent.ArtifactBinding{Token: identity.Token, Value: identity.Value}
+		}
+		command.IntakeContext = &codingagent.IntakeContext{RedactedRequest: inputs.RequestAuthority.modelRequest, ArtifactBindings: bindings}
+	}
+	plan, err := r.svc.repo.StoreCodingPlanReview(r.ctx, command)
 	if err != nil {
 		return err
+	}
+	if configuration.Mode == codingagent.Agents {
+		r.svc.emitStepEvent(r.claim.Authority, "coding_plan_frozen", fmt.Sprintf("generation=%d revision=%d leaves=%d", plan.Generation, plan.Revision, len(plan.Leaves)))
+		return nil
 	}
 	r.svc.emitStepEvent(r.claim.Authority, "coding_plan_review_ready", fmt.Sprintf(
 		"generation=%d revision=%d leaves=%d", plan.Generation, plan.Revision, len(plan.Leaves),

@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 
@@ -42,25 +41,5 @@ func loadClientInstallationIdentity(configRoot string) (string, error) {
 }
 
 func readClientInstallationIdentity(name string) (identity string, resultErr error) {
-	file, err := os.Open(name)
-	if err != nil {
-		return "", err
-	}
-	defer func() { resultErr = errors.Join(resultErr, file.Close()) }()
-	info, err := file.Stat()
-	if err != nil {
-		return "", err
-	}
-	if !info.Mode().IsRegular() {
-		return "", fmt.Errorf("client identity is not a regular file")
-	}
-	data, err := io.ReadAll(io.LimitReader(file, 33))
-	if err != nil {
-		return "", err
-	}
-	identity = string(data)
-	if err := projectroot.ValidateClientIdentity(identity); err != nil {
-		return "", fmt.Errorf("stored client identity is invalid: %w", err)
-	}
-	return identity, nil
+	return projectroot.ReadClientInstallationIdentity(filepath.Dir(filepath.Dir(name)))
 }

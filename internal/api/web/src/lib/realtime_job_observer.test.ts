@@ -53,6 +53,18 @@ describe("observeRealtimeJob", () => {
     expect(load).toHaveBeenCalledTimes(2);
   });
 
+  it("stops on waiting_input only when the caller explicitly requests a pause", async () => {
+    const stopped = observeRealtimeJob<JobData>({ jobID: 23, stopOnWaitingInput: true, load: async () => ({ status: "waiting_input", data: {} }) });
+    observations.push(stopped);
+    await expect(stopped.completion).resolves.toMatchObject({ status: "waiting_input" });
+    const ordinary = observeRealtimeJob<JobData>({ jobID: 24, load: async () => ({ status: "waiting_input", data: {} }) });
+    observations.push(ordinary);
+    let settled = false;
+    void ordinary.completion.catch(() => undefined).then(() => { settled = true; });
+    await ordinary.initial;
+    expect(settled).toBe(false);
+  });
+
   it("rejects failed and malformed authoritative job state", async () => {
     const failed = observeRealtimeJob<JobData>({
       jobID: 7,

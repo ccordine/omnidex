@@ -18,9 +18,10 @@ application.register("projects", ProjectsController);
 application.register("shell", ShellController);
 
 async function registerDeferredControllers(): Promise<void> {
-  const [admin, adminDataSources, data, terminal, screen, cardModal] = await Promise.all([
+  const [admin, adminDataSources, codingAgentSettings, data, terminal, screen, cardModal] = await Promise.all([
     import("./controllers/admin_controller"),
     import("./controllers/admin_data_sources_controller"),
+    import("./controllers/coding_agent_settings_controller"),
     import("./controllers/data_controller"),
     import("./controllers/terminal_controller"),
     import("./controllers/screen_controller"),
@@ -28,6 +29,7 @@ async function registerDeferredControllers(): Promise<void> {
   ]);
   application.register("admin", admin.default);
   application.register("admin-data-sources", adminDataSources.default);
+  application.register("coding-agent-settings", codingAgentSettings.default);
   application.register("data", data.default);
   application.register("terminal", terminal.default);
   application.register("screen", screen.default);

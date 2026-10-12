@@ -2,6 +2,7 @@ import { jsonRequest, readJSON } from "./api";
 import { fetchChatJobsPage, requireServerComponentBundle } from "./chat_component_api";
 import { requireJobDetails } from "./chat_execution_contract";
 import { LifecycleOperationAttempt } from "./lifecycle_operation";
+import { requireJobWorkspaceBinding, type JobWorkspaceBinding } from "./job_workspace_contract";
 
 export interface ChatJobsHost {
   queueEnabled(): boolean;
@@ -100,11 +101,12 @@ export class ChatJobsCoordinator {
     const id = jobIDFromEvent(event);
     const button = jobControlButton(event);
     await withButtonFeedback(button, "Canceling job…", async () => {
-      const attemptKey = { scope: id, action: "cancel", content: reason };
+      const workspace = await this.controlWorkspace(id);
+      const attemptKey = { scope: JSON.stringify([id, workspace]), action: "cancel", content: JSON.stringify(reason) };
       const operationID = this.lifecycleOperationAttempt.acquire(attemptKey);
       const control = await readJSON(await fetch(
         `/v1/jobs/${id}/cancel`,
-        jsonRequest({ operation_id: operationID, reason }),
+        jsonRequest({ operation_id: operationID, reason, ...workspace }),
       ));
       const authoritativeID = authoritativeControlJobID(control, id, operationID);
       this.lifecycleOperationAttempt.confirm(attemptKey, operationID);
@@ -126,17 +128,23 @@ export class ChatJobsCoordinator {
   }
 
   private async postControl(id: string, action: "interrupt" | "replan", feedback: string): Promise<void> {
-    const attemptKey = { scope: id, action, content: feedback };
+    const workspace = await this.controlWorkspace(id);
+    const attemptKey = { scope: JSON.stringify([id, workspace]), action, content: JSON.stringify(feedback) };
     const operationID = this.lifecycleOperationAttempt.acquire(attemptKey);
     const control = await readJSON(await fetch(
       `/v1/jobs/${id}/${action}`,
-      jsonRequest({ operation_id: operationID, feedback }),
+      jsonRequest({ operation_id: operationID, feedback, ...workspace }),
     ));
     const authoritativeID = authoritativeControlJobID(control, id, operationID);
     this.lifecycleOperationAttempt.confirm(attemptKey, operationID);
     const details = await readJSON<Record<string, unknown>>(await fetch(`/v1/ui/chat/jobs/${authoritativeID}`));
     await this.renderDetails(details, Number(authoritativeID));
     this.host.addEvent(`job_${action}`, { id: authoritativeID });
+  }
+
+  private async controlWorkspace(id: string): Promise<JobWorkspaceBinding> {
+    const details = await readJSON<Record<string, unknown>>(await fetch(`/v1/jobs/${id}`));
+    return requireJobWorkspaceBinding(details, Number(id));
   }
 }
 

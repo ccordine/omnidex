@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
 )
@@ -76,6 +77,13 @@ func requireChannelSessionTurnEffectTx(
 	case model.ChannelSessionTurnFeedback:
 		if messageID != nil || stepID == nil {
 			return channelSessionReplayError(command.OperationID, "feedback shape")
+		}
+		configuration, err := codingagent.ConfigurationFromMetadata(job.Metadata)
+		if err != nil {
+			return err
+		}
+		if configuration.Mode == codingagent.Agents {
+			return requireCodingAgentAnswerReplayTx(ctx, tx, job.ID, *stepID, job.CurrentGeneration, command.OperationID, command.Text, nil)
 		}
 		var valid bool
 		if err := tx.QueryRow(ctx, `

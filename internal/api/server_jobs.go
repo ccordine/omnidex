@@ -22,6 +22,10 @@ func (s *Server) replanJob(w http.ResponseWriter, r *http.Request, jobID int64) 
 		writeError(w, lifecycleControlBodyStatus(err), err.Error())
 		return
 	}
+	if req.ExpectedGeneration != nil || req.ExpectedWaitingAttempt != nil {
+		writeError(w, http.StatusBadRequest, "expected_generation applies only to feedback")
+		return
+	}
 	if status, err := s.requireLifecycleWorkspaceIdentity(
 		r.Context(),
 		jobID,
@@ -32,6 +36,8 @@ func (s *Server) replanJob(w http.ResponseWriter, r *http.Request, jobID int64) 
 		return
 	}
 
+	s.codingAgentsMu.RLock()
+	defer s.codingAgentsMu.RUnlock()
 	result, err := s.repo.ReplanJob(r.Context(), queue.ReplanJobCommand{
 		OperationID: req.OperationID, JobID: jobID, Feedback: req.Feedback,
 		WorkspaceRoot: req.WorkspaceRoot.Value, WorkspaceIdentity: req.WorkspaceIdentity.Value,

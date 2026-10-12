@@ -7,6 +7,7 @@ import (
 	"maps"
 	"strings"
 
+	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/modelconfig"
 	"github.com/gryph/omnidex/internal/projectroot"
@@ -33,6 +34,7 @@ type channelTurnMetadata struct {
 	RoleplayResponders              []roleplay.SimulationResponderRoute `json:"roleplay_responders,omitempty"`
 	RoleplayUserTurn                *roleplay.UserTurnAuthority         `json:"roleplay_user_turn,omitempty"`
 	ModelConfig                     modelconfig.Config                  `json:"model_config"`
+	CodingExecution                 *codingagent.Configuration          `json:"coding_execution,omitempty"`
 }
 
 type lockedChannelTurnAuthority struct {
@@ -42,6 +44,7 @@ type lockedChannelTurnAuthority struct {
 	DataSourceID         *string
 	Mode                 model.ChannelMode
 	RoleplayViewpointID  *string
+	CodingExecution      *codingagent.Configuration
 }
 
 // EnqueueChannelTurn atomically records the exact user message and creates the
@@ -51,7 +54,7 @@ func (r *Repository) EnqueueChannelTurn(
 	channelID model.ChannelID,
 	instruction string,
 ) (model.ChannelMessage, model.Job, error) {
-	return r.enqueueChannelTurn(ctx, channelID, instruction, "", nil)
+	return r.enqueueChannelTurn(ctx, channelID, instruction, "", nil, codingagent.Normal)
 }
 
 // EnqueueChannelTurnWithDataAuthority binds one host-issued opaque authority
@@ -62,7 +65,7 @@ func (r *Repository) EnqueueChannelTurnWithDataAuthority(
 	instruction string,
 	delegatedAuthorityID string,
 ) (model.ChannelMessage, model.Job, error) {
-	return r.enqueueChannelTurn(ctx, channelID, instruction, delegatedAuthorityID, nil)
+	return r.enqueueChannelTurn(ctx, channelID, instruction, delegatedAuthorityID, nil, codingagent.Normal)
 }
 
 // EnqueueRoleplayChannelTurn requires the exact user-controlled persona and
@@ -73,7 +76,7 @@ func (r *Repository) EnqueueRoleplayChannelTurn(
 	instruction string,
 	userTurn roleplay.UserTurnRequest,
 ) (model.ChannelMessage, model.Job, error) {
-	return r.enqueueChannelTurn(ctx, channelID, instruction, "", &userTurn)
+	return r.enqueueChannelTurn(ctx, channelID, instruction, "", &userTurn, codingagent.Normal)
 }
 
 func (r *Repository) enqueueChannelTurn(
@@ -82,6 +85,7 @@ func (r *Repository) enqueueChannelTurn(
 	instruction string,
 	delegatedAuthorityID string,
 	userTurnRequest *roleplay.UserTurnRequest,
+	codingMode codingagent.Mode,
 ) (model.ChannelMessage, model.Job, error) {
 	if ctx == nil || r == nil || r.pool == nil {
 		return model.ChannelMessage{}, model.Job{}, fmt.Errorf("channel turn requires PostgreSQL and context")
@@ -97,7 +101,15 @@ func (r *Repository) enqueueChannelTurn(
 		return model.ChannelMessage{}, model.Job{}, err
 	}
 	defer tx.Rollback(ctx)
+	codingConfiguration, err := r.codingConfigurationForMode(ctx, tx, codingMode)
+	if err != nil {
+		return model.ChannelMessage{}, model.Job{}, err
+	}
 	authority, err := lockChannelTurnAuthorityTx(ctx, tx, channelID)
+	if err != nil {
+		return model.ChannelMessage{}, model.Job{}, err
+	}
+	clientWorkspaceIdentity, err := bindChannelCodingExecution(&authority, codingConfiguration)
 	if err != nil {
 		return model.ChannelMessage{}, model.Job{}, err
 	}
@@ -126,7 +138,7 @@ func (r *Repository) enqueueChannelTurn(
 		instruction,
 		delegatedAuthorityID,
 		userTurnRequest,
-		"",
+		clientWorkspaceIdentity,
 	)
 	if err != nil {
 		return model.ChannelMessage{}, model.Job{}, err
@@ -259,10 +271,10 @@ func (r *Repository) persistChannelTurnTx(
 			simulation = &prepared
 		}
 	}
-	metadata, err := marshalChannelTurnMetadata(
+	metadata, err := marshalConfiguredChannelTurnMetadata(
 		channelID, message.ID, authority.WorkspaceRoot,
 		modelDataSourceID(authority.DataSourceID), delegatedAuthorityID, authority.Mode,
-		modelSnapshot, simulation, clientWorkspaceIdentity,
+		modelSnapshot, simulation, clientWorkspaceIdentity, authority.CodingExecution,
 	)
 	if err != nil {
 		return model.ChannelMessage{}, model.Job{}, err
@@ -302,54 +314,6 @@ func (r *Repository) enqueueChannelJobTx(
 	)
 }
 
-func marshalChannelTurnMetadata(
-	channelID model.ChannelID,
-	messageID int64,
-	workspaceRoot string,
-	dataSourceID model.DataSourceID,
-	delegatedAuthorityID string,
-	channelMode model.ChannelMode,
-	modelSnapshot modelconfig.Config,
-	simulation *roleplay.SimulationTurnAuthority,
-	clientWorkspaceIdentity string,
-) ([]byte, error) {
-	modelSnapshot = maps.Clone(modelSnapshot)
-	if modelSnapshot == nil {
-		modelSnapshot = modelconfig.Config{}
-	}
-	binding := channelTurnMetadata{
-		ChannelID:            channelID,
-		ChannelUserMessageID: messageID, ClientCWD: workspaceRoot,
-		ClientWorkspaceIdentity:  clientWorkspaceIdentity,
-		DataSourceID:             dataSourceID,
-		DelegatedDataAuthorityID: delegatedAuthorityID,
-		ChannelMode:              channelMode,
-		ModelConfig:              modelSnapshot,
-	}
-	if simulation != nil {
-		if len(simulation.Responders) == 0 || len(simulation.ResponderRoutes) == 0 {
-			return nil, fmt.Errorf("channel roleplay turn authority has no prepared responders")
-		}
-		config := simulation.GenerationConfig
-		binding.RoleplayGenerationConfig = &config
-		if config.NarrativeModel != "" {
-			modelSnapshot["conversation_response_model"] = config.NarrativeModel
-		}
-		binding.ModelConfig = modelSnapshot
-		binding.RoleplayViewpointCharacterID = model.RoleplayCharacterID(simulation.Responders[0].CharacterID)
-		binding.RoleplayResponders = append([]roleplay.SimulationResponderRoute(nil), simulation.ResponderRoutes...)
-		binding.RoleplaySimulationPreparationID = simulation.PreparationID
-		binding.RoleplayWorldID = simulation.WorldID
-		binding.RoleplaySceneID = simulation.SceneID
-		binding.RoleplaySceneRevision = simulation.SceneRevision
-		binding.RoleplayInputKind = simulation.InputKind
-		binding.RoleplayParticipantCharacterIDs = modelRoleplayCharacterIDs(simulation.ParticipantCharacterIDs)
-		userTurn := simulation.UserTurn
-		binding.RoleplayUserTurn = &userTurn
-	}
-	return json.Marshal(binding)
-}
-
 func validateChannelTurnMetadata(binding channelTurnMetadata) error {
 	if err := binding.ChannelID.Validate(); err != nil {
 		return err
@@ -367,6 +331,9 @@ func validateChannelTurnMetadata(binding channelTurnMetadata) error {
 	}
 	if err := binding.ChannelMode.Validate(); err != nil {
 		return fmt.Errorf("channel job metadata mode: %w", err)
+	}
+	if err := validateChannelCodingExecution(binding); err != nil {
+		return err
 	}
 	switch binding.ChannelMode {
 	case model.ChannelModeAssistant:

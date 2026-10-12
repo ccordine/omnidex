@@ -59,6 +59,7 @@ export interface ChannelTranscriptPage {
   next_before_id?: number;
   has_more: boolean;
   html: { bundle: string };
+  latest_user_turn?: { message_id: number; job_id: number; status: ChannelJobStatus };
 }
 
 export type ChannelJobStatus = "pending" | "running" | "waiting_input" | "completed" | "failed" | "canceled";

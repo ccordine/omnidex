@@ -87,8 +87,9 @@ type Step struct {
 }
 
 type JobDetails struct {
-	Job   Job    `json:"job"`
-	Steps []Step `json:"steps"`
+	Job        Job               `json:"job"`
+	Steps      []Step            `json:"steps"`
+	AgentPause *CodingAgentPause `json:"agent_pause,omitempty"`
 }
 
 type ClaimedStep struct {

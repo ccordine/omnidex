@@ -10,6 +10,8 @@ import type { RoleplayTurnInput } from "./roleplay_turn_input";
 
 const JOB_STATUSES = ["pending", "running", "waiting_input", "completed", "failed", "canceled"] as const;
 
+export type CodingMode = "normal" | "agents";
+
 export type ChannelCreationContext =
   | { mode: "assistant"; roleplay_world_name?: never; roleplay_viewpoint_name?: never }
   | { mode: "roleplay"; roleplay_world_name: string; roleplay_viewpoint_name: string };
@@ -53,6 +55,17 @@ export async function fetchChannelTranscript(
   if (page.has_more !== (page.next_before_id !== undefined)) {
     throw new Error("Channel transcript pagination fields are contradictory.");
   }
+  if (payload.latest_user_turn !== undefined) {
+    const turn = requireRecord(payload.latest_user_turn, "Latest channel user turn");
+    if (typeof turn.status !== "string" || !JOB_STATUSES.includes(turn.status as (typeof JOB_STATUSES)[number])) {
+      throw new Error("Latest channel user turn has no authoritative job status.");
+    }
+    page.latest_user_turn = {
+      message_id: requireBoundedInteger(turn.message_id, "Latest channel user message", 1, Number.MAX_SAFE_INTEGER),
+      job_id: requireBoundedInteger(turn.job_id, "Latest channel user job", 1, Number.MAX_SAFE_INTEGER),
+      status: turn.status as (typeof JOB_STATUSES)[number],
+    };
+  }
   return page;
 }
 
@@ -60,13 +73,22 @@ export async function sendChannelMessage(
   channelID: string,
   prompt: string,
   roleplayTurn?: RoleplayTurnInput,
+  codingMode: CodingMode = "normal",
 ): Promise<ChannelTurnAccepted> {
   requireChannelID(channelID, "Channel turn request");
   requireBoundedText(prompt, "Channel turn prompt", 4096, false);
+  if (codingMode !== "normal" && codingMode !== "agents") throw new Error("Unknown coding mode.");
+  if (codingMode === "agents" && roleplayTurn !== undefined) {
+    throw new Error("Agents coding mode requires an assistant conversation.");
+  }
   const response = await fetch(`/v1/channels/${encodeURIComponent(channelID)}/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt, ...(roleplayTurn === undefined ? {} : { roleplay_turn: roleplayTurn }) }),
+    body: JSON.stringify({
+      prompt,
+      ...(roleplayTurn === undefined ? {} : { roleplay_turn: roleplayTurn }),
+      ...(codingMode === "normal" ? {} : { coding_mode: codingMode }),
+    }),
   });
   const payload = await readJSON<Record<string, unknown>>(response);
   requireStatus(response, 202, "channel turn");
@@ -349,12 +371,15 @@ function requireExactText(value: unknown, source: string): string {
   return requireBoundedText(value, source, 256, true);
 }
 
-function requireWorkspaceRoot(value: unknown, source: string): string {
+export function requireWorkspaceRoot(value: unknown, source: string): string {
   const root = requireBoundedText(value, source, 4096, true);
-  if (!root.startsWith("/") || root.includes("//") || (root !== "/" && root.endsWith("/"))) {
+  const windows = /^([a-z]:\\|\\\\[^\\]+\\[^\\]+\\?)(.*)$/i.exec(root);
+  const separator = windows ? "\\" : "/";
+  const path = windows ? windows[2] : root.slice(1);
+  if (windows ? root.includes("/") : !root.startsWith("/")) {
     throw new Error(`${source} must be an exact absolute canonical path.`);
   }
-  if (root.split("/").some((segment) => segment === "." || segment === "..")) {
+  if (path !== "" && path.split(separator).some((segment) => segment === "" || segment === "." || segment === "..")) {
     throw new Error(`${source} must not contain dot path segments.`);
   }
   return root;
