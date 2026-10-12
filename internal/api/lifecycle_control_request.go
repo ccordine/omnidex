@@ -47,6 +47,12 @@ func decodeLifecycleFeedbackRequest(w http.ResponseWriter, r *http.Request) (fee
 	if err := decodeLifecycleControlObject(w, r, "lifecycle feedback request", &request); err != nil {
 		return feedbackRequest{}, err
 	}
+	if request.ExpectedGeneration != nil && *request.ExpectedGeneration <= 0 {
+		return feedbackRequest{}, fmt.Errorf("expected_generation must be positive")
+	}
+	if request.ExpectedWaitingAttempt != nil && *request.ExpectedWaitingAttempt <= 0 {
+		return feedbackRequest{}, fmt.Errorf("expected_waiting_attempt must be positive")
+	}
 	operationID, err := model.ParseLifecycleOperationID(string(request.OperationID))
 	if err != nil {
 		return feedbackRequest{}, err

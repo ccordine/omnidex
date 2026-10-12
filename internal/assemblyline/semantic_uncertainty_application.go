@@ -5,6 +5,13 @@ func applicationSemanticUncertaintyContract(
 ) (SemanticUncertaintyContract, bool) {
 	var contract SemanticUncertaintyContract
 	switch kind {
+	case WorkApplicationConstructionContext:
+		contract = semanticUncertaintyContract(kind,
+			"What explicit construction, delivery, documentation, and verification constraints does the owner request state?",
+			"The role of a literal natural-language source phrase is not mechanically determined by its syntax.",
+			"Only the path-redacted owner request required to identify explicit non-runtime construction constraints.",
+			"One bounded collection of categorized exact construction source phrases, or an explicit absence.",
+			"DecodeConstructionContext validates registered categories and unique exact proper source quotes before code restores artifact bindings and supplies only these facts to task planning.")
 	case WorkApplicationInputSource:
 		contract = semanticUncertaintyContract(kind,
 			"Which process input does this one accepted behavior require?",

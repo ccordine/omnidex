@@ -16,7 +16,8 @@ const (
 
 func validWorkKind(kind WorkKind) bool {
 	switch kind {
-	case WorkApplicationProductContext,
+	case WorkApplicationConstructionContext,
+		WorkApplicationProductContext,
 		WorkApplicationRequirementInventory,
 		WorkApplicationRequirementCandidateCardinality,
 		WorkApplicationRequirementCandidateKind,
@@ -69,6 +70,7 @@ func validWorkKind(kind WorkKind) bool {
 // it to prove exhaustive station mappings without inventing string routing.
 func AllWorkKinds() []WorkKind {
 	return []WorkKind{
+		WorkApplicationConstructionContext,
 		WorkApplicationProductContext,
 		WorkApplicationRequirementInventory,
 		WorkApplicationRequirementCandidateCardinality,

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/modelconfig"
 	"github.com/gryph/omnidex/internal/queue"
@@ -30,6 +31,7 @@ type Options struct {
 	WorkspaceConnections    *workspacetransport.Hub
 	Logger                  *log.Logger
 	RuntimeEventSink        RuntimeEventSink
+	AgentProviders          func() (map[string]codingagent.Provider, codingagent.Verifier, error)
 }
 
 type Service struct {
@@ -46,6 +48,7 @@ type Service struct {
 	runtimeEventSink       RuntimeEventSink
 	runtimeEventMu         sync.RWMutex
 	runtimeEventChannels   map[int64]runtimeEventChannelBinding
+	agentProviders         func() (map[string]codingagent.Provider, codingagent.Verifier, error)
 }
 
 func New(
@@ -70,6 +73,7 @@ func New(
 		logger:                 opts.Logger,
 		runtimeEventSink:       opts.RuntimeEventSink,
 		runtimeEventChannels:   make(map[int64]runtimeEventChannelBinding),
+		agentProviders:         opts.AgentProviders,
 	}
 	return svc, nil
 }

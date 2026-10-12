@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 )
@@ -84,6 +85,20 @@ func (s *Service) runLoop(
 func (s *Service) runClaim(ctx context.Context, workerID string, claim *model.ClaimedStep) error {
 	s.emitStepEvent(claim.Authority, "step_start", fmt.Sprintf("action=%s worker=%s", claim.Step.Action, workerID))
 	if err := s.processStep(ctx, claim); err != nil {
+		if s.skipFailureForLostExecutionAuthority(workerID, claim, err) || s.skipFailureForControlledCancel(ctx, workerID, claim, err) {
+			return nil
+		}
+		var questions *codingagent.QuestionsPending
+		if errors.As(err, &questions) {
+			if pauseErr := s.repo.PauseCodingAgentStep(ctx, claim.Authority, questions.Questions); pauseErr != nil {
+				if s.skipFailureForLostExecutionAuthority(workerID, claim, pauseErr) || s.skipFailureForControlledCancel(ctx, workerID, claim, pauseErr) {
+					return nil
+				}
+				return pauseErr
+			}
+			s.emitStepEvent(claim.Authority, "step_waiting_input", questions.Error())
+			return nil
+		}
 		if errors.Is(err, errCodingPlanReviewPending) {
 			s.emitStepEvent(
 				claim.Authority,

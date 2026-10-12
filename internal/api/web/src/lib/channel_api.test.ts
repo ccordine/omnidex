@@ -3,6 +3,7 @@ import {
   createUserChannel,
   fetchChannelTranscript,
   sendChannelMessage,
+  requireWorkspaceRoot,
 } from "./channel_api";
 
 function response(body: unknown, status = 200): Response {
@@ -42,6 +43,15 @@ const job = {
 describe("channel API authority", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("preserves canonical native workspace paths at the shared transport boundary", () => {
+    for (const root of ["/workspace/project", "/", "C:\\Projects\\Example", "C:\\", "\\\\server\\share\\project"]) {
+      expect(requireWorkspaceRoot(root, "Workspace")).toBe(root);
+    }
+    for (const root of ["relative", "/workspace/../other", "/workspace//other", "C:\\Projects\\..\\other", "C:\\Projects\\\\other"]) {
+      expect(() => requireWorkspaceRoot(root, "Workspace")).toThrow();
+    }
   });
 
   it("accepts only a typed server-rendered transcript bundle", async () => {
@@ -97,6 +107,27 @@ describe("channel API authority", () => {
     });
     const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
     expect(JSON.parse(String(request.body))).toEqual({ prompt: userMessage.content });
+  });
+
+  it("submits the explicit Agents mode without exposing caller-controlled agent routing", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => response({
+      channel, user_message: userMessage, job,
+    }, 202));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendChannelMessage("chat-42", userMessage.content, undefined, "agents");
+
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(String(request.body))).toEqual({ prompt: userMessage.content, coding_mode: "agents" });
+  });
+
+  it("rejects Agents for fictional persona authority before submitting a message", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(sendChannelMessage("chat-42", userMessage.content, {
+      persona_kind: "narrator", contribution_kind: "narration", parts: [{ kind: "event", text: userMessage.content }],
+    }, "agents")).rejects.toThrow("assistant conversation");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("sends and verifies exact roleplay persona and contribution authority", async () => {

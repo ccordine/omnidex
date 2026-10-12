@@ -3,6 +3,19 @@ AGENTS.md
 
 # PRIME DIRECTIVE
 
+The semantic-function rules below govern Normal coding mode. The owner explicitly
+requested an additional Agents coding mode: an environment-capable execution
+agent performs one frozen, scoped task; an independent review agent returns
+concrete findings; an overall review checks the frozen plan. In that mode,
+Omnidex owns scope, capability grants, task state, evidence, routing and final
+completion. Agent output and self-reported success confer no authority. The
+existing queue and workspace are authoritative; no alternate ledger or source
+copy is introduced. Normal behavior remains unchanged. Agents may use only their
+task's granted environment; reviewing grants no write access. The exception also
+applies to the later semantic-only and removed-agent-mode prohibitions solely for
+this explicitly requested, consumed mode. Existing approval, credential, trust,
+verification and preservation requirements remain in force.
+
 Omnidex is deterministic software that invokes LLMs as small, bounded semantic functions.
 
 Code owns the workflow and must drive the user's objective toward verified completion.

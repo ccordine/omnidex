@@ -37,6 +37,8 @@ func (s *Server) dispatchScrumChannelMessage(
 	if s == nil || s.repo == nil || r == nil || projectID <= 0 {
 		return scrumChannelDispatchResult{}, fmt.Errorf("postgres repository, request, and project are required for Scrum channel dispatch")
 	}
+	s.codingAgentsMu.RLock()
+	defer s.codingAgentsMu.RUnlock()
 	request := queue.ScrumChannelOperationRequest{
 		OperationID: operationID, ProjectID: projectID, CardID: cardID,
 		Message: userMessage,

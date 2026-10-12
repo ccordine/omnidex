@@ -87,11 +87,13 @@ type FailStepCommand struct {
 }
 
 type SubmitJobFeedbackCommand struct {
-	OperationID       model.LifecycleOperationID `json:"operation_id"`
-	JobID             int64                      `json:"job_id"`
-	Feedback          string                     `json:"feedback"`
-	WorkspaceRoot     string                     `json:"workspace_root,omitempty"`
-	WorkspaceIdentity string                     `json:"workspace_identity,omitempty"`
+	OperationID            model.LifecycleOperationID `json:"operation_id"`
+	JobID                  int64                      `json:"job_id"`
+	Feedback               string                     `json:"feedback"`
+	WorkspaceRoot          string                     `json:"workspace_root,omitempty"`
+	WorkspaceIdentity      string                     `json:"workspace_identity,omitempty"`
+	ExpectedGeneration     *int64                     `json:"expected_generation,omitempty"`
+	ExpectedWaitingAttempt *int64                     `json:"expected_waiting_attempt,omitempty"`
 }
 
 type ReplanJobCommand struct {

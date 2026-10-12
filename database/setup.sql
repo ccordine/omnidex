@@ -864,11 +864,30 @@ BEGIN
     ELSIF NEW.disposition='feedback_submitted' THEN
         IF NEW.result_job->>'status' NOT IN ('running','completed') OR
            NEW.user_message_id IS NOT NULL OR NEW.result_step_id IS NULL OR
-           NOT EXISTS(SELECT 1 FROM job_steps
+           NOT (EXISTS(SELECT 1 FROM job_steps
              WHERE id=NEW.result_step_id AND job_id=NEW.job_id
                AND generation=NEW.result_generation AND status='completed'
-               AND output=payload->>'text') THEN
-            RAISE EXCEPTION 'Channel session feedback lacks its exact completed input step';
+               AND output=payload->>'text') OR
+             EXISTS(SELECT 1 FROM job_steps AS step
+               JOIN jobs AS job ON job.id=step.job_id
+               JOIN evidence AS answer ON answer.job_id=step.job_id AND answer.step_id=step.id
+               JOIN evidence AS question ON question.id=(answer.payload_json->>'question_id')::bigint
+                 AND question.job_id=answer.job_id AND question.step_id=answer.step_id
+               JOIN job_step_attempts AS waiting ON waiting.job_id=step.job_id
+                 AND waiting.step_id=step.id AND waiting.generation=step.generation
+                 AND waiting.attempt=(answer.payload_json->>'waiting_attempt')::bigint
+                 AND waiting.status='waiting_input'
+               WHERE step.id=NEW.result_step_id AND step.job_id=NEW.job_id
+                 AND step.generation=NEW.result_generation AND step.action='v3_coding'
+                 AND step.status='running' AND job.metadata->'coding_execution'->>'mode'='agents'
+                 AND answer.kind='coding_agent' AND question.kind='coding_agent'
+                 AND answer.payload_json->>'generation'=NEW.result_generation::TEXT
+                 AND question.payload_json->>'generation'=NEW.result_generation::TEXT
+                 AND answer.payload_json->>'phase'='answers' AND question.payload_json->>'phase'='questions'
+                 AND answer.payload_json->>'operation_id'=NEW.operation_id
+                 AND answer.payload_json->'answers'=jsonb_build_array(payload->>'text')
+                 AND question.id<answer.id)) THEN
+            RAISE EXCEPTION 'Channel session feedback lacks its exact completed input or scoped-agent answer receipt';
         END IF;
     ELSE
         RAISE EXCEPTION 'Channel session operation has unregistered disposition';
@@ -1727,6 +1746,11 @@ BEGIN
         RAISE EXCEPTION 'lifecycle operation lacks exact generation authority';
     END IF;
     IF NEW.kind='submit_feedback' THEN
+        IF NEW.command_payload ? 'expected_waiting_attempt' AND
+           (SELECT current_attempt FROM job_steps WHERE id=NEW.step_id AND job_id=NEW.job_id AND generation=NEW.observed_generation)
+           IS DISTINCT FROM (NEW.command_payload->>'expected_waiting_attempt')::bigint THEN
+            RAISE EXCEPTION 'feedback differs from its exact observed waiting attempt';
+        END IF;
         IF transition_purpose='interrupt' THEN
             RAISE EXCEPTION 'interrupted canonical boundary requires explicit replan';
         END IF;
@@ -4355,7 +4379,7 @@ CREATE TABLE job_lifecycle_operations (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT job_lifecycle_operations_check CHECK (((jsonb_typeof(command_payload) = 'object'::text) AND (command_payload ? 'operation_id'::text) AND ((command_payload ->> 'operation_id'::text) = operation_id))),
     CONSTRAINT job_lifecycle_operations_check2 CHECK (((jsonb_typeof(result_job) = 'object'::text) AND (result_job ? 'id'::text) AND (result_job ? 'current_generation'::text) AND (result_job ? 'status'::text) AND (((result_job ->> 'id'::text))::bigint = job_id) AND (((result_job ->> 'current_generation'::text))::bigint = result_generation) AND ((result_job ->> 'status'::text) = result_job_status))),
-    CONSTRAINT job_lifecycle_operations_check3 CHECK ((((kind = 'complete_step'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'completed'::text)) OR ((kind = 'fail_step'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'failed'::text) AND (result_job_status = 'failed'::text)) OR ((kind = 'submit_feedback'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'completed'::text)) OR ((kind = 'interrupt_job'::text) AND (step_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = (observed_generation + 1)) AND (result_job_status = 'waiting_input'::text)) OR ((kind = 'replan_job'::text) AND (step_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = (observed_generation + 1)) AND (result_job_status = 'running'::text)) OR ((kind = 'cancel_job'::text) AND (step_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = observed_generation) AND (result_job_status = 'canceled'::text)) OR ((kind = 'coding_plan_decisions'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'waiting_input'::text) AND (result_job_status = 'waiting_input'::text)) OR ((kind = 'coding_plan_freeze'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'completed'::text) AND (result_job_status = 'running'::text)))),
+    CONSTRAINT job_lifecycle_operations_check3 CHECK ((((kind = 'complete_step'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'completed'::text)) OR ((kind = 'fail_step'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'failed'::text) AND (result_job_status = 'failed'::text)) OR ((kind = 'submit_feedback'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND ((result_step_status = 'completed'::text) OR ((result_step_status = 'running'::text) AND (result_job_status = 'running'::text) AND COALESCE(result_job->'metadata'->'coding_execution'->>'mode' = 'agents', false)))) OR ((kind = 'interrupt_job'::text) AND (step_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = (observed_generation + 1)) AND (result_job_status = 'waiting_input'::text)) OR ((kind = 'replan_job'::text) AND (step_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = (observed_generation + 1)) AND (result_job_status = 'running'::text)) OR ((kind = 'cancel_job'::text) AND (step_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = observed_generation) AND (result_job_status = 'canceled'::text)) OR ((kind = 'coding_plan_decisions'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'waiting_input'::text) AND (result_job_status = 'waiting_input'::text)) OR ((kind = 'coding_plan_freeze'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'completed'::text) AND (result_job_status = 'running'::text)))),
     CONSTRAINT job_lifecycle_operations_check4 CHECK (
 CASE
     WHEN (kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text])) THEN ((command_payload ? 'step_id'::text) AND (((command_payload ->> 'step_id'::text))::bigint = step_id))
@@ -4366,7 +4390,7 @@ END),
     CONSTRAINT job_lifecycle_operations_operation_id_check CHECK ((operation_id ~ '^lifecycle_operation_[a-z0-9_]{1,128}$'::text)),
     CONSTRAINT job_lifecycle_operations_result_generation_check CHECK ((result_generation > 0)),
     CONSTRAINT job_lifecycle_operations_result_job_status_check CHECK ((result_job_status = ANY (ARRAY['pending'::text, 'running'::text, 'completed'::text, 'failed'::text, 'canceled'::text, 'waiting_input'::text]))),
-    CONSTRAINT job_lifecycle_operations_result_step_status_check CHECK (((result_step_status IS NULL) OR (result_step_status = ANY (ARRAY['completed'::text, 'failed'::text, 'waiting_input'::text]))))
+    CONSTRAINT job_lifecycle_operations_result_step_status_check CHECK (((result_step_status IS NULL) OR (result_step_status = ANY (ARRAY['completed'::text, 'failed'::text, 'waiting_input'::text, 'running'::text]))))
 );
 
 
@@ -5972,7 +5996,11 @@ ALTER TABLE job_lifecycle_operations
       ((kind = 'fail_step'::text) AND
        (command_payload ?& ARRAY['operation_id'::text, 'step_id'::text, 'error'::text]) AND
        ((command_payload - ARRAY['operation_id'::text, 'step_id'::text, 'error'::text]) = '{}'::jsonb)) OR
-      ((kind = ANY (ARRAY['submit_feedback'::text, 'interrupt_job'::text, 'replan_job'::text])) AND
+      ((kind = 'submit_feedback'::text) AND
+       (command_payload ?& ARRAY['operation_id'::text, 'job_id'::text, 'feedback'::text]) AND
+       ((command_payload - ARRAY['operation_id'::text, 'job_id'::text, 'feedback'::text, 'workspace_root'::text, 'workspace_identity'::text, 'expected_generation'::text, 'expected_waiting_attempt'::text]) = '{}'::jsonb) AND
+       lifecycle_workspace_payload_is_valid(command_payload)) OR
+      ((kind = ANY (ARRAY['interrupt_job'::text, 'replan_job'::text])) AND
        (command_payload ?& ARRAY['operation_id'::text, 'job_id'::text, 'feedback'::text]) AND
        ((command_payload - ARRAY['operation_id'::text, 'job_id'::text, 'feedback'::text, 'workspace_root'::text, 'workspace_identity'::text]) = '{}'::jsonb) AND
        lifecycle_workspace_payload_is_valid(command_payload)) OR
@@ -9649,6 +9677,56 @@ CREATE INDEX idx_coding_plans_current_review
 CREATE INDEX idx_coding_plan_leaves_decision
     ON coding_plan_leaves(job_id,generation,decision,sort_index);
 
+CREATE FUNCTION coding_agent_plan_finalization_matches_current_authority(
+    plan_job_id BIGINT, plan_generation BIGINT
+) RETURNS boolean
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT EXISTS (
+        SELECT 1 FROM coding_plans AS plan
+        JOIN jobs AS job ON job.id=plan.job_id
+        JOIN job_steps AS step ON step.id=plan.plan_step_id AND step.job_id=plan.job_id
+          AND step.generation=plan.generation
+        JOIN job_step_attempts AS attempt ON attempt.job_id=step.job_id
+          AND attempt.step_id=step.id AND attempt.generation=step.generation
+          AND attempt.attempt=step.current_attempt
+        JOIN evidence AS receipt ON receipt.job_id=plan.job_id AND receipt.step_id=step.id
+        WHERE plan.job_id=plan_job_id AND plan.generation=plan_generation
+          AND plan.state='frozen' AND job.current_generation=plan.generation
+          AND job.status='running' AND job.metadata->'coding_execution'->>'mode'='agents'
+          AND step.action='v3_coding_plan' AND step.status='completed'
+          AND step.superseded_at_generation IS NULL AND attempt.status='completed'
+          AND receipt.kind='coding_agent' AND receipt.payload_json->>'phase'='requirements_frozen'
+          AND receipt.payload_json->>'generation'=plan.generation::TEXT
+          AND receipt.payload_json->'delegation'=job.metadata->'coding_execution'
+          AND receipt.payload_json->'authority'=jsonb_build_object(
+            'job_id',plan.job_id,'generation',plan.generation,'step_id',step.id,
+            'attempt',attempt.attempt,'worker_id',attempt.worker_id)
+          AND receipt.payload_json->'snapshot'=jsonb_build_object(
+            'job_id',plan.job_id,'generation',plan.generation,'revision',plan.revision,'state',plan.state,
+            'leaves',(SELECT jsonb_agg(jsonb_build_object('id',leaf.leaf_id,
+                'statement',leaf.statement,'decision',leaf.decision) ORDER BY leaf.sort_index)
+              FROM coding_plan_leaves AS leaf
+              WHERE leaf.job_id=plan.job_id AND leaf.generation=plan.generation))
+          AND jsonb_array_length(receipt.payload_json->'input_leaves')=(
+              SELECT COUNT(*) FROM coding_plan_leaves
+              WHERE job_id=plan.job_id AND generation=plan.generation)
+          AND NOT EXISTS (
+            SELECT 1 FROM jsonb_array_elements(receipt.payload_json->'input_leaves')
+              WITH ORDINALITY AS input(value,position)
+            LEFT JOIN coding_plan_leaves AS leaf ON leaf.job_id=plan.job_id
+              AND leaf.generation=plan.generation AND leaf.sort_index=input.position-1
+            WHERE leaf.leaf_id IS NULL OR input.value->>'id' IS DISTINCT FROM leaf.leaf_id
+              OR input.value->>'statement' IS DISTINCT FROM leaf.statement
+              OR input.value->>'result_schema' IS DISTINCT FROM leaf.result_schema
+              OR input.value->>'result_relation' IS DISTINCT FROM leaf.result_relation
+              OR input.value->>'decision_origin_generation' IS DISTINCT FROM leaf.decision_origin_generation::TEXT
+              OR (CASE input.value->>'decision' WHEN 'pending' THEN 'approved'
+                    ELSE input.value->>'decision' END) IS DISTINCT FROM leaf.decision
+          )
+    );
+$$;
+
 CREATE FUNCTION coding_plan_result_matches_current_authority(
     plan_job_id BIGINT,
     plan_generation BIGINT,
@@ -9679,7 +9757,8 @@ CREATE FUNCTION coding_plan_result_matches_current_authority(
               FROM coding_plan_leaves AS leaf
               WHERE leaf.job_id=plan.job_id AND leaf.generation=plan.generation
           )
-    );
+    ) OR (operation_kind IN ('coding_plan_decisions','coding_plan_freeze') AND
+          coding_agent_plan_finalization_matches_current_authority(plan_job_id,plan_generation));
 $$;
 
 CREATE FUNCTION validate_coding_plan_update() RETURNS trigger
@@ -9846,6 +9925,11 @@ DECLARE
     plan_step_superseded_at_generation BIGINT;
     job_status TEXT;
 BEGIN
+    -- A delegated Store transaction inserts review and freezes before committing.
+    -- Its earlier deferred insert event is covered by the exact final receipt.
+    IF NEW.state='review' AND coding_agent_plan_finalization_matches_current_authority(NEW.job_id,NEW.generation) THEN
+        RETURN NULL;
+    END IF;
     SELECT status,superseded_at_generation
       INTO plan_step_status,plan_step_superseded_at_generation
       FROM job_steps
@@ -9990,3 +10074,52 @@ CREATE TABLE web_evidence (
 );
 
 CREATE INDEX web_evidence_job_idx ON web_evidence(job_id,id);
+
+-- Scoped-agent journal entries are immutable receipts, not editable annotations.
+CREATE FUNCTION prevent_coding_agent_evidence_mutation() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RAISE EXCEPTION 'coding agent evidence is immutable';
+END;
+$$;
+
+CREATE TRIGGER coding_agent_evidence_delete_immutable BEFORE DELETE ON evidence
+FOR EACH ROW WHEN (OLD.kind='coding_agent')
+EXECUTE FUNCTION prevent_coding_agent_evidence_mutation();
+
+CREATE TRIGGER coding_agent_evidence_update_immutable BEFORE UPDATE ON evidence
+FOR EACH ROW WHEN (OLD.kind='coding_agent' OR NEW.kind='coding_agent')
+EXECUTE FUNCTION prevent_coding_agent_evidence_mutation();
+
+ALTER TABLE job_lifecycle_operations
+    ADD CONSTRAINT job_lifecycle_operations_feedback_generation_check CHECK (
+      kind<>'submit_feedback' OR (
+      CASE WHEN command_payload ? 'expected_generation' THEN
+        jsonb_typeof(command_payload->'expected_generation')='number' AND
+        (command_payload->>'expected_generation') ~ '^[1-9][0-9]{0,18}$' AND
+        (command_payload->>'expected_generation')::numeric BETWEEN 1 AND 9223372036854775807 AND
+        (command_payload->>'expected_generation')::numeric=observed_generation
+      ELSE COALESCE(result_job->'metadata'->'coding_execution'->>'mode','normal')<>'agents'
+      END AND
+      CASE WHEN command_payload ? 'expected_waiting_attempt' THEN
+        jsonb_typeof(command_payload->'expected_waiting_attempt')='number' AND
+        (command_payload->>'expected_waiting_attempt') ~ '^[1-9][0-9]{0,18}$' AND
+        (command_payload->>'expected_waiting_attempt')::numeric BETWEEN 1 AND 9223372036854775807
+      ELSE COALESCE(result_job->'metadata'->'coding_execution'->>'mode','normal')<>'agents'
+      END)
+    ) NOT VALID;
+
+CREATE TABLE coding_agent_settings (
+    singleton boolean PRIMARY KEY DEFAULT TRUE CHECK (singleton),
+    schema text NOT NULL CHECK (schema='omnidex.coding-agent-settings.v1'),
+    configuration jsonb NOT NULL CHECK (
+      jsonb_typeof(configuration)='object' AND configuration->>'mode' IS NOT DISTINCT FROM 'agents' AND
+      configuration ?& ARRAY['mode','planner','executor','reviewer'] AND
+      (configuration-ARRAY['mode','planner','executor','reviewer'])='{}'::jsonb AND
+      jsonb_typeof(configuration->'planner')='object' AND
+      jsonb_typeof(configuration->'executor')='object' AND
+      jsonb_typeof(configuration->'reviewer')='object'
+    ),
+    updated_at timestamptz NOT NULL DEFAULT clock_timestamp()
+);

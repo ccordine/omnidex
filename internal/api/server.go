@@ -42,6 +42,7 @@ type Server struct {
 	scrumAutoWorkAsyncMu      sync.Mutex
 	scrumAutoWorkAsyncRunning bool
 	scrumAutoWorkAsyncPending bool
+	codingAgentsMu            sync.RWMutex
 }
 
 type ServerOptions struct {
@@ -67,10 +68,12 @@ type memoryCandidatePromotionRequest struct {
 }
 
 type feedbackRequest struct {
-	OperationID       model.LifecycleOperationID `json:"operation_id"`
-	Feedback          string                     `json:"feedback"`
-	WorkspaceRoot     lifecycleWorkspaceValue    `json:"workspace_root,omitempty"`
-	WorkspaceIdentity lifecycleWorkspaceValue    `json:"workspace_identity,omitempty"`
+	OperationID            model.LifecycleOperationID `json:"operation_id"`
+	Feedback               string                     `json:"feedback"`
+	WorkspaceRoot          lifecycleWorkspaceValue    `json:"workspace_root,omitempty"`
+	WorkspaceIdentity      lifecycleWorkspaceValue    `json:"workspace_identity,omitempty"`
+	ExpectedGeneration     *int64                     `json:"expected_generation,omitempty"`
+	ExpectedWaitingAttempt *int64                     `json:"expected_waiting_attempt,omitempty"`
 }
 
 type cancelRequest struct {
@@ -124,6 +127,9 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) routes() {
+	s.mux.HandleFunc("/v1/coding-agents/settings", s.handleCodingAgentSettings)
+	s.mux.HandleFunc("/v1/coding-agents/refresh", s.handleCodingAgentRefresh)
+	s.mux.HandleFunc("/v1/coding-agents/update", s.handleCodingAgentUpdate)
 	s.mux.HandleFunc("/healthz", s.handleHealth)
 	s.mux.HandleFunc("/readyz", s.handleReadiness)
 	s.mux.HandleFunc("/v1/providers", s.handleProviderCatalog)

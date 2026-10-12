@@ -31,6 +31,8 @@ func (s *Server) handleScrumCardPlay(w http.ResponseWriter, r *http.Request, car
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.codingAgentsMu.RLock()
+	defer s.codingAgentsMu.RUnlock()
 	result, err := s.repo.ApplyScrumCardPlay(r.Context(), queue.ScrumCardPlayCommand{
 		ProjectID: projectID, CardID: cardID,
 		ExpectedUpdatedAt: req.ExpectedUpdatedAt.Value, Pivot: req.Pivot,

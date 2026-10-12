@@ -96,6 +96,38 @@ The CLI and web cockpit expose the same concise execution truth:
 
 Repeated polling state is coalesced. Full prompts and context remain available through explicit verbose/debug views instead of flooding the normal progress stream.
 
+## Coding modes
+
+Normal uses the bounded semantic station workflow. Agents freezes a plan, gives
+an environment-capable executor one task with exact files and acceptance checks,
+then runs a fresh independent reviewer. Findings reopen the affected task;
+questions pause the same durable job until answered. Overall review checks the
+original objective and integration before completion. Restart preserves the
+plan, accepted tasks, questions and original native receipts.
+
+Select **Agents** in a local CLI-bound assistant conversation, or submit
+`coding_mode: "agents"` to `POST /v1/jobs` with the selected workspace in
+`metadata.client_cwd`. The native service must own that workspace under
+`HOST_DIRECTORY_ACCESS_ROOT`; a remote directory with the same name grants no
+access. Normal is the default. The API also accepts `coding_mode: "normal"`.
+
+`CODING_PLANNER_PROVIDER/MODEL`, `CODING_EXECUTOR_PROVIDER/MODEL` and
+`CODING_REVIEWER_PROVIDER/MODEL` configure the independent roles at startup.
+Each role also accepts `_EFFORT` and `_SERVICE_TIER`. In Admin, **Coding agents**
+lets you choose each role's model, advertised reasoning effort and speed, save
+settings for new jobs, refresh the signed-in model catalog, and update the existing
+Codex installation. Task-planner settings govern decomposition after the existing
+requirement intake; that intake retains its station settings. Existing jobs keep
+their frozen routes. Model availability and effort/speed choices come from the
+installed Codex catalog rather than a fixed list.
+
+The built-in agent adapter is signed-in Codex; other adapters implement the
+portable `codingagent.Provider` port and register through worker options.
+Execution writes only granted files through Omnidex's mutation fence; review
+is read-only. Native tool caches are disposable and network access is disabled.
+Agents has no arbitrary correction-round cap; cancellation and the configured
+request lifetime still apply.
+
 ## Models
 
 Ollama is the recommended explicit local provider. Omnidex has no implicit model

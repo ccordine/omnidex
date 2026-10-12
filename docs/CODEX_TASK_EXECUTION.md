@@ -1,5 +1,95 @@
 # Persistent task execution with Codex
 
+## Completed task: governed agent execution
+
+Authoritative root: /home/gryph/Projects/tools/omnidex.
+Branch: feat/governed-agent-mode, based on 2fb65541 and stacked on provider PR #5.
+Goal: implement Normal/Agents coding modes with narrow execution, independent
+review/correction, overall review and durable code-owned task/evidence state.
+
+Acceptance: mode selection; frozen task/file/check contracts; replaceable providers;
+enforced scope and read-only review; durable questions, findings, cancellation and
+recovery; completion guarded by observed checks and exact requirement coverage;
+existing Normal/Charmeleon intake preserved; per-role Codex models, effort and Fast,
+model refresh and managed CLI updates; actual native qualification; preserving
+installation activation, one scoped PR and task-resource cleanup.
+
+Authorization: Agents may use the granted environment. Normal retains semantic-only
+restrictions. No source copies/worktrees, owner-file changes or Daemonet work.
+No overall qualification deadline. Narrow execution/task review receive only the
+assigned task, relevant files/checks/findings/answers; parent context is rejected.
+Task decomposition receives finalized requirements, resolved artifact bindings,
+literal construction facts and code-owned runtime authority, never the original
+request. Original Charmeleon requirement intake remains unchanged. Overall review
+alone receives the original objective. Native source mounts are read-only; execution
+edits use the existing Omnidex mutation fence with exact original-content validation.
+
+Implemented: provider contracts, native sandbox/tool adapter, independent fresh
+review turns, exact criterion-reference schemas, scoped correction/question replay,
+durable queue completion gates, cancellation/recovery, mode and settings UI, live
+model catalog, saved per-role routes and serialized managed updates/job admission.
+Native retry notifications retain the same turn and original frames. Verification
+preserves overall scope while stripping write access. Review now explicitly runs
+independent checks over declared input classes/ranges and representation boundaries.
+
+Verified: affected Go suites/race checks/vet; isolated PostgreSQL queue/API admission,
+replay, question, completion and settings checks; frontend suites/type checks and
+UI/core/CLI builds. Actual native source edits, fresh independent review, sandbox/env
+isolation and running-command cancellation passed (latest complete check 74.217s).
+Actual Chromium checked keyboard mode selection, desktop/mobile layouts, live model,
+effort (including max/ultra), Fast/priority, Save, Refresh and reload persistence.
+Managed update succeeded on the existing signed-in Codex 0.162.1 installation.
+Production routes remain unchanged; retained production rows match the baseline.
+
+Qualification: PASS on source 0eea5f26, 2026-10-12. The ordinary production
+request passed original intake, task planning, three narrow execution/review pairs
+and overall review: 8 retained native calls, 783.602 seconds. Independent holdout
+passed actual results, return types, inverse consistency, representable large
+integers/floats, signed overflow and invalid-input exceptions. A preserving runtime
+restart retained the same completion calls. No intermediate plan, feedback or
+application edits were injected. The request explicitly declares overflow behavior;
+all earlier holdout assertions remain, with overflow checks added. Generic production
+prompts contain no workload hints. Reviewer used high effort and advertised priority;
+ultra routing was observed in the preceding legitimate question-producing run.
+
+Delivered: commits pushed to feat/governed-agent-mode; stacked PR
+https://github.com/ccordine/omnidex/pull/6, based on provider PR #5. Installed production
+behavior is 5b1ab835; 0eea5f26 changes only qualification/documentation. All three native
+units are active/enabled and readiness passes. Production routes remain unchanged.
+Original jobs, messages, calls, receipts, outcomes and completion rows match the
+pre-activation baseline byte-for-byte after the final preserving activation.
+Installed binary SHA-256:
+- bin/omnidex: 5c5977fca5e58b158c795839cb5816888995fa049ae4a95bd600effe81f9badd
+- bin/omni: aaf48e4d5942a1ca0ddb4fdf470645ba09d94001b1ba677d666bbf70c347be9c
+
+Cleaned: task-owned PostgreSQL fixture/container, request schemas/files, browser
+profile/script, generated protocol, stale/native tool caches and PR-body scratch
+retired. Candidate binaries were activated. No task-owned processes or disposable
+resources remain. Pre-existing owner changes and shared caches remain preserved.
+Stages: implemented, verified, delivered, installed, cleaned. No remaining task work.
+
+Resources: generated installed protocol under bin/agent-protocol, at most 32 MiB,
+removed after qualification. Native task tool caches are under
+bin/agent-runtime/call-*; one call at a time, two workers, bounded by the existing
+request lifetime and workspace/artifact limits, removed on call exit. Disposable
+qualification fixtures use bin/agent-qualification and bin/agent-test-fixtures
+(32 MiB, removed at completion)
+and one isolated auto-removed PostgreSQL test container (512 MiB RAM, two CPUs).
+One headless Chromium profile and UI qualification script/output may use that
+same ignored qualification directory (128 MiB, one browser, removed after checks).
+One core/CLI candidate binary set uses bin/omnidex-agents-candidate and
+bin/omni-agents-candidate (256 MiB total, retired when activated). Native provider
+qualification uses one process at a time; local compilation uses two workers and
+one compiler check/build at a time. Test resources retire after actual completion
+or explicit cancellation rather than an arbitrary whole-job time cutoff.
+Native runtime inputs include the resolved Codex executable, installed Go tools
+and module cache (read-only, excluding VCS credentials), and existing selected
+workspace dependency directories. Authentication remains outside command grants.
+Source and
+durable native services remain in the established authoritative locations.
+
+## Completed foundation (historical)
+
 Authoritative workspace: /home/gryph/Projects/tools/omnidex.
 Branch: feat/codex-persistent-task-execution, based on 82add43f.
 

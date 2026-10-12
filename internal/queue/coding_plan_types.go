@@ -2,6 +2,7 @@ package queue
 
 import (
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/model"
 )
 
@@ -12,8 +13,9 @@ type CodingPlanLeafWrite struct {
 }
 
 type StoreCodingPlanReviewCommand struct {
-	Authority model.StepAttemptAuthority
-	Leaves    []CodingPlanLeafWrite
+	IntakeContext *codingagent.IntakeContext
+	Authority     model.StepAttemptAuthority
+	Leaves        []CodingPlanLeafWrite
 }
 
 type CodingPlanDecisionChange struct {

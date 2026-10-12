@@ -75,6 +75,8 @@ func (s *Server) applyCodingPlanDecisions(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
+	s.codingAgentsMu.RLock()
+	defer s.codingAgentsMu.RUnlock()
 	result, err := s.repo.ApplyCodingPlanDecisions(r.Context(), queue.ApplyCodingPlanDecisionsCommand{
 		OperationID: request.OperationID, JobID: jobID,
 		Generation: request.Generation, Revision: request.Revision,
@@ -112,6 +114,8 @@ func (s *Server) freezeCodingPlan(w http.ResponseWriter, r *http.Request, jobID 
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
+	s.codingAgentsMu.RLock()
+	defer s.codingAgentsMu.RUnlock()
 	result, err := s.repo.FreezeCodingPlan(r.Context(), queue.FreezeCodingPlanCommand{
 		OperationID: request.OperationID, JobID: jobID,
 		Generation: request.Generation, Revision: request.Revision,

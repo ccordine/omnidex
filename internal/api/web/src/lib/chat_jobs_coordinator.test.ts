@@ -49,6 +49,7 @@ describe("ChatJobsCoordinator lifecycle retries", () => {
 	it("submits one replan operation per interaction", async () => {
 		const controlRequests: RequestInit[] = [];
 		const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
+			if (input === "/v1/jobs/42") return jsonResponse(jobDetails());
 			if (input === "/v1/jobs/42/replan") {
 				if (!init) throw new Error("Replan request options are required.");
 				controlRequests.push(init);
@@ -74,6 +75,7 @@ describe("ChatJobsCoordinator lifecycle retries", () => {
 		const request = JSON.parse(String(controlRequests[0]?.body));
 		expect(request.feedback).toBe("  use the corrected plan\nwith trailing space  ");
 		expect(request.operation_id).toMatch(/^lifecycle_operation_[0-9a-f]{64}$/);
+		expect(Object.keys(request).sort()).toEqual(["feedback", "operation_id"]);
 		expect(button.disabled).toBe(false);
 		expect(button.getAttribute("aria-busy")).toBe("false");
 		expect(button.textContent).toBe("Replan");
@@ -83,6 +85,7 @@ describe("ChatJobsCoordinator lifecycle retries", () => {
 		const cancelRequests: RequestInit[] = [];
 		let cancelCalls = 0;
 		const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
+			if (input === "/v1/jobs/42") return jsonResponse(jobDetails());
 			if (input === "/v1/jobs/42/cancel") {
 				if (!init) throw new Error("Cancellation request options are required.");
 				cancelRequests.push(init);
@@ -112,11 +115,89 @@ describe("ChatJobsCoordinator lifecycle retries", () => {
 		const second = JSON.parse(String(cancelRequests[1]?.body));
 		expect(second.operation_id).toBe(first.operation_id);
 		expect(second.reason).toBe("  deliberate cancellation\n  ");
+		expect(Object.keys(second).sort()).toEqual(["operation_id", "reason"]);
 		expect(button.disabled).toBe(false);
 		expect(button.getAttribute("aria-busy")).toBe("false");
 		expect(button.textContent).toBe("Cancel");
 	});
+
+	it.each(["cancel", "interrupt", "replan"] as const)("binds %s to the exact selected Agents workspace", async (action) => {
+		const bodies: Record<string, unknown>[] = [];
+		const workspaceIdentity = "client_0123456789abcdef0123456789abcdef_directory_0_42";
+		vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
+			if (input === "/v1/jobs/42") return jsonResponse(jobDetails({ client_cwd: "C:\\Projects\\target", client_workspace_identity: workspaceIdentity, coding_execution: { mode: "agents" } }));
+			if (input === `/v1/jobs/42/${action}`) {
+				const body = JSON.parse(String(init?.body)); bodies.push(body);
+				return jsonResponse({ job_id: 42, operation_id: body.operation_id, status: action === "cancel" ? "canceled" : "running" });
+			}
+			if (input === "/v1/ui/chat/jobs/42") return jsonResponse({ ...jobDetails(), html: { bundle: "server-details" } });
+			if (input === "/v1/ui/chat/jobs?limit=20&offset=0") return jsonResponse({ has_more: false, html: { bundle: "server-list" } });
+			throw new Error(`Unexpected request ${input}`);
+		}));
+		vi.spyOn(window, "prompt").mockReturnValue("  exact user instruction  ");
+		const button = document.createElement("button"); button.dataset.jobId = "42";
+		await new ChatJobsCoordinator(chatJobsTestHost())[action]({ currentTarget: button } as unknown as Event);
+		expect(bodies).toEqual([{
+			operation_id: expect.stringMatching(/^lifecycle_operation_[0-9a-f]{64}$/),
+			[action === "cancel" ? "reason" : "feedback"]: "  exact user instruction  ",
+			workspace_root: "C:\\Projects\\target", workspace_identity: workspaceIdentity,
+		}]);
+	});
+
+	it("replays a bound replan after a lost response advances generation", async () => {
+		let generation = 1;
+		const bodies: Record<string, unknown>[] = [];
+		vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
+			const details = jobDetails({ client_cwd: "/workspace/target", client_workspace_identity: "directory_1_42" });
+			details.job.current_generation = generation;
+			if (input === "/v1/jobs/42") return jsonResponse(details);
+			if (input === "/v1/jobs/42/replan") {
+				const body = JSON.parse(String(init?.body)); bodies.push(body);
+				if (bodies.length === 1) { generation++; throw new Error("response lost after commit"); }
+				return jsonResponse({ job_id: 42, operation_id: body.operation_id, status: "running" });
+			}
+			if (input === "/v1/ui/chat/jobs/42") return jsonResponse({ ...details, html: { bundle: "server-details" } });
+			throw new Error(`Unexpected request ${input}`);
+		}));
+		vi.spyOn(window, "prompt").mockReturnValue("same exact instruction");
+		const coordinator = new ChatJobsCoordinator(chatJobsTestHost());
+		const button = document.createElement("button"); button.dataset.jobId = "42";
+		const event = { currentTarget: button } as unknown as Event;
+		await expect(coordinator.replan(event)).rejects.toThrow("response lost after commit");
+		await coordinator.replan(event);
+		expect(bodies).toHaveLength(2);
+		expect(bodies[1]).toEqual(bodies[0]);
+	});
+
+	it.each([
+		{ client_cwd: "/workspace/target", client_workspace_identity: null },
+		{ client_cwd: "../other", client_workspace_identity: "directory_1_42" },
+		{ client_cwd: "/workspace/target", client_workspace_identity: "directory_01_42" },
+		{ client_cwd: "/workspace/target", coding_execution: { mode: "agents" } },
+	])("rejects malformed workspace authority before sending a cancellation", async (metadata) => {
+		const fetchMock = vi.fn(async () => jsonResponse(jobDetails(metadata)));
+		vi.stubGlobal("fetch", fetchMock);
+		vi.spyOn(window, "prompt").mockReturnValue("cancel");
+		const button = document.createElement("button"); button.dataset.jobId = "42";
+		await expect(new ChatJobsCoordinator(chatJobsTestHost()).cancel({ currentTarget: button } as unknown as Event)).rejects.toThrow();
+		expect(fetchMock.mock.calls).toHaveLength(1);
+		expect(fetchMock.mock.calls[0]).toEqual(["/v1/jobs/42"]);
+	});
+
+	it("rejects a foreign job before sending a lifecycle control", async () => {
+		const details = jobDetails(); details.job.id = 43;
+		const fetchMock = vi.fn(async () => jsonResponse(details));
+		vi.stubGlobal("fetch", fetchMock);
+		vi.spyOn(window, "prompt").mockReturnValue("cancel");
+		const button = document.createElement("button"); button.dataset.jobId = "42";
+		await expect(new ChatJobsCoordinator(chatJobsTestHost()).cancel({ currentTarget: button } as unknown as Event)).rejects.toThrow(/requested #42/i);
+		expect(fetchMock.mock.calls).toHaveLength(1);
+	});
 });
+
+function jobDetails(metadata?: Record<string, unknown>) {
+	return { job: { id: 42, status: "running", current_generation: 1, ...(metadata === undefined ? {} : { metadata }) }, steps: [] };
+}
 
 function chatJobsTestHost(): ChatJobsHost {
 	const filter = document.createElement("select");

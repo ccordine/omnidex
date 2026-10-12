@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/evidence"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/modelconfig"
@@ -18,6 +19,7 @@ import (
 type Repository struct {
 	pool           *pgxpool.Pool
 	modelAuthority modelconfig.Authority
+	codingAgents   codingagent.Configuration
 }
 
 type stepSeed struct {
@@ -34,6 +36,12 @@ func New(
 	}
 }
 
+// WithCodingAgents freezes installation routes before request handling starts.
+func (r *Repository) WithCodingAgents(configuration codingagent.Configuration) *Repository {
+	r.codingAgents = configuration
+	return r
+}
+
 func (r *Repository) Ping(ctx context.Context) error {
 	if r == nil || r.pool == nil {
 		return fmt.Errorf("postgres repository is not configured")
@@ -46,28 +54,41 @@ func (r *Repository) EnqueueCodingJob(
 	instruction string,
 	clientCWD string,
 ) (model.Job, error) {
-	workspaceIdentity, err := projectroot.DirectoryIdentity(clientCWD)
-	if err != nil {
-		return model.Job{}, fmt.Errorf("attest coding job workspace identity: %w", err)
-	}
-	metadataJSON, err := json.Marshal(struct {
-		ClientCWD               string             `json:"client_cwd"`
-		ClientWorkspaceIdentity string             `json:"client_workspace_identity"`
-		ModelConfig             modelconfig.Config `json:"model_config"`
-	}{
-		ClientCWD: clientCWD, ClientWorkspaceIdentity: workspaceIdentity,
-		ModelConfig: r.modelAuthority.Config(),
-	})
-	if err != nil {
-		return model.Job{}, fmt.Errorf("encode coding job authority: %w", err)
-	}
-	pipeline := model.PipelineCoding
+	return r.EnqueueCodingJobMode(ctx, instruction, clientCWD, codingagent.Normal)
+}
 
+func (r *Repository) EnqueueCodingJobMode(ctx context.Context, instruction, clientCWD string, mode codingagent.Mode) (model.Job, error) {
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return model.Job{}, err
 	}
 	defer tx.Rollback(ctx)
+	configuration, err := r.codingConfigurationForMode(ctx, tx, mode)
+	if err != nil {
+		return model.Job{}, err
+	}
+	var agents *codingagent.Configuration
+	if configuration.Mode == codingagent.Agents {
+		agents = &configuration
+	}
+	workspaceIdentity, err := projectroot.DirectoryIdentity(clientCWD)
+	if err != nil {
+		return model.Job{}, fmt.Errorf("attest coding job workspace identity: %w", err)
+	}
+	metadataJSON, err := json.Marshal(struct {
+		ClientCWD               string                     `json:"client_cwd"`
+		ClientWorkspaceIdentity string                     `json:"client_workspace_identity"`
+		ModelConfig             modelconfig.Config         `json:"model_config"`
+		CodingExecution         *codingagent.Configuration `json:"coding_execution,omitempty"`
+	}{
+		ClientCWD: clientCWD, ClientWorkspaceIdentity: workspaceIdentity,
+		ModelConfig:     r.modelAuthority.Config(),
+		CodingExecution: agents,
+	})
+	if err != nil {
+		return model.Job{}, fmt.Errorf("encode coding job authority: %w", err)
+	}
+	pipeline := model.PipelineCoding
 
 	job, err := r.enqueueJobTx(ctx, tx, instruction, pipeline, metadataJSON)
 	if err != nil {

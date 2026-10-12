@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/codingagent"
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
@@ -32,6 +33,14 @@ func (r *Repository) StoreCodingPlanReview(
 	if err != nil {
 		return model.CodingPlan{}, err
 	}
+	configuration, err := codingagent.ConfigurationFromMetadata(job.Metadata)
+	if err != nil {
+		return model.CodingPlan{}, err
+	}
+	agents := configuration.Mode == codingagent.Agents
+	if !agents && command.IntakeContext != nil {
+		return model.CodingPlan{}, fmt.Errorf("retained agent intake context requires Agents mode")
+	}
 	var action string
 	if err := tx.QueryRow(ctx, `
 		SELECT action FROM job_steps WHERE id=$1 AND job_id=$2
@@ -50,13 +59,19 @@ func (r *Repository) StoreCodingPlanReview(
 	}
 
 	if locked.AttemptStatus == model.StepAttemptCompleted &&
-		locked.StepStatus == model.StepStatusWaiting && job.Status == model.JobStatusWaiting {
+		((!agents && locked.StepStatus == model.StepStatusWaiting && job.Status == model.JobStatusWaiting) || (agents && locked.StepStatus == model.StepStatusCompleted)) {
 		plan, err := readCodingPlan(ctx, tx, job.ID, command.Authority.Generation)
 		if err != nil {
 			return model.CodingPlan{}, err
 		}
-		if err := requireStoredCodingPlanCommandTx(ctx, tx, plan, command); err != nil {
-			return model.CodingPlan{}, err
+		var replayErr error
+		if agents {
+			replayErr = requireStoredCodingAgentPlanCommandTx(ctx, tx, plan, command, configuration)
+		} else {
+			replayErr = requireStoredCodingPlanCommandTx(ctx, tx, plan, command)
+		}
+		if replayErr != nil {
+			return model.CodingPlan{}, replayErr
 		}
 		if err := tx.Commit(ctx); err != nil {
 			return model.CodingPlan{}, err
@@ -89,10 +104,21 @@ func (r *Repository) StoreCodingPlanReview(
 			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
 		`, job.ID, command.Authority.Generation, write.Leaf.ID, index,
 			write.Leaf.Statement, write.Leaf.Decision,
-			write.DecisionOriginGeneration, write.ResultRelation.Schema,
-			write.ResultRelation.Relation); err != nil {
+			write.DecisionOriginGeneration, write.ResultRelation.Schema, write.ResultRelation.Relation); err != nil {
 			return model.CodingPlan{}, fmt.Errorf("store coding plan leaf %d: %w", index, err)
 		}
+	}
+	if agents {
+		if err := finalizeCodingAgentPlanTx(ctx, tx, command); err != nil {
+			return model.CodingPlan{}, err
+		}
+	}
+	stepStatus, jobStatus := model.StepStatusWaiting, model.JobStatusWaiting
+	var stepOutput *string
+	if agents {
+		stepStatus, jobStatus = model.StepStatusCompleted, model.JobStatusRunning
+		output := "coding plan approved and frozen"
+		stepOutput = &output
 	}
 	if err := terminalizeStepAttemptTx(
 		ctx, tx, command.Authority, model.StepAttemptCompleted,
@@ -101,12 +127,12 @@ func (r *Repository) StoreCodingPlanReview(
 	}
 	stepResult, err := tx.Exec(ctx, `
 		UPDATE job_steps
-		SET status=$2,worker_id=NULL,output=NULL,error=NULL,finished_at=NULL,updated_at=NOW()
+		SET status=$2,worker_id=NULL,output=$8,error=NULL,finished_at=CASE WHEN $2='completed' THEN clock_timestamp() ELSE NULL END,updated_at=NOW()
 		WHERE id=$1 AND job_id=$3 AND generation=$4 AND current_attempt=$5
 		  AND worker_id=$6 AND status=$7
-	`, command.Authority.StepID, model.StepStatusWaiting, job.ID,
+	`, command.Authority.StepID, stepStatus, job.ID,
 		command.Authority.Generation, command.Authority.Attempt,
-		command.Authority.WorkerID, model.StepStatusRunning)
+		command.Authority.WorkerID, model.StepStatusRunning, stepOutput)
 	if err != nil {
 		return model.CodingPlan{}, err
 	}
@@ -117,7 +143,7 @@ func (r *Repository) StoreCodingPlanReview(
 		UPDATE jobs
 		SET status=$2,result=NULL,error=NULL,completed_at=NULL,updated_at=NOW()
 		WHERE id=$1 AND current_generation=$3 AND status=$4
-	`, job.ID, model.JobStatusWaiting, command.Authority.Generation, model.JobStatusRunning)
+	`, job.ID, jobStatus, command.Authority.Generation, model.JobStatusRunning)
 	if err != nil {
 		return model.CodingPlan{}, err
 	}
@@ -127,6 +153,11 @@ func (r *Repository) StoreCodingPlanReview(
 	plan, err := readCodingPlan(ctx, tx, job.ID, command.Authority.Generation)
 	if err != nil {
 		return model.CodingPlan{}, err
+	}
+	if agents {
+		if err := recordCodingAgentPlanFinalizationTx(ctx, tx, command, configuration, plan); err != nil {
+			return model.CodingPlan{}, err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return model.CodingPlan{}, err
@@ -216,7 +247,7 @@ func lockCodingPlanStoreAuthorityTx(
 		if stepWorker == nil || *stepWorker != authority.WorkerID {
 			return lockedStepAttempt{}, staleStepAttemptError(authority, "step worker changed", nil)
 		}
-	case model.StepStatusWaiting:
+	case model.StepStatusWaiting, model.StepStatusCompleted:
 		if stepWorker != nil {
 			return lockedStepAttempt{}, staleStepAttemptError(authority, "waiting plan retained a worker", nil)
 		}

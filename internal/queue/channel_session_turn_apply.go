@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
 )
@@ -144,12 +145,26 @@ func applyChannelSessionFeedbackTx(
 	command ChannelSessionTurnCommand,
 	job model.Job,
 ) (model.Job, int64, error) {
+	var expectedWaitingAttempt *int64
+	configuration, err := codingagent.ConfigurationFromMetadata(job.Metadata)
+	if err != nil {
+		return model.Job{}, 0, err
+	}
+	if configuration.Mode == codingagent.Agents {
+		var waitingAttempt int64
+		if err := tx.QueryRow(ctx, `SELECT current_attempt FROM job_steps WHERE job_id=$1 AND generation=$2 AND status='waiting_input' AND superseded_at_generation IS NULL ORDER BY sort_index,id LIMIT 1 FOR UPDATE`, job.ID, job.CurrentGeneration).Scan(&waitingAttempt); err != nil {
+			return model.Job{}, 0, err
+		}
+		expectedWaitingAttempt = &waitingAttempt
+	}
 	feedback, err := normalizeSubmitFeedbackCommand(SubmitJobFeedbackCommand{
-		OperationID:       command.OperationID,
-		JobID:             job.ID,
-		Feedback:          command.Text,
-		WorkspaceRoot:     command.WorkspaceRoot,
-		WorkspaceIdentity: command.WorkspaceIdentity,
+		OperationID:            command.OperationID,
+		JobID:                  job.ID,
+		ExpectedGeneration:     &job.CurrentGeneration,
+		ExpectedWaitingAttempt: expectedWaitingAttempt,
+		Feedback:               command.Text,
+		WorkspaceRoot:          command.WorkspaceRoot,
+		WorkspaceIdentity:      command.WorkspaceIdentity,
 	})
 	if err != nil {
 		return model.Job{}, 0, fmt.Errorf("%w: %v", ErrChannelSessionTurnInvalid, err)

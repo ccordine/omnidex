@@ -46,7 +46,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*Runtime, 
 		cancel()
 		return nil, fmt.Errorf("connect runtime database: %w", err)
 	}
-	repo := queue.New(pool, cfg.ModelAuthority)
+	repo := queue.New(pool, cfg.ModelAuthority).WithCodingAgents(cfg.CodingAgents)
 
 	transports := llmprovider.NewLazyFromConfig(cfg)
 	server, err := api.NewServer(repo, transports.Embeddings, api.ServerOptions{
@@ -74,6 +74,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*Runtime, 
 		transports.Stations,
 		nil,
 		worker.Options{
+			AgentProviders:          agentProviders(cfg),
 			PollInterval:            cfg.WorkerPollInterval,
 			InferenceContextTokens:  cfg.InferenceContextTokens,
 			HostDirectoryAccessRoot: cfg.HostDirectoryAccessRoot,

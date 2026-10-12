@@ -13,6 +13,11 @@ func normalizeStoreCodingPlanReviewCommand(
 	if err := validateStepAttemptAuthority(command.Authority); err != nil {
 		return StoreCodingPlanReviewCommand{}, err
 	}
+	if command.IntakeContext != nil {
+		if err := command.IntakeContext.Validate(); err != nil {
+			return StoreCodingPlanReviewCommand{}, err
+		}
+	}
 	if command.Leaves == nil || len(command.Leaves) > model.MaxCodingPlanLeaves {
 		return StoreCodingPlanReviewCommand{}, fmt.Errorf(
 			"coding plan leaves must be an array of at most %d entries",

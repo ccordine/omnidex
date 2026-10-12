@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 	"github.com/gryph/omnidex/internal/roleplay"
@@ -77,6 +78,23 @@ type channelMessageRequest struct {
 	Prompt                   string                          `json:"prompt"`
 	DelegatedDataAuthorityID channelDelegatedDataAuthorityID `json:"delegated_data_authority_id,omitempty"`
 	RoleplayTurn             *roleplay.UserTurnRequest       `json:"roleplay_turn,omitempty"`
+	CodingMode               channelCodingMode               `json:"coding_mode,omitempty"`
+}
+
+type channelCodingMode struct {
+	Value codingagent.Mode
+}
+
+func (mode *channelCodingMode) UnmarshalJSON(raw []byte) error {
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return fmt.Errorf("decode coding_mode: %w", err)
+	}
+	if value != string(codingagent.Normal) && value != string(codingagent.Agents) {
+		return errors.New("coding_mode must be exactly normal or agents")
+	}
+	mode.Value = codingagent.Mode(value)
+	return nil
 }
 
 type channelDelegatedDataAuthorityID struct {
@@ -295,17 +313,23 @@ func (s *Server) postChannelMessage(w http.ResponseWriter, r *http.Request, chan
 		writeError(w, http.StatusBadRequest, "prompt is required")
 		return
 	}
+	s.codingAgentsMu.RLock()
+	defer s.codingAgentsMu.RUnlock()
 	var channel model.Channel
 	var userMessage model.ChannelMessage
 	var job model.Job
 	if req.RoleplayTurn == nil {
-		userMessage, job, err = s.repo.EnqueueChannelTurnWithDataAuthority(
-			r.Context(), channelID, prompt, req.DelegatedDataAuthorityID.Value,
+		userMessage, job, err = s.repo.EnqueueChannelTurnWithCodingMode(
+			r.Context(), channelID, prompt, req.DelegatedDataAuthorityID.Value, req.CodingMode.Value,
 		)
 		if err == nil {
 			channel, err = s.repo.GetChannel(r.Context(), channelID)
 		}
 	} else {
+		if req.CodingMode.Value == codingagent.Agents {
+			writeError(w, http.StatusBadRequest, "Agents coding mode requires an assistant conversation")
+			return
+		}
 		channel, err = s.repo.GetChannel(r.Context(), channelID)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -348,7 +372,9 @@ func (s *Server) postChannelMessage(w http.ResponseWriter, r *http.Request, chan
 			errors.Is(err, roleplay.ErrSimulationStaleRevision),
 			errors.Is(err, roleplay.ErrSimulationConflict):
 			status = http.StatusConflict
-		case errors.Is(err, roleplay.ErrSimulationUnknown),
+		case errors.Is(err, queue.ErrCodingModeWorkspaceUnavailable),
+			errors.Is(err, queue.ErrCodingModeInvalidChannel),
+			errors.Is(err, roleplay.ErrSimulationUnknown),
 			errors.Is(err, roleplay.ErrSimulationAmbiguous),
 			errors.Is(err, roleplay.ErrSimulationIllegal):
 			status = http.StatusBadRequest

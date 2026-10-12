@@ -1,16 +1,40 @@
 import type { OmniPanel } from "../lib/panel_routing";
 import type { ChatChannelTurnReceipt } from "../lib/chat_channel_turn";
+import type { CodingMode } from "../lib/channel_api";
 import { toastError } from "../lib/feedback";
 import type { RoleplayTurnInput } from "../lib/roleplay_turn_input";
 import { ChatRoleplayTurnController } from "./chat_roleplay_turn_controller";
 
 export default class ChatController extends ChatRoleplayTurnController {
+  static targets = ["codingMode", "agentQuestions", "agentQuestionText"];
+  declare readonly codingModeTarget: HTMLSelectElement;
+  declare readonly hasCodingModeTarget: boolean;
+  declare readonly agentQuestionsTarget: HTMLElement;
+  declare readonly hasAgentQuestionsTarget: boolean;
+  declare readonly agentQuestionTextTarget: HTMLElement;
+  private codingPreferenceBeforeActive?: CodingMode;
+  private agentTurnWasActive = false;
+
+  async connect(): Promise<void> {
+    const ready = super.connect();
+    this.channel?.onAgentTurnChange(() => this.renderCodingAgentState());
+    await ready;
+    this.renderCodingAgentState();
+  }
+
+  disconnect(): void {
+    this.channel?.disconnectAgentTurns();
+    super.disconnect();
+  }
+
+
   async selectChannel(event: Event): Promise<void> {
     const wasBusy = this.busy;
     this.setBusy(true);
     try {
       await this.channel.select(event);
       await this.synchronizeSelectedSlashCommands();
+      this.renderCodingAgentState();
     } finally {
       this.setBusy(wasBusy);
     }
@@ -51,7 +75,8 @@ export default class ChatController extends ChatRoleplayTurnController {
   }
 
   async submitChannel(prompt: string, turn?: RoleplayTurnInput): Promise<ChatChannelTurnReceipt> {
-    return this.channel.submit(prompt, turn);
+    const mode = this.selectedCodingMode();
+    return mode === "normal" ? this.channel.submit(prompt, turn) : this.channel.submit(prompt, turn, mode);
   }
 
   async showPanel(event: Event): Promise<void> { await this.panels.show(event); }
@@ -136,7 +161,10 @@ export default class ChatController extends ChatRoleplayTurnController {
         ? this.submitChannel(prompt)
         : this.submitChannel(prompt, roleplayTurn);
     }
-    const result = await this.channel.createAndSubmit(prompt);
+    const mode = this.selectedCodingMode();
+    const result = mode === "normal"
+      ? await this.channel.createAndSubmit(prompt)
+      : await this.channel.createAndSubmit(prompt, mode);
     if (result.kind === "roleplay_setup_required") {
       this.setBusy(false);
       this.setStatus("roleplay setup required", "error");
@@ -144,6 +172,40 @@ export default class ChatController extends ChatRoleplayTurnController {
       return null;
     }
     return result.turn;
+  }
+
+  private selectedCodingMode(): CodingMode {
+    if (!this.hasCodingModeTarget) return "normal";
+    const mode = this.codingModeTarget.value;
+    if (mode !== "normal" && mode !== "agents") throw new Error("Choose a coding mode.");
+    if (mode === "agents" && this.channel.hasSelection() && this.channel.selectedMode() === "roleplay") {
+      throw new Error("Agents coding mode requires an assistant conversation.");
+    }
+    return mode;
+  }
+
+  private renderCodingAgentState(): void {
+    if (!this.hasCodingModeTarget) return;
+    const state = this.channel.agentTurnState();
+    if (state) {
+      if (this.codingPreferenceBeforeActive === undefined) this.codingPreferenceBeforeActive = this.selectedCodingMode();
+      this.codingModeTarget.value = "agents";
+      this.codingModeTarget.disabled = true;
+      this.agentTurnWasActive = true;
+      this.setTurnActive(state.status !== "waiting_input");
+      if (state.status === "waiting_input") this.setStatus("Answer required", "ready");
+      else this.renderProgressActivity("Working…");
+    } else {
+      this.codingModeTarget.disabled = false;
+      if (this.codingPreferenceBeforeActive !== undefined) this.codingModeTarget.value = this.codingPreferenceBeforeActive;
+      this.codingPreferenceBeforeActive = undefined;
+      if (this.agentTurnWasActive) this.setTurnActive(false);
+      this.agentTurnWasActive = false;
+    }
+    if (this.hasAgentQuestionsTarget) {
+      this.agentQuestionsTarget.classList.toggle("hidden", state?.status !== "waiting_input");
+      this.agentQuestionTextTarget.textContent = state?.question ?? "";
+    }
   }
 
   private trackAcceptedTurn(turn: ChatChannelTurnReceipt): void {
@@ -155,6 +217,7 @@ export default class ChatController extends ChatRoleplayTurnController {
       .catch((error) => this.reportTurnFailure(turn, error))
       .finally(() => {
         this.setTurnActive(false);
+        this.renderCodingAgentState();
         if (this.hasInputTarget) this.focusComposer();
       });
   }

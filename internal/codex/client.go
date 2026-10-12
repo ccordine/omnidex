@@ -21,7 +21,7 @@ func New(command, directory string, timeout time.Duration) (*Client, error) {
 	if command == "" || directory == "" || timeout <= 0 {
 		return nil, fmt.Errorf("Codex transport requires an executable, working directory, and timeout")
 	}
-	return &Client{command: command, directory: directory, timeout: timeout}, nil
+	return &Client{command: resolveCodexExecutable(command), directory: directory, timeout: timeout}, nil
 }
 
 func (client *Client) PrepareExactRequest(prepared llm.PreparedModel) (llm.PreparedModel, error) {

@@ -44,12 +44,22 @@ func (failure *rpcError) Error() string {
 }
 
 func startConnection(ctx context.Context, command, directory string) (*connection, error) {
-	process := exec.CommandContext(ctx, command, "app-server", "--listen", "stdio://",
-		"-c", "features.shell_tool=false", "-c", "features.unified_exec=false",
+	return startConfiguredConnection(ctx, command, directory, false, nil)
+}
+
+func startConfiguredConnection(ctx context.Context, command, directory string, agent bool, overrides []string) (*connection, error) {
+	enabled := fmt.Sprint(agent)
+	arguments := []string{"app-server", "--listen", "stdio://",
+		"-c", "features.shell_tool=" + enabled, "-c", "features.unified_exec=" + enabled,
 		"-c", "features.apps=false", "-c", "features.plugins=false", "-c", "agents.enabled=false",
 		"-c", "features.hooks=false", "-c", "features.multi_agent=false",
-		"-c", "project_doc_max_bytes=0", "-c", "web_search=\"disabled\"")
+		"-c", "project_doc_max_bytes=0", "-c", "web_search=\"disabled\""}
+	arguments = append(arguments, overrides...)
+	process := exec.CommandContext(ctx, command, arguments...)
 	process.Dir = directory
+	if agent {
+		process.Env = agentProcessEnvironment()
+	}
 	process.WaitDelay = 5 * time.Second
 	configureProcessLifetime(process)
 	// Runtime diagnostics must not expose credential/configuration material.
@@ -108,6 +118,12 @@ func (connection *connection) send(method string, params any, id *int) error {
 }
 
 func (connection *connection) next() (rpcFrame, error) {
+	return connection.readFrame(false)
+}
+
+func (connection *connection) nextAgent() (rpcFrame, error) { return connection.readFrame(true) }
+
+func (connection *connection) readFrame(agent bool) (rpcFrame, error) {
 	if !connection.output.Scan() {
 		if err := connection.output.Err(); err != nil {
 			return rpcFrame{}, err
@@ -119,7 +135,7 @@ func (connection *connection) next() (rpcFrame, error) {
 	if err := json.Unmarshal(connection.lastFrame, &frame); err != nil {
 		return frame, err
 	}
-	if frame.ID != nil && frame.Method != "" {
+	if frame.ID != nil && frame.Method != "" && !(agent && frame.Method == "item/tool/call") {
 		return frame, fmt.Errorf("Codex attempted a client tool or approval request")
 	}
 	return frame, nil
