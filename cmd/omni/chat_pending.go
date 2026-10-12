@@ -31,6 +31,7 @@ func (session *chatSession) resolvePendingOperation() (*pendingOperationResoluti
 					session.workspaceIdentity,
 					pending.operationID,
 					pending.exactText,
+					pending.codingMode,
 				)
 			},
 		)

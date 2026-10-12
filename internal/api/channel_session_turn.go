@@ -16,6 +16,7 @@ type channelSessionTurnRequest struct {
 	WorkspaceIdentity string                     `json:"workspace_identity"`
 	Text              string                     `json:"text"`
 	OperationID       model.LifecycleOperationID `json:"operation_id"`
+	CodingMode        channelCodingMode          `json:"coding_mode,omitzero"`
 }
 
 type channelSessionTurnResponse struct {
@@ -81,6 +82,7 @@ func (s *Server) postChannelSessionTurn(
 			WorkspaceRoot:     request.WorkspaceRoot,
 			WorkspaceIdentity: request.WorkspaceIdentity,
 			Text:              request.Text,
+			CodingMode:        request.CodingMode.Value,
 		},
 	)
 	if err != nil {

@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/projectroot"
 )
@@ -324,10 +325,11 @@ func validateClientActiveJob(
 		return 0, fmt.Errorf("chat session active job %d has non-active status %q", job.ID, job.Status)
 	}
 	var binding struct {
-		ChannelID               model.ChannelID `json:"channel_id"`
-		ChannelUserMessageID    int64           `json:"channel_user_message_id"`
-		ClientCWD               string          `json:"client_cwd"`
-		ClientWorkspaceIdentity string          `json:"client_workspace_identity"`
+		ChannelID               model.ChannelID            `json:"channel_id"`
+		ChannelUserMessageID    int64                      `json:"channel_user_message_id"`
+		ClientCWD               string                     `json:"client_cwd"`
+		ClientWorkspaceIdentity string                     `json:"client_workspace_identity"`
+		CodingExecution         *codingagent.Configuration `json:"coding_execution"`
 	}
 	if err := json.Unmarshal(job.Metadata, &binding); err != nil {
 		return 0, fmt.Errorf("decode chat session active job %d binding: %w", job.ID, err)
@@ -359,6 +361,9 @@ func validateClientActiveJob(
 	}
 	if openSteps == 0 {
 		return 0, fmt.Errorf("chat session active job %d has no open current step", job.ID)
+	}
+	if err := validateChatSessionAgentPause(details, binding.CodingExecution); err != nil {
+		return 0, err
 	}
 	return binding.ChannelUserMessageID, nil
 }

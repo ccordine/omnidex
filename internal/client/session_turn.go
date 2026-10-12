@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/projectroot"
 )
@@ -27,7 +28,20 @@ func (client *Client) SubmitSessionTurn(
 	workspaceIdentity string,
 	operationID model.LifecycleOperationID,
 	exactText string,
+	codingModes ...codingagent.Mode,
 ) (SessionTurnReceipt, error) {
+	if len(codingModes) > 1 {
+		return SessionTurnReceipt{}, fmt.Errorf("session turn requires at most one coding mode")
+	}
+	codingMode := codingagent.Normal
+	if len(codingModes) == 1 {
+		codingMode = codingModes[0]
+	}
+	switch codingMode {
+	case codingagent.Normal, codingagent.Agents:
+	default:
+		return SessionTurnReceipt{}, fmt.Errorf("session turn has unsupported coding mode %q", codingMode)
+	}
 	if err := channel.ValidateStored(); err != nil {
 		return SessionTurnReceipt{}, fmt.Errorf("invalid CLI chat channel: %w", err)
 	}
@@ -49,11 +63,13 @@ func (client *Client) SubmitSessionTurn(
 		WorkspaceIdentity string                     `json:"workspace_identity"`
 		Text              string                     `json:"text"`
 		OperationID       model.LifecycleOperationID `json:"operation_id"`
+		CodingMode        codingagent.Mode           `json:"coding_mode"`
 	}{
 		WorkspaceRoot:     channel.WorkspaceRoot,
 		WorkspaceIdentity: workspaceIdentity,
 		Text:              exactText,
 		OperationID:       operationID,
+		CodingMode:        codingMode,
 	}
 	var receipt SessionTurnReceipt
 	requestPath := "/v1/channels/" + string(channel.ID) + "/session/turn"

@@ -18,6 +18,13 @@ func (r *Repository) applyChannelSessionTurnTx(
 	found bool,
 ) (ChannelSessionTurnResult, *int64, error) {
 	if !found {
+		configuration, err := r.codingConfigurationForMode(ctx, tx, command.CodingMode)
+		if err != nil {
+			return ChannelSessionTurnResult{}, nil, err
+		}
+		if _, err := bindChannelCodingExecution(&authority, configuration); err != nil {
+			return ChannelSessionTurnResult{}, nil, err
+		}
 		message, job, err := r.persistChannelTurnTx(
 			ctx,
 			tx,

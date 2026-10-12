@@ -2,7 +2,6 @@ package worker
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/model"
@@ -24,9 +23,11 @@ func (runtime *nativeRuntimeV3) runAgentCodingAction(configuration codingagent.C
 	if err != nil {
 		return err
 	}
-	if err := runtime.svc.requireNativeAgentWorkspace(runtime.claim.Job, scope, identity); err != nil {
+	agentContext, cancelAgent, err := runtime.svc.nativeAgentWorkspaceContext(runtime.ctx, runtime.claim.Job, scope, identity)
+	if err != nil {
 		return err
 	}
+	defer cancelAgent()
 	if err := runtime.workspaceFence.Reattest(scope.Root); err != nil {
 		return fmt.Errorf("native agent environment must own the exact selected workspace: %w", err)
 	}
@@ -59,33 +60,22 @@ func (runtime *nativeRuntimeV3) runAgentCodingAction(configuration codingagent.C
 		Evidence:          runtime.svc.repo.CodingAgentEvidence(runtime.claim.Authority)}
 	stopHeartbeat := runtime.svc.startProgressHeartbeat(runtime.ctx, runtime.claim.Authority, "scoped-agent-work")
 	defer stopHeartbeat()
-	if err := controller.Run(runtime.ctx); err != nil {
+	if err := controller.Run(agentContext); err != nil {
 		return err
 	}
-	return runtime.completeAppliedWorkspace("Completed the frozen plan with scoped execution, independent review and verified checks.")
-}
-
-func (service *Service) requireNativeAgentWorkspace(job model.Job, scope v3WorkspaceScope, identity string) error {
-	if err := service.requireHostWorkspaceRoot(scope.Root); err != nil {
+	if err := agentContext.Err(); err != nil {
 		return err
 	}
-	if job.Pipeline != model.PipelineChat {
-		return nil
+	if err := runtime.workspaceFence.Reattest(scope.Root); err != nil {
+		return err
 	}
-	clientID, directoryID, err := projectroot.ParseClientWorkspaceIdentity(scope.Identity)
+	entries, err := controller.Evidence.Read(agentContext)
 	if err != nil {
 		return err
 	}
-	configRoot, err := os.UserConfigDir()
+	recap, err := codingagent.CompletionRecap(entries, model.MaxChannelContentBytes)
 	if err != nil {
 		return err
 	}
-	localID, err := projectroot.ReadClientInstallationIdentity(configRoot)
-	if err != nil {
-		return fmt.Errorf("native agent requires the existing local client installation: %w", err)
-	}
-	if clientID != localID || directoryID != identity {
-		return fmt.Errorf("selected workspace belongs to another environment; use an agent registered in that environment")
-	}
-	return nil
+	return runtime.completeAppliedWorkspace(recap)
 }

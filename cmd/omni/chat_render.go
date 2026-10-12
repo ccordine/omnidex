@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/client"
@@ -14,7 +15,7 @@ type chatRenderer struct {
 
 func (renderer chatRenderer) banner(channel model.Channel) error {
 	return renderer.console.WriteOutput(fmt.Sprintf(
-		"Omnidex chat\nproject: %s\nsession: %s\nType /help for controls. Exit with /exit or Ctrl-D; active server work continues.\n",
+		"Omnidex chat\nproject: %s\nsession: %s\nmode: Agents\nType /help for controls. Exit with /exit or Ctrl-D; workspace access ends when the terminal closes.\n",
 		channel.WorkspaceRoot,
 		channel.ID,
 	))
@@ -135,6 +136,9 @@ func (renderer chatRenderer) job(details model.JobDetails, previous *model.JobDe
 			)
 		}
 	}
+	if details.AgentPause != nil && (previous == nil || !reflect.DeepEqual(previous.AgentPause, details.AgentPause)) {
+		renderAgentQuestions(&rendered, details.AgentPause)
+	}
 	if rendered.Len() == 0 {
 		return nil
 	}
@@ -160,7 +164,15 @@ func (renderer chatRenderer) status(details model.JobDetails) error {
 			step.Status,
 		)
 	}
+	if details.AgentPause != nil {
+		renderAgentQuestions(&rendered, details.AgentPause)
+	}
 	return renderer.console.WriteError(rendered.String())
+}
+
+func renderAgentQuestions(destination *strings.Builder, pause *model.CodingAgentPause) {
+	renderBlock(destination, "omni>", strings.Join(pause.Questions, "\n\n"))
+	fmt.Fprintln(destination, "[omni] reply here to answer")
 }
 
 func (renderer chatRenderer) realtime(event client.RealtimeEvent) error {

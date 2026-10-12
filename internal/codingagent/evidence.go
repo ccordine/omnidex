@@ -22,6 +22,7 @@ type Entry struct {
 	Frame             []byte             `json:"frame,omitempty"`
 	Findings          []Finding          `json:"findings,omitempty"`
 	Checks            []CheckResult      `json:"checks,omitempty"`
+	WrittenFiles      []string           `json:"written_files,omitempty"`
 	Questions         []string           `json:"questions,omitempty"`
 	Answers           []string           `json:"answers,omitempty"`
 	Notes             []string           `json:"notes,omitempty"`

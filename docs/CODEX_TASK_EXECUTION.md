@@ -1,5 +1,58 @@
 # Persistent task execution with Codex
 
+## Completed task: terminal Agents in the invoking directory
+
+Root: /home/gryph/Projects/tools/omnidex. Branch: feat/local-cli-agent-chat,
+based on main 1169030c. Goal: plain omni chat in the invoking local directory;
+original Charmeleon research/planning, scoped execution, independent verification,
+recap, then another task in the same terminal. Deliver a proven MVP, then stop.
+Future self-improvement is a subsequent task performed through Omnidex.
+
+Implemented: terminal turns explicitly select Agents and retain exact mode/operation
+identity on retry; new jobs freeze saved Codex routes; active jobs retain theirs.
+The existing local client/physical-directory binding and live transport permit native
+execution outside the static host boundary. Direct/foreign jobs retain their prior
+restrictions. Native calls cancel on disconnect; reconnect does not restore old
+access. Existing transport mutation fences and original-content guards remain.
+Original plan pauses and execution questions project through the same transaction;
+questions/responses, cancellation and replanning work in the terminal. Recaps derive
+only observed written files, accepted tasks and passed checks. Safe native review
+references restore exact criteria/IDs, including quotes; original frames are retained.
+Review receives the real mechanically enforced write boundary. No intake shortcut,
+raw-goal execution context, alternate ledger or broad filesystem grant was added.
+
+Verified: PASS on source bae3f234, 2026-10-12. Installed plain omni chat ran in a real
+PTY, in an existing project directory with spaces outside the configured hostroot.
+Two successive ordinary tasks completed in one session in 203.959 seconds. Both
+modified actual source/tests, passed independent behavior checks, preserved keep.txt,
+and displayed their recap. No browser, intermediate plan injection or manual source
+correction was used. The original Charmeleon objective/application/step lifecycle
+remained authoritative. Relevant application/lifecycle, replay, question/plan-pause,
+replan/cancel and exact workspace/lifetime gauntlets passed, as did affected package,
+PostgreSQL/race checks, vet and native builds. This proves the observed terminal MVP;
+general application-building autonomy is not inferred from these checks.
+
+Delivered: source commits d1b57e1d and bae3f234 pushed in
+https://github.com/ccordine/omnidex/pull/7 (base main). Corrected binaries are active;
+recognized old omni and ~/.local/bin/omni resolve to the single native launcher.
+Config and Codex sign-in are retained; normal CLI initialization created its local
+client identifier. All three native services are active/enabled; readiness passes.
+The current operation validator from setup.sql was replaced transactionally without
+resetting rows; Normal descriptors remain identical. Existing production jobs,
+messages, calls, receipts, outcomes and completion rows match the before-activation
+baseline. All 12 pre-existing stateless-inference/CHANGELOG files match their hashes.
+Installed SHA-256:
+- bin/omnidex: 316531258f10d32747f6953928a4d1e50772efa339a6d4824e9ec32c67d72a2e
+- bin/omni: 687abdfc8554116630febe54a4c23d72af4d3deeb96518a485b20617cb659dd2
+
+Cleaned: fixture schemas/requests, real PTY processes, 129 MiB task compiler cache,
+PR-body scratch and the isolated PostgreSQL container retired. Candidates activated.
+Resource budgets were declared before creation: bin/cli-agent-qualification 32 MiB,
+candidates 256 MiB, one PostgreSQL fixture 512 MiB/two CPUs/1 GiB tmpfs, one compiler
+operation/two workers, task cache 512 MiB. No task-owned disposables remain; shared
+caches and owner work preserved. Implemented, verified, delivered, installed, cleaned.
+No remaining MVP work. Stop; use Omnidex for the next explicitly requested task.
+
 ## Completed task: governed agent execution
 
 Authoritative root: /home/gryph/Projects/tools/omnidex.

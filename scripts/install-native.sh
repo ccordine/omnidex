@@ -114,19 +114,12 @@ for ((attempt=0; attempt<30; attempt++)); do
   sleep 1
 done
 ((ready)) || { echo 'Omnidex did not become ready; inspect its user service journal' >&2; exit 1; }
-mkdir -p "$(dirname "$launcher")"
-cat > "$launcher" <<EOF
-#!/usr/bin/env bash
-# Managed by Omnidex native installer
-set -euo pipefail
-if [[ -z \${CORE_URL:-} ]]; then
-  CORE_URL=\$(sed -n 's/^CORE_URL=//p' "$config_root/runtime.env")
-  export CORE_URL
+cli_aliases=("$HOME/.local/bin/omni")
+selected_cli=$(command -v omni || true)
+if [[ -n "$selected_cli" && "$selected_cli" != "${cli_aliases[0]}" ]]; then
+  cli_aliases+=("$selected_cli")
 fi
-if ((\$# == 0)); then set -- chat; fi
-exec "$repo/bin/omni" "\$@"
-EOF
-chmod 700 "$launcher"
+bash "$repo/scripts/install-cli-launcher.sh" "$repo" "$config_root" "$launcher" "${cli_aliases[@]}"
 systemctl --user is-active omnidex.service omnidex-postgres.service omnidex-valkey.service
 [[ $(loginctl show-user "$USER" -p Linger --value) == yes ]] || { echo 'User lingering is required for startup before login' >&2; exit 1; }
 printf 'Omnidex installed from %s; durable state: %s\n' "$repo" "$state_root"

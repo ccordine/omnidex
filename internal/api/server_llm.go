@@ -5,8 +5,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/gryph/omnidex/internal/codingagent"
-	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 	"github.com/jackc/pgx/v5"
 )
@@ -111,18 +109,6 @@ func (s *Server) writeCurrentJobDetails(w http.ResponseWriter, r *http.Request, 
 		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
-	}
-	configuration, err := codingagent.ConfigurationFromMetadata(details.Job.Metadata)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if configuration.Mode == codingagent.Agents && details.Job.Status == model.JobStatusWaiting {
-		details.AgentPause, err = s.repo.ReadCodingAgentPause(r.Context(), id, details.Job.CurrentGeneration)
-		if err != nil {
-			writeError(w, http.StatusConflict, "Agent question changed; refresh the job.")
-			return
-		}
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, details)
