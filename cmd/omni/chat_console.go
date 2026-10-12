@@ -28,7 +28,16 @@ func (stream terminalReadWriter) Read(buffer []byte) (int, error) {
 }
 
 func (stream terminalReadWriter) Write(buffer []byte) (int, error) {
-	return stream.writer.Write(buffer)
+	// Internal projection markers must never reach the physical terminal.
+	rendered := displayPasteProjection.Replace(string(buffer))
+	count, err := stream.writer.Write([]byte(rendered))
+	if err == nil && count != len(rendered) {
+		err = io.ErrShortWrite
+	}
+	if err != nil {
+		return 0, err
+	}
+	return len(buffer), nil
 }
 
 type chatConsole struct {
@@ -147,18 +156,15 @@ func (console *chatConsole) ReadLine() (string, bool, terminalInputAuthority, er
 	if console.terminal != nil {
 		console.inputOverflow.Store(false)
 		line, err := console.terminal.ReadLine()
-		pasted, pasteOverflow, mixedPaste, invalidUTF8, unsafeText, exactPaste, authority := console.pasteReader.consumeLineState()
+		pasted, pasteOverflow, invalidUTF8, unsafeText, authority := console.pasteReader.consumeLineState()
+		composed := restorePasteProjection.Replace(line)
+		pasted = pasted || composed != line
+		line = composed
 		if console.inputOverflow.Load() || pasteOverflow || len(line) > model.MaxFreeFormTurnBytes {
 			return "", false, authority, fmt.Errorf(
 				"%w: input exceeded the %d-byte terminal boundary and was not submitted",
 				errChatInputRejected,
 				model.MaxFreeFormTurnBytes,
-			)
-		}
-		if pasted && mixedPaste {
-			return "", false, authority, fmt.Errorf(
-				"%w: pasted input cannot be combined with typed terminal edits; the turn was not submitted",
-				errChatInputRejected,
 			)
 		}
 		if invalidUTF8 {
@@ -177,7 +183,7 @@ func (console *chatConsole) ReadLine() (string, bool, terminalInputAuthority, er
 			return "", false, authority, err
 		}
 		if pasted {
-			return exactPaste, true, authority, nil
+			return line, true, authority, nil
 		}
 		if errors.Is(err, term.ErrPasteIndicator) {
 			return "", false, authority, fmt.Errorf("terminal paste provenance was not preserved")
@@ -199,7 +205,7 @@ func (console *chatConsole) boundTerminalInput(
 		return line, position, true
 	}
 	keyBytes := utf8.RuneLen(key)
-	if keyBytes > 0 && len(line)+keyBytes <= model.MaxFreeFormTurnBytes {
+	if keyBytes > 0 && len(restorePasteProjection.Replace(line))+keyBytes <= model.MaxFreeFormTurnBytes {
 		return "", 0, false
 	}
 	console.inputOverflow.Store(true)
