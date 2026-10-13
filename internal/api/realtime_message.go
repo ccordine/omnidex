@@ -13,34 +13,35 @@ import (
 )
 
 type realtimeMessage struct {
-	ID             uint64               `json:"id,omitempty"`
-	StateKey       string               `json:"stateKey,omitempty"`
-	OccurredAt     string               `json:"occurredAt,omitempty"`
-	HTML           string               `json:"html,omitempty"`
-	EventName      string               `json:"eventName,omitempty"`
-	Reason         string               `json:"reason,omitempty"`
-	Toast          string               `json:"toast,omitempty"`
-	ToastTone      string               `json:"toastTone,omitempty"`
-	ProjectID      int64                `json:"projectID,omitempty"`
-	CardID         string               `json:"cardID,omitempty"`
-	Card           *ScrumCard           `json:"card,omitempty"`
-	PlayQueue      map[string]any       `json:"playQueue,omitempty"`
-	LatestID       uint64               `json:"latestID,omitempty"`
-	ReplayCount    int                  `json:"replayCount,omitempty"`
-	SyncRequired   bool                 `json:"syncRequired,omitempty"`
-	JobID          int64                `json:"jobID,omitempty"`
-	ChannelID      string               `json:"channelID,omitempty"`
-	Phase          realtimeJobPhase     `json:"phase,omitempty"`
-	Summary        string               `json:"summary,omitempty"`
-	StepID         int64                `json:"stepID,omitempty"`
-	Attempt        int64                `json:"attempt,omitempty"`
-	RuntimeEvent   string               `json:"runtimeEvent,omitempty"`
-	Detail         string               `json:"detail,omitempty"`
-	FileOperation  string               `json:"fileOperation,omitempty"`
-	FilePath       string               `json:"filePath,omitempty"`
-	FileSourcePath string               `json:"fileSourcePath,omitempty"`
-	AgentActivity  *model.AgentActivity `json:"agentActivity,omitempty"`
-	Snapshot       bool                 `json:"snapshot,omitempty"`
+	ID                uint64                   `json:"id,omitempty"`
+	StateKey          string                   `json:"stateKey,omitempty"`
+	OccurredAt        string                   `json:"occurredAt,omitempty"`
+	HTML              string                   `json:"html,omitempty"`
+	EventName         string                   `json:"eventName,omitempty"`
+	Reason            string                   `json:"reason,omitempty"`
+	Toast             string                   `json:"toast,omitempty"`
+	ToastTone         string                   `json:"toastTone,omitempty"`
+	ProjectID         int64                    `json:"projectID,omitempty"`
+	CardID            string                   `json:"cardID,omitempty"`
+	Card              *ScrumCard               `json:"card,omitempty"`
+	PlayQueue         map[string]any           `json:"playQueue,omitempty"`
+	LatestID          uint64                   `json:"latestID,omitempty"`
+	ReplayCount       int                      `json:"replayCount,omitempty"`
+	SyncRequired      bool                     `json:"syncRequired,omitempty"`
+	JobID             int64                    `json:"jobID,omitempty"`
+	ChannelID         string                   `json:"channelID,omitempty"`
+	Phase             realtimeJobPhase         `json:"phase,omitempty"`
+	Summary           string                   `json:"summary,omitempty"`
+	StepID            int64                    `json:"stepID,omitempty"`
+	Attempt           int64                    `json:"attempt,omitempty"`
+	RuntimeEvent      string                   `json:"runtimeEvent,omitempty"`
+	Detail            string                   `json:"detail,omitempty"`
+	FileOperation     string                   `json:"fileOperation,omitempty"`
+	FilePath          string                   `json:"filePath,omitempty"`
+	FileSourcePath    string                   `json:"fileSourcePath,omitempty"`
+	AgentActivity     *model.AgentActivity     `json:"agentActivity,omitempty"`
+	AgentCallActivity *model.AgentCallActivity `json:"agentCallActivity,omitempty"`
+	Snapshot          bool                     `json:"snapshot,omitempty"`
 }
 
 type realtimeJobPhase string

@@ -63,6 +63,12 @@ func (runtime *nativeRuntimeV3) runAgentCodingAction(configuration codingagent.C
 				JobID: runtime.claim.Authority.JobID, StepID: runtime.claim.Authority.StepID,
 				Attempt: runtime.claim.Authority.Attempt, Kind: "agent_activity", AgentActivity: &activity,
 			})
+		},
+		CallActivity: func(activity model.AgentCallActivity) {
+			runtime.svc.emitRuntimeEvent(RuntimeEvent{
+				JobID: runtime.claim.Authority.JobID, StepID: runtime.claim.Authority.StepID,
+				Attempt: runtime.claim.Authority.Attempt, Kind: "agent_call_activity", AgentCallActivity: &activity,
+			})
 		}}
 	stopHeartbeat := runtime.svc.startProgressHeartbeat(runtime.ctx, runtime.claim.Authority, "scoped-agent-work")
 	defer stopHeartbeat()

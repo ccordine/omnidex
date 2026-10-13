@@ -53,6 +53,7 @@ func (environment *codingAgentEnvironment) ReadFiles(ctx context.Context) ([]str
 				}
 			}
 			if !page.HasMore {
+				environment.runtime.observeWorkspaceRead("workspace_directory_read", "list", directory)
 				break
 			}
 			if len(page.Entries) == 0 {
@@ -119,7 +120,7 @@ func (environment *codingAgentEnvironment) WriteFile(ctx context.Context, edit c
 	if entry.Kind != workspace.EntryFile {
 		return fmt.Errorf("agent edit requires a pre-attested regular file")
 	}
-	file, err := environment.runtime.workspaceFence.ReadFile(ctx, edit.Path)
+	file, err := environment.runtime.readObservedWorkspaceFile(ctx, edit.Path)
 	if err != nil {
 		return err
 	}

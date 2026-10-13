@@ -36,6 +36,14 @@ func TestInstalledTerminalAgentsUpdateExistingProject(t *testing.T) {
 		t.Fatal(err)
 	}
 	base := filepath.Join(repository, "bin", "cli-agent-qualification")
+	_, before := os.Stat(base)
+	if os.IsNotExist(before) {
+		t.Cleanup(func() {
+			if err := os.Remove(base); err != nil && !os.IsNotExist(err) {
+				t.Errorf("retire terminal fixture parent: %v", err)
+			}
+		})
+	}
 	if err := os.MkdirAll(base, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -57,9 +65,19 @@ func TestInstalledTerminalAgentsUpdateExistingProject(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// The server and its local terminal share one isolated installation identity.
+	// A child-only config root would correctly look like a foreign environment.
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(fixture, "client-config"))
 	for _, field := range modelconfig.RegisteredFields() {
 		for _, key := range field.EnvKeys {
 			t.Setenv(key, modelName)
+		}
+	}
+	// Qualify available public summaries with the same supported role setting
+	// a user can select. Low-effort turns may emit no summary at all.
+	if effort := os.Getenv("OMNI_TEST_CODEX_EFFORT"); effort != "" {
+		for _, role := range []string{"PLANNER", "EXECUTOR", "REVIEWER"} {
+			t.Setenv("CODING_"+role+"_EFFORT", effort)
 		}
 	}
 	for key, value := range map[string]string{"DATABASE_URL": databaseURL, "DATABASE_SCHEMA": fmt.Sprintf("terminal_agents_%d", time.Now().UnixNano()), "LLM_PROVIDER": "codex", "CODEX_COMMAND": command, "CODEX_DIRECTORY": repository, "HOST_DIRECTORY_ACCESS_ROOT": filepath.Join(fixture, "server-only"), "WORKER_POLL_INTERVAL": "50ms", "REDIS_URL": "", "LISTEN_ADDR": "127.0.0.1:0"} {
@@ -69,7 +87,7 @@ func TestInstalledTerminalAgentsUpdateExistingProject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 	runtime, err := New(ctx, cfg, log.New(io.Discard, "", 0))
 	if err != nil {
@@ -84,9 +102,14 @@ func TestInstalledTerminalAgentsUpdateExistingProject(t *testing.T) {
 	workers := make(chan error, 1)
 	go func() { workers <- runtime.worker.Start(runtime.context) }()
 	defer func() { runtime.cancel(); <-workers }()
-	process := exec.CommandContext(ctx, "script", "--quiet", "--return", "--flush", "--command", "stty rows 24 cols 100; exec omni chat", "/dev/null")
+	cli := os.Getenv("OMNI_TEST_CLI_COMMAND")
+	if cli == "" {
+		cli = "omni"
+	}
+	quotedCLI := "'" + strings.ReplaceAll(cli, "'", "'\\''") + "'"
+	process := exec.CommandContext(ctx, "script", "--quiet", "--return", "--flush", "--command", "stty rows 24 cols 100; exec "+quotedCLI+" chat", "/dev/null")
 	process.Dir = root
-	process.Env = append(os.Environ(), "CORE_URL="+server.URL, "TERM=xterm-256color")
+	process.Env = append(os.Environ(), "CORE_URL="+server.URL, "TERM=xterm-256color", "XDG_CONFIG_HOME="+filepath.Join(fixture, "client-config"))
 	transcript := &terminalTranscript{}
 	process.Stdout, process.Stderr = transcript, transcript
 	input, err := process.StdinPipe()
@@ -109,9 +132,18 @@ func TestInstalledTerminalAgentsUpdateExistingProject(t *testing.T) {
 			}
 		}
 	}
-	wait(func() bool { return strings.Contains(transcript.text(), "mode: Agents") })
+	wait(func() bool { return strings.Contains(transcript.text(), "Omnidex · Agents") })
 	var previousID int64
 	for index, value := range []string{"hello", "goodbye"} {
+		if index == 1 {
+			if _, err := io.WriteString(input, "/verbosity verbose\n"); err != nil {
+				t.Fatal(err)
+			}
+			wait(func() bool { return strings.Contains(transcript.text(), "Verbosity: verbose") })
+		}
+		cursor := transcript.position()
+		activity := terminalWorkflowActivity{requireOutput: index == 1}
+		planningActivity, statusRequested, statusObserved := false, false, false
 		instruction := fmt.Sprintf("In this existing Python project, change greeting() in greeting.py to return %q. Update test_greeting.py to verify that result. Keep keep.txt unchanged. Run python3 -B -m unittest test_greeting.", value)
 		if _, err := io.WriteString(input, instruction+"\n"); err != nil {
 			t.Fatal(err)
@@ -147,9 +179,40 @@ func TestInstalledTerminalAgentsUpdateExistingProject(t *testing.T) {
 				_ = runtime.pool.QueryRow(ctx, `SELECT jsonb_build_object('role',payload_json->>'role','task',payload_json->'assignment'->'task') FROM evidence WHERE job_id=$1 AND kind='coding_agent' AND payload_json->>'phase'='call_opened' ORDER BY id DESC LIMIT 1`, details.Job.ID).Scan(&assignment)
 				t.Fatalf("ordinary terminal job %d stopped as %s: %s; questions=%v; assignment=%s", details.Job.ID, details.Job.Status, details.Job.Error, questions, assignment)
 			}
+			currentText, next, readErr := transcript.since(cursor)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			cursor = next
+			activity.observe(currentText)
+			statusObserved = statusObserved || (statusRequested && strings.Contains(transcript.text(), "task> "+instruction))
+			for _, step := range details.Steps {
+				if step.Action == "v3_coding_plan" && step.Status == model.StepStatusRunning && activity.seen["Collect requirements · started"] && activity.seen["Collect requirements · completed"] {
+					planningActivity = true
+					if !statusRequested {
+						if _, err := io.WriteString(input, "/status\n"); err != nil {
+							t.Fatal(err)
+						}
+						statusRequested = true
+						t.Logf("job %d displayed actual requirement call start/result before plan completion; /status submitted while working", details.Job.ID)
+					}
+				}
+			}
 			return details.Job.Status == model.JobStatusCompleted
 		})
-		wait(func() bool { return strings.Count(transcript.text(), "Written files:") >= index+1 })
+		if !planningActivity || !statusRequested || !statusObserved {
+			t.Fatal("real terminal planning stayed silent until completion")
+		}
+		wait(func() bool {
+			currentText, next, err := transcript.since(cursor)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cursor = next
+			activity.observe(currentText)
+			return activity.seen["Written files:"]
+		})
+		activity.assert(t)
 		verification := exec.Command("python3", "-B", "-c", fmt.Sprintf("from greeting import greeting; assert greeting()==%q", value))
 		verification.Dir = root
 		if output, err := verification.CombinedOutput(); err != nil {
@@ -167,12 +230,14 @@ func TestInstalledTerminalAgentsUpdateExistingProject(t *testing.T) {
 type terminalTranscript struct {
 	mu    sync.Mutex
 	bytes []byte
+	total int64
 }
 
 func (transcript *terminalTranscript) Write(value []byte) (int, error) {
 	transcript.mu.Lock()
 	defer transcript.mu.Unlock()
 	transcript.bytes = append(transcript.bytes, value...)
+	transcript.total += int64(len(value))
 	if len(transcript.bytes) > 256*1024 {
 		transcript.bytes = append([]byte{}, transcript.bytes[len(transcript.bytes)-256*1024:]...)
 	}
@@ -183,4 +248,20 @@ func (transcript *terminalTranscript) text() string {
 	transcript.mu.Lock()
 	defer transcript.mu.Unlock()
 	return string(transcript.bytes)
+}
+
+func (transcript *terminalTranscript) position() int64 {
+	transcript.mu.Lock()
+	defer transcript.mu.Unlock()
+	return transcript.total
+}
+
+func (transcript *terminalTranscript) since(cursor int64) (string, int64, error) {
+	transcript.mu.Lock()
+	defer transcript.mu.Unlock()
+	start := transcript.total - int64(len(transcript.bytes))
+	if cursor < start || cursor > transcript.total {
+		return "", transcript.total, fmt.Errorf("terminal activity cursor lost bounded evidence")
+	}
+	return string(transcript.bytes[cursor-start:]), transcript.total, nil
 }

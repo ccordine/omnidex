@@ -115,20 +115,22 @@ func (stream *agentActivityStream) observe(event codingagent.NativeEvent) error 
 		item.streamed = true
 		item.sent += params.Delta
 		return stream.text(params.ItemID, model.AgentActivityMessage, model.AgentActivityDelta, params.Delta)
-	case "item/reasoning/summaryTextDelta":
-		if params.SummaryIndex < 0 {
+	case "item/reasoning/summaryTextDelta", "item/reasoning/summaryPartAdded":
+		if params.SummaryIndex < item.summaryIndex || params.SummaryIndex > item.summaryIndex+1 {
 			return fmt.Errorf("native public summary has invalid section identity")
 		}
 		text := params.Delta
-		if item.streamed && item.summaryIndex != params.SummaryIndex {
+		if frame.Method == "item/reasoning/summaryPartAdded" {
+			text = ""
+		}
+		if item.summaryIndex != params.SummaryIndex {
 			text = "\n" + text
 		}
 		item.streamed, item.summaryIndex = true, params.SummaryIndex
 		item.sent += text
 		return stream.text(params.ItemID, model.AgentActivityReasoningSummary, model.AgentActivityDelta, text)
 	case "item/commandExecution/outputDelta":
-		item.streamed = true
-		item.sent += params.Delta
+		item.streamed = item.streamed || params.Delta != ""
 		return stream.text(params.ItemID, model.AgentActivityCommandOutput, model.AgentActivityDelta, params.Delta)
 	}
 	return nil
@@ -144,14 +146,16 @@ func (stream *agentActivityStream) completed(params agentActivityParams, item *a
 	case "reasoning":
 		return stream.completeText(params.Item.ID, model.AgentActivityReasoningSummary, model.AgentActivityCompleted, item.sent, strings.Join(params.Item.Summary, "\n"))
 	case "commandExecution":
-		if params.Item.AggregatedOutput != nil {
-			if err := stream.completeText(params.Item.ID, model.AgentActivityCommandOutput, model.AgentActivityDelta, item.sent, *params.Item.AggregatedOutput); err != nil {
-				return err
-			}
-		}
 		status := model.AgentActivityStatus(params.Item.Status)
 		if status != model.AgentActivityCompleted && status != model.AgentActivityFailed && status != model.AgentActivityDeclined {
 			return fmt.Errorf("native command has invalid terminal status")
+		}
+		// Native live deltas preserve arrival order. Its retained aggregate groups
+		// stdout before stderr and may be capped, so it is not a streamed prefix.
+		if !item.streamed && params.Item.AggregatedOutput != nil {
+			if err := stream.text(params.Item.ID, model.AgentActivityCommandOutput, model.AgentActivityDelta, *params.Item.AggregatedOutput); err != nil {
+				return err
+			}
 		}
 		return stream.command(params, status)
 	}
@@ -160,7 +164,7 @@ func (stream *agentActivityStream) completed(params agentActivityParams, item *a
 
 func (stream *agentActivityStream) completeText(itemID string, kind model.AgentActivityKind, status model.AgentActivityStatus, sent, final string) error {
 	if !strings.HasPrefix(final, sent) {
-		return fmt.Errorf("native completed public text contradicts its streamed prefix")
+		return fmt.Errorf("native completed public text contradicts its streamed prefix: kind=%s item=%.64q sentBytes=%d finalBytes=%d", kind, itemID, len(sent), len(final))
 	}
 	return stream.text(itemID, kind, status, final[len(sent):])
 }

@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"path"
 	"strings"
 	"unicode/utf8"
 
@@ -17,16 +18,17 @@ const (
 // JobRuntimeEvent is a worker observation projected through the existing
 // server-owned realtime hub. It cannot change job or filesystem state.
 type JobRuntimeEvent struct {
-	JobID          int64
-	ChannelID      model.ChannelID
-	StepID         int64
-	Attempt        int64
-	RuntimeEvent   string
-	Detail         string
-	FileOperation  string
-	FilePath       string
-	FileSourcePath string
-	AgentActivity  *model.AgentActivity
+	JobID             int64
+	ChannelID         model.ChannelID
+	StepID            int64
+	Attempt           int64
+	RuntimeEvent      string
+	Detail            string
+	FileOperation     string
+	FilePath          string
+	FileSourcePath    string
+	AgentActivity     *model.AgentActivity
+	AgentCallActivity *model.AgentCallActivity
 }
 
 func (event JobRuntimeEvent) validate() error {
@@ -40,6 +42,18 @@ func (event JobRuntimeEvent) validate() error {
 	}
 	if !canonicalRealtimeRuntimeEvent(event.RuntimeEvent) {
 		return fmt.Errorf("job runtime event name %q is not canonical", event.RuntimeEvent)
+	}
+	if event.RuntimeEvent == "agent_call_activity" {
+		if event.AgentCallActivity == nil {
+			return fmt.Errorf("agent call event requires its typed journal projection")
+		}
+		if event.AgentActivity != nil || event.Detail != "" || event.FileOperation != "" || event.FilePath != "" || event.FileSourcePath != "" {
+			return fmt.Errorf("agent call event carries unrelated runtime fields")
+		}
+		return event.AgentCallActivity.Validate()
+	}
+	if event.AgentCallActivity != nil {
+		return fmt.Errorf("non-call runtime event carries an agent call projection")
 	}
 	if event.RuntimeEvent == "agent_activity" {
 		if event.AgentActivity == nil {
@@ -61,25 +75,39 @@ func (event JobRuntimeEvent) validate() error {
 		return fmt.Errorf("job runtime event detail exceeds its exact UTF-8 boundary")
 	}
 	if event.FileOperation == "" && event.FilePath == "" && event.FileSourcePath == "" {
-		if event.RuntimeEvent == "workspace_file_changed" {
+		if event.RuntimeEvent == "workspace_file_changed" || event.RuntimeEvent == "workspace_directory_read" || event.RuntimeEvent == "workspace_file_read" {
 			return fmt.Errorf("workspace file runtime event requires an operation and path")
 		}
 		return nil
 	}
-	if event.RuntimeEvent != "workspace_file_changed" || event.FileOperation == "" || event.FilePath == "" {
+	if event.FileOperation == "" || event.FilePath == "" {
 		return fmt.Errorf("job runtime file operation and path require workspace_file_changed authority")
 	}
-	switch event.FileOperation {
-	case "create", "replace", "delete":
-		if event.FileSourcePath != "" {
-			return fmt.Errorf("non-move workspace event cannot carry a source path")
+	switch event.RuntimeEvent {
+	case "workspace_directory_read", "workspace_file_read":
+		operation := "read"
+		rootDirectory := event.RuntimeEvent == "workspace_directory_read" && event.FilePath == "."
+		if event.RuntimeEvent == "workspace_directory_read" {
+			operation = "list"
 		}
-	case "move":
-		if event.FileSourcePath == "" {
-			return fmt.Errorf("workspace move event requires a source path")
+		if event.FileOperation != operation || event.FileSourcePath != "" || !rootDirectory && !canonicalRealtimeObservedPath(event.FilePath) {
+			return fmt.Errorf("workspace read event requires its exact observed relative path and operation")
+		}
+	case "workspace_file_changed":
+		switch event.FileOperation {
+		case "create", "replace", "delete":
+			if event.FileSourcePath != "" {
+				return fmt.Errorf("non-move workspace event cannot carry a source path")
+			}
+		case "move":
+			if event.FileSourcePath == "" {
+				return fmt.Errorf("workspace move event requires a source path")
+			}
+		default:
+			return fmt.Errorf("job runtime file operation %q is not registered", event.FileOperation)
 		}
 	default:
-		return fmt.Errorf("job runtime file operation %q is not registered", event.FileOperation)
+		return fmt.Errorf("job runtime file fields require a registered workspace event")
 	}
 	if event.FilePath != strings.TrimSpace(event.FilePath) ||
 		len(event.FilePath) > maxRealtimeFilePathBytes || !utf8.ValidString(event.FilePath) ||
@@ -92,6 +120,11 @@ func (event JobRuntimeEvent) validate() error {
 		return fmt.Errorf("job runtime source path is outside its exact UTF-8 boundary")
 	}
 	return nil
+}
+
+func canonicalRealtimeObservedPath(value string) bool {
+	return value != "" && value != "." && value != ".." && !path.IsAbs(value) && path.Clean(value) == value &&
+		!strings.HasPrefix(value, "../") && !strings.ContainsAny(value, "\\\r\n")
 }
 
 func canonicalRealtimeRuntimeEvent(value string) bool {
@@ -137,8 +170,9 @@ func (s *Server) PublishJobRuntimeEvent(event JobRuntimeEvent) error {
 			StepID: event.StepID, Attempt: event.Attempt,
 			RuntimeEvent: event.RuntimeEvent, Detail: event.Detail,
 			FileOperation: event.FileOperation, FilePath: event.FilePath,
-			FileSourcePath: event.FileSourcePath,
-			AgentActivity:  event.AgentActivity,
+			FileSourcePath:    event.FileSourcePath,
+			AgentActivity:     event.AgentActivity,
+			AgentCallActivity: event.AgentCallActivity,
 		},
 	)
 	return err

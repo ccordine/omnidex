@@ -211,7 +211,7 @@ func (renderer *chatRenderer) agentText(event client.RealtimeEvent, activity mod
 		return renderer.console.SetActivityDetail(event.JobID, event.StepID, agentActivityRoleLabel(activity))
 	}
 	if item.pending != "" && !(key.kind == model.AgentActivityReasoningSummary && item.headingShown && renderer.verbosity == chatNormal) {
-		excerpt := shortAgentExcerpt(item.pending)
+		excerpt := liveAgentExcerpt(item.pending)
 		if key.kind == model.AgentActivityCommandOutput {
 			excerpt = "Output: " + excerpt
 		}
@@ -282,6 +282,15 @@ func shortAgentExcerpt(text string) string {
 	const limit = 120
 	if len(characters) > limit {
 		return string(characters[:limit-1]) + "…"
+	}
+	return string(characters)
+}
+
+func liveAgentExcerpt(text string) string {
+	characters := []rune(strings.TrimSpace(text))
+	const limit = 120
+	if len(characters) > limit {
+		return "…" + string(characters[len(characters)-limit+1:])
 	}
 	return string(characters)
 }

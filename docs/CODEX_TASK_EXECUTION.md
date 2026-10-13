@@ -1,5 +1,59 @@
 # Persistent task execution with Codex
 
+## Active task: complete live terminal planning activity
+
+Root: /home/gryph/Projects/tools/omnidex. Branch: fix/planner-live-activity from
+main c869b275. Goal: show actual public commentary/summaries, file reads/searches,
+commands/output/results and worker handoffs live across planning, execution and
+review in omni chat. Preserve usable verbosity, interruption, feedback, redirection
+and cancellation, exact Charmeleon stations, minimal contexts, permissions,
+durable identities and the twelve unrelated owner files. No deadline/token cap.
+One authoritative tree; no replay of the owner's canceled Daemonet job.
+
+Implemented: existing semantic calls expose an optional public observation stream,
+with original native identities/result capture and tool-free boundaries preserved.
+Each actual semantic call displays its action/model/start/result. Typed handoffs
+follow persisted call journal boundaries for planning, execution, independent and
+overall review. Actual directory/file reads use the existing authenticated realtime
+path. Long unfinished public text keeps showing its newest fragment; verbosity
+retains quiet/normal/verbose/debug behavior. Native command output preserves live
+arrival order; lossy completed aggregates are used only without live output.
+Indexed summary boundaries retain empty sections. Private reasoning, semantic
+answers and final structured agent results are excluded from public activity.
+
+Verified 2026-10-13 UTC: meaningful red regressions preceded the fixes. All nine
+affected Go packages passed under race on the final source; vet passed. Isolated
+PostgreSQL integration verified early public observations with unchanged original
+semantic evidence and expired-authority rejection. Final native real-PTY two-turn
+omni chat qualification passed in 306.095 s with gpt-6.1-sol/high: ordinary requests,
+actual call starts/results before planning completes, responsive /status, public
+summaries, reads, commands/exits, all four agent roles, verbose command output,
+recaps, independently checked edited source and unchanged unrelated owner data.
+No intermediate specification, prompt correction or manual source intervention.
+The ordinary low-effort run completed both tasks/holdouts but emitted no public
+summary/commentary frames; its summary assertion failed (217.07 s). Three earlier
+semantic samples likewise emitted no summary and reported zero reasoning tokens.
+Summary availability is provider output; code does not fabricate thoughts or change
+production effort/preferences. Earlier native failures reproduced an isolated
+identity-fixture error and valid stream-completion handling, now fixed and checked.
+
+Qualified candidate SHA256:
+CLI eef4ef8c93e06c266107b59672288796c6f48250376b66c43a5caaeee28491b2
+core 6e910eca21580696ac6f6a1a95a069352879ce854a56a1dc1e3f46f83080335d
+Delivery pending: one scoped commit/push/PR and atomic activation of those matching
+binaries. Fresh audit found no active production jobs, unchanged protected owner
+hashes and runtime.env (0600); captured thirteen durable row-family fingerprints.
+Restart only the core; verify readiness, installed launcher/controls and preservation.
+
+Resources: one compiler/two workers; shared caches preserved. Task-owned fixture
+container omnidex-planner-activity-pg: two CPUs/512 MiB/1 GiB tmpfs, auto-remove.
+New postgres:18-alpine image 120,059,278 bytes; retire when unshared. Temporary
+native/PTY source fixtures (1 MiB), scratch (128 MiB), bounded terminal transcripts
+(256 KiB/15 min), protocol export (16 MiB/10 s) have been retired by their lifecycles.
+Empty bin/agent-runtime remains for final cleanup. Candidate CLI/core (128 MiB
+budget each) retire by activation. No source copies, production test data, altered
+settings, unrelated cache deletion or additional installation trees.
+
 ## Completed task: readable live terminal progress
 
 Root: /home/gryph/Projects/tools/omnidex. Continue fix/terminal-mixed-paste and

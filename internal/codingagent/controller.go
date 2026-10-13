@@ -22,6 +22,7 @@ type Controller struct {
 	Environment         Environment
 	Evidence            EvidenceStore
 	Activity            func(model.AgentActivity)
+	CallActivity        func(model.AgentCallActivity)
 }
 
 func (controller *Controller) Run(ctx context.Context) error {

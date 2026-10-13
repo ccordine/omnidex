@@ -49,7 +49,11 @@ func agentActivityRoleLabel(activity model.AgentActivity) string {
 	if activity.Source == model.AgentActivityVerification {
 		return "Verifying checks"
 	}
-	switch activity.Role {
+	return agentRoleLabel(activity.Role)
+}
+
+func agentRoleLabel(role string) string {
+	switch role {
 	case "plan":
 		return "Planning"
 	case "execute":
@@ -134,7 +138,15 @@ func (renderer chatRenderer) realtimeActivity(event client.RealtimeEvent) error 
 	if event.EventName != client.RealtimeJobRuntimeEvent {
 		return nil
 	}
+	if activity, known := workerActivityForEvent(event); known {
+		return renderer.workerActivity(activity)
+	}
 	switch event.RuntimeEvent {
+	case "workspace_directory_read", "workspace_file_read":
+		if renderer.verbosity == chatQuiet {
+			return nil
+		}
+		return renderer.system("%s · %q", event.FileOperation, event.FilePath)
 	case "workspace_file_changed":
 		if renderer.verbosity == chatQuiet {
 			return nil

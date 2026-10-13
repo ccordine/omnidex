@@ -26,24 +26,25 @@ const (
 )
 
 type RealtimeEvent struct {
-	ID             uint64               `json:"id,omitempty"`
-	OccurredAt     string               `json:"occurredAt,omitempty"`
-	EventName      string               `json:"eventName"`
-	LatestID       uint64               `json:"latestID,omitempty"`
-	ReplayCount    int                  `json:"replayCount,omitempty"`
-	SyncRequired   bool                 `json:"syncRequired,omitempty"`
-	JobID          int64                `json:"jobID,omitempty"`
-	ChannelID      model.ChannelID      `json:"channelID,omitempty"`
-	Phase          string               `json:"phase,omitempty"`
-	Summary        string               `json:"summary,omitempty"`
-	StepID         int64                `json:"stepID,omitempty"`
-	Attempt        int64                `json:"attempt,omitempty"`
-	RuntimeEvent   string               `json:"runtimeEvent,omitempty"`
-	Detail         string               `json:"detail,omitempty"`
-	FileOperation  string               `json:"fileOperation,omitempty"`
-	FilePath       string               `json:"filePath,omitempty"`
-	FileSourcePath string               `json:"fileSourcePath,omitempty"`
-	AgentActivity  *model.AgentActivity `json:"agentActivity,omitempty"`
+	ID                uint64                   `json:"id,omitempty"`
+	OccurredAt        string                   `json:"occurredAt,omitempty"`
+	EventName         string                   `json:"eventName"`
+	LatestID          uint64                   `json:"latestID,omitempty"`
+	ReplayCount       int                      `json:"replayCount,omitempty"`
+	SyncRequired      bool                     `json:"syncRequired,omitempty"`
+	JobID             int64                    `json:"jobID,omitempty"`
+	ChannelID         model.ChannelID          `json:"channelID,omitempty"`
+	Phase             string                   `json:"phase,omitempty"`
+	Summary           string                   `json:"summary,omitempty"`
+	StepID            int64                    `json:"stepID,omitempty"`
+	Attempt           int64                    `json:"attempt,omitempty"`
+	RuntimeEvent      string                   `json:"runtimeEvent,omitempty"`
+	Detail            string                   `json:"detail,omitempty"`
+	FileOperation     string                   `json:"fileOperation,omitempty"`
+	FilePath          string                   `json:"filePath,omitempty"`
+	FileSourcePath    string                   `json:"fileSourcePath,omitempty"`
+	AgentActivity     *model.AgentActivity     `json:"agentActivity,omitempty"`
+	AgentCallActivity *model.AgentCallActivity `json:"agentCallActivity,omitempty"`
 }
 
 type RealtimeProtocolError struct {

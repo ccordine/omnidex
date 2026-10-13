@@ -152,6 +152,9 @@ func renderAgentQuestions(destination *strings.Builder, pause *model.CodingAgent
 }
 
 func (renderer *chatRenderer) realtime(event client.RealtimeEvent) error {
+	if event.AgentCallActivity != nil {
+		return renderer.agentCallActivity(*event.AgentCallActivity)
+	}
 	if event.AgentActivity != nil {
 		return renderer.nativeActivity(event)
 	}

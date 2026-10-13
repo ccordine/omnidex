@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/llm"
+	"github.com/gryph/omnidex/internal/model"
 )
 
 type Client struct {
@@ -38,6 +39,12 @@ func (client *Client) PrepareExactRequest(prepared llm.PreparedModel) (llm.Prepa
 }
 
 func (client *Client) GeneratePreparedExact(parent context.Context, prepared llm.PreparedModel) (llm.PreparedGeneration, error) {
+	return client.GeneratePreparedExactWithActivity(parent, prepared, nil)
+}
+
+// GeneratePreparedExactWithActivity observes public native items for this
+// semantic call only. Observation cannot change its request or result contract.
+func (client *Client) GeneratePreparedExactWithActivity(parent context.Context, prepared llm.PreparedModel, observer func(model.AgentActivity) error) (llm.PreparedGeneration, error) {
 	result := llm.PreparedGeneration{Schema: llm.PreparedGenerationSchemaV1, Protocol: prepared.Protocol,
 		ProviderRequestDisposition: llm.ProviderRequestNotDispatched, ProviderResponseDisposition: llm.ProviderResponseTransportError}
 	if prepared.Protocol != llm.ExactPreparedProtocolCodexV1 {
@@ -58,7 +65,7 @@ func (client *Client) GeneratePreparedExact(parent context.Context, prepared llm
 		return result, err
 	}
 	defer connection.close()
-	capture, dispatched, err := connection.generate(ctx, request)
+	capture, dispatched, err := connection.generate(ctx, request, observer)
 	if dispatched {
 		result.ProviderRequestDisposition = llm.ProviderRequestDispatched
 	}

@@ -3,6 +3,7 @@ package codingagent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 
@@ -78,6 +79,9 @@ func (controller *Controller) invoke(ctx context.Context, call Assignment, round
 	if err != nil {
 		return Result{}, err
 	}
+	if err := controller.emitCallActivity(callID, call, model.AgentCallActivityStarted); err != nil {
+		return Result{}, err
+	}
 	provider := controller.Providers[call.Route.Provider]
 	encodedCall, err := json.Marshal(call)
 	if err != nil {
@@ -136,15 +140,20 @@ func (controller *Controller) invoke(ctx context.Context, call Assignment, round
 		}
 		return nil
 	})
-	if runErr != nil {
-		_, _ = controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "call_failed", CallID: callID, Role: call.Role, TaskID: taskID, Round: round})
-		return result, runErr
+	if runErr == nil && (frames == 0 || result.Provider != call.Route.Provider || result.Model != call.Route.Model || !result.Completed || !json.Valid(result.Content) || result.ThreadID == "" || result.TurnID == "") {
+		runErr = fmt.Errorf("agent returned unbound or incomplete native evidence")
 	}
-	if frames == 0 || result.Provider != call.Route.Provider || result.Model != call.Route.Model || !result.Completed || !json.Valid(result.Content) || result.ThreadID == "" || result.TurnID == "" {
-		return result, fmt.Errorf("agent returned unbound or incomplete native evidence")
+	if runErr != nil {
+		if _, err := controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "call_failed", CallID: callID, Role: call.Role, TaskID: taskID, Round: round}); err != nil {
+			return result, errors.Join(runErr, err)
+		}
+		return result, errors.Join(runErr, controller.emitCallActivity(callID, call, model.AgentCallActivityFailed))
 	}
 	result.Evidence = nil // Original frames already belong to the queue journal.
 	result.CallID = callID
 	_, err = controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "call_completed", CallID: callID, Role: call.Role, TaskID: taskID, Round: round, Result: &result})
-	return result, err
+	if err != nil {
+		return result, err
+	}
+	return result, controller.emitCallActivity(callID, call, model.AgentCallActivityCompleted)
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/llm"
+	"github.com/gryph/omnidex/internal/model"
 )
 
 type threadResult struct {
@@ -18,7 +19,7 @@ type threadResult struct {
 	} `json:"thread"`
 }
 
-func (connection *connection) generate(ctx context.Context, request llm.CodexStationRequest) (llm.CodexResponseCapture, bool, error) {
+func (connection *connection) generate(ctx context.Context, request llm.CodexStationRequest, observer func(model.AgentActivity) error) (llm.CodexResponseCapture, bool, error) {
 	var capture llm.CodexResponseCapture
 	if _, err := connection.call("initialize", map[string]any{
 		"clientInfo":   map[string]string{"name": "omnidex", "title": "Omnidex", "version": "0.5.0"},
@@ -58,9 +59,13 @@ func (connection *connection) generate(ctx context.Context, request llm.CodexSta
 			ID string `json:"id"`
 		} `json:"turn"`
 	}
+	summary := "none"
+	if observer != nil {
+		summary = "detailed"
+	}
 	capture.Turn, err = connection.call("turn/start", map[string]any{"threadId": thread.Thread.ID,
 		"input": []any{map[string]string{"type": "text", "text": request.Prompt}}, "model": request.Model,
-		"environments": []any{}, "runtimeWorkspaceRoots": []string{}, "effort": "low", "summary": "none",
+		"environments": []any{}, "runtimeWorkspaceRoots": []string{}, "effort": "low", "summary": summary,
 		"approvalPolicy": "never", "sandboxPolicy": map[string]any{"type": "readOnly", "networkAccess": false}}, &turn)
 	if err != nil {
 		return capture, true, err
@@ -68,6 +73,7 @@ func (connection *connection) generate(ctx context.Context, request llm.CodexSta
 	if thread.Thread.ID == "" || turn.Turn.ID == "" {
 		return capture, true, fmt.Errorf("Codex did not identify its original request")
 	}
+	activity := newSemanticActivityStream(thread.Thread.ID, turn.Turn.ID, observer)
 	for ctx.Err() == nil {
 		frame, err := connection.next()
 		if err != nil {
@@ -75,6 +81,9 @@ func (connection *connection) generate(ctx context.Context, request llm.CodexSta
 		}
 		finished, err := collectGenerationFrame(frame, connection.lastFrame, &capture, thread.Thread.ID, turn.Turn.ID)
 		if err != nil {
+			return capture, true, err
+		}
+		if err := activity.consume(frame, connection.lastFrame); err != nil {
 			return capture, true, err
 		}
 		if finished {
