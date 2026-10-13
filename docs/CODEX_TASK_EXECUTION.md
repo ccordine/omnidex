@@ -1,6 +1,6 @@
 # Persistent task execution with Codex
 
-## Active correction: actual chat questions, input and stopping
+## Completed correction: actual chat questions, input and stopping
 
 Root /home/gryph/Projects/tools/omnidex; branch fix/planner-live-activity,
 existing PR #9. Owner reproduced that progress and the cursor share one line,
@@ -39,6 +39,8 @@ Actual application qualification may run one candidate core on loopback 18091
 and a second fixture schema, with the actual repository as its workspace and
 existing Codex settings. No substitute project, copied credentials/config, or
 source edits by the test. Core/terminal processes retire after qualification.
+PR description helper bin/chat-questions-pr-body.txt: at most 32 KiB, retire
+immediately after updating existing PR9.
 
 Checkpoint: installed app job7 reproduced missing CLI-command meanings. All nine
 affected Go packages passed race; focused PostgreSQL intake/answer/replan/stop/
@@ -71,6 +73,29 @@ Full queue/database integration race rerun passed (99.520 s / 2.780 s) after the
 measured fixture adjustment. Vet passed. No Python was invoked. Final qualified
 CLI SHA256 26dd8d420f89e36817e8ad7b5fd0f628dd9450ea05143e288d302858aac7185a;
 core SHA256 a38868c42f9c66c01ce17818d5535851c59acb565b1fcffe825535fcc51efb5a.
+
+Delivered source 1e0aedb9 on fix/planner-live-activity in existing PR9,
+https://github.com/ccordine/omnidex/pull/9 (unmerged). Final builds from that source
+were atomically installed after preserving maintenance and a fresh no-active-job
+audit; only core restarted. Installed CLI SHA256
+9638c95ae9d004f82de6909b9942394ca82063ce6a6b2dc8dff6e69dd3b0ddfe;
+core SHA256 1f53231f7c39e7cd088ea77d5db305b8299d00ff7f697cedda80386529b7b676.
+Readiness passed; the actual installed launcher/live core answered the formerly
+failing command question correctly in its own job8, then passed help/status/idle
+stop/exit. Activation preserved all fifteen audited row families before that
+intentional test addition; owner jobs2–6 remained failed/canceled. All twelve
+protected owner-file hashes and runtime.env (0600) remained unchanged. All three
+existing services remain active. Final full worker/client/API race reruns passed.
+
+Cleaned: actual terminal/core test processes exited, candidate binaries became
+the canonical installed binaries, PR helper was retired, the task-owned
+auto-remove PostgreSQL fixture and its unshared 120,059,278-byte image were
+retired. Shared caches and owner work were preserved. Agent-generated question
+binding and wait races have protocol/component/database evidence; native app
+qualification covered planning/conversation/control flows and did not execute
+or review a source-writing assignment. Compact status uses single-cell text;
+original Unicode transcript content remains intact. The existing editor's
+general Unicode/grapheme behavior was not replaced.
 
 ## Completed correction: explain every actual planning check
 
