@@ -25,14 +25,6 @@ func objectiveInstructionPathProvenance(
 		)
 	}
 	selected := make(map[string]struct{})
-	for _, identity := range modelcontext.PathIdentities(
-		instruction, assemblyline.ArtifactIdentityProvenance{},
-	) {
-		relative, err := objectiveRelativeArtifactPath(root, identity.Value)
-		if err == nil {
-			selected[relative] = struct{}{}
-		}
-	}
 	for _, token := range modelcontext.LexicalPathTokens(instruction) {
 		if err := ctx.Err(); err != nil {
 			return assemblyline.ArtifactIdentityProvenance{}, err
@@ -41,19 +33,46 @@ func objectiveInstructionPathProvenance(
 		if err != nil {
 			return assemblyline.ArtifactIdentityProvenance{}, err
 		}
+		qualified := false
+		for _, identity := range modelcontext.PathIdentities(
+			token.Value, assemblyline.ArtifactIdentityProvenance{},
+		) {
+			if identity.Start == 0 && identity.End == len(token.Value) {
+				qualified = true
+				break
+			}
+		}
+		if token.Quoted && !plausibleQuotedObjectiveArtifact(token.Value, recognized) {
+			continue
+		}
+		if token.Quoted && strings.ContainsAny(token.Value, `/\`) {
+			qualified = true
+		}
+		if !recognized && !qualified {
+			continue
+		}
 		relative, err := objectiveRelativeArtifactPath(root, token.Value)
 		if err != nil {
 			continue
 		}
-		if recognized || token.Quoted {
-			selected[relative] = struct{}{}
-		}
+		selected[relative] = struct{}{}
 	}
 	paths := make([]string, 0, len(selected))
 	for path := range selected {
 		paths = append(paths, path)
 	}
 	return modelcontext.NewArtifactIdentityProvenance(paths)
+}
+
+func plausibleQuotedObjectiveArtifact(value string, recognized bool) bool {
+	if value == "" || value == "-" || value == "--" || value != strings.TrimSpace(value) ||
+		strings.ContainsAny(value, "\r\n\t{}[]<>,;'\"") {
+		return false
+	}
+	if strings.ContainsRune(value, ':') && !(len(value) >= 2 && value[1] == ':') {
+		return false
+	}
+	return recognized || !strings.ContainsRune(value, ' ') || strings.ContainsAny(value, `/\`)
 }
 
 func objectiveRelativeArtifactPath(root, candidate string) (string, error) {

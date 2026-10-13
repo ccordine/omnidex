@@ -1,5 +1,40 @@
 # Persistent task execution with Codex
 
+## Completed qualification: real chat application gauntlet
+
+Root `/home/gryph/Projects/tools/omnidex`; branch
+`feat/codex-ledger-agent-mode`; existing stacked PR #10. The owner requires an
+actual candidate-app run through `omni chat` that builds a fresh nontrivial
+project, plus inspection of whether its visible actions and workflow are useful.
+The candidate ran through the normal terminal client against an isolated core,
+database schema and empty project. No project source, plan or review result was
+injected or manually corrected.
+
+Two framework blockers found by the run are corrected generically. Instruction
+path provenance no longer mistakes inline JSON, command names or the stdin token
+`-` for workspace artifacts while retaining registered and path-qualified
+artifacts. Native Plan results canonicalize repeated leading `./` on declared
+workspace files before the existing strict workload validator runs.
+
+The qualification itself failed and does not establish end-to-end readiness.
+Intake took 9 minutes 52 seconds and 122 semantic calls, then admitted only 10
+outcomes and omitted the requested `ready` and `order` behavior. Native Plan
+asked for schema and syntax already present in the request, required three calls,
+and froze automatically without an explicit terminal approval. Execution wrote
+only the first task's `go.mod`, `main.go` and `main_test.go`. Its first narrow
+Review included `git status` in the intentionally fresh non-Git directory, then
+a provider `serverOverloaded` response failed the entire job without retry or
+resume after 18 minutes 15 seconds.
+
+Independent post-run checks confirm that the partial project is gofmt-clean and
+its own `go test ./...` and `go vet ./...` pass, but all six required semantic
+validation failures return success, `ready` and `order` are absent, JSON output
+is absent and no README exists. Therefore the observed workflow is not yet
+sensible or productive enough for this gauntlet. Task-owned candidate binaries,
+cache, isolated schema, core process, database container and unshared image are
+retired after source verification; production and unrelated owner work remain
+untouched.
+
 ## Completed task: port Codex Ledger native agent modes
 
 Root `/home/gryph/Projects/tools/omnidex`; branch

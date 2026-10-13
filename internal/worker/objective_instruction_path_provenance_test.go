@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
@@ -50,6 +52,54 @@ func TestObjectiveInstructionPathProvenanceRedactsEveryExplicitAdapterRecognized
 	if redacted != "repair ARTIFACT_1 and ARTIFACT_2" || len(identities) != 2 ||
 		identities[0].Value != "main.go" || identities[1].Value != "one/main.go" {
 		t.Fatalf("unexpected direct-path redaction %q with %#v", redacted, identities)
+	}
+}
+
+func TestObjectiveInstructionPathProvenanceDoesNotTreatInlineJSONAsAPath(t *testing.T) {
+	root := t.TempDir()
+	instruction := "Build a CLI that reads `{ \"tasks\": [{\"id\":\"build\",\"depends_on\":[\"lint\"]}] }` and " +
+		"`{\"route\":\"src/main.go\"}`. Write main.go and `docs/My Guide.md`."
+	provenance, err := objectiveInstructionPathProvenance(
+		context.Background(), root, instruction,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"docs/My Guide.md", "main.go"}
+	if got := provenance.Paths(); !slices.Equal(got, want) {
+		t.Fatalf("artifact provenance = %#v, want %#v", got, want)
+	}
+	gauntlet := "Build a dependency-free Go CLI named relayplan in this empty directory. It reads a JSON file (or `-` for stdin) shaped as " +
+		"`{ \"tasks\": [{\"id\":\"build\",\"duration_minutes\":5,\"depends_on\":[\"lint\"],\"done\":false}] }`. " +
+		"Provide validate, ready, and order subcommands. Run gofmt, go test ./..., and go vet ./... before calling it complete."
+	gauntletProvenance, err := objectiveInstructionPathProvenance(context.Background(), root, gauntlet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	redacted, identities, err := assemblyline.RedactArtifactIdentities(gauntlet, gauntletProvenance)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(gauntletProvenance.Paths()) != 0 || len(identities) != 1 || identities[0].Value != "./" ||
+		strings.Contains(redacted, "ARTIFACT_1 for stdin") || !strings.Contains(redacted, "shaped as `{ \"tasks\"") {
+		t.Fatalf("gauntlet redaction = %q with paths %#v and identities %#v", redacted, gauntletProvenance.Paths(), identities)
+	}
+	applicationContext, err := assemblyline.BootstrapApplicationContext(redacted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := assemblyline.NewApplicationRequirementInventoryJob(
+		assemblyline.ApplicationRequirementInventoryInput{UserRequest: redacted, Context: applicationContext},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt, err := assemblyline.RenderPortableJob(job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateDirectCodingSemanticPrompt(prompt, identities, gauntletProvenance); err != nil {
+		t.Fatalf("gauntlet semantic prompt boundary: %v", err)
 	}
 }
 
