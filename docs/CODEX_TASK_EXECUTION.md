@@ -46,8 +46,9 @@ foreign review threads fail instead of becoming clean acceptance.
 Verified on 2026-10-13: focused Codex/coding-agent/queue tests passed. The final
 affected race suite passed for `internal/codex`, `internal/codingagent`,
 `internal/queue`, `internal/worker`, `internal/runtime` and `cmd/omni`; the worker
-and chat packages used only their loopback test listeners. Full `go vet -p 1
-./...`, both `cmd/omnidex` and `cmd/omni` builds, and `git diff --check` passed.
+and chat packages used only their loopback test listeners. Full
+`go vet -p 1 ./...`, both `cmd/omnidex` and `cmd/omni` builds, and
+`git diff --check` passed.
 The read-only installed-Codex native Plan qualification completed in 30.986 s
 with one task and one integration check (thread
 `01a1358d-d7ac-7fa1-8187-9bed751a2064`, turn
