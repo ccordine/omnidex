@@ -3,8 +3,10 @@ package codex
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/gryph/omnidex/internal/codingagent"
 )
@@ -69,30 +71,104 @@ func mapAgentReviewResult(call codingagent.Assignment, content json.RawMessage) 
 	if call.Role != codingagent.Review && call.Role != codingagent.OverallReview {
 		return content, nil
 	}
+	document := string(content)
+	if len(content) > 0 && content[0] == '"' {
+		if err := json.Unmarshal(content, &document); err != nil {
+			return nil, fmt.Errorf("decode native review text: %w", err)
+		}
+	}
+	raw, comments, err := splitNativeReviewDocument(document)
+	if err != nil {
+		return nil, fmt.Errorf("decode native agent review: %w", err)
+	}
+	review, directErr := decodeAgentReviewReceipt(call, raw)
+	if directErr != nil {
+		var envelope struct {
+			Findings []struct {
+				Title string `json:"title"`
+				Body  string `json:"body"`
+			} `json:"findings"`
+			OverallExplanation string `json:"overall_explanation"`
+			OverallCorrectness string `json:"overall_correctness"`
+		}
+		if err := json.Unmarshal(raw, &envelope); err != nil {
+			return nil, fmt.Errorf("decode native agent review: %w", directErr)
+		}
+		receipt, details, err := splitNativeReviewDocument(envelope.OverallExplanation)
+		if err == nil {
+			review, err = decodeAgentReviewReceipt(call, receipt)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("native agent review omitted its exact task and criterion receipt: %w", err)
+		}
+		if len(envelope.Findings) > len(review.Findings) {
+			return nil, fmt.Errorf("native agent review omitted referenced findings from its structured receipt")
+		}
+		for index, finding := range envelope.Findings {
+			detail := strings.TrimSpace(strings.TrimSpace(finding.Title) + ": " + strings.TrimSpace(finding.Body))
+			if detail != ":" && detail != "" {
+				review.Findings[index].Observation = strings.TrimSpace(review.Findings[index].Observation + "\n\nNative review detail: " + detail)
+			}
+		}
+		if details != "" {
+			comments = strings.TrimSpace(details + "\n\n" + comments)
+		}
+		if envelope.OverallCorrectness != "" && envelope.OverallCorrectness != "patch is correct" && len(review.Findings) == 0 {
+			return nil, fmt.Errorf("native agent review reported %q without a referenced finding", envelope.OverallCorrectness)
+		}
+	}
+	if comments != "" {
+		if len(review.Findings) == 0 {
+			return nil, fmt.Errorf("native agent review returned unreferenced full review comments")
+		}
+		review.Findings[0].Observation = strings.TrimSpace(review.Findings[0].Observation + "\n\nFull review comments:\n" + comments)
+	}
+	return json.Marshal(review)
+}
+
+func splitNativeReviewDocument(text string) (json.RawMessage, string, error) {
+	decoder := json.NewDecoder(strings.NewReader(text))
+	var raw json.RawMessage
+	if err := decoder.Decode(&raw); err != nil {
+		return nil, "", err
+	}
+	tail := strings.TrimSpace(text[decoder.InputOffset():])
+	if tail == "" {
+		return raw, "", nil
+	}
+	const heading = "Full review comments:"
+	if !strings.HasPrefix(tail, heading) {
+		return nil, "", errors.New("unexpected text after native review result")
+	}
+	return raw, strings.TrimSpace(strings.TrimPrefix(tail, heading)), nil
+}
+
+func decodeAgentReviewReceipt(call codingagent.Assignment, content json.RawMessage) (codingagent.ReviewResult, error) {
 	var native struct {
-		Findings  []nativeAgentReviewFinding `json:"findings"`
-		Questions []string                   `json:"questions"`
+		Findings     []nativeAgentReviewFinding `json:"findings"`
+		Questions    []string                   `json:"questions"`
+		Verification string                     `json:"verification,omitempty"`
 	}
 	decoder := json.NewDecoder(bytes.NewReader(content))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&native); err != nil {
-		return nil, fmt.Errorf("decode native agent review: %w", err)
+		return codingagent.ReviewResult{}, err
 	}
 	if err := decoder.Decode(new(any)); err != io.EOF {
-		return nil, fmt.Errorf("native agent review contains trailing data")
+		return codingagent.ReviewResult{}, fmt.Errorf("native agent review contains trailing data")
 	}
 	if native.Findings == nil || native.Questions == nil {
-		return nil, fmt.Errorf("native agent review requires findings and questions arrays")
+		return codingagent.ReviewResult{}, fmt.Errorf("native agent review requires findings and questions arrays")
 	}
 	tasks := map[string]agentReviewTaskReference{}
 	for _, task := range agentReviewReferences(call) {
 		tasks[task.Reference] = task
 	}
-	review := codingagent.ReviewResult{Findings: make([]codingagent.Finding, 0, len(native.Findings)), Questions: native.Questions}
+	review := codingagent.ReviewResult{Findings: make([]codingagent.Finding, 0, len(native.Findings)), Questions: native.Questions, Verification: native.Verification}
 	for _, finding := range native.Findings {
 		task, known := tasks[finding.TaskReference]
 		if !known || finding.File == nil || finding.Observation == nil {
-			return nil, fmt.Errorf("native agent review finding lacks its exact task reference or result fields")
+			return codingagent.ReviewResult{}, fmt.Errorf("native agent review finding lacks its exact task reference or result fields")
 		}
 		criteria := map[string]string{}
 		for _, criterion := range task.Criteria {
@@ -100,11 +176,11 @@ func mapAgentReviewResult(call codingagent.Assignment, content json.RawMessage) 
 		}
 		requirement, known := criteria[finding.CriterionReference]
 		if !known {
-			return nil, fmt.Errorf("native agent review finding has an unknown criterion reference for its task")
+			return codingagent.ReviewResult{}, fmt.Errorf("native agent review finding has an unknown criterion reference for its task")
 		}
 		review.Findings = append(review.Findings, codingagent.Finding{
 			TaskID: task.TaskID, Requirement: requirement, File: *finding.File, Observation: *finding.Observation,
 		})
 	}
-	return json.Marshal(review)
+	return review, nil
 }

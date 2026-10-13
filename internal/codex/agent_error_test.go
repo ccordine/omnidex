@@ -75,7 +75,7 @@ func TestAgentNativeErrorRejectsUnboundOrMissingRetryAuthority(t *testing.T) {
 		`{"method":"error","params":{"threadId":"thread","turnId":"turn","willRetry":true,"error":null}}`,
 	} {
 		result := codingagent.Result{ThreadID: "thread", TurnID: "turn"}
-		finished, err := collectAgentFrame(decodeAgentTestFrame(t, raw), json.RawMessage(raw), &result)
+		finished, err := collectAgentFrame(decodeAgentTestFrame(t, raw), json.RawMessage(raw), &result, codingagent.Execute)
 		if err == nil || finished || result.Completed {
 			t.Fatalf("unbound or malformed native retry notification accepted: %s", raw)
 		}

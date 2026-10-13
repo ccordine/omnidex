@@ -32,6 +32,7 @@ func TestAgentPlanningAcceptanceUsesFinalizedAuthority(t *testing.T) {
 		"Derive acceptance criteria only from the frozen behavioral requirements and explicit construction facts",
 		"Choosing a development method or implementation order does not authorize an additional acceptance obligation",
 		"Require historical process evidence only when the supplied construction facts explicitly require that process",
+		"workload-level checks array must also contain one or more executable integration checks",
 	} {
 		if !strings.Contains(instruction, boundary) {
 			t.Fatalf("planner lacks authority boundary: %s", boundary)
@@ -59,6 +60,9 @@ func TestAgentReviewPreservesExplicitAcceptanceWithoutAddingProcess(t *testing.T
 		}
 		if !strings.Contains(instruction, "unless the task explicitly requires it") || !strings.Contains(instruction, "Existing tests do not by themselves require historical evidence") {
 			t.Fatal("review turned verification into an unrequested historical process")
+		}
+		if !strings.Contains(instruction, "Review result JSON Schema:") || !strings.Contains(instruction, `"verification"`) {
+			t.Fatal("native review lacks its exact typed result contract")
 		}
 	}
 }

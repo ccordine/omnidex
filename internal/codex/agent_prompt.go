@@ -19,7 +19,7 @@ func renderAgentAssignment(call codingagent.Assignment) (string, error) {
 	var instruction string
 	switch call.Role {
 	case codingagent.Plan:
-		instruction = "Decompose only the finalized requirements into ordered narrow execution tasks, identified by requirement_ids. Resolve artifact references using the supplied code-owned bindings; spell the actual relevant values in each task rather than leaving unresolved tokens. Honor the supplied construction facts in the relevant tasks. Each task names exact read/write files, narrow acceptance criteria, preceding dependencies, and executable checks that actually test the behavior. Derive acceptance criteria only from the frozen behavioral requirements and explicit construction facts: observable behavior, required artifacts, and meaningful verification. Choosing a development method or implementation order does not authorize an additional acceptance obligation. Require historical process evidence only when the supplied construction facts explicitly require that process. Existing read dependencies must come from the file catalog. When new_files_allowed is true you are authorized to declare new source/test/documentation paths inside the selected workspace, even when the catalog is empty; execution grants are created only after code validates your plan. Planning itself remains read-only. Choose exact file names unless an explicit binding fixes them; do not ask the user to perform planning. Use available executables for offline checks. Tasks receive no original conversation. Include only dependencies and context needed for each task. Return concrete questions only for information or authority absent from this context. Preserve the finalized requirements; do not reinterpret a user request, execute the plan or add product scope. Verification has read-only source and writable disposable caches; network access is disabled."
+		instruction = "Decompose only the finalized requirements into ordered narrow execution tasks, identified by requirement_ids. Resolve artifact references using the supplied code-owned bindings; spell the actual relevant values in each task rather than leaving unresolved tokens. Honor the supplied construction facts in the relevant tasks. Each task names exact read/write files, narrow acceptance criteria, preceding dependencies, and one or more executable checks that actually test the behavior. The workload-level checks array must also contain one or more executable integration checks for the completed task set; it cannot be empty. Derive acceptance criteria only from the frozen behavioral requirements and explicit construction facts: observable behavior, required artifacts, and meaningful verification. Choosing a development method or implementation order does not authorize an additional acceptance obligation. Require historical process evidence only when the supplied construction facts explicitly require that process. Existing read dependencies must come from the file catalog. When new_files_allowed is true you are authorized to declare new source/test/documentation paths inside the selected workspace, even when the catalog is empty; execution grants are created only after code validates your plan. Planning itself remains read-only. Choose exact file names unless an explicit binding fixes them; do not ask the user to perform planning. Use available executables for offline checks. Tasks receive no original conversation. Include only dependencies and context needed for each task. Return concrete questions only for information or authority absent from this context. Preserve the finalized requirements; do not reinterpret a user request, execute the plan or add product scope. Verification has read-only source and writable disposable caches; network access is disabled."
 	case codingagent.Execute:
 		instruction = "Fulfill this task completely in its granted files. Edit source using the omnidex_write_file tool, which writes only this task's allowed files through Omnidex. Native shell commands can read source and write disposable tool caches; they cannot edit source. Run the task's checks. Address only the supplied findings. Report concrete questions if required information or authority is missing. Your report is not completion authority."
 	case codingagent.Review:
@@ -30,12 +30,16 @@ func renderAgentAssignment(call codingagent.Assignment) (string, error) {
 		return "", fmt.Errorf("unknown agent role")
 	}
 	if call.Role == codingagent.Review || call.Role == codingagent.OverallReview {
-		instruction += " Omnidex mechanically limits execution source writes to each task's write_files through its validated writer; native source mounts are read-only. Files outside those grants cannot be changed by this job's execution. Assess unchanged-file obligations against that enforced boundary; do not require before/after history for files this execution cannot write."
+		instruction += " Omnidex mechanically limits execution source writes to each task's write_files through its validated writer; native source mounts are read-only. Files outside those grants cannot be changed by this job's execution. Assess unchanged-file obligations against that enforced boundary; do not require before/after history for files this execution cannot write. This call runs through Codex native Review mode. Return the exact review object described below directly when permitted. If native Review requires its standard review envelope, put that complete JSON object in overall_explanation and mirror every native finding in its referenced findings array. Do not leave defects only in free-form native findings or comments."
 		references, err := json.Marshal(agentReviewReferences(call))
 		if err != nil {
 			return "", err
 		}
-		instruction += "\n\nReview reference table:\n" + string(references)
+		contract, err := json.Marshal(agentOutputSchema(call))
+		if err != nil {
+			return "", err
+		}
+		instruction += "\n\nReview result JSON Schema:\n" + string(contract) + "\n\nReview reference table:\n" + string(references)
 	}
 	prompt := instruction + "\n\nAssignment:\n" + string(encoded)
 	if len(prompt) > llm.MaxExactPreparedModelInputBytes {
@@ -74,5 +78,5 @@ func agentOutputSchema(call codingagent.Assignment) map[string]any {
 	if call.Role == codingagent.Review && len(variants) == 1 {
 		finding = variants[0]
 	}
-	return object(map[string]any{"findings": map[string]any{"type": "array", "items": finding}, "questions": strings}, "findings", "questions")
+	return object(map[string]any{"findings": map[string]any{"type": "array", "items": finding}, "questions": strings, "verification": text}, "findings", "questions")
 }

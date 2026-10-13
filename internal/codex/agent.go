@@ -44,33 +44,32 @@ func (client *Client) Run(parent context.Context, call codingagent.Assignment, w
 	if err := recordAgentFrame(&result, raw, event); err != nil {
 		return result, err
 	}
-	var turn struct {
-		Turn struct {
-			ID string `json:"id"`
-		} `json:"turn"`
-	}
 	prompt, err := renderAgentAssignment(call)
 	if err != nil {
 		return result, err
 	}
-	turnOptions := map[string]any{"threadId": result.ThreadID,
-		"input": []any{map[string]string{"type": "text", "text": prompt}}, "model": call.Route.Model,
-		"permissions": "omnidex-task", "approvalPolicy": "never", "summary": "auto",
-		"outputSchema": agentOutputSchema(call)}
-	applyAgentInferenceOptions(turnOptions, call.Route)
-	raw, err = connection.call("turn/start", turnOptions, &turn)
+	turnID, raw, pending, err := connection.startAgentTurn(call, thread, prompt)
 	if err != nil {
 		return result, err
 	}
-	result.TurnID = turn.Turn.ID
+	result.TurnID = turnID
 	if result.TurnID == "" {
 		return result, fmt.Errorf("agent turn lacks its native identity")
+	}
+	items := map[string]string{}
+	finished := false
+	for _, notification := range pending {
+		var done bool
+		done, err = consumeAgentFrame(notification.frame, notification.raw, &result, call.Role, items, event)
+		if err != nil {
+			return result, err
+		}
+		finished = finished || done
 	}
 	if err := recordAgentFrame(&result, raw, event); err != nil {
 		return result, err
 	}
-	items := map[string]string{}
-	for ctx.Err() == nil {
+	for !finished && ctx.Err() == nil {
 		frame, err := connection.nextAgent()
 		if err != nil {
 			return result, err
@@ -81,28 +80,29 @@ func (client *Client) Run(parent context.Context, call codingagent.Assignment, w
 			}
 			continue
 		}
-		finished, err := consumeAgentFrame(frame, connection.lastFrame, &result, call.Role, items, event)
+		finished, err = consumeAgentFrame(frame, connection.lastFrame, &result, call.Role, items, event)
 		if err != nil {
 			return result, err
 		}
-		if finished {
-			if len(items) > 0 {
-				return result, fmt.Errorf("agent ended with incomplete native items")
-			}
-			result.Content, err = mapAgentReviewResult(call, result.Content)
-			if err != nil {
-				return result, err
-			}
-			return result, nil
-		}
 	}
-	return result, ctx.Err()
+	if !finished {
+		return result, ctx.Err()
+	}
+	if len(items) > 0 {
+		return result, fmt.Errorf("agent ended with incomplete native items")
+	}
+	mapped, err := mapAgentReviewResult(call, result.Content)
+	if err != nil {
+		return result, err
+	}
+	result.Content = mapped
+	return result, nil
 }
 
 func agentEvidenceMethod(method string) bool {
 	switch method {
 	case "item/started", "item/completed", "turn/completed", "thread/tokenUsage/updated", "error",
-		"item/agentMessage/delta", "item/reasoning/summaryTextDelta", "item/reasoning/summaryPartAdded", "item/commandExecution/outputDelta":
+		"item/agentMessage/delta", "item/plan/delta", "item/reasoning/summaryTextDelta", "item/reasoning/summaryPartAdded", "item/commandExecution/outputDelta":
 		return true
 	default:
 		return false

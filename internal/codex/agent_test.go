@@ -154,21 +154,39 @@ func TestAgentNativeReceiptsRejectForeignIncompleteAndUngrantableEvents(t *testi
 		`{"method":"turn/completed","params":{"threadId":"thread","turn":{"id":"turn","status":"completed"}}}`,
 	} {
 		result := codingagent.Result{ThreadID: "thread", TurnID: "turn"}
-		if finished, err := collectAgentFrame(decodeAgentTestFrame(t, raw), []byte(raw), &result); err == nil || finished || result.Completed {
+		if finished, err := collectAgentFrame(decodeAgentTestFrame(t, raw), []byte(raw), &result, codingagent.Execute); err == nil || finished || result.Completed {
 			t.Fatalf("foreign, incomplete, or ungranted receipt accepted: %s", raw)
 		}
 	}
 	result := codingagent.Result{ThreadID: "thread", TurnID: "turn"}
 	answer := `{"method":"item/completed","params":{"threadId":"thread","turnId":"turn","item":{"type":"agentMessage","phase":"final_answer","text":"{\"questions\":[]}"}}}`
-	if finished, err := collectAgentFrame(decodeAgentTestFrame(t, answer), []byte(answer), &result); err != nil || finished || result.Completed {
+	if finished, err := collectAgentFrame(decodeAgentTestFrame(t, answer), []byte(answer), &result, codingagent.Execute); err != nil || finished || result.Completed {
 		t.Fatalf("a final message alone became completion: finished=%v error=%v", finished, err)
 	}
-	if _, err := collectAgentFrame(decodeAgentTestFrame(t, answer), []byte(answer), &result); err == nil {
+	if _, err := collectAgentFrame(decodeAgentTestFrame(t, answer), []byte(answer), &result, codingagent.Execute); err == nil {
 		t.Fatal("duplicate structured answers were accepted")
 	}
 	completed := `{"method":"turn/completed","params":{"threadId":"thread","turn":{"id":"turn","status":"completed"}}}`
-	if finished, err := collectAgentFrame(decodeAgentTestFrame(t, completed), []byte(completed), &result); err != nil || !finished || !result.Completed {
+	if finished, err := collectAgentFrame(decodeAgentTestFrame(t, completed), []byte(completed), &result, codingagent.Execute); err != nil || !finished || !result.Completed {
 		t.Fatalf("exact native completion rejected: finished=%v error=%v", finished, err)
+	}
+}
+
+func TestAgentNativePlanAndReviewItemsAreAuthoritativeResults(t *testing.T) {
+	plan := codingagent.Result{ThreadID: "thread", TurnID: "turn"}
+	planItem := `{"method":"item/completed","params":{"threadId":"thread","turnId":"turn","item":{"id":"plan","type":"plan","status":"completed","text":"{\"tasks\":[]}"}}}`
+	if _, err := collectAgentFrame(decodeAgentTestFrame(t, planItem), []byte(planItem), &plan, codingagent.Plan); err != nil || string(plan.Content) != `{"tasks":[]}` {
+		t.Fatalf("native plan result lost: content=%s error=%v", plan.Content, err)
+	}
+
+	review := codingagent.Result{ThreadID: "thread", TurnID: "turn"}
+	reviewItem := `{"method":"item/completed","params":{"threadId":"thread","turnId":"turn","item":{"id":"review","type":"exitedReviewMode","status":"completed","review":"{\"findings\":[],\"questions\":[]}\nFull review comments: detail"}}}`
+	if _, err := collectAgentFrame(decodeAgentTestFrame(t, reviewItem), []byte(reviewItem), &review, codingagent.Review); err != nil {
+		t.Fatal(err)
+	}
+	var text string
+	if err := json.Unmarshal(review.Content, &text); err != nil || !strings.Contains(text, "Full review comments") {
+		t.Fatalf("native review text lost: content=%s error=%v", review.Content, err)
 	}
 }
 
@@ -195,6 +213,39 @@ func TestAgentItemLifecycleRejectsWriteAttemptsAndUnboundCompletion(t *testing.T
 	write := decodeAgentTestFrame(t, `{"method":"item/started","params":{"item":{"id":"edit-1","type":"fileChange"}}}`)
 	if err := validateAgentItems(write, codingagent.Review, open); err == nil {
 		t.Fatal("independent review acquired source write authority")
+	}
+}
+
+func TestNativeReviewExitClosesItsMessagePlaceholder(t *testing.T) {
+	open := map[string]string{}
+	frames := []string{
+		`{"method":"item/started","params":{"item":{"id":"message","type":"agentMessage"}}}`,
+		`{"method":"item/started","params":{"item":{"id":"review","type":"exitedReviewMode"}}}`,
+		`{"method":"item/completed","params":{"item":{"id":"review","type":"exitedReviewMode","status":"completed"}}}`,
+	}
+	for _, raw := range frames {
+		if err := validateAgentItems(decodeAgentTestFrame(t, raw), codingagent.Review, open); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(open) != 0 {
+		t.Fatalf("native review placeholder remained open: %v", open)
+	}
+
+	open = map[string]string{}
+	for _, id := range []string{"first", "second"} {
+		raw := `{"method":"item/started","params":{"item":{"id":"` + id + `","type":"agentMessage"}}}`
+		if err := validateAgentItems(decodeAgentTestFrame(t, raw), codingagent.Review, open); err != nil {
+			t.Fatal(err)
+		}
+	}
+	start := `{"method":"item/started","params":{"item":{"id":"review","type":"exitedReviewMode"}}}`
+	complete := `{"method":"item/completed","params":{"item":{"id":"review","type":"exitedReviewMode","status":"completed"}}}`
+	if err := validateAgentItems(decodeAgentTestFrame(t, start), codingagent.Review, open); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateAgentItems(decodeAgentTestFrame(t, complete), codingagent.Review, open); err == nil {
+		t.Fatal("native review exit hid multiple incomplete messages")
 	}
 }
 

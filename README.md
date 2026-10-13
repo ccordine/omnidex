@@ -105,6 +105,15 @@ questions pause the same durable job until answered. Overall review checks the
 original objective and integration before completion. Restart preserves the
 plan, accepted tasks, questions and original native receipts.
 
+The built-in Codex adapter uses Codex's native collaboration surfaces for those
+roles: task decomposition runs in native Plan mode, execution runs as a normal
+tool-capable turn through Omnidex's existing mutation fence, and task plus overall
+reviews run through native inline Review mode. Every invocation still receives a
+fresh ephemeral thread. Native plan/review lifecycle events, thread and turn IDs,
+token notifications, detailed review comments and the validated structured result
+are retained in the existing queue evidence journal and streamed through the same
+web and terminal activity surfaces; no second ledger is introduced.
+
 Run **omni chat** from the local directory you want to work on. Terminal turns
 use Agents, show progress and concrete questions, and return a recap of written
 files and passed checks. After completion, the next message starts a new task in

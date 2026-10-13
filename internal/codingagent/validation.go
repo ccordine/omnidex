@@ -52,6 +52,9 @@ func ValidateReview(taskIDs map[string]Task, result ReviewResult, requirements .
 	if err := validateTextList(result.Questions, "questions"); err != nil {
 		return err
 	}
+	if result.Verification != "" && strings.TrimSpace(result.Verification) == "" {
+		return fmt.Errorf("review verification must contain concrete text when present")
+	}
 	for _, finding := range result.Findings {
 		task, known := taskIDs[finding.TaskID]
 		if !known || strings.TrimSpace(finding.Requirement) == "" || strings.TrimSpace(finding.Observation) == "" {

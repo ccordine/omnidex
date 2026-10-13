@@ -113,8 +113,9 @@ type Finding struct {
 	Observation string `json:"observation"`
 }
 type ReviewResult struct {
-	Findings  []Finding `json:"findings"`
-	Questions []string  `json:"questions"`
+	Findings     []Finding `json:"findings"`
+	Questions    []string  `json:"questions"`
+	Verification string    `json:"verification,omitempty"`
 }
 type ExecutionResult struct {
 	Questions []string `json:"questions"`

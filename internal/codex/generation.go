@@ -10,8 +10,9 @@ import (
 )
 
 type threadResult struct {
-	Model  string `json:"model"`
-	Thread struct {
+	Model           string  `json:"model"`
+	ReasoningEffort *string `json:"reasoningEffort"`
+	Thread          struct {
 		ID    string `json:"id"`
 		Turns []struct {
 			ID string `json:"id"`

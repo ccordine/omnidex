@@ -31,6 +31,62 @@ func TestAgentReviewReferencesRestoreExactQuotedPortableFindings(t *testing.T) {
 	}
 }
 
+func TestAgentReviewReferencesAcceptNativeEnvelopeAndPreserveDetails(t *testing.T) {
+	task := codingagent.Task{ID: "task-a", Acceptance: []string{"Behavior remains exact."}}
+	call := codingagent.Assignment{Role: codingagent.Review, Task: &task}
+	receipt := `{"findings":[{"task_id":"task_1","requirement":"criterion_1","file":"","observation":"Observed mismatch."}],"questions":[]}`
+	envelope, err := json.Marshal(map[string]any{
+		"findings":            []map[string]any{{"title": "Exact behavior differs", "body": "The returned bytes do not match."}},
+		"overall_correctness": "patch is incorrect", "overall_explanation": receipt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mapped, err := mapAgentReviewResult(call, envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var review codingagent.ReviewResult
+	if err := json.Unmarshal(mapped, &review); err != nil {
+		t.Fatal(err)
+	}
+	if len(review.Findings) != 1 || review.Findings[0].TaskID != "task-a" || review.Findings[0].Requirement != "Behavior remains exact." || !strings.Contains(review.Findings[0].Observation, "returned bytes") {
+		t.Fatalf("native review detail or references lost: %+v", review)
+	}
+}
+
+func TestAgentReviewReferencesPreserveTypedVerification(t *testing.T) {
+	task := codingagent.Task{ID: "task-a", Acceptance: []string{"Behavior remains exact."}}
+	call := codingagent.Assignment{Role: codingagent.Review, Task: &task}
+	mapped, err := mapAgentReviewResult(call, json.RawMessage(`{"findings":[],"questions":[],"verification":"Ran the declared check and an independent edge case."}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var review codingagent.ReviewResult
+	if err := json.Unmarshal(mapped, &review); err != nil {
+		t.Fatal(err)
+	}
+	if review.Verification != "Ran the declared check and an independent edge case." {
+		t.Fatalf("native review verification lost: %+v", review)
+	}
+}
+
+func TestAgentReviewReferencesRejectUnreferencedNativeFinding(t *testing.T) {
+	task := codingagent.Task{ID: "task-a", Acceptance: []string{"Behavior remains exact."}}
+	call := codingagent.Assignment{Role: codingagent.Review, Task: &task}
+	envelope, err := json.Marshal(map[string]any{
+		"findings":            []map[string]any{{"title": "Unbound defect", "body": "Missing from the receipt."}},
+		"overall_correctness": "patch is incorrect",
+		"overall_explanation": `{"findings":[],"questions":[]}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mapAgentReviewResult(call, envelope); err == nil || !strings.Contains(err.Error(), "omitted referenced findings") {
+		t.Fatalf("unreferenced native finding accepted: %v", err)
+	}
+}
+
 func TestAgentOverallReviewReferencesRestoreOnlyBoundParentOutcome(t *testing.T) {
 	first := codingagent.Task{ID: `task "first"`, Acceptance: []string{`First "exact" criterion.`}, RequirementIDs: []string{"parent-a"}}
 	second := codingagent.Task{ID: `task "second"`, Acceptance: []string{`Second "exact" criterion.`}, RequirementIDs: []string{"parent-b"}}

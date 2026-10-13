@@ -1,5 +1,65 @@
 # Persistent task execution with Codex
 
+## Completed task: port Codex Ledger native agent modes
+
+Root `/home/gryph/Projects/tools/omnidex`; branch
+`feat/codex-ledger-agent-mode`, based on `fix/planner-live-activity` at
+`c7a1188c`. Source reference: the clean sibling repository
+`/home/gryph/Projects/tools/codex-ledger` at `cd2d239`; it remains read-only.
+The unrelated stateless-inference CHANGELOG and untracked source/contract/SDK
+work present at start is preserved and excluded from this task.
+
+Goal: combine Codex Ledger's proven native Plan and Review protocol handling
+with Omnidex's existing app, terminal chat, queue, workspace grants and durable
+agent workflow. Keep the existing Omnidex queue journal authoritative; do not
+copy the standalone ledger, CLI, workspace model or permissive filesystem policy.
+
+Acceptance: planner invocations use native Plan collaboration mode with the
+frozen planner route and structured workload contract; task and overall reviewers
+use native inline `review/start`; execution retains the existing scoped write
+tool and mutation fence; all invocations remain fresh and ephemeral; events that
+precede the start response are retained; native plan deltas appear in live chat;
+native review envelopes, detailed comments and direct receipts map to exact
+Omnidex task/criterion findings without allowing unreferenced defects to pass;
+existing questions, correction, restart, completion and app/chat behavior remain
+unchanged. Verify protocol regressions, affected race tests, vet and native builds.
+
+Resources: one compiler with two workers; task-owned Go cache
+`/tmp/omnidex-ledger-port-gocache` was declared at 512 MiB, reached 753 MiB during
+the full race/vet/build coverage, and was retired after verification together
+with the 48 MiB task build directory.
+No container, browser, service, production database, installation or deployment
+is authorized for this port.
+
+Implemented: the Codex provider now maps plan assignments to native Plan
+collaboration mode and both review roles to native inline `review/start` while
+leaving execution on Omnidex's existing dynamic write tool and mutation fence.
+Notifications arriving before the start response are buffered and then persisted
+in arrival order. Native plan items/deltas feed the existing activity stream.
+Native Review's enter/exit lifecycle closes its protocol-defined message
+placeholder without relaxing ordinary item accounting. Direct review receipts,
+native envelopes and appended detailed comments map through the existing opaque
+task/criterion reference table. The observed optional verification narrative is
+now an explicit typed review field. Unreferenced native findings/comments and
+foreign review threads fail instead of becoming clean acceptance.
+
+Verified on 2026-10-13: focused Codex/coding-agent/queue tests passed. The final
+affected race suite passed for `internal/codex`, `internal/codingagent`,
+`internal/queue`, `internal/worker`, `internal/runtime` and `cmd/omni`; the worker
+and chat packages used only their loopback test listeners. Full `go vet -p 1
+./...`, both `cmd/omnidex` and `cmd/omni` builds, and `git diff --check` passed.
+The read-only installed-Codex native Plan qualification completed in 30.986 s
+with one task and one integration check (thread
+`01a1358d-d7ac-7fa1-8187-9bed751a2064`, turn
+`01a1358d-d7ee-7d90-911e-ee6f060f86bc`). The installed-Codex execution plus
+fresh native Review qualification completed in 51.062 s with two commands, one
+confirmed fenced edit, a passing behavior check, no findings/questions and
+distinct execution/review identities (execution thread
+`01a1358c-0421-72a3-a9da-d3443cc46c34`; review thread
+`01a1358c-639a-7a43-8e37-e23e4419041a`). These are native protocol and fixture
+behavior proofs, not a general application-building claim. No production job,
+service, database, installation or user workspace was changed.
+
 ## Completed correction: actual chat questions, input and stopping
 
 Root /home/gryph/Projects/tools/omnidex; branch fix/planner-live-activity,

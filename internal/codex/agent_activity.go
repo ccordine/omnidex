@@ -11,6 +11,7 @@ import (
 )
 
 type agentActivityItem struct {
+	kind         string
 	phase        string
 	streamed     bool
 	sent         string
@@ -89,7 +90,7 @@ func (stream *agentActivityStream) observe(event codingagent.NativeEvent) error 
 		return err
 	}
 	if frame.Method == "item/started" {
-		stream.items[params.Item.ID] = &agentActivityItem{phase: params.Item.Phase}
+		stream.items[params.Item.ID] = &agentActivityItem{kind: params.Item.Type, phase: params.Item.Phase}
 		if params.Item.Type == "commandExecution" {
 			return stream.command(params, model.AgentActivityStarted)
 		}
@@ -115,6 +116,10 @@ func (stream *agentActivityStream) observe(event codingagent.NativeEvent) error 
 		item.streamed = true
 		item.sent += params.Delta
 		return stream.text(params.ItemID, model.AgentActivityMessage, model.AgentActivityDelta, params.Delta)
+	case "item/plan/delta":
+		item.streamed = true
+		item.sent += params.Delta
+		return stream.text(params.ItemID, model.AgentActivityMessage, model.AgentActivityDelta, params.Delta)
 	case "item/reasoning/summaryTextDelta", "item/reasoning/summaryPartAdded":
 		if params.SummaryIndex < item.summaryIndex || params.SummaryIndex > item.summaryIndex+1 {
 			return fmt.Errorf("native public summary has invalid section identity")
@@ -137,11 +142,20 @@ func (stream *agentActivityStream) observe(event codingagent.NativeEvent) error 
 }
 
 func (stream *agentActivityStream) completed(params agentActivityParams, item *agentActivityItem) error {
+	if params.Item.Type == "exitedReviewMode" {
+		for id, candidate := range stream.items {
+			if id != params.Item.ID && candidate.kind == "agentMessage" {
+				delete(stream.items, id)
+			}
+		}
+	}
 	switch params.Item.Type {
 	case "agentMessage":
 		if params.Item.Phase != "commentary" {
 			return nil
 		}
+		return stream.completeText(params.Item.ID, model.AgentActivityMessage, model.AgentActivityCompleted, item.sent, params.Item.Text)
+	case "plan":
 		return stream.completeText(params.Item.ID, model.AgentActivityMessage, model.AgentActivityCompleted, item.sent, params.Item.Text)
 	case "reasoning":
 		return stream.completeText(params.Item.ID, model.AgentActivityReasoningSummary, model.AgentActivityCompleted, item.sent, strings.Join(params.Item.Summary, "\n"))

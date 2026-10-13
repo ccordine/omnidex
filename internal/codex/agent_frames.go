@@ -12,6 +12,9 @@ import (
 
 func validateAgentItems(frame rpcFrame, role codingagent.Role, open map[string]string) error {
 	if kind := agentDeltaItemKind(frame.Method); kind != "" {
+		if kind == "plan" && role != codingagent.Plan {
+			return fmt.Errorf("non-planning agent emitted a native plan")
+		}
 		var params struct {
 			ItemID string `json:"itemId"`
 		}
@@ -43,6 +46,12 @@ func validateAgentItems(frame rpcFrame, role codingagent.Role, open map[string]s
 	if (item.Type == "fileChange" || item.Type == "dynamicToolCall") && role != codingagent.Execute {
 		return fmt.Errorf("read-only agent attempted a source edit")
 	}
+	if item.Type == "plan" && role != codingagent.Plan {
+		return fmt.Errorf("non-planning agent emitted a native plan")
+	}
+	if (item.Type == "enteredReviewMode" || item.Type == "exitedReviewMode") && role != codingagent.Review && role != codingagent.OverallReview {
+		return fmt.Errorf("non-reviewing agent emitted a native review lifecycle")
+	}
 	if frame.Method == "item/started" {
 		if _, exists := open[item.ID]; exists {
 			return fmt.Errorf("native item identity reused")
@@ -57,6 +66,22 @@ func validateAgentItems(frame rpcFrame, role codingagent.Role, open map[string]s
 		return fmt.Errorf("native agent item is unfinished")
 	}
 	delete(open, item.ID)
+	if item.Type == "exitedReviewMode" {
+		placeholder := ""
+		for id, kind := range open {
+			if kind != "agentMessage" {
+				continue
+			}
+			if placeholder != "" {
+				return fmt.Errorf("native review left multiple message placeholders open")
+			}
+			placeholder = id
+		}
+		// Native Review starts one placeholder agentMessage for the review body,
+		// then returns that body on exitedReviewMode instead of completing the
+		// placeholder. The exited receipt is its authoritative terminal event.
+		delete(open, placeholder)
+	}
 	return nil
 }
 
@@ -90,13 +115,15 @@ func consumeAgentFrame(frame rpcFrame, raw json.RawMessage, result *codingagent.
 			return false, err
 		}
 	}
-	return collectAgentFrame(frame, raw, result)
+	return collectAgentFrame(frame, raw, result, role)
 }
 
 func agentDeltaItemKind(method string) string {
 	switch method {
 	case "item/agentMessage/delta":
 		return "agentMessage"
+	case "item/plan/delta":
+		return "plan"
 	case "item/reasoning/summaryTextDelta", "item/reasoning/summaryPartAdded":
 		return "reasoning"
 	case "item/commandExecution/outputDelta":
@@ -131,21 +158,28 @@ type agentNativeError struct {
 	CodexErrorInfo    json.RawMessage `json:"codexErrorInfo"`
 }
 
-func collectAgentFrame(frame rpcFrame, raw json.RawMessage, result *codingagent.Result) (bool, error) {
+func collectAgentFrame(frame rpcFrame, raw json.RawMessage, result *codingagent.Result, role codingagent.Role) (bool, error) {
 	var params struct {
 		ThreadID  string            `json:"threadId"`
 		TurnID    string            `json:"turnId"`
 		WillRetry *bool             `json:"willRetry"`
 		Error     *agentNativeError `json:"error"`
 		Item      struct {
-			Type  string `json:"type"`
-			Phase string `json:"phase"`
-			Text  string `json:"text"`
+			Type   string `json:"type"`
+			Phase  string `json:"phase"`
+			Text   string `json:"text"`
+			Review string `json:"review"`
 		} `json:"item"`
 		Turn struct {
 			ID     string            `json:"id"`
 			Status string            `json:"status"`
 			Error  *agentNativeError `json:"error"`
+			Items  []struct {
+				Type   string `json:"type"`
+				Phase  string `json:"phase"`
+				Text   string `json:"text"`
+				Review string `json:"review"`
+			} `json:"items"`
 		} `json:"turn"`
 	}
 	if err := json.Unmarshal(frame.Params, &params); err != nil {
@@ -157,19 +191,25 @@ func collectAgentFrame(frame rpcFrame, raw json.RawMessage, result *codingagent.
 	switch frame.Method {
 	case "item/started", "item/completed":
 		switch params.Item.Type {
-		case "userMessage", "reasoning", "agentMessage", "commandExecution", "fileChange", "dynamicToolCall":
+		case "userMessage", "reasoning", "agentMessage", "plan", "enteredReviewMode", "exitedReviewMode", "commandExecution", "fileChange", "dynamicToolCall":
 		default:
 			return false, fmt.Errorf("agent attempted an ungranted capability %s", params.Item.Type)
 		}
-		if frame.Method == "item/completed" && params.Item.Type == "agentMessage" && params.Item.Phase == "final_answer" {
-			if len(result.Content) != 0 || !json.Valid([]byte(params.Item.Text)) {
-				return false, fmt.Errorf("agent returned missing, duplicate or invalid structured result")
+		if frame.Method == "item/completed" {
+			if err := collectAgentResultItem(result, role, params.Item.Type, params.Item.Phase, params.Item.Text, params.Item.Review); err != nil {
+				return false, err
 			}
-			result.Content = json.RawMessage(params.Item.Text)
 		}
 	case "turn/completed":
 		if params.Turn.ID == result.TurnID && params.Turn.Status == "failed" {
 			return false, nativeAgentFailure(params.Turn.Error)
+		}
+		if params.Turn.ID == result.TurnID && params.Turn.Status == "completed" && len(result.Content) == 0 {
+			for _, item := range params.Turn.Items {
+				if err := collectAgentResultItem(result, role, item.Type, item.Phase, item.Text, item.Review); err != nil {
+					return false, err
+				}
+			}
 		}
 		if params.Turn.ID != result.TurnID || params.Turn.Status != "completed" || len(result.Content) == 0 {
 			return false, fmt.Errorf("agent did not complete the exact assignment")
@@ -186,6 +226,36 @@ func collectAgentFrame(frame rpcFrame, raw json.RawMessage, result *codingagent.
 		return false, nativeAgentFailure(params.Error)
 	}
 	return false, nil
+}
+
+func collectAgentResultItem(result *codingagent.Result, role codingagent.Role, itemType, phase, text, review string) error {
+	var content string
+	switch {
+	case itemType == "agentMessage" && phase == "final_answer":
+		content = text
+	case itemType == "plan" && role == codingagent.Plan:
+		content = text
+	case itemType == "exitedReviewMode" && (role == codingagent.Review || role == codingagent.OverallReview):
+		content = review
+	default:
+		return nil
+	}
+	if len(result.Content) != 0 || strings.TrimSpace(content) == "" {
+		return fmt.Errorf("agent returned missing or duplicate structured result")
+	}
+	if json.Valid([]byte(content)) {
+		result.Content = json.RawMessage(content)
+		return nil
+	}
+	if itemType != "exitedReviewMode" {
+		return fmt.Errorf("agent returned an invalid structured result")
+	}
+	encoded, err := json.Marshal(content)
+	if err != nil {
+		return err
+	}
+	result.Content = encoded
+	return nil
 }
 
 func nativeAgentFailure(detail *agentNativeError) error {
