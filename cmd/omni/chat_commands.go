@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -10,6 +11,10 @@ import (
 )
 
 const ctrlCInterruptReason = "User interrupted the active objective from omni chat."
+
+const defaultChatCancelReason = "User stopped the active objective from omni chat."
+
+var errNoActiveChatJob = errors.New("no active task")
 
 func parseChatCommand(line string) (name, text string, command bool) {
 	if !strings.HasPrefix(line, "/") {
@@ -114,12 +119,13 @@ func (session *chatSession) control(
 	if session.active == nil {
 		if expectedJobID != nil && *expectedJobID > 0 {
 			return 0, fmt.Errorf(
-				"/%s target job %d is no longer active",
+				"%w: /%s target job %d is no longer active",
+				errNoActiveChatJob,
 				action,
 				*expectedJobID,
 			)
 		}
-		return 0, fmt.Errorf("/%s requires an active server job", action)
+		return 0, fmt.Errorf("%w: /%s requires an active server job", errNoActiveChatJob, action)
 	}
 	jobID := session.active.Job.ID
 	if expectedJobID != nil && jobID != *expectedJobID {
@@ -223,7 +229,7 @@ func validatedChatControlText(action, exactText string) (string, error) {
 		}
 	case "cancel":
 		if strings.TrimSpace(exactText) == "" {
-			return "", fmt.Errorf("/cancel requires a reason")
+			exactText = defaultChatCancelReason
 		}
 		if err := client.ValidateCancelReason(exactText); err != nil {
 			return "", err
@@ -237,11 +243,13 @@ func validatedChatControlText(action, exactText string) (string, error) {
 func printChatHelp(renderer chatRenderer) error {
 	return renderer.console.WriteOutput(
 		"commands:\n" +
-			"  /status                 reload authoritative job state\n" +
+			"  /status                 show current work\n" +
+			"  /verbosity <level>      quiet, normal, verbose, or debug\n" +
 			"  /interrupt [reason]     pause the active job on the same job identity\n" +
 			"  /redirect <text>        explicitly redirect the active job\n" +
-			"  /cancel <reason>        terminally cancel the active job\n" +
+			"  /cancel [reason]        stop the active task\n" +
+			"  /stop                   stop the active task\n" +
 			"  /exit                   close this client; server work continues\n" +
-			"Ordinary text is submitted to the server-owned session turn boundary.\n",
+			"Reply while working to give feedback; /redirect changes the plan.\n",
 	)
 }

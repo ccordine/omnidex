@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 )
 
 func (console *chatConsole) ShowPlanReview(value string) error {
@@ -127,20 +128,13 @@ func (console *chatConsole) leavePlanReviewScreenLocked() error {
 	}
 	console.reviewActive = false
 	console.reviewView = ""
-	console.promptMu.Lock()
-	prompt := console.prompt
-	console.promptMu.Unlock()
-	console.terminal.SetPrompt(prompt)
-	_, err := console.terminal.Write(nil)
-	return err
+	console.renderedPrompt = ""
+	return console.redrawPromptLocked(time.Now())
 }
 
 func (console *chatConsole) restorePromptAfterPlanReviewFailureLocked() {
-	console.promptMu.Lock()
-	prompt := console.prompt
-	console.promptMu.Unlock()
-	console.terminal.SetPrompt(prompt)
-	_, _ = console.terminal.Write(nil)
+	console.renderedPrompt = ""
+	_ = console.redrawPromptLocked(time.Now())
 }
 
 func writeTerminalControl(destination io.Writer, value string) error {

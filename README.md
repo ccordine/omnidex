@@ -111,6 +111,14 @@ files and passed checks. After completion, the next message starts a new task in
 the same project. No browser is required. Native execution uses only the exact
 live local CLI directory; disconnecting ends its workspace access.
 
+Chat shows the current phase and elapsed time while you type, plus actual agent
+messages, public thinking summaries, file activity and commands with exit status.
+Use `/verbosity quiet|normal|verbose|debug`: normal is concise, verbose adds full
+public summaries and command output, and debug also shows worker diagnostics.
+Reply while work runs to give feedback, `/interrupt` to pause, `/redirect <text>`
+to change the plan, or `/stop` or `/cancel` to stop. Cancellation reasons are
+optional. `/status` shows authoritative current work and `/help` lists controls.
+
 Alternatively, select **Agents** in a local CLI-bound assistant conversation, or submit
 `coding_mode: "agents"` to `POST /v1/jobs` with the selected workspace in
 `metadata.client_cwd`. The native service must own that workspace under

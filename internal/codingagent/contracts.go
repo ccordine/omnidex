@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"path"
 	"strings"
+
+	"github.com/gryph/omnidex/internal/model"
 )
 
 type Mode string
@@ -160,7 +162,14 @@ type Result struct {
 }
 
 type Provider interface {
-	Run(context.Context, Assignment, FileWriter, func(json.RawMessage) error) (Result, error)
+	Run(context.Context, Assignment, FileWriter, func(NativeEvent) error) (Result, error)
+}
+
+// NativeEvent preserves the original journal receipt separately from its
+// validated public projection. An activity-only event is never a new receipt.
+type NativeEvent struct {
+	Frame    json.RawMessage
+	Activity *model.AgentActivity
 }
 
 type FileWrite struct {

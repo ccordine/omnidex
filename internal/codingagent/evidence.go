@@ -2,6 +2,8 @@ package codingagent
 
 import (
 	"context"
+
+	"github.com/gryph/omnidex/internal/model"
 )
 
 type Entry struct {
@@ -37,7 +39,7 @@ type EvidenceStore interface {
 }
 
 type Verifier interface {
-	ExecuteChecks(context.Context, Assignment, []Check) ([]CheckResult, error)
+	ExecuteChecks(context.Context, Assignment, []Check, func(model.AgentActivity) error) ([]CheckResult, error)
 }
 type Environment interface {
 	ReadFiles(context.Context) ([]string, error)

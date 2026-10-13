@@ -46,8 +46,6 @@ func TestChatCommandsRejectMissingOrDiscardedArguments(t *testing.T) {
 	}{
 		{input: "/redirect", message: "/redirect requires exact redirection text"},
 		{input: "/redirect   ", message: "/redirect requires exact redirection text"},
-		{input: "/cancel", message: "/cancel requires a reason"},
-		{input: "/cancel   ", message: "/cancel requires a reason"},
 		{input: "/status ignored", message: "/status does not accept arguments"},
 		{input: "/exit ignored", message: "/exit does not accept arguments"},
 		{input: "/help ignored", message: "/help does not accept arguments"},

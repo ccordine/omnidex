@@ -142,10 +142,19 @@ func (connection *connection) readFrame(agent bool) (rpcFrame, error) {
 }
 
 func (connection *connection) call(method string, params, result any) (json.RawMessage, error) {
+	return connection.callObserved(method, params, result, nil, nil)
+}
+
+func (connection *connection) callObserved(method string, params, result any, sent func() error, notification func(rpcFrame) error) (json.RawMessage, error) {
 	connection.sequence++
 	id := connection.sequence
 	if err := connection.send(method, params, &id); err != nil {
 		return nil, err
+	}
+	if sent != nil {
+		if err := sent(); err != nil {
+			return nil, err
+		}
 	}
 	for {
 		frame, err := connection.next()
@@ -153,6 +162,11 @@ func (connection *connection) call(method string, params, result any) (json.RawM
 			return nil, err
 		}
 		if frame.ID == nil {
+			if notification != nil {
+				if err := notification(frame); err != nil {
+					return nil, err
+				}
+			}
 			continue
 		}
 		if *frame.ID != id {

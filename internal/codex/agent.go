@@ -10,7 +10,7 @@ import (
 	"github.com/gryph/omnidex/internal/codingagent"
 )
 
-func (client *Client) Run(parent context.Context, call codingagent.Assignment, writer codingagent.FileWriter, event func(json.RawMessage) error) (codingagent.Result, error) {
+func (client *Client) Run(parent context.Context, call codingagent.Assignment, writer codingagent.FileWriter, event func(codingagent.NativeEvent) error) (codingagent.Result, error) {
 	result := codingagent.Result{Provider: "codex", Model: call.Route.Model, Evidence: []json.RawMessage{}}
 	if err := validateAgentAssignment(call); err != nil {
 		return result, err
@@ -18,6 +18,8 @@ func (client *Client) Run(parent context.Context, call codingagent.Assignment, w
 	if (call.Role == codingagent.Execute) != (writer != nil) {
 		return result, fmt.Errorf("execution requires its scoped file writer; other roles cannot receive one")
 	}
+	activity := newAgentActivityStream(call, &result, event)
+	event = activity.observe
 	ctx, cancel := context.WithTimeout(parent, client.timeout)
 	defer cancel()
 	scratch, cleanup, err := client.agentScratch()
@@ -53,7 +55,7 @@ func (client *Client) Run(parent context.Context, call codingagent.Assignment, w
 	}
 	turnOptions := map[string]any{"threadId": result.ThreadID,
 		"input": []any{map[string]string{"type": "text", "text": prompt}}, "model": call.Route.Model,
-		"permissions": "omnidex-task", "approvalPolicy": "never", "summary": "none",
+		"permissions": "omnidex-task", "approvalPolicy": "never", "summary": "auto",
 		"outputSchema": agentOutputSchema(call)}
 	applyAgentInferenceOptions(turnOptions, call.Route)
 	raw, err = connection.call("turn/start", turnOptions, &turn)
@@ -99,7 +101,8 @@ func (client *Client) Run(parent context.Context, call codingagent.Assignment, w
 
 func agentEvidenceMethod(method string) bool {
 	switch method {
-	case "item/started", "item/completed", "turn/completed", "thread/tokenUsage/updated", "error":
+	case "item/started", "item/completed", "turn/completed", "thread/tokenUsage/updated", "error",
+		"item/agentMessage/delta", "item/reasoning/summaryTextDelta", "item/reasoning/summaryPartAdded", "item/commandExecution/outputDelta":
 		return true
 	default:
 		return false

@@ -14,6 +14,7 @@ type RuntimeEvent struct {
 	FileOperation  string
 	FilePath       string
 	FileSourcePath string
+	AgentActivity  *model.AgentActivity
 }
 
 // RuntimeEventSink projects worker observations into the server-owned

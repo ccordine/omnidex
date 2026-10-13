@@ -26,6 +26,7 @@ type JobRuntimeEvent struct {
 	FileOperation  string
 	FilePath       string
 	FileSourcePath string
+	AgentActivity  *model.AgentActivity
 }
 
 func (event JobRuntimeEvent) validate() error {
@@ -39,6 +40,21 @@ func (event JobRuntimeEvent) validate() error {
 	}
 	if !canonicalRealtimeRuntimeEvent(event.RuntimeEvent) {
 		return fmt.Errorf("job runtime event name %q is not canonical", event.RuntimeEvent)
+	}
+	if event.RuntimeEvent == "agent_activity" {
+		if event.AgentActivity == nil {
+			return fmt.Errorf("agent activity runtime event requires its typed public projection")
+		}
+		if err := event.AgentActivity.Validate(); err != nil {
+			return err
+		}
+		if event.Detail != "" || event.FileOperation != "" || event.FilePath != "" || event.FileSourcePath != "" {
+			return fmt.Errorf("agent activity cannot carry unrelated runtime fields")
+		}
+		return nil
+	}
+	if event.AgentActivity != nil {
+		return fmt.Errorf("non-agent runtime event carries an agent projection")
 	}
 	if len(event.Detail) > maxRealtimeRuntimeDetailBytes || !utf8.ValidString(event.Detail) ||
 		strings.ContainsRune(event.Detail, '\x00') {
@@ -122,6 +138,7 @@ func (s *Server) PublishJobRuntimeEvent(event JobRuntimeEvent) error {
 			RuntimeEvent: event.RuntimeEvent, Detail: event.Detail,
 			FileOperation: event.FileOperation, FilePath: event.FilePath,
 			FileSourcePath: event.FileSourcePath,
+			AgentActivity:  event.AgentActivity,
 		},
 	)
 	return err

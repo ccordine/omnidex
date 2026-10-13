@@ -10,14 +10,15 @@ import (
 )
 
 type chatRenderer struct {
-	console *chatConsole
+	console     *chatConsole
+	verbosity   chatVerbosity
+	agentStream *chatAgentStream
 }
 
 func (renderer chatRenderer) banner(channel model.Channel) error {
 	return renderer.console.WriteOutput(fmt.Sprintf(
-		"Omnidex chat\nproject: %s\nsession: %s\nmode: Agents\nType /help for controls. Exit with /exit or Ctrl-D; workspace access ends when the terminal closes.\n",
+		"Omnidex · Agents\nproject: %s\n/help for controls · /exit or Ctrl-D to leave\n",
 		channel.WorkspaceRoot,
-		channel.ID,
 	))
 }
 
@@ -96,8 +97,13 @@ func (renderer chatRenderer) sessionControl(control model.ChannelSessionControl)
 
 func (renderer chatRenderer) prompt(details *model.JobDetails) error {
 	label := "you> "
+	activity := chatActivity{}
 	if details != nil {
 		label = fmt.Sprintf("you #%d> ", details.Job.ID)
+		activity = activityForJob(*details)
+	}
+	if err := renderer.console.SetActivity(activity); err != nil {
+		return err
 	}
 	return renderer.console.SetPrompt(label)
 }
@@ -108,34 +114,12 @@ func (renderer chatRenderer) system(format string, values ...any) error {
 
 func (renderer chatRenderer) job(details model.JobDetails, previous *model.JobDetails) error {
 	var rendered strings.Builder
-	if previous == nil || previous.Job.Status != details.Job.Status ||
-		previous.Job.CurrentGeneration != details.Job.CurrentGeneration {
-		fmt.Fprintf(
-			&rendered,
-			"[omni] job %d · generation %d · %s\n",
-			details.Job.ID,
-			details.Job.CurrentGeneration,
-			details.Job.Status,
-		)
+	if renderer.verbosity == chatDebug {
+		renderDiagnosticJob(&rendered, details, previous)
+	} else if renderer.verbosity != chatQuiet {
+		renderJobActivity(&rendered, details, previous)
 	}
-	prior := map[int64]string{}
-	if previous != nil {
-		for _, step := range previous.Steps {
-			prior[step.ID] = step.Status
-		}
-	}
-	for _, step := range details.Steps {
-		if prior[step.ID] != step.Status {
-			fmt.Fprintf(
-				&rendered,
-				"[omni] job %d · step %d · stage %s · %s\n",
-				details.Job.ID,
-				step.ID,
-				step.Action,
-				step.Status,
-			)
-		}
-	}
+	renderJobErrors(&rendered, details, previous)
 	if details.AgentPause != nil && (previous == nil || !reflect.DeepEqual(previous.AgentPause, details.AgentPause)) {
 		renderAgentQuestions(&rendered, details.AgentPause)
 	}
@@ -147,23 +131,15 @@ func (renderer chatRenderer) job(details model.JobDetails, previous *model.JobDe
 
 func (renderer chatRenderer) status(details model.JobDetails) error {
 	var rendered strings.Builder
-	fmt.Fprintf(
-		&rendered,
-		"[omni] job %d · generation %d · %s\n",
-		details.Job.ID,
-		details.Job.CurrentGeneration,
-		details.Job.Status,
-	)
-	for _, step := range details.Steps {
-		fmt.Fprintf(
-			&rendered,
-			"[omni] job %d · step %d · stage %s · %s\n",
-			details.Job.ID,
-			step.ID,
-			step.Action,
-			step.Status,
-		)
+	if renderer.verbosity == chatDebug {
+		renderDiagnosticJob(&rendered, details, nil)
+	} else {
+		fmt.Fprintf(&rendered, "[omni] job %d · %s\n", details.Job.ID, activityForJob(details).Label)
 	}
+	if details.Job.Instruction != "" {
+		renderBlock(&rendered, "task>", details.Job.Instruction)
+	}
+	renderJobErrors(&rendered, details, nil)
 	if details.AgentPause != nil {
 		renderAgentQuestions(&rendered, details.AgentPause)
 	}
@@ -175,7 +151,14 @@ func renderAgentQuestions(destination *strings.Builder, pause *model.CodingAgent
 	fmt.Fprintln(destination, "[omni] reply here to answer")
 }
 
-func (renderer chatRenderer) realtime(event client.RealtimeEvent) error {
+func (renderer *chatRenderer) realtime(event client.RealtimeEvent) error {
+	if event.AgentActivity != nil {
+		return renderer.nativeActivity(event)
+	}
+	renderer.observeWorkspaceFile(event)
+	if renderer.verbosity != chatDebug {
+		return renderer.realtimeActivity(event)
+	}
 	if event.EventName == client.RealtimeJobProgress {
 		return renderer.system("job %d · %s", event.JobID, event.Summary)
 	}

@@ -83,6 +83,8 @@ func runChatSession(config chatSessionConfig) (resultErr error) {
 	if err := session.reconcilePlanReview(); err != nil {
 		return err
 	}
+	activityErrors, stopActivity := startChatActivityDisplay(config.Context, config.Console)
+	defer stopActivity()
 	inputs, inputDone := readChatInput(config.Context, config.Console)
 	defer func() {
 		config.Cancel()
@@ -104,6 +106,8 @@ func runChatSession(config chatSessionConfig) (resultErr error) {
 
 	for {
 		select {
+		case err := <-activityErrors:
+			return err
 		case <-config.Context.Done():
 			return config.Context.Err()
 		case signal := <-config.Signals:
@@ -283,7 +287,13 @@ func (session *chatSession) acceptInput(line string, pasted bool) (bool, error) 
 			return false, session.renderer.system("no active job")
 		}
 		return false, session.renderer.status(*session.active)
-	case "interrupt", "redirect", "cancel":
+	case "diagnostics":
+		return false, session.setChatDiagnostics(text)
+	case "verbosity":
+		return false, session.setChatVerbosity(text)
+	case "cancel", "stop":
+		return false, session.stopCurrentJob(text)
+	case "interrupt", "redirect":
 		expectedJobID := int64(0)
 		if session.active != nil {
 			expectedJobID = session.active.Job.ID
@@ -339,11 +349,7 @@ func (session *chatSession) acceptText(text string) error {
 		}
 		return err
 	}
-	if err := session.renderer.system(
-		"job %d · %s",
-		receipt.JobID,
-		receipt.Disposition,
-	); err != nil {
+	if err := session.renderTurnAccepted(receipt); err != nil {
 		return err
 	}
 	if err := session.reloadSnapshot(); err != nil {
@@ -403,6 +409,11 @@ func (session *chatSession) acceptRealtime(event client.RealtimeEvent) error {
 	}
 	if event.ID <= session.realtimeCursor && realtimeEventReflectedBySnapshot(event) {
 		return nil
+	}
+	if detail, changed := chatEventActivity(event); changed {
+		if err := session.renderer.console.SetActivityDetail(event.JobID, event.StepID, detail); err != nil {
+			return err
+		}
 	}
 	if err := session.renderer.realtime(event); err != nil {
 		return err

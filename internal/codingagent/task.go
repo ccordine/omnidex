@@ -59,7 +59,7 @@ func (controller *Controller) runTask(ctx context.Context, task Task, state *tas
 		}
 		scope := controller.assignment(Review, &task, controller.Configuration.Reviewer)
 		scope.Findings = state.findings[task.ID]
-		checks, err := controller.Verifier.ExecuteChecks(ctx, scope, task.Checks)
+		checks, err := controller.executeChecks(ctx, scope, task.Checks)
 		if err != nil {
 			return err
 		}

@@ -16,7 +16,7 @@ func TestRejectedProposalsReturnToTheirOwnRoleWithConcreteNotes(t *testing.T) {
 	}, passingChecks)
 	planner := controller.Providers["planner"]
 	plans := 0
-	controller.Providers["planner"] = providerFunc(func(ctx context.Context, call Assignment, writer FileWriter, event func(json.RawMessage) error) (Result, error) {
+	controller.Providers["planner"] = providerFunc(func(ctx context.Context, call Assignment, writer FileWriter, event func(NativeEvent) error) (Result, error) {
 		plans++
 		result, err := planner.Run(ctx, call, writer, event)
 		if plans == 1 {
@@ -30,7 +30,7 @@ func TestRejectedProposalsReturnToTheirOwnRoleWithConcreteNotes(t *testing.T) {
 	})
 	reviewer := controller.Providers["reviewer"]
 	reviews := 0
-	controller.Providers["reviewer"] = providerFunc(func(ctx context.Context, call Assignment, writer FileWriter, event func(json.RawMessage) error) (Result, error) {
+	controller.Providers["reviewer"] = providerFunc(func(ctx context.Context, call Assignment, writer FileWriter, event func(NativeEvent) error) (Result, error) {
 		reviews++
 		result, err := reviewer.Run(ctx, call, writer, event)
 		if reviews == 1 {

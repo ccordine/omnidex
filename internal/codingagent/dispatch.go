@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+
+	"github.com/gryph/omnidex/internal/model"
 )
 
 func (controller *Controller) assignment(role Role, task *Task, route Route) Assignment {
@@ -90,13 +92,49 @@ func (controller *Controller) invoke(ctx context.Context, call Assignment, round
 		writer = taskFileWriter{environment: controller.Environment, files: call.WriteFiles}
 	}
 	frames := 0
-	result, runErr := provider.Run(ctx, providerCall, writer, func(frame json.RawMessage) error {
-		if !json.Valid(frame) {
-			return fmt.Errorf("agent emitted an invalid native receipt")
+	result, runErr := provider.Run(ctx, providerCall, writer, func(event NativeEvent) error {
+		if len(event.Frame) != 0 {
+			if !json.Valid(event.Frame) {
+				return fmt.Errorf("agent emitted an invalid native receipt")
+			}
+			frames++
+			if _, err := controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "native_event", CallID: callID, Role: call.Role, TaskID: taskID, Round: round, Frame: event.Frame}); err != nil {
+				return err
+			}
 		}
-		frames++
-		_, err := controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "native_event", CallID: callID, Role: call.Role, TaskID: taskID, Round: round, Frame: frame})
-		return err
+		if event.Activity != nil {
+			if frames == 0 {
+				return fmt.Errorf("agent activity preceded its original native evidence")
+			}
+			activity := *event.Activity
+			if activity.Source != model.AgentActivityNative || activity.Role != string(call.Role) || activity.TaskID != taskID {
+				return fmt.Errorf("agent activity changed its task assignment")
+			}
+			if err := activity.Validate(); err != nil {
+				return err
+			}
+			for _, file := range activity.Paths {
+				granted := call.ReadFiles
+				if activity.Kind == model.AgentActivityFileEdit {
+					granted = call.WriteFiles
+				}
+				bound := false
+				for _, allowed := range granted {
+					if file == allowed {
+						bound = true
+						break
+					}
+				}
+				if !bound {
+					return fmt.Errorf("agent activity names an ungranted file")
+				}
+			}
+			activity.Paths = append([]string(nil), activity.Paths...)
+			if controller.Activity != nil {
+				controller.Activity(activity)
+			}
+		}
+		return nil
 	})
 	if runErr != nil {
 		_, _ = controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "call_failed", CallID: callID, Role: call.Role, TaskID: taskID, Round: round})

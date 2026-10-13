@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -54,6 +55,10 @@ type chatConsole struct {
 	reviewView     string
 	promptMu       sync.Mutex
 	prompt         string
+	activity       chatActivity
+	activityDetail string
+	activityFrame  int
+	renderedPrompt string
 }
 
 func newChatConsole(
@@ -223,21 +228,12 @@ func (console *chatConsole) SetPrompt(prompt string) error {
 	console.presentationMu.Lock()
 	defer console.presentationMu.Unlock()
 	console.promptMu.Lock()
-	if console.prompt == prompt {
-		console.promptMu.Unlock()
-		return nil
-	}
 	console.prompt = prompt
 	console.promptMu.Unlock()
 	if console.terminal == nil {
 		return fmt.Errorf("interactive terminal is unavailable")
 	}
-	if console.reviewActive {
-		return nil
-	}
-	console.terminal.SetPrompt(prompt)
-	_, err := console.terminal.Write(nil)
-	return err
+	return console.redrawPromptLocked(time.Now())
 }
 
 func (console *chatConsole) WriteOutput(value string) error {

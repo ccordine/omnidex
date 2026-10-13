@@ -3,14 +3,14 @@ package codex
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/gryph/omnidex/internal/codingagent"
+	"github.com/gryph/omnidex/internal/model"
 )
 
 // ExecuteChecks invokes the native sandbox directly. No model is asked to run
 // or interpret a command whose arguments are already frozen by Omnidex.
-func (client *Client) ExecuteChecks(parent context.Context, scope codingagent.Assignment, checks []codingagent.Check) ([]codingagent.CheckResult, error) {
+func (client *Client) ExecuteChecks(parent context.Context, scope codingagent.Assignment, checks []codingagent.Check, activity func(model.AgentActivity) error) ([]codingagent.CheckResult, error) {
 	scope, err := readOnlyCheckScope(scope)
 	if err != nil {
 		return nil, err
@@ -39,21 +39,11 @@ func (client *Client) ExecuteChecks(parent context.Context, scope codingagent.As
 	}
 	results := make([]codingagent.CheckResult, 0, len(checks))
 	for _, check := range checks {
-		var response struct {
-			ExitCode *int   `json:"exitCode"`
-			Stdout   string `json:"stdout"`
-			Stderr   string `json:"stderr"`
-		}
-		_, err := connection.call("command/exec", map[string]any{"command": check.Argv, "cwd": scope.Root, "permissionProfile": "omnidex-task",
-			"timeoutMs": int64(client.timeout / time.Millisecond), "outputBytesCap": 1 << 20,
-			"env": agentToolEnvironment(scratch)}, &response)
+		result, err := client.executeAgentCheck(connection, scope, check, scratch, activity)
 		if err != nil {
 			return nil, fmt.Errorf("verify check %s: %w", check.ID, err)
 		}
-		if response.ExitCode == nil {
-			return nil, fmt.Errorf("verification check %s lacks its actual exit status", check.ID)
-		}
-		results = append(results, codingagent.CheckResult{ID: check.ID, ExitCode: *response.ExitCode, Output: response.Stdout + response.Stderr})
+		results = append(results, result)
 	}
 	return results, nil
 }

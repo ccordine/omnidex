@@ -57,7 +57,13 @@ func (runtime *nativeRuntimeV3) runAgentCodingAction(configuration codingagent.C
 		ArtifactBindings: bindings, PlanningEnvironment: planningEnvironment,
 		ConstructionFacts: facts,
 		Environment:       &codingAgentEnvironment{runtime: runtime, root: scope.Root, identity: identity},
-		Evidence:          runtime.svc.repo.CodingAgentEvidence(runtime.claim.Authority)}
+		Evidence:          runtime.svc.repo.CodingAgentEvidence(runtime.claim.Authority),
+		Activity: func(activity model.AgentActivity) {
+			runtime.svc.emitRuntimeEvent(RuntimeEvent{
+				JobID: runtime.claim.Authority.JobID, StepID: runtime.claim.Authority.StepID,
+				Attempt: runtime.claim.Authority.Attempt, Kind: "agent_activity", AgentActivity: &activity,
+			})
+		}}
 	stopHeartbeat := runtime.svc.startProgressHeartbeat(runtime.ctx, runtime.claim.Authority, "scoped-agent-work")
 	defer stopHeartbeat()
 	if err := controller.Run(agentContext); err != nil {
