@@ -202,7 +202,7 @@ func TestAgentReceiptPersistenceMustSucceedBeforeEvidenceIsAccepted(t *testing.T
 	result := codingagent.Result{}
 	raw := json.RawMessage(`{"original":"receipt"}`)
 	failure := errors.New("durable evidence unavailable")
-	if err := recordAgentFrame(&result, raw, func(json.RawMessage) error { return failure }); !errors.Is(err, failure) || len(result.Evidence) != 0 {
+	if err := recordAgentFrame(&result, raw, func(codingagent.NativeEvent) error { return failure }); !errors.Is(err, failure) || len(result.Evidence) != 0 {
 		t.Fatal("failed persistence was accepted as invocation evidence")
 	}
 	if err := recordAgentFrame(&result, raw, nil); err != nil {

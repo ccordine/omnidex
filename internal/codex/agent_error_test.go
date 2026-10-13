@@ -22,8 +22,8 @@ func TestAgentNativeRetryNotificationPreservesEvidenceAndWaitsForCompletion(t *t
 	items := map[string]string{}
 	var persisted []json.RawMessage
 	for index, raw := range frames {
-		finished, err := consumeAgentFrame(decodeAgentTestFrame(t, raw), json.RawMessage(raw), &result, codingagent.Plan, items, func(frame json.RawMessage) error {
-			persisted = append(persisted, append(json.RawMessage(nil), frame...))
+		finished, err := consumeAgentFrame(decodeAgentTestFrame(t, raw), json.RawMessage(raw), &result, codingagent.Plan, items, func(event codingagent.NativeEvent) error {
+			persisted = append(persisted, append(json.RawMessage(nil), event.Frame...))
 			return nil
 		})
 		if err != nil {
@@ -48,8 +48,8 @@ func TestAgentNativeFinalFailurePersistsOriginalFrameAndReportsDetail(t *testing
 	} {
 		result := codingagent.Result{ThreadID: "thread", TurnID: "turn"}
 		var persisted json.RawMessage
-		finished, err := consumeAgentFrame(decodeAgentTestFrame(t, raw), json.RawMessage(raw), &result, codingagent.Plan, map[string]string{}, func(frame json.RawMessage) error {
-			persisted = append(json.RawMessage(nil), frame...)
+		finished, err := consumeAgentFrame(decodeAgentTestFrame(t, raw), json.RawMessage(raw), &result, codingagent.Plan, map[string]string{}, func(event codingagent.NativeEvent) error {
+			persisted = append(json.RawMessage(nil), event.Frame...)
 			return nil
 		})
 		if err == nil || finished || result.Completed {
@@ -86,7 +86,7 @@ func TestAgentNativeFailurePersistenceErrorTakesPrecedence(t *testing.T) {
 	raw := `{"method":"error","params":{"threadId":"thread","turnId":"turn","willRetry":false,"error":{"message":"Native failed"}}}`
 	result := codingagent.Result{ThreadID: "thread", TurnID: "turn"}
 	failure := errors.New("native receipt persistence failed")
-	finished, err := consumeAgentFrame(decodeAgentTestFrame(t, raw), json.RawMessage(raw), &result, codingagent.Plan, map[string]string{}, func(json.RawMessage) error { return failure })
+	finished, err := consumeAgentFrame(decodeAgentTestFrame(t, raw), json.RawMessage(raw), &result, codingagent.Plan, map[string]string{}, func(codingagent.NativeEvent) error { return failure })
 	if !errors.Is(err, failure) || finished || result.Completed || len(result.Evidence) != 0 {
 		t.Fatal("native failure was processed without required durable evidence")
 	}

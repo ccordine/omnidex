@@ -74,7 +74,7 @@ func nativeAgentFixture(t *testing.T, model string) codingagent.Assignment {
 		Acceptance: []string{`greet("Ada") == "Hello, Ada!" and greet("") == "Hello, !"`},
 		ReadFiles:  []string{"contract.txt"}, WriteFiles: []string{"allowed.py"}, Dependencies: []string{},
 		RequirementIDs: []string{"greeting-result"}, Checks: []codingagent.Check{{ID: "greeting-behavior", Argv: []string{
-			python, "-B", "-c", `import runpy; greet=runpy.run_path("allowed.py")["greet"]; assert greet("Ada")=="Hello, Ada!"; assert greet("")=="Hello, !"`,
+			python, "-B", "-c", `import runpy; greet=runpy.run_path("allowed.py")["greet"]; assert greet("Ada")=="Hello, Ada!"; assert greet("")=="Hello, !"; print("greeting-behavior verified")`,
 		}}}}
 	return codingagent.Assignment{JobID: 17, Generation: 1, Role: codingagent.Execute, Task: &task,
 		Root: root, ReadFiles: []string{"allowed.py", "contract.txt"}, WriteFiles: []string{"allowed.py"},
@@ -88,7 +88,14 @@ func TestInstalledCodexAgentExecutionAndIndependentReview(t *testing.T) {
 	defer cancel()
 	frames, effects := 0, 0
 	writer := &agentFixtureWriter{scope: scope}
-	result, err := client.Run(ctx, scope, writer, func(raw json.RawMessage) error {
+	activityProof := nativeActivityQualification{call: scope}
+	result, err := client.Run(ctx, scope, writer, func(event codingagent.NativeEvent) error {
+		if err := activityProof.native(event); err != nil {
+			return err
+		}
+		if len(event.Frame) == 0 {
+			return nil
+		}
 		frames++
 		var frame struct {
 			Method string `json:"method"`
@@ -98,7 +105,7 @@ func TestInstalledCodexAgentExecutionAndIndependentReview(t *testing.T) {
 				} `json:"item"`
 			} `json:"params"`
 		}
-		if err := json.Unmarshal(raw, &frame); err != nil {
+		if err := json.Unmarshal(event.Frame, &frame); err != nil {
 			return err
 		}
 		if frame.Method == "item/completed" && (frame.Params.Item.Type == "commandExecution" || frame.Params.Item.Type == "dynamicToolCall") {
@@ -116,13 +123,15 @@ func TestInstalledCodexAgentExecutionAndIndependentReview(t *testing.T) {
 	if err := json.Unmarshal(result.Content, &execution); err != nil || execution.Questions == nil || len(execution.Questions) != 0 {
 		t.Fatalf("native execution did not fulfill its complete supplied contract: decode=%v", err)
 	}
-	checks, err := client.ExecuteChecks(ctx, scope, scope.Task.Checks)
+	checks, err := client.ExecuteChecks(ctx, scope, scope.Task.Checks, activityProof.verification)
 	if err != nil || len(checks) != 1 || checks[0].ExitCode != 0 {
 		t.Fatalf("actual native behavior verification failed: checks=%+v error=%v", checks, err)
 	}
+	activityProof.verify(t, writer.writes)
 	reviewScope := scope
 	reviewScope.Role, reviewScope.WriteFiles, reviewScope.Checks = codingagent.Review, nil, checks
-	review, err := client.Run(ctx, reviewScope, nil, nil)
+	reviewActivityProof := nativeActivityQualification{call: reviewScope}
+	review, err := client.Run(ctx, reviewScope, nil, reviewActivityProof.native)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +173,7 @@ except OSError as failure:
     assert failure.errno in (errno.EACCES, errno.EPERM, errno.ENOENT, errno.EROFS)
 assert os.path.realpath(os.environ["HOME"])==os.path.realpath(os.environ["TMPDIR"])
 `
-	results, err := client.ExecuteChecks(context.Background(), scope, []codingagent.Check{{ID: "actual-sandbox-denials", Argv: []string{python, "-B", "-c", denied}}})
+	results, err := client.ExecuteChecks(context.Background(), scope, []codingagent.Check{{ID: "actual-sandbox-denials", Argv: []string{python, "-B", "-c", denied}}}, nil)
 	for file, expected := range map[string]string{"allowed.py": "def greet(name):\n    return 'broken'\n", "undeclared.txt": "keep this exact fixture unchanged\n"} {
 		content, err := os.ReadFile(filepath.Join(scope.Root, file))
 		if err != nil || string(content) != expected {
@@ -189,7 +198,7 @@ func TestInstalledCodexAgentRunningCommandCancellation(t *testing.T) {
 	script := `import os, pathlib, sys, time; pathlib.Path(os.environ["TMPDIR"],sys.argv[1]).write_text(str(os.getpid())); time.sleep(120)`
 	finished := make(chan error, 1)
 	go func() {
-		_, err := client.ExecuteChecks(ctx, scope, []codingagent.Check{{ID: "actual-running-command", Argv: []string{scope.Task.Checks[0].Argv[0], "-B", "-c", script, marker}}})
+		_, err := client.ExecuteChecks(ctx, scope, []codingagent.Check{{ID: "actual-running-command", Argv: []string{scope.Task.Checks[0].Argv[0], "-B", "-c", script, marker}}}, nil)
 		finished <- err
 	}()
 	var pid int
@@ -261,44 +270,4 @@ func markedNativeChild(executable, marker string) int {
 		}
 	}
 	return 0
-}
-
-type agentFixtureWriter struct {
-	scope  codingagent.Assignment
-	writes int
-}
-
-func (writer *agentFixtureWriter) WriteFile(ctx context.Context, write codingagent.FileWrite) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if err := codingagent.ValidatePath(write.Path); err != nil {
-		return err
-	}
-	allowed := false
-	for _, file := range writer.scope.WriteFiles {
-		if file == write.Path {
-			allowed = true
-		}
-	}
-	if !allowed || writer.scope.Role != codingagent.Execute {
-		return fmt.Errorf("fixture writer denied an ungranted source file")
-	}
-	path := filepath.Join(writer.scope.Root, filepath.FromSlash(write.Path))
-	resolved, err := filepath.EvalSymlinks(path)
-	if err != nil || resolved != path {
-		return fmt.Errorf("fixture writer requires exact physical source")
-	}
-	current, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	if string(current) != write.ExpectedContent {
-		return fmt.Errorf("fixture writer rejected stale source bytes")
-	}
-	if err := os.WriteFile(path, []byte(write.Content), 0o600); err != nil {
-		return err
-	}
-	writer.writes++
-	return nil
 }

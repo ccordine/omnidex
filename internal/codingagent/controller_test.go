@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+
+	"github.com/gryph/omnidex/internal/model"
 )
 
 type memoryJournal struct{ entries []Entry }
@@ -31,15 +33,15 @@ func (fixtureEnvironment) PrepareFiles(context.Context, Task) error   { return n
 func (fixtureEnvironment) Attest(context.Context) error               { return nil }
 func (fixtureEnvironment) WriteFile(context.Context, FileWrite) error { return nil }
 
-type providerFunc func(context.Context, Assignment, FileWriter, func(json.RawMessage) error) (Result, error)
+type providerFunc func(context.Context, Assignment, FileWriter, func(NativeEvent) error) (Result, error)
 
-func (provider providerFunc) Run(ctx context.Context, call Assignment, writer FileWriter, receipt func(json.RawMessage) error) (Result, error) {
+func (provider providerFunc) Run(ctx context.Context, call Assignment, writer FileWriter, receipt func(NativeEvent) error) (Result, error) {
 	return provider(ctx, call, writer, receipt)
 }
 
 type verifierFunc func(context.Context, Assignment, []Check) ([]CheckResult, error)
 
-func (verifier verifierFunc) ExecuteChecks(ctx context.Context, call Assignment, checks []Check) ([]CheckResult, error) {
+func (verifier verifierFunc) ExecuteChecks(ctx context.Context, call Assignment, checks []Check, activity func(model.AgentActivity) error) ([]CheckResult, error) {
 	return verifier(ctx, call, checks)
 }
 
@@ -53,7 +55,7 @@ func fixtureController(t *testing.T, workload Workload, behavior func(Assignment
 	t.Helper()
 	journal := &memoryJournal{}
 	sequence := 0
-	provider := providerFunc(func(ctx context.Context, call Assignment, writer FileWriter, event func(json.RawMessage) error) (Result, error) {
+	provider := providerFunc(func(ctx context.Context, call Assignment, writer FileWriter, event func(NativeEvent) error) (Result, error) {
 		if (call.Role == Execute) != (writer != nil) {
 			t.Fatal("review/execution effect boundary was not enforced")
 		}
@@ -61,7 +63,7 @@ func fixtureController(t *testing.T, workload Workload, behavior func(Assignment
 			return Result{}, err
 		}
 		sequence++
-		if err := event(json.RawMessage(`{"native":"receipt"}`)); err != nil {
+		if err := event(NativeEvent{Frame: json.RawMessage(`{"native":"receipt"}`)}); err != nil {
 			return Result{}, err
 		}
 		var content any
@@ -200,7 +202,7 @@ func TestControllerRejectsInventedScopeAndMissingRequirements(t *testing.T) {
 		controller, journal := fixtureController(t, plan, func(Assignment) (any, error) { t.Fatal("invalid plan reached execution"); return nil, nil }, passingChecks)
 		ctx, cancel := context.WithCancel(context.Background())
 		planner := controller.Providers["planner"]
-		controller.Providers["planner"] = providerFunc(func(ctx context.Context, call Assignment, writer FileWriter, event func(json.RawMessage) error) (Result, error) {
+		controller.Providers["planner"] = providerFunc(func(ctx context.Context, call Assignment, writer FileWriter, event func(NativeEvent) error) (Result, error) {
 			if len(call.ValidationNotes) > 0 {
 				cancel()
 				return Result{}, ctx.Err()

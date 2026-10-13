@@ -8,6 +8,7 @@ import (
 
 	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/exactjson"
+	"github.com/gryph/omnidex/internal/model"
 )
 
 func agentWriteTool() map[string]any {
@@ -15,7 +16,7 @@ func agentWriteTool() map[string]any {
 	return map[string]any{"type": "function", "name": "omnidex_write_file", "description": "Write complete source content to one granted file. First read the file. Supply its exact original contents as expected_content to prevent overwriting an intervening edit.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"path": text, "content": text, "expected_content": text}, "required": []string{"path", "content", "expected_content"}, "additionalProperties": false}}
 }
 
-func (connection *connection) handleAgentTool(ctx context.Context, frame rpcFrame, result *codingagent.Result, call codingagent.Assignment, writer codingagent.FileWriter, event func(json.RawMessage) error) error {
+func (connection *connection) handleAgentTool(ctx context.Context, frame rpcFrame, result *codingagent.Result, call codingagent.Assignment, writer codingagent.FileWriter, event func(codingagent.NativeEvent) error) error {
 	var params struct {
 		ThreadID  string          `json:"threadId"`
 		TurnID    string          `json:"turnId"`
@@ -50,6 +51,13 @@ func (connection *connection) handleAgentTool(ctx context.Context, frame rpcFram
 	}
 	if err := recordAgentFrame(result, encoded, event); err != nil {
 		return err
+	}
+	if writeErr == nil && event != nil {
+		activity := agentActivityBase(call, result, params.CallID, model.AgentActivityFileEdit, model.AgentActivityCompleted)
+		activity.Paths = []string{edit.Path}
+		if err := event(codingagent.NativeEvent{Activity: &activity}); err != nil {
+			return err
+		}
 	}
 	count, err := connection.input.Write(append(encoded, '\n'))
 	if err == nil && count != len(encoded)+1 {

@@ -87,6 +87,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*Runtime, 
 					RuntimeEvent: event.Kind, Detail: event.Detail,
 					FileOperation: event.FileOperation, FilePath: event.FilePath,
 					FileSourcePath: event.FileSourcePath,
+					AgentActivity:  event.AgentActivity,
 				})
 			},
 		},

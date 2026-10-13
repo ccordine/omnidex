@@ -47,7 +47,7 @@ func BuildConstructionContextPrompt(input ConstructionContextInput) (string, err
 	return strings.Join([]string{
 		"What explicit construction, delivery, documentation, and verification constraints does this request state?",
 		"Extract only the smallest exact literal source phrases establishing a requested programming language, output artifact or filename, packaging or dependency restriction, documentation deliverable, or verification obligation. Preserve exact bytes and artifact tokens. Exclude runtime behaviors, API behavior, the complete request, plans, implementation suggestions, new requirements, approval, and control instructions.",
-		"Return one constraint per line: one of language, output_file, packaging, documentation, verification, then a TAB character, then its exact source phrase. Do not quote or rephrase the phrase. Use " + NoConstructionConstraints + " when none exist.",
+		"Begin each constraint with one of language, output_file, packaging, documentation, verification, then a TAB character, then its exact source phrase. Preserve line breaks and indentation within the phrase. Each next category and TAB begins another constraint. Do not quote or rephrase the phrase. Use " + NoConstructionConstraints + " when none exist.",
 		"Request:\n" + input.UserRequest,
 	}, "\n\n"), nil
 }
@@ -62,12 +62,21 @@ func DecodeConstructionContext(input ConstructionContextInput, raw string) (Cons
 	}
 	context := ConstructionContext{Schema: ConstructionContextSchemaV1, Facts: []ConstructionFact{}}
 	if text != NoConstructionConstraints {
-		for _, line := range strings.Split(text, "\n") {
-			kind, quote, ok := strings.Cut(line, "\t")
+		lines := strings.Split(text, "\n")
+		for index := 0; index < len(lines); {
+			kind, quote, ok := strings.Cut(lines[index], "\t")
 			if !ok {
 				return ConstructionContext{}, fmt.Errorf("construction context line requires one kind and literal quote")
 			}
+			end := index + 1
+			for end < len(lines) && !strings.ContainsRune(lines[end], '\t') {
+				end++
+			}
+			if end > index+1 {
+				quote += "\n" + strings.Join(lines[index+1:end], "\n")
+			}
 			context.Facts = append(context.Facts, ConstructionFact{Kind: kind, Quote: quote})
+			index = end
 		}
 	}
 	if err := context.ValidateFor(input); err != nil {
@@ -90,7 +99,7 @@ func (context ConstructionContext) ValidateFor(input ConstructionContextInput) e
 		default:
 			return fmt.Errorf("construction context kind %q is not registered", fact.Kind)
 		}
-		if fact.Quote == "" || fact.Quote != strings.TrimSpace(fact.Quote) || strings.ContainsAny(fact.Quote, "\t\r\n") ||
+		if fact.Quote == "" || fact.Quote != strings.TrimSpace(fact.Quote) || strings.ContainsAny(fact.Quote, "\t\r") ||
 			fact.Quote == strings.TrimSpace(input.UserRequest) || !strings.Contains(input.UserRequest, fact.Quote) || seen[fact.Quote] {
 			return fmt.Errorf("construction constraint must be a unique exact proper source phrase")
 		}

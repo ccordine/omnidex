@@ -11,6 +11,18 @@ import (
 )
 
 func validateAgentItems(frame rpcFrame, role codingagent.Role, open map[string]string) error {
+	if kind := agentDeltaItemKind(frame.Method); kind != "" {
+		var params struct {
+			ItemID string `json:"itemId"`
+		}
+		if err := json.Unmarshal(frame.Params, &params); err != nil {
+			return err
+		}
+		if params.ItemID == "" || open[params.ItemID] != kind {
+			return fmt.Errorf("native agent delta belongs to an unbound item")
+		}
+		return nil
+	}
 	if frame.Method != "item/started" && frame.Method != "item/completed" {
 		return nil
 	}
@@ -48,7 +60,7 @@ func validateAgentItems(frame rpcFrame, role codingagent.Role, open map[string]s
 	return nil
 }
 
-func recordAgentFrame(result *codingagent.Result, raw json.RawMessage, event func(json.RawMessage) error) error {
+func recordAgentFrame(result *codingagent.Result, raw json.RawMessage, event func(codingagent.NativeEvent) error) error {
 	count := len(raw)
 	for _, frame := range result.Evidence {
 		count += len(frame)
@@ -58,7 +70,7 @@ func recordAgentFrame(result *codingagent.Result, raw json.RawMessage, event fun
 	}
 	owned := append(json.RawMessage(nil), raw...)
 	if event != nil {
-		if err := event(owned); err != nil {
+		if err := event(codingagent.NativeEvent{Frame: owned}); err != nil {
 			return err
 		}
 	}
@@ -66,16 +78,51 @@ func recordAgentFrame(result *codingagent.Result, raw json.RawMessage, event fun
 	return nil
 }
 
-func consumeAgentFrame(frame rpcFrame, raw json.RawMessage, result *codingagent.Result, role codingagent.Role, items map[string]string, event func(json.RawMessage) error) (bool, error) {
+func consumeAgentFrame(frame rpcFrame, raw json.RawMessage, result *codingagent.Result, role codingagent.Role, items map[string]string, event func(codingagent.NativeEvent) error) (bool, error) {
+	if err := validateAgentFrameBinding(frame, result); err != nil {
+		return false, err
+	}
+	if err := validateAgentItems(frame, role, items); err != nil {
+		return false, err
+	}
 	if agentEvidenceMethod(frame.Method) {
 		if err := recordAgentFrame(result, raw, event); err != nil {
 			return false, err
 		}
 	}
-	if err := validateAgentItems(frame, role, items); err != nil {
-		return false, err
-	}
 	return collectAgentFrame(frame, raw, result)
+}
+
+func agentDeltaItemKind(method string) string {
+	switch method {
+	case "item/agentMessage/delta":
+		return "agentMessage"
+	case "item/reasoning/summaryTextDelta", "item/reasoning/summaryPartAdded":
+		return "reasoning"
+	case "item/commandExecution/outputDelta":
+		return "commandExecution"
+	default:
+		return ""
+	}
+}
+
+func validateAgentFrameBinding(frame rpcFrame, result *codingagent.Result) error {
+	var params struct {
+		ThreadID string `json:"threadId"`
+		TurnID   string `json:"turnId"`
+	}
+	if err := json.Unmarshal(frame.Params, &params); err != nil {
+		return err
+	}
+	if (params.ThreadID != "" && params.ThreadID != result.ThreadID) || (params.TurnID != "" && params.TurnID != result.TurnID) {
+		return fmt.Errorf("agent event belongs to another assignment")
+	}
+	if frame.Method == "item/started" || frame.Method == "item/completed" || agentDeltaItemKind(frame.Method) != "" {
+		if params.ThreadID != result.ThreadID || params.TurnID != result.TurnID || result.ThreadID == "" || result.TurnID == "" {
+			return fmt.Errorf("native activity lacks its exact thread and turn")
+		}
+	}
+	return nil
 }
 
 type agentNativeError struct {

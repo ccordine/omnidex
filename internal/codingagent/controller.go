@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"sort"
+
+	"github.com/gryph/omnidex/internal/model"
 )
 
 type Controller struct {
@@ -19,6 +21,7 @@ type Controller struct {
 	Verifier            Verifier
 	Environment         Environment
 	Evidence            EvidenceStore
+	Activity            func(model.AgentActivity)
 }
 
 func (controller *Controller) Run(ctx context.Context) error {
@@ -49,7 +52,7 @@ func (controller *Controller) Run(ctx context.Context) error {
 		if err := controller.Environment.Attest(ctx); err != nil {
 			return err
 		}
-		checks, err := controller.Verifier.ExecuteChecks(ctx, controller.overallAssignment(workload), workload.Checks)
+		checks, err := controller.executeChecks(ctx, controller.overallAssignment(workload), workload.Checks)
 		if err != nil {
 			return err
 		}

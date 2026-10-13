@@ -13,20 +13,17 @@ var (
 
 // bracketedPasteReader keeps one terminal paste inside one line-editor turn.
 // The line editor treats CR and LF as submission even during bracketed paste.
-// It receives a single-line display projection; rawPaste retains the actual
-// user text returned by the console.
+// It receives a reversible single-line projection. The edited terminal line
+// owns the complete text, including typed prefixes, suffixes and corrections.
 type bracketedPasteReader struct {
 	source           io.Reader
 	maxBytes         int
 	paste            bool
-	pasteCR          bool
 	linePasted       bool
-	lineMixed        bool
 	lineBytes        int
 	overflow         bool
 	invalidUTF8      bool
 	unsafeText       bool
-	rawPaste         []byte
 	pasteRune        []byte
 	typedRune        []byte
 	candidate        []byte
@@ -119,7 +116,6 @@ func (reader *bracketedPasteReader) consume(value byte) bool {
 		if reader.paste {
 			reader.finishPastePayload()
 		}
-		reader.pasteCR = false
 		reader.queued = append(reader.queued, reader.candidate...)
 		reader.candidate = reader.candidate[:0]
 		reader.paste = !reader.paste
@@ -127,9 +123,9 @@ func (reader *bracketedPasteReader) consume(value byte) bool {
 			reader.linePasted = true
 		}
 	}
-	lineEnd := !reader.paste && value == '\r' && len(reader.candidate) == 0
+	lineEnd := !reader.paste && (value == '\r' || value == '\n') && len(reader.candidate) == 0
 	if lineEnd {
-		reader.skipLineLF = true
+		reader.skipLineLF = value == '\r'
 	}
 	return lineEnd
 }
@@ -144,9 +140,6 @@ func (reader *bracketedPasteReader) flushCandidate() {
 func (reader *bracketedPasteReader) consumeLiteral(value byte) {
 	if !reader.paste {
 		reader.consumeTypedByte(value)
-		if value != '\r' {
-			reader.lineMixed = true
-		}
 		return
 	}
 	reader.consumePasteByte(value)
@@ -191,7 +184,6 @@ func (reader *bracketedPasteReader) consumePasteByte(value byte) {
 		reader.overflow = true
 		return
 	}
-	reader.rawPaste = append(reader.rawPaste, value)
 	reader.pasteRune = append(reader.pasteRune, value)
 	if !utf8.FullRune(reader.pasteRune) {
 		return
@@ -202,27 +194,13 @@ func (reader *bracketedPasteReader) consumePasteByte(value byte) {
 		reader.pasteRune = reader.pasteRune[:0]
 		return
 	}
-	encoded := reader.pasteRune[:size]
 	reader.pasteRune = reader.pasteRune[size:]
 	if unsafeTerminalTextRune(character) && character != '\r' &&
 		character != '\n' && character != '\t' {
 		reader.unsafeText = true
 		return
 	}
-	if character == '\r' {
-		reader.queued = append(reader.queued, ' ')
-		reader.pasteCR = true
-		return
-	}
-	if character == '\n' {
-		if !reader.pasteCR {
-			reader.queued = append(reader.queued, ' ')
-		}
-		reader.pasteCR = false
-		return
-	}
-	reader.pasteCR = false
-	reader.queued = append(reader.queued, encoded...)
+	reader.queued = utf8.AppendRune(reader.queued, projectPasteRune(character))
 }
 
 func (reader *bracketedPasteReader) finishPastePayload() {
@@ -232,27 +210,23 @@ func (reader *bracketedPasteReader) finishPastePayload() {
 	}
 }
 
-func (reader *bracketedPasteReader) consumeLineState() (bool, bool, bool, bool, bool, string, terminalInputAuthority) {
+func (reader *bracketedPasteReader) consumeLineState() (bool, bool, bool, bool, terminalInputAuthority) {
 	reader.finishTypedRune()
 	pasted := reader.linePasted
 	overflow := reader.overflow
-	mixed := reader.lineMixed
 	invalidUTF8 := reader.invalidUTF8
 	unsafeText := reader.unsafeText
-	exactPaste := string(reader.rawPaste)
 	authority := reader.lineAuthority
 	reader.linePasted = false
-	reader.lineMixed = false
 	reader.lineBytes = 0
 	reader.overflow = false
 	reader.invalidUTF8 = false
 	reader.unsafeText = false
-	reader.rawPaste = reader.rawPaste[:0]
 	reader.pasteRune = reader.pasteRune[:0]
 	reader.typedRune = reader.typedRune[:0]
 	reader.lineAuthority = terminalInputAuthority{}
 	reader.lineAuthoritySet = false
-	return pasted, overflow, mixed, invalidUTF8, unsafeText, exactPaste, authority
+	return pasted, overflow, invalidUTF8, unsafeText, authority
 }
 
 func (reader *bracketedPasteReader) mergeLineAuthority(authority terminalInputAuthority) {
