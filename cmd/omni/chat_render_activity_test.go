@@ -99,6 +99,61 @@ func TestChatRendererShowsChangedErrorsWithoutRepeatingThem(t *testing.T) {
 	}
 }
 
+func TestChatRendererAuthorityEndedIsStoppedAndRetainsDebugEvidence(t *testing.T) {
+	const detail = "step execution authority was lost: job generation changed"
+	for _, level := range []chatVerbosity{chatNormal, chatVerbose, chatDebug} {
+		console, output := planReviewTestConsole(t)
+		renderer := chatRenderer{console: console, verbosity: level}
+		if err := renderer.realtime(client.RealtimeEvent{
+			EventName: client.RealtimeJobRuntimeEvent, JobID: 41, StepID: 12,
+			RuntimeEvent: "step_authority_lost", Detail: detail,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(output.String(), "error>") {
+			t.Fatalf("ended authority displayed as a new failure: %q", output.String())
+		}
+		if level == chatDebug {
+			if !strings.Contains(output.String(), detail) {
+				t.Fatalf("debug omitted actual authority evidence: %q", output.String())
+			}
+		} else if !strings.Contains(output.String(), "Work stopped") {
+			t.Fatalf("ended authority lacks truthful stopped state: %q", output.String())
+		}
+	}
+}
+
+func TestChatRendererCanceledReasonIsStatusAndFailureRemainsError(t *testing.T) {
+	for _, status := range []string{model.JobStatusCanceled, model.JobStatusFailed} {
+		console, output := planReviewTestConsole(t)
+		renderer := chatRenderer{console: console}
+		details := renderActivityJob()
+		details.Job.Status, details.Job.Error = status, "Recorded reason"
+		details.Steps[0].Status, details.Steps[0].Error = status, "Recorded reason"
+		if err := renderer.job(details, nil); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(output.String(), "Recorded reason") || strings.Contains(output.String(), "error>") != (status == model.JobStatusFailed) {
+			t.Fatalf("status %s has incorrect error/reason presentation: %q", status, output.String())
+		}
+	}
+}
+
+func TestChatPersistedTurnCancellationRetainsReasonWithoutFailure(t *testing.T) {
+	for _, status := range []string{model.JobStatusCanceled, model.JobStatusFailed} {
+		console, output := planReviewTestConsole(t)
+		message := model.ChannelMessage{Turn: &model.ChannelMessageTurnState{
+			JobID: 41, Status: status, Error: "Recorded reason",
+		}}
+		if err := (chatRenderer{console: console}).messageTurnState(message); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(output.String(), "Recorded reason") || strings.Contains(output.String(), "error>") != (status == model.JobStatusFailed) {
+			t.Fatalf("persisted status %s has incorrect reason/error presentation: %q", status, output.String())
+		}
+	}
+}
+
 func TestChatRendererStatusShowsFullTaskWithoutInternalStages(t *testing.T) {
 	console, output := planReviewTestConsole(t)
 	details := renderActivityJob()

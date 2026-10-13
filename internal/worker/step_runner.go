@@ -90,12 +90,6 @@ func (s *Service) runClaim(ctx context.Context, workerID string, claim *model.Cl
 		}
 		var questions *codingagent.QuestionsPending
 		if errors.As(err, &questions) {
-			if pauseErr := s.repo.PauseCodingAgentStep(ctx, claim.Authority, questions.Questions); pauseErr != nil {
-				if s.skipFailureForLostExecutionAuthority(workerID, claim, pauseErr) || s.skipFailureForControlledCancel(ctx, workerID, claim, pauseErr) {
-					return nil
-				}
-				return pauseErr
-			}
 			s.emitStepEvent(claim.Authority, "step_waiting_input", questions.Error())
 			return nil
 		}

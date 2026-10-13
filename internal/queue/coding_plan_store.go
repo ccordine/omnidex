@@ -88,6 +88,9 @@ func (r *Repository) StoreCodingPlanReview(
 			nil,
 		)
 	}
+	if err := requireNoPendingChannelSessionMessagesTx(ctx, tx, job.ID, command.Authority.Generation); err != nil {
+		return model.CodingPlan{}, err
+	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO coding_plans (
 			job_id,generation,revision,state,plan_step_id

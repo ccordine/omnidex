@@ -3,15 +3,16 @@ package queue
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/model"
 )
 
-// SearchConversationContextRecords returns complete, completed Assistant
-// exchanges. It never projects a matching user or assistant fragment without
-// its exact adjacent counterpart.
+// SearchConversationContextRecords returns exact completed-task and queued
+// Assistant exchanges. Each reply retains its own user-message or immutable
+// intake-operation authority.
 func (r *Repository) SearchConversationContextRecords(
 	ctx context.Context,
 	job model.Job,
@@ -38,7 +39,7 @@ func (r *Repository) SearchConversationContextRecords(
 		return nil, fmt.Errorf("conversation context search requires an assistant channel")
 	}
 	rows, err := r.pool.Query(ctx, `
-		WITH query_terms AS (
+		WITH `+conversationSessionRepliesCTE+`, query_terms AS (
 			SELECT websearch_to_tsquery('simple', term) AS query
 			FROM unnest($3::text[]) AS term
 		), conversation_followups AS (
@@ -75,6 +76,7 @@ func (r *Repository) SearchConversationContextRecords(
 				SELECT message.id,message.role,message.content
 				FROM ai_channel_messages AS message
 				WHERE message.channel_id=$1 AND message.id>completed.user_message_id
+				  AND NOT EXISTS(SELECT 1 FROM session_replies WHERE response_message_id=message.id)
 				ORDER BY message.id ASC
 				LIMIT 1
 			) AS assistant ON TRUE
@@ -109,7 +111,7 @@ func (r *Repository) SearchConversationContextRecords(
 		return nil, fmt.Errorf("search exact channel transcript context: %w", err)
 	}
 	defer rows.Close()
-	records := make([]ContextSearchRecord, 0, limit)
+	rankedRecords := make([]rankedConversationContextRecord, 0, limit)
 	seenUsers := make(map[int64]struct{}, limit)
 	for rows.Next() {
 		var (
@@ -163,7 +165,7 @@ func (r *Repository) SearchConversationContextRecords(
 		if err := model.ValidateChannelMessage(assistantRole, assistantContent); err != nil {
 			return nil, fmt.Errorf("searched assistant message %d is invalid: %w", assistantID, err)
 		}
-		records = append(records, ContextSearchRecord{
+		rankedRecords = append(rankedRecords, rankedConversationContextRecord{rank: rank, messageID: assistantID, record: ContextSearchRecord{
 			Namespace: "conversation_exchange",
 			SourceID: fmt.Sprintf(
 				"channel-message-%d-through-%d", userID, assistantID,
@@ -173,10 +175,29 @@ func (r *Repository) SearchConversationContextRecords(
 				projectedUserContent,
 				assistantContent,
 			),
-		})
+		}})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+	rows.Close()
+	sessionRecords, err := r.searchConversationSessionRecords(ctx, binding, terms, limit)
+	if err != nil {
+		return nil, err
+	}
+	rankedRecords = append(rankedRecords, sessionRecords...)
+	sort.Slice(rankedRecords, func(left, right int) bool {
+		if rankedRecords[left].rank != rankedRecords[right].rank {
+			return rankedRecords[left].rank > rankedRecords[right].rank
+		}
+		return rankedRecords[left].messageID > rankedRecords[right].messageID
+	})
+	if len(rankedRecords) > limit {
+		rankedRecords = rankedRecords[:limit]
+	}
+	records := make([]ContextSearchRecord, 0, len(rankedRecords))
+	for _, ranked := range rankedRecords {
+		records = append(records, ranked.record)
 	}
 	return records, nil
 }

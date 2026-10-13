@@ -152,6 +152,9 @@ func applyJobCancellationTx(
 	if err != nil {
 		return model.Job{}, err
 	}
+	if err := retireChannelSessionMessagesTx(ctx, tx, job, job.CurrentGeneration, command.OperationID); err != nil {
+		return model.Job{}, err
+	}
 
 	return job, nil
 }

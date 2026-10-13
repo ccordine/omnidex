@@ -91,6 +91,9 @@ func (r *Repository) completeStep(
 	if err := requireCodingAgentCompletionTx(ctx, tx, job, command.StepID); err != nil {
 		return err
 	}
+	if err := requireNoPendingChannelSessionMessagesTx(ctx, tx, jobID, command.Authority.Generation); err != nil {
+		return err
+	}
 	if objectiveEvidencePayloads != nil {
 		if err := insertObjectiveCompletionEvidenceTx(ctx, tx, command, objectiveEvidencePayloads); err != nil {
 			return err
@@ -261,6 +264,9 @@ func (r *Repository) FailStep(ctx context.Context, command FailStepCommand) erro
 		return err
 	}
 	stepStatus := model.StepStatusFailed
+	if err := retireChannelSessionMessagesTx(ctx, tx, job, generation, command.OperationID); err != nil {
+		return err
+	}
 	if err := insertLifecycleOperationTx(ctx, tx, descriptor, lifecycleOperationRecord{
 		ID: descriptor.ID, JobID: jobID, ObservedGeneration: generation,
 		ResultGeneration: job.CurrentGeneration, StepID: &command.StepID,

@@ -102,7 +102,7 @@ func renderJobActivity(destination *strings.Builder, details model.JobDetails, p
 
 func renderJobErrors(destination *strings.Builder, details model.JobDetails, previous *model.JobDetails) {
 	if details.Job.Error != "" && (previous == nil || previous.Job.Error != details.Job.Error) {
-		renderBlock(destination, "error>", details.Job.Error)
+		renderBlock(destination, statusErrorLabel(details.Job.Status), details.Job.Error)
 	}
 	prior := make(map[int64]string)
 	if previous != nil {
@@ -112,9 +112,16 @@ func renderJobErrors(destination *strings.Builder, details model.JobDetails, pre
 	}
 	for _, step := range details.Steps {
 		if step.Error != "" && step.Error != prior[step.ID] && step.Error != details.Job.Error {
-			renderBlock(destination, "error>", step.Error)
+			renderBlock(destination, statusErrorLabel(step.Status), step.Error)
 		}
 	}
+}
+
+func statusErrorLabel(status string) string {
+	if status == model.JobStatusCanceled {
+		return "reason>"
+	}
+	return "error>"
 }
 
 func renderDiagnosticJob(destination *strings.Builder, details model.JobDetails, previous *model.JobDetails) {
@@ -155,7 +162,9 @@ func (renderer chatRenderer) realtimeActivity(event client.RealtimeEvent) error 
 			return renderer.system("file move · %q → %q", event.FileSourcePath, event.FilePath)
 		}
 		return renderer.system("file %s · %q", event.FileOperation, event.FilePath)
-	case "step_failed", "step_authority_lost":
+	case "step_authority_lost":
+		return renderer.system("Work stopped · execution authority ended")
+	case "step_failed":
 		if strings.TrimSpace(event.Detail) != "" {
 			rendered := &strings.Builder{}
 			renderBlock(rendered, "error>", event.Detail)

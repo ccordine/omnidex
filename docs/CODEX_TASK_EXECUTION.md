@@ -1,5 +1,77 @@
 # Persistent task execution with Codex
 
+## Active correction: actual chat questions, input and stopping
+
+Root /home/gryph/Projects/tools/omnidex; branch fix/planner-live-activity,
+existing PR #9. Owner reproduced that progress and the cursor share one line,
+internal checks look like user questions, and accepted stop/interrupt emits false
+worker-failure errors. Owner explicitly bans Python and requires testing the
+actual application; no Python scripts, fixtures, toy-project qualification or
+Daemonet task replay. Preserve all twelve unrelated owner files and canceled
+owner jobs 2–6. Actual installed-app read-only question in this repository,
+job 7, completed but could not explain interrupt/stop: aliases lacked the actual
+registered command meanings. No project files were changed by that question.
+
+Acceptance: independent status/input rows with typing/cursor preserved during
+streaming and resize; internal check versus actual waiting-question distinction;
+answers bound to the displayed job/generation/waiting attempt, including retries
+and stale input rejection; referenced CLI-command questions answered from the
+canonical command registry without weakening path-free boundaries; intentional
+cancel/supersession recorded as stopped while genuine failures remain visible.
+Ordinary text during running work currently triggers automatic replan. Correct it
+using queued intake in the existing lifecycle registry, the existing exact turn
+classifier/response station, and a serialized cancellation-bound worker consumer;
+questions retain active job/generation, mutation intent follows existing replan.
+Test installed/candidate omni chat itself in a real terminal, including question,
+typing, interrupt, redirect and stop. Real app results, scoped regressions, exact
+PR delivery, safe local activation and cleanup are required before completion.
+
+Resources: one compiler/two workers, shared caches retained; candidate CLI/core
+128 MiB each under ignored bin, retired after verified activation. Actual-app
+terminal test is task-owned and closed afterward; only its own test jobs may be
+stopped. No owner job resume or unrelated deployment/service changes. If an
+isolated database fixture: one task-owned auto-remove postgres:18-alpine container,
+two CPUs/1 GiB memory/1 GiB tmpfs, image at most 512 MiB; no host data/credential mounts,
+retire after queue and cancellation verification if the image is unshared.
+One schema in that disposable PostgreSQL fixture rehearses the existing-install
+DDL against HEAD's original schema; drop it before retiring the fixture.
+Actual application qualification may run one candidate core on loopback 18091
+and a second fixture schema, with the actual repository as its workspace and
+existing Codex settings. No substitute project, copied credentials/config, or
+source edits by the test. Core/terminal processes retire after qualification.
+
+Checkpoint: installed app job7 reproduced missing CLI-command meanings. All nine
+affected Go packages passed race; focused PostgreSQL intake/answer/replan/stop/
+completion tests passed. Physical terminal-output regressions exposed and fixed
+status/cursor mixing, wide status text and stale wrapped rows. In-flight input
+question changes now serialize with source reads. Four concrete lifecycle review
+findings are closing: null intake IDs, durable-reply edits, exact redirect proof
+and native/plan waiting transitions. Each has observed failing regression.
+Final native application verification and matching local activation remain.
+Actual candidate app (real PTY/Codex, actual repository, isolated database) passed
+command question, live question with same job2/generation1, wrapped input+Home
+edit+60-column resize (exact edited question persisted), interrupt to waiting G2,
+explicit redirect same job/G3, stop with native worker stopped (no false EOF
+failure), bare exit and persisted canceled-reason rendering after its final fix.
+No native source edits occurred. Actual next ordinary turn job3 then exposed a
+history defect: queued reply message4 was treated as main task result of user3.
+Close it with typed operation-backed context authority; retain this exact fixture
+history for the next native retry. Candidate core and terminal are stopped.
+Final canonical existing-schema maintenance rehearsal preserved fifteen row
+families, including seeded prior conversation. Production has not been upgraded.
+The broader queue/database race run exceeded the original 512 MiB fixture budget
+(one confirmed cgroup OOM kill); host available RAM was 30 GiB. Increase only the
+task fixture to 1 GiB, bound its WAL to 64 MiB and rerun that failed suite.
+Verified final history fix on the same real app/PTY and saved fixture: job4
+completed the previously failing next question; fresh job5 canceled during an
+actual Codex classification with reason> and stopped status, no false error.
+Bare quit closed the client. Both task terminal/core processes exited cleanly.
+Nine affected packages passed race; scoped final changed-package reruns passed.
+Full queue/database integration race rerun passed (99.520 s / 2.780 s) after the
+measured fixture adjustment. Vet passed. No Python was invoked. Final qualified
+CLI SHA256 26dd8d420f89e36817e8ad7b5fd0f628dd9450ea05143e288d302858aac7185a;
+core SHA256 a38868c42f9c66c01ce17818d5535851c59acb565b1fcffe825535fcc51efb5a.
+
 ## Completed correction: explain every actual planning check
 
 Root /home/gryph/Projects/tools/omnidex; same fix/planner-live-activity branch and

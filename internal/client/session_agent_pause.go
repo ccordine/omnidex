@@ -27,10 +27,18 @@ func validateChatSessionAgentPause(details model.JobDetails, execution *codingag
 		}
 		waitingStepID = step.ID
 	}
-	if waitingStepID == 0 || pause.Schema != "omnidex-coding-agent-pause-v1" ||
+	if waitingStepID == 0 ||
 		pause.Generation != details.Job.CurrentGeneration || pause.StepID != waitingStepID ||
-		pause.WaitingAttempt < 1 || len(pause.Questions) == 0 {
+		pause.WaitingAttempt < 1 {
 		return fmt.Errorf("chat session agent question differs from its exact waiting authority")
+	}
+	return validateAgentQuestion(pause)
+}
+
+func validateAgentQuestion(pause *model.CodingAgentPause) error {
+	if pause == nil || pause.Schema != "omnidex-coding-agent-pause-v1" ||
+		pause.Generation < 1 || pause.StepID < 1 || pause.WaitingAttempt < 1 || len(pause.Questions) == 0 {
+		return fmt.Errorf("agent question lacks its exact waiting authority")
 	}
 	for _, question := range pause.Questions {
 		if strings.TrimSpace(question) == "" || !utf8.ValidString(question) || strings.ContainsRune(question, '\x00') {

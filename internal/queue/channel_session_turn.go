@@ -25,6 +25,9 @@ func (r *Repository) SubmitChannelSessionTurn(
 	if err != nil {
 		return ChannelSessionTurnResult{}, err
 	}
+	if command.ExpectedJobID != nil {
+		return r.submitChannelSessionMessage(ctx, command)
+	}
 	descriptor, err := describeLifecycleOperation(
 		command.OperationID,
 		LifecycleChannelSession,

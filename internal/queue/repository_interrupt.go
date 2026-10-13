@@ -155,6 +155,9 @@ func interruptJobTx(
 	if err != nil {
 		return LifecycleJobResult{}, err
 	}
+	if err := retireChannelSessionMessagesTx(ctx, tx, job, currentGeneration, command.OperationID); err != nil {
+		return LifecycleJobResult{}, err
+	}
 	if err := insertLifecycleOperationTx(ctx, tx, descriptor, lifecycleOperationRecord{
 		ID: descriptor.ID, JobID: command.JobID, ObservedGeneration: currentGeneration,
 		ResultGeneration: newGeneration, Kind: descriptor.Kind,

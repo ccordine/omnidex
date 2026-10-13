@@ -12,11 +12,13 @@ import (
 const maxChannelSessionTurnBodyBytes int64 = 64 * 1024
 
 type channelSessionTurnRequest struct {
-	WorkspaceRoot     string                     `json:"workspace_root"`
-	WorkspaceIdentity string                     `json:"workspace_identity"`
-	Text              string                     `json:"text"`
-	OperationID       model.LifecycleOperationID `json:"operation_id"`
-	CodingMode        channelCodingMode          `json:"coding_mode,omitzero"`
+	WorkspaceRoot      string                     `json:"workspace_root"`
+	WorkspaceIdentity  string                     `json:"workspace_identity"`
+	Text               string                     `json:"text"`
+	OperationID        model.LifecycleOperationID `json:"operation_id"`
+	CodingMode         channelCodingMode          `json:"coding_mode,omitzero"`
+	ExpectedJobID      *int64                     `json:"expected_job_id,omitempty"`
+	ExpectedGeneration *int64                     `json:"expected_generation,omitempty"`
 }
 
 type channelSessionTurnResponse struct {
@@ -83,6 +85,7 @@ func (s *Server) postChannelSessionTurn(
 			WorkspaceIdentity: request.WorkspaceIdentity,
 			Text:              request.Text,
 			CodingMode:        request.CodingMode.Value,
+			ExpectedJobID:     request.ExpectedJobID, ExpectedGeneration: request.ExpectedGeneration,
 		},
 	)
 	if err != nil {
@@ -97,6 +100,9 @@ func (s *Server) postChannelSessionTurn(
 	phase, summary := realtimeJobChanged, "Interactive turn accepted"
 	if result.Disposition == model.ChannelSessionTurnEnqueued {
 		phase, summary = realtimeJobQueued, "Job queued"
+	}
+	if result.Disposition == model.ChannelSessionTurnQueued {
+		summary = "Message queued"
 	}
 	if result.Applied {
 		s.publishChannelJobProgress(result.ChannelID, result.Job.ID, phase, summary)
@@ -139,7 +145,7 @@ func channelSessionTurnReceipt(
 	switch result.Disposition {
 	case model.ChannelSessionTurnEnqueued,
 		model.ChannelSessionTurnReplanned,
-		model.ChannelSessionTurnFeedback:
+		model.ChannelSessionTurnFeedback, model.ChannelSessionTurnQueued:
 	default:
 		return channelSessionTurnResponse{}, fmt.Errorf(
 			"channel session turn returned unregistered disposition %q",

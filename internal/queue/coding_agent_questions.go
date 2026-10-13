@@ -38,6 +38,9 @@ func (r *Repository) PauseCodingAgentStep(ctx context.Context, authority model.S
 	if !slices.Equal(question.Questions, questions) {
 		return fmt.Errorf("agent pause differs from its durable unanswered question")
 	}
+	if err := requireNoPendingChannelSessionMessagesTx(ctx, tx, authority.JobID, authority.Generation); err != nil {
+		return err
+	}
 	if err := terminalizeStepAttemptTx(ctx, tx, authority, model.StepAttemptWaiting); err != nil {
 		return err
 	}

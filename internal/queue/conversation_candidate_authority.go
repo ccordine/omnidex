@@ -38,6 +38,7 @@ type ConversationAssistantResultAuthority struct {
 type ConversationCandidateAuthoritySet struct {
 	Turns            []ConversationCandidateTurn
 	AssistantResults []ConversationAssistantResultAuthority
+	SessionExchanges []ConversationSessionExchangeAuthority
 }
 
 // ConversationCandidateAuthorities returns one immutable, bounded suffix of
@@ -125,7 +126,16 @@ func (r *Repository) ConversationCandidateAuthorities(
 		followups []conversationFollowup
 	}
 	descendingExchanges := make([]completeExchange, 0, len(descendingAssistants))
+	descendingSessionExchanges := make([]ConversationSessionExchangeAuthority, 0, len(descendingAssistants))
 	for _, assistant := range descendingAssistants {
+		session, found, err := loadConversationSessionExchangeTx(ctx, tx, assistant)
+		if err != nil {
+			return ConversationCandidateAuthoritySet{}, err
+		}
+		if found {
+			descendingSessionExchanges = append(descendingSessionExchanges, session)
+			continue
+		}
 		user, err := loadImmediatelyPrecedingConversationUser(
 			ctx, tx, binding.ChannelID, assistant.ID,
 		)
@@ -155,6 +165,9 @@ func (r *Repository) ConversationCandidateAuthorities(
 		Turns:            make([]ConversationCandidateTurn, 0, len(descendingExchanges)*2),
 		AssistantResults: make([]ConversationAssistantResultAuthority, 0, len(descendingExchanges)),
 	}
+	for index := len(descendingSessionExchanges) - 1; index >= 0; index-- {
+		set.SessionExchanges = append(set.SessionExchanges, descendingSessionExchanges[index])
+	}
 	for index := len(descendingExchanges) - 1; index >= 0; index-- {
 		exchange := descendingExchanges[index]
 		set.Turns = append(set.Turns, ConversationCandidateTurn{
@@ -181,10 +194,12 @@ func loadImmediatelyPrecedingConversationUser(
 	assistantMessageID int64,
 ) (model.ChannelMessage, error) {
 	var user model.ChannelMessage
-	err := tx.QueryRow(ctx, `
+	err := tx.QueryRow(ctx, `WITH `+conversationSessionRepliesCTE+`
 		SELECT id, channel_id, role, content, created_at
 		FROM ai_channel_messages
 		WHERE channel_id=$1 AND id<$2
+		  AND NOT EXISTS(SELECT 1 FROM session_replies
+		      WHERE response_message_id=ai_channel_messages.id AND channel_id=$1)
 		ORDER BY id DESC
 		LIMIT 1
 	`, channelID, assistantMessageID).Scan(

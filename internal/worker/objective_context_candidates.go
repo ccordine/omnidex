@@ -68,7 +68,7 @@ func (provider boundObjectiveContextProvider) retrieveAssistant(
 	if err != nil {
 		return contextcompiler.CandidateSet{}, err
 	}
-	recentRecords, err := recentConversationContextRecords(recent.Turns)
+	recentProjection, err := projectRecentAssistantContext(recent)
 	if err != nil {
 		return contextcompiler.CandidateSet{}, err
 	}
@@ -89,7 +89,7 @@ func (provider boundObjectiveContextProvider) retrieveAssistant(
 			}
 		}
 	}
-	records := interleaveContextRecordGroups(recentRecords, searched)
+	records := interleaveContextRecordGroups(recentProjection.Records, searched)
 	required, err := objectiveSessionContextRecords(
 		provider.job,
 		continuity.Session,

@@ -39,12 +39,12 @@ func TestPlanningJSONProjectionShowsExactCandidateAndResolvedMeaning(t *testing.
 		}
 	}
 	for _, required := range []string{
-		"omni> Identifying outcomes",
-		"omni> 2 proposed outcomes found",
-		`omni> Considering outcome: Store "draft" data locally`,
-		`omni> Included in current work: Store "draft" data locally`,
-		"omni> Omitted because it was not requested: Publish a public gallery",
-		"omni> 1 outcome selected for current work",
+		"check> Identifying outcomes",
+		"check> 2 proposed outcomes found",
+		`check> Considering outcome: Store "draft" data locally`,
+		`check> Included in current work: Store "draft" data locally`,
+		"check> Omitted because it was not requested: Publish a public gallery",
+		"check> 1 outcome selected for current work",
 	} {
 		if !strings.Contains(output.String(), required) {
 			t.Errorf("planning omitted observed meaning %q: %q", required, output.String())

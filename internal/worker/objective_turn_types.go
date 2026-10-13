@@ -11,6 +11,7 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/contextcompiler"
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/projectroot"
 	"github.com/gryph/omnidex/internal/queue"
 	"github.com/gryph/omnidex/internal/roleplay"
 	"github.com/gryph/omnidex/internal/webresearch"
@@ -38,6 +39,7 @@ type turnAuthority struct {
 	DelegatedDataAuthorityID        string
 	ChannelID                       model.ChannelID
 	ChannelMode                     model.ChannelMode
+	ClientWorkspaceIdentity         string
 	RoleplayViewpointCharacterID    model.RoleplayCharacterID
 	RoleplaySimulationPreparationID string
 	RoleplayWorldID                 string
@@ -222,6 +224,7 @@ func newTurnAuthority(job model.Job) (turnAuthority, error) {
 		DataSourceID                    model.DataSourceID                  `json:"data_source_id"`
 		DelegatedDataAuthorityID        string                              `json:"delegated_data_authority_id"`
 		ChannelMode                     model.ChannelMode                   `json:"channel_mode"`
+		ClientWorkspaceIdentity         string                              `json:"client_workspace_identity"`
 		RoleplayViewpointCharacterID    model.RoleplayCharacterID           `json:"roleplay_viewpoint_character_id"`
 		RoleplaySimulationPreparationID string                              `json:"roleplay_simulation_preparation_id"`
 		RoleplayWorldID                 string                              `json:"roleplay_world_id"`
@@ -244,6 +247,11 @@ func newTurnAuthority(job model.Job) (turnAuthority, error) {
 	}
 	if err := metadata.ChannelID.Validate(); err != nil {
 		return turnAuthority{}, fmt.Errorf("conversation turn channel authority: %w", err)
+	}
+	if metadata.ClientWorkspaceIdentity != "" {
+		if err := projectroot.ValidateClientWorkspaceIdentity(metadata.ClientWorkspaceIdentity); err != nil {
+			return turnAuthority{}, fmt.Errorf("conversation turn CLI workspace origin: %w", err)
+		}
 	}
 	switch metadata.ChannelMode {
 	case model.ChannelModeAssistant:
@@ -327,6 +335,7 @@ func newTurnAuthority(job model.Job) (turnAuthority, error) {
 		DelegatedDataAuthorityID:        metadata.DelegatedDataAuthorityID,
 		ChannelID:                       metadata.ChannelID,
 		ChannelMode:                     metadata.ChannelMode,
+		ClientWorkspaceIdentity:         metadata.ClientWorkspaceIdentity,
 		RoleplayViewpointCharacterID:    metadata.RoleplayViewpointCharacterID,
 		RoleplaySimulationPreparationID: metadata.RoleplaySimulationPreparationID,
 		RoleplayWorldID:                 metadata.RoleplayWorldID, RoleplaySceneID: metadata.RoleplaySceneID,

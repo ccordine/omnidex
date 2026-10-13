@@ -33,6 +33,7 @@ const (
 	typedWorkerRejected  typedWorkerState = "rejected"
 	typedWorkerCompleted typedWorkerState = "completed"
 	typedWorkerFailed    typedWorkerState = "failed"
+	typedWorkerStopped   typedWorkerState = "stopped"
 )
 
 type typedWorkerEvent struct {

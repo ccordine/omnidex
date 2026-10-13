@@ -43,19 +43,12 @@ func (provider boundObjectiveContextProvider) assistantSearchAvailability(
 	if err != nil {
 		return "", err
 	}
-	recentRecords, err := recentConversationContextRecords(recent.Turns)
+	recentProjection, err := projectRecentAssistantContext(recent)
 	if err != nil {
 		return "", err
 	}
-	representedMessageIDs := make([]int64, len(recent.AssistantResults))
-	for index, result := range recent.AssistantResults {
-		representedMessageIDs[index] = result.UserMessageID
-	}
-	if len(recentRecords) != len(representedMessageIDs) {
-		return "", fmt.Errorf("recent assistant context differs from exact result authority")
-	}
 	additionalConversation, err := provider.runtime.svc.repo.HasAdditionalConversationSearchAuthority(
-		ctx, provider.job, representedMessageIDs,
+		ctx, provider.job, recentProjection.UserMessageIDs, recentProjection.SessionOperationIDs...,
 	)
 	if err != nil {
 		return "", err

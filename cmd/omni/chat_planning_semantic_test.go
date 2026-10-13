@@ -15,7 +15,7 @@ func TestPlanningNormalShowsEachExactSemanticQuestionOptionsAndResult(t *testing
 		t.Fatal(err)
 	}
 	for _, required := range []string{
-		"omni>", semanticPlanningQuestion, semanticPlanningSubject, semanticPlanningAgainst,
+		"check>", semanticPlanningQuestion, semanticPlanningSubject, semanticPlanningAgainst,
 		semanticPlanningWhy, semanticPlanningOptionA, semanticPlanningOptionB,
 	} {
 		if !strings.Contains(output.String(), required) {
@@ -29,7 +29,7 @@ func TestPlanningNormalShowsEachExactSemanticQuestionOptionsAndResult(t *testing
 	if err := renderer.realtime(semanticPlanningJSONEvent(t, "semantic_completed", semanticPlanningResult)); err != nil {
 		t.Fatal(err)
 	}
-	for _, required := range []string{"omni>", semanticPlanningSubject, semanticPlanningResult, semanticPlanningConsumer} {
+	for _, required := range []string{"check>", semanticPlanningSubject, semanticPlanningResult, semanticPlanningConsumer} {
 		if !strings.Contains(output.String(), required) {
 			t.Errorf("returned check omitted result/action %q: %q", required, output.String())
 		}

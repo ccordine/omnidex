@@ -24,6 +24,8 @@ func workerActivityForEvent(event client.RealtimeEvent) (chatWorkerActivity, boo
 		activity.status = "rejected"
 	case "coding_worker_failed", "objective_worker_failed":
 		activity.status = "failed"
+	case "coding_worker_stopped", "objective_worker_stopped":
+		activity.status = "stopped"
 	default:
 		return chatWorkerActivity{}, false
 	}

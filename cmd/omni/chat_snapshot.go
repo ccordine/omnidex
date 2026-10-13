@@ -71,7 +71,11 @@ func (session *chatSession) reconcileSnapshot(
 	for _, turn := range snapshot.Turns {
 		previous, seen := session.turns[turn.OperationID]
 		if seen && previous != turn {
-			return fmt.Errorf("persisted session turn %q changed", turn.OperationID)
+			before, after := previous, turn
+			before.MessageState, after.MessageState = "", ""
+			if before != after || previous.Disposition != model.ChannelSessionTurnQueued || previous.MessageState != model.ChannelSessionMessagePending || turn.MessageState == model.ChannelSessionMessagePending {
+				return fmt.Errorf("persisted session turn %q changed", turn.OperationID)
+			}
 		}
 		if !seen && !session.suppressSessionTurn(turn, snapshot.Messages) {
 			entries = append(entries, chatSnapshotEntry{

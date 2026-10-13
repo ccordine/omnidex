@@ -99,6 +99,9 @@ func channelSessionStateTx(
 		    WHERE bound_job.pipeline='chat'
 		      AND bound_job.metadata->>'channel_id'=channel.id
 		      AND operation.kind='submit_feedback'
+		    UNION ALL
+		    SELECT operation_id,created_at FROM lifecycle_operation_registry
+		    WHERE kind='channel_session_message' AND message_channel_id=channel.id
 		  ) AS turn_history
 		  ORDER BY created_at DESC,operation_id DESC LIMIT 1
 		) AS turn ON TRUE

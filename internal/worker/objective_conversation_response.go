@@ -334,6 +334,13 @@ func runObjectiveConversationResponse(
 		Context:            assemblyline.CloneObjectiveContext(authority.Context),
 		KnownArtifactPaths: append([]string{}, authority.ModelArtifactPaths...),
 	}
+	if result.Kind == assemblyline.ObjectiveKindAnswer {
+		references, err := objectiveConversationCLICommands(authority)
+		if err != nil {
+			return result, err
+		}
+		input.CLICommands = references
+	}
 	if authority.RoleplayIdentity != nil {
 		identity := *authority.RoleplayIdentity
 		input.RoleplayIdentity = &identity

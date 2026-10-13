@@ -148,6 +148,9 @@ func applyReplanJobTx(
 	if err != nil {
 		return model.Job{}, 0, err
 	}
+	if err := retireChannelSessionMessagesTx(ctx, tx, job, currentGeneration, command.OperationID); err != nil {
+		return model.Job{}, 0, err
+	}
 	return job, currentGeneration, nil
 }
 

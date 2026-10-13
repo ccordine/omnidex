@@ -37,6 +37,23 @@ func (client *Client) SubmitSessionTurn(
 	if len(codingModes) == 1 {
 		codingMode = codingModes[0]
 	}
+	return client.submitSessionTurn(ctx, channel, workspaceIdentity, operationID, exactText, codingMode, nil, nil)
+}
+
+func (client *Client) SubmitObservedSessionTurn(ctx context.Context, channel model.Channel, workspaceIdentity string,
+	operationID model.LifecycleOperationID, exactText string, codingMode codingagent.Mode, jobID, generation int64) (SessionTurnReceipt, error) {
+	if jobID < 1 || generation < 1 {
+		return SessionTurnReceipt{}, fmt.Errorf("active message requires positive observed job and generation")
+	}
+	receipt, err := client.submitSessionTurn(ctx, channel, workspaceIdentity, operationID, exactText, codingMode, &jobID, &generation)
+	if err == nil && (receipt.Disposition != model.ChannelSessionTurnQueued || receipt.JobID != jobID || receipt.Generation != generation) {
+		return SessionTurnReceipt{}, fmt.Errorf("active message receipt differs from the observed job generation")
+	}
+	return receipt, err
+}
+
+func (client *Client) submitSessionTurn(ctx context.Context, channel model.Channel, workspaceIdentity string,
+	operationID model.LifecycleOperationID, exactText string, codingMode codingagent.Mode, jobID, generation *int64) (SessionTurnReceipt, error) {
 	switch codingMode {
 	case codingagent.Normal, codingagent.Agents:
 	default:
@@ -59,17 +76,20 @@ func (client *Client) SubmitSessionTurn(
 		return SessionTurnReceipt{}, err
 	}
 	payload := struct {
-		WorkspaceRoot     string                     `json:"workspace_root"`
-		WorkspaceIdentity string                     `json:"workspace_identity"`
-		Text              string                     `json:"text"`
-		OperationID       model.LifecycleOperationID `json:"operation_id"`
-		CodingMode        codingagent.Mode           `json:"coding_mode"`
+		WorkspaceRoot      string                     `json:"workspace_root"`
+		WorkspaceIdentity  string                     `json:"workspace_identity"`
+		Text               string                     `json:"text"`
+		OperationID        model.LifecycleOperationID `json:"operation_id"`
+		CodingMode         codingagent.Mode           `json:"coding_mode"`
+		ExpectedJobID      *int64                     `json:"expected_job_id,omitempty"`
+		ExpectedGeneration *int64                     `json:"expected_generation,omitempty"`
 	}{
 		WorkspaceRoot:     channel.WorkspaceRoot,
 		WorkspaceIdentity: workspaceIdentity,
 		Text:              exactText,
 		OperationID:       operationID,
 		CodingMode:        codingMode,
+		ExpectedJobID:     jobID, ExpectedGeneration: generation,
 	}
 	var receipt SessionTurnReceipt
 	requestPath := "/v1/channels/" + string(channel.ID) + "/session/turn"
@@ -126,6 +146,10 @@ func validateSessionTurnReceipt(
 		}
 		if receipt.UserMessage != nil {
 			return fmt.Errorf("session feedback receipt unexpectedly carries an enqueue message")
+		}
+	case model.ChannelSessionTurnQueued:
+		if (receipt.Status != model.JobStatusRunning && receipt.Status != model.JobStatusPending) || receipt.UserMessage != nil {
+			return fmt.Errorf("queued message receipt has contradictory authority")
 		}
 	default:
 		return fmt.Errorf("session turn receipt has unsupported disposition %q", receipt.Disposition)

@@ -25,14 +25,7 @@ func (session *chatSession) resolvePendingOperation() (*pendingOperationResoluti
 			session.ctx,
 			session.signals,
 			func(requestContext context.Context) (client.SessionTurnReceipt, error) {
-				return session.client.SubmitSessionTurn(
-					requestContext,
-					session.channel,
-					session.workspaceIdentity,
-					pending.operationID,
-					pending.exactText,
-					pending.codingMode,
-				)
+				return session.submitPendingTurn(requestContext, pending)
 			},
 		)
 		if err != nil {

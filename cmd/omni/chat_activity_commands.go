@@ -36,6 +36,8 @@ func (session *chatSession) renderTurnAccepted(receipt client.SessionTurnReceipt
 		label = "Plan updated."
 	case model.ChannelSessionTurnFeedback:
 		label = "Follow-up received."
+	case model.ChannelSessionTurnQueued:
+		label = "Message queued."
 	}
 	return session.renderer.console.WriteOutput("omni> " + label + "\n")
 }

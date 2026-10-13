@@ -59,7 +59,7 @@ func (renderer chatRenderer) messageTurnState(message model.ChannelMessage) erro
 	}
 	var rendered strings.Builder
 	fmt.Fprintf(&rendered, "[omni] job %d · %s\n", message.Turn.JobID, message.Turn.Status)
-	renderBlock(&rendered, "error>", message.Turn.Error)
+	renderBlock(&rendered, statusErrorLabel(message.Turn.Status), message.Turn.Error)
 	return renderer.console.WriteError(rendered.String())
 }
 
@@ -71,6 +71,7 @@ func (renderer chatRenderer) sessionTurn(turn model.ChannelSessionTurn) error {
 	case model.ChannelSessionTurnFeedback:
 		label = "you follow-up>"
 	case model.ChannelSessionTurnEnqueued:
+	case model.ChannelSessionTurnQueued:
 	default:
 		return fmt.Errorf("cannot render session turn disposition %q", turn.Disposition)
 	}
@@ -99,10 +100,18 @@ func (renderer chatRenderer) sessionControl(control model.ChannelSessionControl)
 func (renderer chatRenderer) prompt(details *model.JobDetails) error {
 	label := "you> "
 	activity := chatActivity{}
+	jobID := int64(0)
+	var question *model.CodingAgentPause
 	if details != nil {
+		jobID = details.Job.ID
 		label = fmt.Sprintf("you #%d> ", details.Job.ID)
 		activity = activityForJob(*details)
+		if details.AgentPause != nil {
+			question = details.AgentPause
+			label = fmt.Sprintf("answer #%d> ", details.Job.ID)
+		}
 	}
+	renderer.console.SetQuestionAuthority(jobID, question)
 	renderer.retainPlanningScope(activity)
 	if err := renderer.console.SetActivity(activity); err != nil {
 		return err
@@ -149,8 +158,8 @@ func (renderer chatRenderer) status(details model.JobDetails) error {
 }
 
 func renderAgentQuestions(destination *strings.Builder, pause *model.CodingAgentPause) {
-	renderBlock(destination, "omni>", strings.Join(pause.Questions, "\n\n"))
-	fmt.Fprintln(destination, "[omni] reply here to answer")
+	renderBlock(destination, "question>", strings.Join(pause.Questions, "\n\n"))
+	fmt.Fprintln(destination, "[omni] Waiting for your answer.")
 }
 
 func (renderer *chatRenderer) realtime(event client.RealtimeEvent) error {

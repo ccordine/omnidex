@@ -52,8 +52,8 @@ func TestChannelSessionTurnFreezesSavedAgentsOnlyForNewJobs(t *testing.T) {
 	control := command
 	control.OperationID = codingPlanOperationID(t, "session-replan", result.Job.ID)
 	control.CodingMode, control.Text = codingagent.Normal, "Refine the approved behavior."
-	replanned, err := repository.SubmitChannelSessionTurn(ctx, control)
-	if err != nil || replanned.Disposition != model.ChannelSessionTurnReplanned ||
+	replanned, err := repository.ReplanJob(ctx, ReplanJobCommand{OperationID: control.OperationID, JobID: result.Job.ID, Feedback: control.Text, WorkspaceRoot: control.WorkspaceRoot, WorkspaceIdentity: control.WorkspaceIdentity})
+	if err != nil || !replanned.Applied ||
 		replanned.Job.ID != result.Job.ID || replanned.Job.CurrentGeneration != 2 {
 		t.Fatalf("frozen-mode replan: %#v %v", replanned, err)
 	}
@@ -98,8 +98,8 @@ func TestChannelSessionTurnNormalReplayAndAgentsControlPreserveNormal(t *testing
 	}
 	command.OperationID = codingPlanOperationID(t, "normal-session-replan", result.Job.ID)
 	command.Text = "Refine the accepted objective."
-	replanned, err := repository.SubmitChannelSessionTurn(ctx, command)
-	if err != nil || replanned.Disposition != model.ChannelSessionTurnReplanned || replanned.Job.ID != result.Job.ID {
+	replanned, err := repository.ReplanJob(ctx, ReplanJobCommand{OperationID: command.OperationID, JobID: result.Job.ID, Feedback: command.Text, WorkspaceRoot: command.WorkspaceRoot, WorkspaceIdentity: command.WorkspaceIdentity})
+	if err != nil || !replanned.Applied || replanned.Job.ID != result.Job.ID {
 		t.Fatalf("Agents request changed Normal control: %#v %v", replanned, err)
 	}
 	assertSessionCodingConfiguration(t, replanned.Job, codingagent.Configuration{Mode: codingagent.Normal})

@@ -4519,7 +4519,7 @@ CREATE TABLE lifecycle_operation_registry (
     command_payload jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT lifecycle_operation_registry_check CHECK (((jsonb_typeof(command_payload) = 'object'::text) AND (command_payload ? 'operation_id'::text) AND ((command_payload ->> 'operation_id'::text) = operation_id))),
-    CONSTRAINT lifecycle_operation_registry_kind_check CHECK ((kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text, 'submit_feedback'::text, 'interrupt_job'::text, 'replan_job'::text, 'channel_session_turn'::text, 'scrum_channel_message'::text, 'cancel_job'::text, 'coding_plan_decisions'::text, 'coding_plan_freeze'::text]))),
+    CONSTRAINT lifecycle_operation_registry_kind_check CHECK ((kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text, 'submit_feedback'::text, 'interrupt_job'::text, 'replan_job'::text, 'channel_session_turn'::text, 'channel_session_message'::text, 'scrum_channel_message'::text, 'cancel_job'::text, 'coding_plan_decisions'::text, 'coding_plan_freeze'::text]))),
     CONSTRAINT lifecycle_operation_registry_operation_id_check CHECK ((operation_id ~ '^lifecycle_operation_[a-z0-9_]{1,128}$'::text))
 );
 
@@ -10124,3 +10124,189 @@ CREATE TABLE coding_agent_settings (
     ),
     updated_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
+
+-- Active conversational messages retain the existing lifecycle registry as
+-- intake authority and existing evidence as immutable resolution authority.
+ALTER TABLE lifecycle_operation_registry
+ ADD COLUMN message_job_id bigint GENERATED ALWAYS AS
+   (CASE WHEN kind='channel_session_message' THEN (command_payload->'command'->>'expected_job_id')::bigint END) STORED,
+ ADD COLUMN message_generation bigint GENERATED ALWAYS AS
+   (CASE WHEN kind='channel_session_message' THEN (command_payload->'command'->>'expected_generation')::bigint END) STORED,
+ ADD COLUMN message_channel_id text GENERATED ALWAYS AS
+   (CASE WHEN kind='channel_session_message' THEN command_payload->'command'->>'channel_id' END) STORED,
+ ADD CONSTRAINT channel_session_message_generation_owner FOREIGN KEY(message_job_id,message_generation)
+   REFERENCES job_generations(job_id,generation) ON DELETE RESTRICT,
+ ADD CONSTRAINT channel_session_message_channel_owner FOREIGN KEY(message_channel_id)
+   REFERENCES ai_channels(id) ON DELETE RESTRICT;
+
+CREATE INDEX channel_session_message_pending_lookup ON lifecycle_operation_registry
+ (message_job_id,message_generation,created_at,operation_id) WHERE kind='channel_session_message';
+
+CREATE FUNCTION validate_channel_session_message_intake() RETURNS trigger
+ LANGUAGE plpgsql SET search_path TO 'pg_catalog','__OMNIDEX_RUNTIME_SCHEMA__','pg_temp' AS $$
+DECLARE command jsonb; admitted jsonb;
+BEGIN
+ IF NEW.kind<>'channel_session_message' THEN RETURN NEW; END IF;
+ command:=NEW.command_payload->'command'; admitted:=NEW.command_payload->'admitted_job';
+ IF jsonb_typeof(command) IS DISTINCT FROM 'object' OR jsonb_typeof(admitted) IS DISTINCT FROM 'object' OR
+   NOT (NEW.command_payload ?& ARRAY['operation_id','command','admitted_job','redirect_operation_id']) OR
+   (NEW.command_payload-ARRAY['operation_id','command','admitted_job','redirect_operation_id'])<>'{}'::jsonb OR
+   NOT (command ?& ARRAY['operation_id','channel_id','workspace_root','workspace_identity','text','expected_job_id','expected_generation']) OR
+   (command-ARRAY['operation_id','channel_id','workspace_root','workspace_identity','text','coding_mode','expected_job_id','expected_generation'])<>'{}'::jsonb OR
+   jsonb_typeof(NEW.command_payload->'operation_id') IS DISTINCT FROM 'string' OR
+   jsonb_typeof(command->'operation_id') IS DISTINCT FROM 'string' OR
+   NEW.command_payload->>'operation_id' IS DISTINCT FROM NEW.operation_id OR
+   command->>'operation_id' IS DISTINCT FROM NEW.operation_id OR
+   jsonb_typeof(command->'expected_job_id') IS DISTINCT FROM 'number' OR
+   jsonb_typeof(command->'expected_generation') IS DISTINCT FROM 'number' OR
+   jsonb_typeof(command->'text') IS DISTINCT FROM 'string' OR
+   jsonb_typeof(command->'workspace_identity') IS DISTINCT FROM 'string' OR
+   (command ? 'coding_mode' AND command->'coding_mode' IS DISTINCT FROM '"agents"'::jsonb) OR
+   jsonb_typeof(NEW.command_payload->'redirect_operation_id') IS DISTINCT FROM 'string' OR
+   NEW.command_payload->>'redirect_operation_id' !~ '^lifecycle_operation_[a-z0-9_]{1,128}$' OR
+   NEW.command_payload->>'redirect_operation_id'=NEW.operation_id OR
+   NOT lifecycle_feedback_is_valid(command->>'text',4096) OR
+   (command->>'expected_job_id') !~ '^[1-9][0-9]{0,18}$' OR
+   (command->>'expected_generation') !~ '^[1-9][0-9]{0,18}$' OR
+   command->>'workspace_identity' !~ '^client_[0-9a-f]{32}_directory_(0|[1-9][0-9]{0,19})_[1-9][0-9]{0,19}$' OR
+   NOT EXISTS(SELECT 1 FROM jobs job JOIN ai_channels channel ON channel.id=command->>'channel_id'
+     WHERE job.id=(command->>'expected_job_id')::bigint AND job.current_generation=(command->>'expected_generation')::bigint
+       AND job.status IN ('pending','running') AND job.pipeline='chat'
+       AND channel.scope='user' AND channel.mode='assistant'
+       AND channel.workspace_root=command->>'workspace_root' AND channel.cli_workspace_identity=command->>'workspace_identity'
+       AND job.metadata->>'channel_id'=channel.id AND job.metadata->>'client_cwd'=channel.workspace_root
+       AND job.metadata->>'client_workspace_identity'=channel.cli_workspace_identity
+       AND (admitted->>'id')::bigint=job.id AND (admitted->>'current_generation')::bigint=job.current_generation
+       AND admitted->>'status'=job.status AND admitted->>'instruction'=job.instruction
+       AND admitted->'metadata'=job.metadata) THEN
+   RAISE EXCEPTION 'Active message intake differs from exact live conversation authority';
+ END IF;
+ RETURN NEW;
+END $$;
+CREATE TRIGGER channel_session_message_intake_validate BEFORE INSERT ON lifecycle_operation_registry
+ FOR EACH ROW EXECUTE FUNCTION validate_channel_session_message_intake();
+
+ALTER TABLE evidence ADD COLUMN message_operation_id text GENERATED ALWAYS AS
+ (CASE WHEN kind='channel_session_message' THEN source_ref END) STORED,
+ ADD COLUMN message_reply_id bigint GENERATED ALWAYS AS
+ (CASE WHEN kind='channel_session_message' THEN (payload_json->>'response_message_id')::bigint END) STORED,
+ ADD CONSTRAINT channel_session_message_resolution_owner FOREIGN KEY(message_operation_id)
+ REFERENCES lifecycle_operation_registry(operation_id) ON DELETE RESTRICT,
+ ADD CONSTRAINT channel_session_message_reply_owner FOREIGN KEY(message_reply_id)
+ REFERENCES ai_channel_messages(id) ON DELETE RESTRICT;
+CREATE UNIQUE INDEX channel_session_message_resolution_unique ON evidence(message_operation_id)
+ WHERE kind='channel_session_message';
+
+CREATE FUNCTION validate_channel_session_message_resolution() RETURNS trigger
+ LANGUAGE plpgsql SET search_path TO 'pg_catalog','__OMNIDEX_RUNTIME_SCHEMA__','pg_temp' AS $$
+DECLARE intake jsonb; meaning text; authority jsonb; reply bigint;
+BEGIN
+ IF jsonb_typeof(NEW.payload_json) IS DISTINCT FROM 'object' OR
+   NOT (NEW.payload_json ?& ARRAY['operation_id','kind','job']) OR
+   (NEW.payload_json-ARRAY['operation_id','kind','job','authority','response_message_id','control_operation_id'])<>'{}'::jsonb OR
+   jsonb_typeof(NEW.payload_json->'operation_id') IS DISTINCT FROM 'string' OR
+   jsonb_typeof(NEW.payload_json->'kind') IS DISTINCT FROM 'string' OR
+   jsonb_typeof(NEW.payload_json->'job') IS DISTINCT FROM 'object' OR
+   NOT ((NEW.payload_json->'job') ?& ARRAY['id','current_generation','status','instruction','pipeline','metadata']) OR
+   jsonb_typeof(NEW.payload_json->'job'->'id') IS DISTINCT FROM 'number' OR
+   jsonb_typeof(NEW.payload_json->'job'->'current_generation') IS DISTINCT FROM 'number' OR
+   NEW.source_ref IS NULL OR NEW.source_type IS DISTINCT FROM 'lifecycle_operation' THEN
+   RAISE EXCEPTION 'Message resolution requires exact typed fields';
+ END IF;
+ SELECT command_payload INTO intake FROM lifecycle_operation_registry
+ WHERE operation_id=NEW.source_ref AND kind='channel_session_message';
+ meaning:=NEW.payload_json->>'kind'; authority:=NEW.payload_json->'authority';
+ IF NOT FOUND OR NEW.source_type<>'lifecycle_operation' OR NEW.payload_json->>'operation_id'<>NEW.source_ref OR
+   NEW.job_id<>(intake->'command'->>'expected_job_id')::bigint OR
+   (NEW.payload_json->'job'->>'id')::bigint<>NEW.job_id OR
+   NOT EXISTS(SELECT 1 FROM job_steps WHERE id=NEW.step_id AND job_id=NEW.job_id
+     AND generation=(intake->'command'->>'expected_generation')::bigint) THEN
+   RAISE EXCEPTION 'Message resolution lacks exact intake owner';
+ END IF;
+ IF meaning IN ('answer','story','failed') THEN
+   IF NOT (NEW.payload_json ?& ARRAY['authority','response_message_id']) OR
+     jsonb_typeof(authority) IS DISTINCT FROM 'object' OR
+     NOT (authority ?& ARRAY['job_id','generation','step_id','attempt','worker_id']) OR
+     (authority-ARRAY['job_id','generation','step_id','attempt','worker_id'])<>'{}'::jsonb OR
+     jsonb_typeof(authority->'job_id') IS DISTINCT FROM 'number' OR
+     jsonb_typeof(authority->'generation') IS DISTINCT FROM 'number' OR
+     jsonb_typeof(authority->'step_id') IS DISTINCT FROM 'number' OR
+     jsonb_typeof(authority->'attempt') IS DISTINCT FROM 'number' OR
+     jsonb_typeof(authority->'worker_id') IS DISTINCT FROM 'string' OR
+     jsonb_typeof(NEW.payload_json->'response_message_id') IS DISTINCT FROM 'number' THEN
+     RAISE EXCEPTION 'Message answer requires an exact typed attempt and reply';
+   END IF;
+   reply:=(NEW.payload_json->>'response_message_id')::bigint;
+   IF authority IS NULL OR (authority->>'job_id')::bigint<>NEW.job_id OR
+     (authority->>'generation')::bigint<>(intake->'command'->>'expected_generation')::bigint OR
+     (authority->>'step_id')::bigint<>NEW.step_id OR NEW.payload_json ? 'control_operation_id' OR
+     NOT EXISTS(SELECT 1 FROM jobs job JOIN job_steps step ON step.job_id=job.id
+       JOIN job_step_attempts attempt ON attempt.job_id=job.id AND attempt.step_id=step.id
+       WHERE job.id=NEW.job_id AND job.current_generation=(authority->>'generation')::bigint
+         AND job.status='running' AND step.id=NEW.step_id AND step.status='running'
+         AND step.current_attempt=(authority->>'attempt')::bigint
+         AND attempt.attempt=step.current_attempt AND attempt.status='active'
+         AND attempt.worker_id=authority->>'worker_id' AND attempt.expires_at>clock_timestamp()
+         AND (NEW.payload_json->'job'->>'current_generation')::bigint=job.current_generation
+         AND NEW.payload_json->'job'->>'status'=job.status
+         AND NEW.payload_json->'job'->>'instruction'=job.instruction
+         AND NEW.payload_json->'job'->'metadata'=job.metadata) OR
+     NOT EXISTS(SELECT 1 FROM ai_channel_messages WHERE id=reply
+       AND channel_id=intake->'command'->>'channel_id' AND role='assistant') THEN
+     RAISE EXCEPTION 'Message answer lacks its active attempt or durable reply';
+   END IF;
+ ELSIF meaning='workspace_mutation' THEN
+   IF NOT (NEW.payload_json ? 'control_operation_id') OR
+     jsonb_typeof(NEW.payload_json->'control_operation_id') IS DISTINCT FROM 'string' OR
+     NEW.payload_json ? 'response_message_id' OR
+     NEW.payload_json->>'control_operation_id' IS DISTINCT FROM intake->>'redirect_operation_id' OR
+     NOT EXISTS(SELECT 1 FROM job_lifecycle_operations control
+       WHERE control.operation_id=intake->>'redirect_operation_id' AND control.kind='replan_job'
+         AND control.job_id=NEW.job_id AND control.result_job=NEW.payload_json->'job'
+         AND control.observed_generation=(intake->'command'->>'expected_generation')::bigint
+         AND control.result_generation=control.observed_generation+1
+         AND control.command_payload->>'feedback'=intake->'command'->>'text') THEN
+     RAISE EXCEPTION 'Message redirect lacks its exact designated replan and unchanged input';
+   END IF;
+ ELSIF meaning='retired' THEN
+   IF NOT (NEW.payload_json ? 'control_operation_id') OR
+     jsonb_typeof(NEW.payload_json->'control_operation_id') IS DISTINCT FROM 'string' OR
+     NEW.payload_json ? 'response_message_id' OR
+     NOT (EXISTS(SELECT 1 FROM job_lifecycle_operations control
+       WHERE control.operation_id=NEW.payload_json->>'control_operation_id' AND control.job_id=NEW.job_id
+         AND control.observed_generation=(intake->'command'->>'expected_generation')::bigint
+         AND control.kind IN ('replan_job','interrupt_job','cancel_job','fail_step')
+         AND control.result_job=NEW.payload_json->'job') OR
+       EXISTS(SELECT 1 FROM channel_session_turn_operations control
+         WHERE control.operation_id=NEW.payload_json->>'control_operation_id' AND control.job_id=NEW.job_id
+           AND control.disposition='replanned' AND control.result_job=NEW.payload_json->'job')) THEN
+     RAISE EXCEPTION 'Message cutover lacks its exact lifecycle control receipt';
+   END IF;
+ ELSE RAISE EXCEPTION 'Message resolution has unregistered meaning';
+ END IF;
+ RETURN NULL;
+END $$;
+CREATE CONSTRAINT TRIGGER channel_session_message_resolution_validate AFTER INSERT ON evidence
+ DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (NEW.kind='channel_session_message')
+ EXECUTE FUNCTION validate_channel_session_message_resolution();
+
+CREATE FUNCTION prevent_channel_session_message_resolution_mutation() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN RAISE EXCEPTION 'Active conversation resolutions are immutable'; END $$;
+CREATE TRIGGER channel_session_message_resolution_update_immutable BEFORE UPDATE ON evidence
+ FOR EACH ROW WHEN (OLD.kind='channel_session_message' OR NEW.kind='channel_session_message')
+ EXECUTE FUNCTION prevent_channel_session_message_resolution_mutation();
+CREATE TRIGGER channel_session_message_resolution_delete_immutable BEFORE DELETE ON evidence
+ FOR EACH ROW WHEN (OLD.kind='channel_session_message')
+ EXECUTE FUNCTION prevent_channel_session_message_resolution_mutation();
+
+CREATE FUNCTION prevent_channel_session_message_reply_mutation() RETURNS trigger
+ LANGUAGE plpgsql SET search_path TO 'pg_catalog','__OMNIDEX_RUNTIME_SCHEMA__','pg_temp' AS $$
+BEGIN
+ IF NEW IS DISTINCT FROM OLD AND EXISTS(SELECT 1 FROM evidence
+   WHERE kind='channel_session_message' AND message_reply_id=OLD.id) THEN
+   RAISE EXCEPTION 'Referenced active conversation replies are immutable';
+ END IF;
+ RETURN NEW;
+END $$;
+CREATE TRIGGER channel_session_message_reply_update_immutable BEFORE UPDATE ON ai_channel_messages
+ FOR EACH ROW EXECUTE FUNCTION prevent_channel_session_message_reply_mutation();

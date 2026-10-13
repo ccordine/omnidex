@@ -61,7 +61,7 @@ func (r *Repository) applyChannelSessionTurnTx(
 	var err error
 	switch job.Status {
 	case model.JobStatusPending, model.JobStatusRunning:
-		job, err = applyChannelSessionReplanTx(ctx, tx, command, job)
+		return ChannelSessionTurnResult{}, nil, fmt.Errorf("%w: active message requires the observed job and generation", ErrChannelSessionTurnInvalid)
 	case model.JobStatusWaiting:
 		var generationPurpose string
 		if err = tx.QueryRow(ctx, `

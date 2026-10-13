@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
+
+	"golang.org/x/term"
 )
 
 // Activity is a presentation of observed work, never execution authority.
@@ -42,10 +45,12 @@ func (console *chatConsole) SetActivityDetail(jobID, stepID int64, detail string
 func (console *chatConsole) PulseActivity(now time.Time) error {
 	console.presentationMu.Lock()
 	defer console.presentationMu.Unlock()
-	if !console.activity.Working || console.reviewActive {
+	if console.reviewActive {
 		return nil
 	}
-	console.activityFrame++
+	if console.activity.Working {
+		console.activityFrame++
+	}
 	return console.redrawPromptLocked(now)
 }
 
@@ -56,29 +61,65 @@ func (console *chatConsole) redrawPromptLocked(now time.Time) error {
 	console.promptMu.Lock()
 	prompt := console.prompt
 	console.promptMu.Unlock()
+	if console.terminalFD >= 0 {
+		if width, height, err := term.GetSize(console.terminalFD); err == nil && width > 0 && height > 0 && (width != console.terminalWidth || height != console.terminalHeight) {
+			if err := console.terminal.SetSize(width, height); err != nil {
+				return err
+			}
+			console.terminalWidth, console.terminalHeight = width, height
+		}
+	}
+	width := console.terminalWidth
+	if width <= 0 {
+		width = 80
+	}
 	activity := console.activity
 	if activity.JobID > 0 {
 		label := activity.Label
 		if console.activityDetail != "" && console.activityDetail != label {
-			label += " · " + console.activityDetail
+			label += " | " + console.activityDetail
 		}
 		if activity.Working {
-			frames := []rune("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+			frames := []rune("|/-\\")
 			label = string(frames[console.activityFrame%len(frames)]) + " " + label
 			if !activity.StartedAt.IsZero() {
 				elapsed := max(time.Duration(0), now.Sub(activity.StartedAt)).Truncate(time.Second)
-				label += " · " + elapsed.String()
+				label += " | " + elapsed.String()
 			}
 		}
-		prompt = safeConsoleText(label) + "  " + prompt
+		// x/term counts every rune as one column. Only this compact status
+		// projection uses ASCII cells; original Unicode stays in the transcript.
+		row := []rune(singleCellActivityText(label))
+		if len(row) > width {
+			row = append(row[:width-1], '~')
+		}
+		prompt = string(row) + strings.Repeat(" ", width-len(row)) + prompt
 	}
 	if console.renderedPrompt == prompt {
 		return nil
 	}
 	console.renderedPrompt = prompt
 	console.terminal.SetPrompt(prompt)
-	_, err := console.terminal.Write(nil)
+	// Terminal.Write moves to the editor origin before writing this trusted
+	// erase. Clear old wrapped rows below a cursor parked inside the input.
+	_, err := console.terminal.Write([]byte("\x1b[0J"))
 	return err
+}
+
+func singleCellActivityText(value string) string {
+	value = strings.NewReplacer("\n", " ", "\t", " ").Replace(value)
+	var rendered strings.Builder
+	for _, character := range safeConsoleText(value) {
+		switch {
+		case character <= '~':
+			rendered.WriteRune(character)
+		case character <= '\uffff':
+			fmt.Fprintf(&rendered, "\\u%04x", character)
+		default:
+			fmt.Fprintf(&rendered, "\\U%08x", character)
+		}
+	}
+	return rendered.String()
 }
 
 // One display timer animates real active work. It performs no runtime polling.

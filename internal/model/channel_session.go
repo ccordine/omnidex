@@ -11,16 +11,29 @@ const (
 	ChannelSessionTurnEnqueued  ChannelSessionTurnDisposition = "enqueued"
 	ChannelSessionTurnReplanned ChannelSessionTurnDisposition = "replanned"
 	ChannelSessionTurnFeedback  ChannelSessionTurnDisposition = "feedback_submitted"
+	ChannelSessionTurnQueued    ChannelSessionTurnDisposition = "message_queued"
+)
+
+type ChannelSessionMessageState string
+
+const (
+	ChannelSessionMessagePending    ChannelSessionMessageState = "pending"
+	ChannelSessionMessageAnswered   ChannelSessionMessageState = "answer"
+	ChannelSessionMessageStory      ChannelSessionMessageState = "story"
+	ChannelSessionMessageRedirected ChannelSessionMessageState = "workspace_mutation"
+	ChannelSessionMessageRetired    ChannelSessionMessageState = "retired"
+	ChannelSessionMessageFailed     ChannelSessionMessageState = "failed"
 )
 
 type ChannelSessionTurn struct {
-	OperationID LifecycleOperationID          `json:"operation_id"`
-	Disposition ChannelSessionTurnDisposition `json:"disposition"`
-	Text        string                        `json:"text"`
-	JobID       int64                         `json:"job_id"`
-	Generation  int64                         `json:"generation"`
-	Status      string                        `json:"status"`
-	CreatedAt   time.Time                     `json:"created_at"`
+	OperationID  LifecycleOperationID          `json:"operation_id"`
+	Disposition  ChannelSessionTurnDisposition `json:"disposition"`
+	Text         string                        `json:"text"`
+	JobID        int64                         `json:"job_id"`
+	Generation   int64                         `json:"generation"`
+	Status       string                        `json:"status"`
+	CreatedAt    time.Time                     `json:"created_at"`
+	MessageState ChannelSessionMessageState    `json:"message_state,omitempty"`
 }
 
 type ChannelSessionControlKind string

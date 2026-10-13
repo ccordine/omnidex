@@ -18,7 +18,9 @@ func (r *nativeRuntimeV3) complete(output string) error {
 	if r.svc.completeStep == nil {
 		return fmt.Errorf("native completion requires the worker step completer")
 	}
-	return r.svc.completeStep(r.ctx, command)
+	return r.transitionAfterSessionMessages(r.ctx, func() error {
+		return r.svc.completeStep(r.ctx, command)
+	})
 }
 
 func (r *nativeRuntimeV3) completeAppliedWorkspace(output string) error {
@@ -64,11 +66,10 @@ func (r *nativeRuntimeV3) completeWithEvidence(
 		record.StepID = r.claim.Step.ID
 		bound[index] = record
 	}
-	if err := r.svc.repo.CompleteStepWithEvidence(r.ctx, queue.CompleteStepEvidenceCommand{
-		CompleteStepCommand: command,
-		Evidence:            bound,
-	}); err != nil {
-		return err
-	}
-	return nil
+	return r.transitionAfterSessionMessages(r.ctx, func() error {
+		return r.svc.repo.CompleteStepWithEvidence(r.ctx, queue.CompleteStepEvidenceCommand{
+			CompleteStepCommand: command,
+			Evidence:            bound,
+		})
+	})
 }

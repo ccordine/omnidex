@@ -27,16 +27,17 @@ func NewStepLifecycleOperationID(authority model.StepAttemptAuthority, kind Life
 type LifecycleOperationKind string
 
 const (
-	LifecycleCompleteStep        LifecycleOperationKind = "complete_step"
-	LifecycleFailStep            LifecycleOperationKind = "fail_step"
-	LifecycleSubmitFeedback      LifecycleOperationKind = "submit_feedback"
-	LifecycleInterruptJob        LifecycleOperationKind = "interrupt_job"
-	LifecycleReplanJob           LifecycleOperationKind = "replan_job"
-	LifecycleChannelSession      LifecycleOperationKind = "channel_session_turn"
-	LifecycleScrumChannel        LifecycleOperationKind = "scrum_channel_message"
-	LifecycleCancelJob           LifecycleOperationKind = "cancel_job"
-	LifecycleCodingPlanDecisions LifecycleOperationKind = "coding_plan_decisions"
-	LifecycleCodingPlanFreeze    LifecycleOperationKind = "coding_plan_freeze"
+	LifecycleCompleteStep          LifecycleOperationKind = "complete_step"
+	LifecycleFailStep              LifecycleOperationKind = "fail_step"
+	LifecycleSubmitFeedback        LifecycleOperationKind = "submit_feedback"
+	LifecycleInterruptJob          LifecycleOperationKind = "interrupt_job"
+	LifecycleReplanJob             LifecycleOperationKind = "replan_job"
+	LifecycleChannelSession        LifecycleOperationKind = "channel_session_turn"
+	LifecycleChannelSessionMessage LifecycleOperationKind = "channel_session_message"
+	LifecycleScrumChannel          LifecycleOperationKind = "scrum_channel_message"
+	LifecycleCancelJob             LifecycleOperationKind = "cancel_job"
+	LifecycleCodingPlanDecisions   LifecycleOperationKind = "coding_plan_decisions"
+	LifecycleCodingPlanFreeze      LifecycleOperationKind = "coding_plan_freeze"
 )
 
 type CompleteStepCommand struct {

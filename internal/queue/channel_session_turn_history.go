@@ -14,12 +14,12 @@ func listChannelSessionTurnsTx(
 	channelID model.ChannelID,
 ) ([]model.ChannelSessionTurn, bool, error) {
 	rows, err := tx.Query(ctx, `
-		SELECT operation_id,disposition,text,job_id,generation,status,created_at
+		SELECT operation_id,disposition,text,job_id,generation,status,created_at,message_state
 		FROM (
 		  SELECT operation.operation_id,operation.disposition,
 		         registry.command_payload->>'text' AS text,operation.job_id,
 		         operation.result_generation AS generation,
-		         operation.result_job->>'status' AS status,operation.created_at
+		         operation.result_job->>'status' AS status,operation.created_at,''::text AS message_state
 		  FROM channel_session_turn_operations AS operation
 		  JOIN lifecycle_operation_registry AS registry
 		    ON registry.operation_id=operation.operation_id
@@ -29,11 +29,18 @@ func listChannelSessionTurnsTx(
 		  SELECT operation.operation_id,'feedback_submitted'::text,
 		         operation.command_payload->>'feedback',operation.job_id,
 		         operation.result_generation,operation.result_job_status,
-		         operation.created_at
+		         operation.created_at,''::text
 		  FROM job_lifecycle_operations AS operation
 		  JOIN jobs AS job ON job.id=operation.job_id
 		  WHERE job.pipeline='chat' AND job.metadata->>'channel_id'=$1
 		    AND operation.kind='submit_feedback'
+		  UNION ALL
+		  SELECT intake.operation_id,'message_queued'::text,intake.command_payload->'command'->>'text',
+		    intake.message_job_id,intake.message_generation,intake.command_payload->'admitted_job'->>'status',intake.created_at,
+		    COALESCE(resolution.payload_json->>'kind','pending')
+		  FROM lifecycle_operation_registry AS intake
+		  LEFT JOIN evidence AS resolution ON resolution.kind='channel_session_message' AND resolution.source_ref=intake.operation_id
+		  WHERE intake.kind='channel_session_message' AND intake.message_channel_id=$1
 		) AS history
 		ORDER BY created_at DESC,operation_id DESC
 		LIMIT $2
@@ -57,6 +64,7 @@ func listChannelSessionTurnsTx(
 			&turn.Generation,
 			&turn.Status,
 			&turn.CreatedAt,
+			&turn.MessageState,
 		); err != nil {
 			return nil, false, err
 		}

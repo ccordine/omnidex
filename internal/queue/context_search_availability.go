@@ -21,12 +21,13 @@ type RoleplayContextSearchRepresentation struct {
 }
 
 // HasAdditionalConversationSearchAuthority reports whether term-directed
-// assistant retrieval can add an exact completed exchange beyond the already
-// acquired recent suffix.
+// assistant retrieval can add an exact task or queued-message exchange beyond
+// the already acquired recent suffix. Their source identities stay separate.
 func (r *Repository) HasAdditionalConversationSearchAuthority(
 	ctx context.Context,
 	job model.Job,
 	representedUserMessageIDs []int64,
+	representedSessionOperationIDs ...model.LifecycleOperationID,
 ) (bool, error) {
 	if ctx == nil || r == nil || r.pool == nil {
 		return false, fmt.Errorf("conversation search availability requires PostgreSQL and context")
@@ -48,9 +49,19 @@ func (r *Repository) HasAdditionalConversationSearchAuthority(
 		}
 		seen[messageID] = struct{}{}
 	}
+	seenOperations := make(map[model.LifecycleOperationID]struct{}, len(representedSessionOperationIDs))
+	for _, operationID := range representedSessionOperationIDs {
+		if _, err := model.ParseLifecycleOperationID(string(operationID)); err != nil {
+			return false, err
+		}
+		if _, duplicate := seenOperations[operationID]; duplicate {
+			return false, fmt.Errorf("represented queued conversation operation %q is duplicated", operationID)
+		}
+		seenOperations[operationID] = struct{}{}
+	}
 	var additional, invalid bool
 	if err := r.pool.QueryRow(ctx, additionalConversationSearchAuthorityQuery,
-		binding.ChannelID, binding.UserMessageID, representedUserMessageIDs,
+		binding.ChannelID, binding.UserMessageID, representedUserMessageIDs, representedSessionOperationIDs,
 	).Scan(&additional, &invalid); err != nil {
 		return false, fmt.Errorf("inspect additional conversation search authority: %w", err)
 	}
@@ -126,7 +137,7 @@ func validateDistinctSearchRepresentation(label string, values []string) error {
 }
 
 const additionalConversationSearchAuthorityQuery = `
-	WITH completed AS (
+	WITH ` + conversationSessionRepliesCTE + `, completed AS (
 		SELECT message.id AS user_message_id,message.content AS user_content,
 		       MIN(job.instruction) AS instruction,MIN(job.result) AS result,
 		       BOOL_AND(job.result IS NOT NULL) AS result_present,
@@ -145,6 +156,7 @@ const additionalConversationSearchAuthorityQuery = `
 			SELECT message.role,message.content
 			FROM ai_channel_messages AS message
 			WHERE message.channel_id=$1 AND message.id>completed.user_message_id
+			  AND NOT EXISTS(SELECT 1 FROM session_replies WHERE response_message_id=message.id)
 			ORDER BY message.id ASC LIMIT 1
 		) AS assistant ON TRUE
 		WHERE completed.completion_count=1
@@ -158,6 +170,7 @@ const additionalConversationSearchAuthorityQuery = `
 			SELECT message.role,message.content
 			FROM ai_channel_messages AS message
 			WHERE message.channel_id=$1 AND message.id>completed.user_message_id
+			  AND NOT EXISTS(SELECT 1 FROM session_replies WHERE response_message_id=message.id)
 			ORDER BY message.id ASC LIMIT 1
 		) AS assistant ON TRUE
 		WHERE completed.completion_count<>1
@@ -170,7 +183,14 @@ const additionalConversationSearchAuthorityQuery = `
 		SELECT user_message_id FROM exact_exchanges
 		EXCEPT
 		SELECT represented FROM unnest($3::bigint[]) AS represented
-	), EXISTS(SELECT 1 FROM invalid_exchanges)
+	) OR EXISTS(
+		SELECT operation_id FROM session_replies WHERE channel_id=$1 AND response_message_id<$2
+		EXCEPT SELECT represented FROM unnest($4::text[]) AS represented
+	), EXISTS(SELECT 1 FROM invalid_exchanges) OR EXISTS(
+		SELECT represented FROM unnest($4::text[]) AS represented
+		WHERE NOT EXISTS(SELECT 1 FROM session_replies
+		  WHERE operation_id=represented AND channel_id=$1 AND response_message_id<$2)
+	)
 `
 
 const additionalRoleplaySearchAuthorityQuery = `

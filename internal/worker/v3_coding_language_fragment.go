@@ -333,11 +333,10 @@ func failDirectCodingLanguageGeneration(
 	attempt int,
 	err error,
 ) error {
-	emitTypedWorker(runtime, typedWorkerEvent{
-		State: typedWorkerFailed, Kind: typedWorkerFragment, Subject: job.Subject,
+	emitTypedWorkerFailure(runtime, typedWorkerEvent{
+		Kind: typedWorkerFragment, Subject: job.Subject,
 		Model: modelName, Attempt: attempt, MaxAttempts: runtime.MaxAttempts,
-		Detail: trimForBudget(err.Error(), 1200),
-	})
+	}, err)
 	return fmt.Errorf("%s fragment generation failed: %w", job.Input.Language, err)
 }
 

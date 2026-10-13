@@ -11,8 +11,8 @@ func (session *chatSession) reconcilePersistedPendingOperations() error {
 		if !persisted {
 			return nil
 		}
-		if turn.Text != pending.exactText {
-			return fmt.Errorf("persisted session turn differs from pending operation authority")
+		if err := validatePendingSessionTurn(turn, pending); err != nil {
+			return err
 		}
 		session.pendingTurn = nil
 		return nil

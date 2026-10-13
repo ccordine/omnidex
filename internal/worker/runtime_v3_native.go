@@ -22,6 +22,7 @@ type nativeRuntimeV3 struct {
 	objectivePathProvenance assemblyline.ArtifactIdentityProvenance
 	workspaceFence          workspacefacts.Access
 	workspaceFenceRoot      string
+	sessionMessages         *channelSessionMessageConsumer
 }
 
 func (s *Service) runNativeV3Step(
@@ -36,6 +37,11 @@ func (s *Service) runNativeV3Step(
 		svc: s, ctx: ctx, claim: claim,
 		action: action,
 	}
+	consumer, err := newChannelSessionMessageConsumer(runtime)
+	if err != nil {
+		return err
+	}
+	runtime.sessionMessages = consumer
 	runErr := runtime.run()
 	releaseErr := runtime.releaseWorkspaceMutationFence()
 	if releaseErr != nil {

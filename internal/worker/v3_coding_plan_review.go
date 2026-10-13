@@ -95,8 +95,12 @@ func (r *nativeRuntimeV3) runDirectCodingPlanAction() error {
 		}
 		command.IntakeContext = &codingagent.IntakeContext{RedactedRequest: inputs.RequestAuthority.modelRequest, ArtifactBindings: bindings}
 	}
-	plan, err := r.svc.repo.StoreCodingPlanReview(r.ctx, command)
-	if err != nil {
+	var plan model.CodingPlan
+	if err := r.transitionAfterSessionMessages(r.ctx, func() error {
+		var storeErr error
+		plan, storeErr = r.svc.repo.StoreCodingPlanReview(r.ctx, command)
+		return storeErr
+	}); err != nil {
 		return err
 	}
 	if configuration.Mode == codingagent.Agents {

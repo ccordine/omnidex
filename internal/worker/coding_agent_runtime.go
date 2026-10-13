@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/codingagent"
@@ -72,7 +73,15 @@ func (runtime *nativeRuntimeV3) runAgentCodingAction(configuration codingagent.C
 		}}
 	stopHeartbeat := runtime.svc.startProgressHeartbeat(runtime.ctx, runtime.claim.Authority, "scoped-agent-work")
 	defer stopHeartbeat()
-	if err := controller.Run(agentContext); err != nil {
+	if err := runtime.runWithSessionMessages(agentContext, controller.Run); err != nil {
+		var questions *codingagent.QuestionsPending
+		if errors.As(err, &questions) {
+			if pauseErr := runtime.transitionAfterSessionMessages(agentContext, func() error {
+				return runtime.svc.repo.PauseCodingAgentStep(agentContext, runtime.claim.Authority, questions.Questions)
+			}); pauseErr != nil {
+				return pauseErr
+			}
+		}
 		return err
 	}
 	if err := agentContext.Err(); err != nil {

@@ -142,6 +142,10 @@ func exactStationEvidenceContext(ctx context.Context) (context.Context, context.
 }
 
 func exactStationEvidenceError(err error) string {
+	return exactStationEvidenceErrorWithinBytes(err, 8192)
+}
+
+func exactStationEvidenceErrorWithinBytes(err error, limit int) string {
 	if err == nil {
 		return ""
 	}
@@ -150,7 +154,6 @@ func exactStationEvidenceError(err error) string {
 	if value == "" {
 		value = "station boundary failed without a diagnostic"
 	}
-	const limit = 8192
 	if len(value) <= limit {
 		return value
 	}

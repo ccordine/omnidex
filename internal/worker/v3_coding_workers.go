@@ -374,7 +374,7 @@ func portableWorkerRuntimeWithIdentityGuard(
 			continuations.Delete(job.Key())
 			return nil
 		},
-		Finalize: func(job assemblyline.PortableJob, result assemblyline.PortableResult, validationErr error) error {
+		Finalize: runtime.afterAcceptedPortableResult(executionContext, func(job assemblyline.PortableJob, result assemblyline.PortableResult, validationErr error) error {
 			stored, exists := pending.LoadAndDelete(job.Key())
 			if !exists {
 				return fmt.Errorf("portable work %s has no pending exact station result", job.Kind)
@@ -438,7 +438,7 @@ func portableWorkerRuntimeWithIdentityGuard(
 				return nil
 			}
 			return validationErr
-		},
+		}),
 		Emit: func(event typedWorkerEvent) {
 			runtime.svc.emitStepEvent(
 				runtime.claim.Authority,

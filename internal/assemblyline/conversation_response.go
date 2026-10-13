@@ -14,12 +14,13 @@ const (
 )
 
 type ConversationResponseInput struct {
-	Kind               ConversationObjectiveKind   `json:"kind"`
-	ExactInstruction   string                      `json:"exact_instruction"`
-	Context            ObjectiveContext            `json:"objective_context"`
-	RoleplayIdentity   *RoleplayResponseIdentity   `json:"roleplay_identity"`
-	RoleplayUserTurn   *RoleplayUserTurnProjection `json:"roleplay_user_turn"`
-	KnownArtifactPaths []string                    `json:"known_artifact_paths"`
+	Kind               ConversationObjectiveKind         `json:"kind"`
+	ExactInstruction   string                            `json:"exact_instruction"`
+	Context            ObjectiveContext                  `json:"objective_context"`
+	RoleplayIdentity   *RoleplayResponseIdentity         `json:"roleplay_identity"`
+	RoleplayUserTurn   *RoleplayUserTurnProjection       `json:"roleplay_user_turn"`
+	KnownArtifactPaths []string                          `json:"known_artifact_paths"`
+	CLICommands        []ConversationCLICommandReference `json:"cli_commands,omitempty"`
 }
 
 type RoleplayResponseIdentity struct {
@@ -34,6 +35,9 @@ type ConversationResponseDecision struct {
 }
 
 func NewConversationResponseJob(input ConversationResponseInput) (PortableJob, error) {
+	if err := input.validate(); err != nil {
+		return PortableJob{}, err
+	}
 	return newPortableJob(WorkConversationResponse, input)
 }
 
@@ -44,6 +48,9 @@ func (input ConversationResponseInput) validate() error {
 	}
 	if input.Kind != ObjectiveKindAnswer && input.Kind != ObjectiveKindStory {
 		return fmt.Errorf("conversation response kind %q is unsupported", input.Kind)
+	}
+	if err := validateConversationCLICommands(input); err != nil {
+		return err
 	}
 	if input.RoleplayIdentity != nil {
 		if input.Kind != ObjectiveKindStory {
@@ -176,6 +183,18 @@ func BuildConversationResponsePrompt(input ConversationResponseInput) (string, e
 	}
 	if contextText != "" {
 		sections = append(sections, "Relevant context:\n"+contextText)
+	}
+	commandFacts, err := renderConversationCLICommands(input)
+	if err != nil {
+		return "", err
+	}
+	if commandFacts != "" {
+		if err := ValidatePathFreeModelContextWithProvenance(
+			"conversation CLI command meanings", provenance, commandFacts,
+		); err != nil {
+			return "", err
+		}
+		sections = append(sections, "Referenced Omnidex CLI command meanings:\n"+commandFacts)
 	}
 	if input.RoleplayIdentity != nil {
 		responderName := input.RoleplayIdentity.CharacterName

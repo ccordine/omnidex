@@ -59,6 +59,9 @@ type chatConsole struct {
 	activityDetail string
 	activityFrame  int
 	renderedPrompt string
+	terminalWidth  int
+	terminalHeight int
+	questionScope  chatQuestionScope
 }
 
 func newChatConsole(
@@ -70,7 +73,7 @@ func newChatConsole(
 	if ctx == nil || input == nil || output == nil || errorsOutput == nil {
 		return nil, fmt.Errorf("interactive console requires stdin, stdout, and stderr")
 	}
-	console := &chatConsole{terminalFD: -1}
+	console := &chatConsole{terminalFD: -1, terminalWidth: 80, terminalHeight: 24}
 	inputFile, outputFile, err := requireChatTerminalStreams(input, output)
 	if err != nil {
 		return nil, err
@@ -102,6 +105,9 @@ func newChatConsole(
 	interactive.SetBracketedPasteMode(true)
 	if width, height, sizeErr := term.GetSize(int(outputFile.Fd())); sizeErr == nil {
 		_ = interactive.SetSize(width, height)
+		if width > 0 && height > 0 {
+			console.terminalWidth, console.terminalHeight = width, height
+		}
 	}
 	console.terminal = interactive
 	console.pasteReader = pasteReader

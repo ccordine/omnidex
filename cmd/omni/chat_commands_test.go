@@ -21,6 +21,10 @@ func TestParseChatCommandPreservesOrdinaryAndControlText(t *testing.T) {
 		{input: "/redirect  preserve leading space ", name: "redirect", text: " preserve leading space ", isCommand: true},
 		{input: "/cancel stop this objective", name: "cancel", text: "stop this objective", isCommand: true},
 		{input: "/exit", name: "exit", isCommand: true},
+		{input: "exit", name: "exit", isCommand: true},
+		{input: "quit", name: "exit", isCommand: true},
+		{input: "exiting should preserve work", text: "exiting should preserve work"},
+		{input: "exit after the deployment finishes", text: "exit after the deployment finishes"},
 	}
 	for _, test := range tests {
 		t.Run(test.input, func(t *testing.T) {
@@ -67,5 +71,16 @@ func TestExitCommandClosesOnlyTheClientSession(t *testing.T) {
 	quit, err := (&chatSession{}).acceptInput("/exit", false)
 	if err != nil || !quit {
 		t.Fatalf("/exit = quit %t, error %v; want quit without error", quit, err)
+	}
+}
+
+func TestBareExitGesturesNeverSubmitAnObjective(t *testing.T) {
+	for _, line := range []string{"exit", "quit"} {
+		t.Run(line, func(t *testing.T) {
+			quit, err := (&chatSession{}).acceptInput(line, false)
+			if err != nil || !quit {
+				t.Fatalf("%q = quit %t, error %v; want local exit", line, quit, err)
+			}
+		})
 	}
 }

@@ -239,9 +239,13 @@ func requireTranscriptActiveTurn(
 			activeTurns++
 			if activeJob == nil || message.Turn.JobID != activeJob.ID ||
 				message.Turn.Status != activeJob.Status || message.Role != model.ChannelMessageRoleUser ||
-				message.ID != activeUserMessageID || message.Content != activeJob.Instruction ||
-				index != len(messages)-1 {
+				message.ID != activeUserMessageID || message.Content != activeJob.Instruction {
 				return fmt.Errorf("transcript active turn differs from current job authority")
+			}
+			for _, following := range messages[index+1:] {
+				if following.Role != model.ChannelMessageRoleAssistant || following.Turn != nil {
+					return fmt.Errorf("active task may be followed only by assistant conversation replies")
+				}
 			}
 		}
 	}

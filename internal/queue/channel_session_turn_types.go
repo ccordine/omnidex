@@ -9,12 +9,14 @@ import (
 )
 
 type ChannelSessionTurnCommand struct {
-	OperationID       model.LifecycleOperationID `json:"operation_id"`
-	ChannelID         model.ChannelID            `json:"channel_id"`
-	WorkspaceRoot     string                     `json:"workspace_root"`
-	WorkspaceIdentity string                     `json:"workspace_identity"`
-	Text              string                     `json:"text"`
-	CodingMode        codingagent.Mode           `json:"coding_mode,omitempty"`
+	OperationID        model.LifecycleOperationID `json:"operation_id"`
+	ChannelID          model.ChannelID            `json:"channel_id"`
+	WorkspaceRoot      string                     `json:"workspace_root"`
+	WorkspaceIdentity  string                     `json:"workspace_identity"`
+	Text               string                     `json:"text"`
+	CodingMode         codingagent.Mode           `json:"coding_mode,omitempty"`
+	ExpectedJobID      *int64                     `json:"expected_job_id,omitempty"`
+	ExpectedGeneration *int64                     `json:"expected_generation,omitempty"`
 }
 
 type ChannelSessionTurnResult struct {
@@ -57,12 +59,16 @@ func normalizeChannelSessionTurnCommand(
 		)
 	}
 	command.OperationID = operationID
+	if (command.ExpectedJobID == nil) != (command.ExpectedGeneration == nil) ||
+		command.ExpectedJobID != nil && (*command.ExpectedJobID < 1 || *command.ExpectedGeneration < 1) {
+		return ChannelSessionTurnCommand{}, fmt.Errorf("%w: active message requires positive observed job and generation", ErrChannelSessionTurnInvalid)
+	}
 	return command, nil
 }
 
 func validateChannelSessionTurnDisposition(disposition model.ChannelSessionTurnDisposition) error {
 	switch disposition {
-	case model.ChannelSessionTurnEnqueued, model.ChannelSessionTurnReplanned, model.ChannelSessionTurnFeedback:
+	case model.ChannelSessionTurnEnqueued, model.ChannelSessionTurnReplanned, model.ChannelSessionTurnFeedback, model.ChannelSessionTurnQueued:
 		return nil
 	default:
 		return fmt.Errorf("unregistered channel session turn disposition %q", disposition)

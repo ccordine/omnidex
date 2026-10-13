@@ -23,7 +23,7 @@ func (renderer *chatRenderer) planningActivity(event client.RealtimeEvent) error
 	}
 	text += planningActivityIdentity(activity)
 	var rendered strings.Builder
-	renderBlock(&rendered, "omni>", text)
+	renderBlock(&rendered, "check>", text)
 	if activity.Truncated {
 		fmt.Fprintln(&rendered, "[omni] Returned content preview truncated.")
 	}

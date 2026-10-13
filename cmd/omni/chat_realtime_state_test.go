@@ -16,6 +16,7 @@ func TestRuntimeEventChangesJobStateIncludesImmediatePlanReviewAvailability(t *t
 		{kind: "step_canceled", want: true},
 		{kind: "step_waiting_input", want: true},
 		{kind: "coding_plan_review_ready", want: true},
+		{kind: "session_message_resolved", want: true},
 		{kind: "step_output", want: false},
 		{kind: "coding_plan_candidate", want: false},
 		{kind: "", want: false},

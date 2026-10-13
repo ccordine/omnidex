@@ -211,6 +211,15 @@ func validateChatSessionTurns(snapshot ChatSessionSnapshot) error {
 			if turn.Status != model.JobStatusRunning && turn.Status != model.JobStatusCompleted {
 				return fmt.Errorf("chat session feedback turn %q has status %q", turn.OperationID, turn.Status)
 			}
+		case model.ChannelSessionTurnQueued:
+			if turn.Status != model.JobStatusPending && turn.Status != model.JobStatusRunning {
+				return fmt.Errorf("queued message has contradictory admitted status")
+			}
+			switch turn.MessageState {
+			case model.ChannelSessionMessagePending, model.ChannelSessionMessageAnswered, model.ChannelSessionMessageStory, model.ChannelSessionMessageRedirected, model.ChannelSessionMessageRetired, model.ChannelSessionMessageFailed:
+			default:
+				return fmt.Errorf("queued message has unregistered resolution state %q", turn.MessageState)
+			}
 		default:
 			return fmt.Errorf("chat session turn %q has unsupported disposition %q", turn.OperationID, turn.Disposition)
 		}
@@ -383,9 +392,13 @@ func validateChatSessionActiveTurn(
 			activeTurns++
 			if activeJob == nil || message.Turn.JobID != activeJob.ID ||
 				message.Turn.Status != activeJob.Status || message.Role != model.ChannelMessageRoleUser ||
-				message.ID != activeUserMessageID || message.Content != activeJob.Instruction ||
-				index != len(messages)-1 {
+				message.ID != activeUserMessageID || message.Content != activeJob.Instruction {
 				return fmt.Errorf("chat session transcript active turn differs from current job")
+			}
+			for _, following := range messages[index+1:] {
+				if following.Role != model.ChannelMessageRoleAssistant || following.Turn != nil {
+					return fmt.Errorf("active task may be followed only by assistant conversation replies")
+				}
 			}
 		}
 	}

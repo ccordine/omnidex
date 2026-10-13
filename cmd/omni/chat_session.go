@@ -57,6 +57,8 @@ type pendingSessionTurn struct {
 	exactText   string
 	operationID model.LifecycleOperationID
 	codingMode  codingagent.Mode
+	answer      *pendingAgentAnswer
+	activeJob   *pendingChatJob
 }
 
 func runChatSession(config chatSessionConfig) (resultErr error) {
@@ -329,18 +331,12 @@ func (session *chatSession) acceptText(text string) error {
 		}
 		return err
 	}
+	pending := session.pendingTurn
 	receipt, err := awaitChatRequest(
 		session.ctx,
 		session.signals,
 		func(requestContext context.Context) (client.SessionTurnReceipt, error) {
-			return session.client.SubmitSessionTurn(
-				requestContext,
-				session.channel,
-				session.workspaceIdentity,
-				operationID,
-				text,
-				session.pendingTurn.codingMode,
-			)
+			return session.submitPendingTurn(requestContext, pending)
 		},
 	)
 	if err != nil {
@@ -349,7 +345,7 @@ func (session *chatSession) acceptText(text string) error {
 		}
 		return err
 	}
-	if err := session.renderTurnAccepted(receipt); err != nil {
+	if err := session.renderPendingTurnAccepted(receipt, pending); err != nil {
 		return err
 	}
 	if err := session.reloadSnapshot(); err != nil {
@@ -388,8 +384,15 @@ func (session *chatSession) sessionTurnOperationID(
 	if err != nil {
 		return "", err
 	}
+	answer, err := observedAgentPause(session.active)
+	if err != nil {
+		return "", err
+	}
 	session.pendingTurn = &pendingSessionTurn{
-		exactText: exactText, operationID: operationID, codingMode: codingagent.Agents,
+		exactText: exactText, operationID: operationID, codingMode: codingagent.Agents, answer: answer,
+	}
+	if answer == nil && session.active != nil && (session.active.Job.Status == model.JobStatusPending || session.active.Job.Status == model.JobStatusRunning) {
+		session.pendingTurn.activeJob = &pendingChatJob{jobID: session.active.Job.ID, generation: session.active.Job.CurrentGeneration}
 	}
 	return operationID, nil
 }
@@ -434,7 +437,7 @@ func realtimeEventReflectedBySnapshot(event client.RealtimeEvent) bool {
 func runtimeEventChangesJobState(kind string) bool {
 	switch kind {
 	case "step_start", "step_complete", "step_failed", "step_authority_lost", "step_canceled",
-		"step_waiting_input", "coding_plan_review_ready":
+		"step_waiting_input", "coding_plan_review_ready", "session_message_resolved":
 		return true
 	default:
 		return false

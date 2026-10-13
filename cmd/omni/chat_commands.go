@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/gryph/omnidex/internal/chatcommands"
 	"github.com/gryph/omnidex/internal/client"
 	"github.com/gryph/omnidex/internal/model"
 )
@@ -17,6 +18,9 @@ const defaultChatCancelReason = "User stopped the active objective from omni cha
 var errNoActiveChatJob = errors.New("no active task")
 
 func parseChatCommand(line string) (name, text string, command bool) {
+	if line == "exit" || line == "quit" {
+		return "exit", "", true
+	}
 	if !strings.HasPrefix(line, "/") {
 		return "", line, false
 	}
@@ -241,15 +245,5 @@ func validatedChatControlText(action, exactText string) (string, error) {
 }
 
 func printChatHelp(renderer chatRenderer) error {
-	return renderer.console.WriteOutput(
-		"commands:\n" +
-			"  /status                 show current work\n" +
-			"  /verbosity <level>      quiet, normal, verbose, or debug\n" +
-			"  /interrupt [reason]     pause the active job on the same job identity\n" +
-			"  /redirect <text>        explicitly redirect the active job\n" +
-			"  /cancel [reason]        stop the active task\n" +
-			"  /stop                   stop the active task\n" +
-			"  /exit                   close this client; server work continues\n" +
-			"Reply while working to give feedback; /redirect changes the plan.\n",
-	)
+	return renderer.console.WriteOutput(chatcommands.Help())
 }

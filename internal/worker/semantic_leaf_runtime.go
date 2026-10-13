@@ -56,6 +56,9 @@ func emitDirectCodingSemanticRejection(
 	attempt int,
 	err error,
 ) {
+	if typedWorkerFailureIsStop(runtime, err) {
+		return
+	}
 	emitTypedWorker(runtime, typedWorkerEvent{
 		State: typedWorkerRejected, Kind: typedWorkerSemantic, Subject: subject,
 		Model: modelName, Attempt: attempt, MaxAttempts: runtime.MaxAttempts,
@@ -70,10 +73,9 @@ func failDirectCodingSemanticCall(
 	attempt int,
 	err error,
 ) error {
-	emitTypedWorker(runtime, typedWorkerEvent{
-		State: typedWorkerFailed, Kind: typedWorkerSemantic, Subject: subject,
+	emitTypedWorkerFailure(runtime, typedWorkerEvent{
+		Kind: typedWorkerSemantic, Subject: subject,
 		Model: modelName, Attempt: attempt, MaxAttempts: runtime.MaxAttempts,
-		Detail: trimForBudget(err.Error(), 1200),
-	})
+	}, err)
 	return fmt.Errorf("coding semantic %s failed: %w", subject, err)
 }
