@@ -60,6 +60,14 @@ distinct execution/review identities (execution thread
 behavior proofs, not a general application-building claim. No production job,
 service, database, installation or user workspace was changed.
 
+Delivered: implementation commit `72cfe6b6` on
+`feat/codex-ledger-agent-mode`, pushed to
+https://github.com/ccordine/omnidex/pull/10 with base
+`fix/planner-live-activity` so the stacked PR contains only this port. The
+pre-existing owner CHANGELOG and stateless-inference files remain uncommitted and
+unchanged by this task. Task caches/builds and native qualification fixtures were
+retired; the established empty shared `bin/agent-runtime` directory was preserved.
+
 ## Completed correction: actual chat questions, input and stopping
 
 Root /home/gryph/Projects/tools/omnidex; branch fix/planner-live-activity,
