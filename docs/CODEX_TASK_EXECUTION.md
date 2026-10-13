@@ -1,5 +1,65 @@
 # Persistent task execution with Codex
 
+## Completed task: readable live terminal progress
+
+Root: /home/gryph/Projects/tools/omnidex. Continue fix/terminal-mixed-paste and
+the existing PR #8; the owner reported unusable worker-log output and requested
+Codex-style chat. Acceptance: readable live activity/elapsed time; real agent
+messages, public reasoning summaries, file operations, commands/output/results;
+quiet/normal/verbose/debug views; interrupt/feedback/replan retained; /cancel
+without a mandatory reason and /stop, safe idle handling; preserve input,
+plan-review, native scope and original workflow authority. User's follow-up
+exposed a second defect: job 2 failed because a literal source newline in
+construction-context evidence 128 was parsed as a new constraint. Regressions
+failed before its fix; exact multiline provenance now passes focused tests.
+The user tried to stop that job; it remains stopped and is not rerun here.
+Implemented: concise phase/task state and one elapsed-time display while typing;
+actual native commentary, public summaries, observed files, commands/output/exit
+through the existing authenticated realtime path. Four display verbosity levels
+preserve original diagnostics. Interrupt/feedback/replan retain their existing
+authority; /stop and optional-reason /cancel use the original cancellation API.
+Multiline construction quotes retain exact provenance. Stream-only native check
+completion preserves captured stdout/stderr; contradictory nonempty aggregates
+remain errors. Display clipping never changes frozen execution argv.
+
+Verified on source 1ee34b52, 2026-10-13 UTC: regressions failed before behavior
+changes; all nine affected Go packages passed under race, vet and native CLI/core
+builds. Candidate and installed launcher passed real PTY/private-protocol checks
+from daemonet-org: mixed CRLF/tab/edit input, live elapsed activity while typing,
+messages/summaries/commands, all verbosity levels, waiting/resume and recap.
+Installed launcher/live-core PTY check passed /help, idle /stop, reasonless /cancel
+and clean exit, without submitting work. Actual installed Codex execution and a
+fresh independent review passed in 50.388 s: three observed command lifecycles,
+one confirmed scoped edit, 78 public summary chunks, independent check output
+and its real exit. The preceding native attempt exposed the stream-only completion
+defect, which was corrected and requalified. Source review found no authority,
+private-reasoning or context-boundary regression. These are component/protocol/
+native-runtime proofs, not a new general application-building benchmark.
+
+Delivered: source 1ee34b52 in the existing PR #8 (base main). Matched core/CLI
+binaries are atomically active; only the core service was restarted. All three
+native services remain active/enabled and readiness passes. The 13 audited durable
+row families, including both jobs and all 128 model receipts/outcomes, retain their
+before-activation fingerprints. Runtime configuration and all 12 owner files
+retain their hashes. Job 2 remains failed; the stopped request was not rerun.
+No requirement/planning shortcut, schema change, new model call in the product,
+or execution of that Daemonet request by this agent. Installed SHA-256:
+
+- bin/omni: d477ace268f8ad38fba685ee503daa7d24503aa22a04f0e36c713273766e2a1d
+- bin/omnidex: 2d51c168ea87763110dc6187413a1ffad4a839df3de0c0f2b945f0486a9cc976
+
+Disposable budgets:
+bin/chat-activity-qualification 32 MiB for one bounded private server/PTY check,
+bin/omni-activity-candidate and bin/omnidex-activity-candidate 128 MiB each,
+activated after checks; native bin/agent-qualification source fixture 1 MiB
+and bin/agent-runtime scratch 128 MiB, retired after one installed execution/
+independent-review qualification. One compiler operation/two workers, shared
+caches preserved. The installed/live-core smoke owned one PTY child, 20 s and
+256 KiB output. No active jobs were present at the activation audit. Cleaned:
+private server, PTYs, isolated client configs and native source/scratch retired;
+candidates activated and known helper/PR-body files removed. No task-owned
+disposable remains. Implemented, verified, delivered, installed, cleaned; stop.
+
 ## Completed task: compose typed text and terminal paste
 
 Root: /home/gryph/Projects/tools/omnidex. Branch: fix/terminal-mixed-paste,
