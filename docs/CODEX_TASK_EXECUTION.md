@@ -1,6 +1,6 @@
 # Persistent task execution with Codex
 
-## Active correction: explain every actual planning check
+## Completed correction: explain every actual planning check
 
 Root /home/gryph/Projects/tools/omnidex; same fix/planner-live-activity branch and
 PR #9. Prior delivery was marked complete too early: the owner reproduced default
@@ -46,8 +46,15 @@ paged at the existing publication boundary without changing job limits or result
 Qualified candidate SHA256:
 CLI 8319bc40165365b60af8f9872459062cb266b79ef021dc6864728717c2c78a69
 core 8afaccee96531f2cf03433a23f92fdc3f8fc04f8e786aaca37dcf48102ef4833
-Next: same PR #9 delivery, fresh no-active-job audit, matching local activation,
-installed launcher probe and cleanup. Preserve owner-canceled jobs 4 and 5.
+Delivered: source 1212781fc4006dccf629f4aed7f73efc4cefb09f was committed and pushed in
+existing PR #9: https://github.com/ccordine/omnidex/pull/9. It remains unmerged.
+Matching binaries were atomically activated after a fresh no-active-job audit;
+only core restarted. Readiness passed. The installed launcher/live-core real PTY
+passed /help, /status, all four verbosity levels, idle /stop, reasonless /cancel
+and clean exit, without submitting work. Thirteen durable row-family fingerprints
+matched before/after activation and the installed probe. All twelve protected
+owner-file hashes and runtime.env (0600) stayed unchanged. Existing services remain
+active/enabled; owner-canceled jobs 4 and 5 remain canceled.
 
 Resources before creation: one compiler/two workers, shared caches retained.
 Disposable native fixtures under existing ignored bin paths: source 1 MiB,
@@ -56,6 +63,11 @@ One task-owned PostgreSQL container two CPUs/512 MiB/1 GiB tmpfs; newly pulled
 postgres:18-alpine image at most 512 MiB, retire afterward if unshared. Candidate
 CLI/core 128 MiB each under bin, retired by verified activation. PR body helper
 under bin/planner-activity-qualification (32 MiB), removed immediately after use.
+Cleaned: the task-owned auto-remove PostgreSQL container and newly pulled,
+unshared 120,059,278-byte postgres:18-alpine image were retired. All source/native
+fixture directories, bounded PTY processes and PR helper were retired. Candidate
+binaries were retired by activation. Only the twelve unrelated owner files remain
+dirty; shared caches, source, installations, identities and preferences were kept.
 
 ## Completed task: complete live terminal planning activity
 
