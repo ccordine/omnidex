@@ -1,6 +1,6 @@
 # Persistent task execution with Codex
 
-## Active task: complete live terminal planning activity
+## Completed task: complete live terminal planning activity
 
 Root: /home/gryph/Projects/tools/omnidex. Branch: fix/planner-live-activity from
 main c869b275. Goal: show actual public commentary/summaries, file reads/searches,
@@ -40,18 +40,26 @@ identity-fixture error and valid stream-completion handling, now fixed and check
 Qualified candidate SHA256:
 CLI eef4ef8c93e06c266107b59672288796c6f48250376b66c43a5caaeee28491b2
 core 6e910eca21580696ac6f6a1a95a069352879ce854a56a1dc1e3f46f83080335d
-Delivery pending: one scoped commit/push/PR and atomic activation of those matching
-binaries. Fresh audit found no active production jobs, unchanged protected owner
-hashes and runtime.env (0600); captured thirteen durable row-family fingerprints.
-Restart only the core; verify readiness, installed launcher/controls and preservation.
+Delivered: source ef39bb5bb551332bf7a0007eebe51bdcf33728b2 in the single scoped
+PR #9: https://github.com/ccordine/omnidex/pull/9 (base main). The matching binaries
+were atomically activated after a fresh no-active-job audit; only core restarted,
+and readiness passed. Installed launcher/live-core real PTY passed /help, /status,
+all four verbosity levels, idle /stop, reasonless /cancel and clean exit (3,447-byte
+transcript; no work submitted). Thirteen durable row-family fingerprints matched
+before/after activation and the probe. All twelve protected owner-file hashes and
+runtime.env (0600) remained unchanged. All three existing services are active and
+enabled. The owner's canceled job remains stopped. No merge was performed.
 
 Resources: one compiler/two workers; shared caches preserved. Task-owned fixture
 container omnidex-planner-activity-pg: two CPUs/512 MiB/1 GiB tmpfs, auto-remove.
-New postgres:18-alpine image 120,059,278 bytes; retire when unshared. Temporary
+New postgres:18-alpine image 120,059,278 bytes; retired after verifying no other
+image users. The task-owned fixture container was stopped and auto-removed. Temporary
 native/PTY source fixtures (1 MiB), scratch (128 MiB), bounded terminal transcripts
 (256 KiB/15 min), protocol export (16 MiB/10 s) have been retired by their lifecycles.
-Empty bin/agent-runtime remains for final cleanup. Candidate CLI/core (128 MiB
-budget each) retire by activation. No source copies, production test data, altered
+Empty bin/agent-runtime and the PR body helper were retired after inspection.
+Candidate CLI/core (128 MiB budget each) retired by activation. All declared
+disposable paths are absent; only the twelve unrelated owner files remain dirty.
+No source copies, production test data, altered
 settings, unrelated cache deletion or additional installation trees.
 
 ## Completed task: readable live terminal progress
