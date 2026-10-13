@@ -45,6 +45,7 @@ type RealtimeEvent struct {
 	FileSourcePath    string                   `json:"fileSourcePath,omitempty"`
 	AgentActivity     *model.AgentActivity     `json:"agentActivity,omitempty"`
 	AgentCallActivity *model.AgentCallActivity `json:"agentCallActivity,omitempty"`
+	PlanningActivity  *model.PlanningActivity  `json:"planningActivity,omitempty"`
 }
 
 type RealtimeProtocolError struct {

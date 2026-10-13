@@ -116,6 +116,7 @@ func resolveDirectCodingApplicationPlan(
 	if err != nil {
 		return nil, err
 	}
+	observeDirectCodingPlanning(runtime, model.PlanningActivity{Schema: 1, Kind: "inventory_started"})
 	inventory, err := runDirectCodingSemanticLeafCall(
 		runtime, models.Requirements, "application_requirement_inventory", inventoryJob, identities,
 		func(raw string) (assemblyline.ApplicationRequirementInventory, error) {
@@ -125,6 +126,9 @@ func resolveDirectCodingApplicationPlan(
 	if err != nil {
 		return nil, err
 	}
+	observeDirectCodingPlanning(runtime, model.PlanningActivity{
+		Schema: 1, Kind: "inventory_completed", Count: len(inventory.Candidates),
+	})
 	candidateQueue := newDirectCodingApplicationRequirementCandidateQueue(inventory)
 	accepted := make([]assemblyline.ApplicationIntentCandidateRequirement, 0, assemblyline.MaxApplicationRequirementLeaves)
 	proposals := make([]directCodingApplicationRequirementProposal, 0, len(inventory.Candidates))
@@ -140,6 +144,9 @@ func resolveDirectCodingApplicationPlan(
 			processedCandidates = append(processedCandidates, currentCandidate)
 			continue
 		}
+		observeDirectCodingPlanning(runtime, model.PlanningActivity{
+			Schema: 1, Kind: "candidate_started", Subject: currentCandidate,
+		})
 		resolved, err := resolveDirectCodingApplicationRequirementCandidate(
 			runtime, models.Requirements, models.ResultRelation, inventoryInput, current,
 			accepted, processedCandidates, identities,
@@ -163,16 +170,21 @@ func resolveDirectCodingApplicationPlan(
 				!directCodingApplicationRequirementPartitionIsZero(resolved.Partition) {
 				return nil, fmt.Errorf("discarded application requirement unexpectedly carries retained state")
 			}
+			observeDirectCodingPlanningResolution(runtime, resolved, 0)
 		case directCodingApplicationRequirementPartitioned:
 			if resolved.ResultRelation != (assemblyline.ApplicationRequirementCandidateResultRelationResult{}) {
 				return nil, fmt.Errorf("partitioned application requirement unexpectedly carries a result-relation receipt")
 			}
 			children := current.partitionChildren(resolved.Partition)
 			if enqueuedCandidates+len(children) > assemblyline.MaxApplicationRequirementCandidateQueueNodes {
+				observeDirectCodingPlanning(runtime, model.PlanningActivity{
+					Schema: 1, Kind: "candidate_resolved", Subject: resolved.Candidate, Outcome: "deferred",
+				})
 				continue
 			}
 			enqueuedCandidates += len(children)
 			candidateQueue = append(children, candidateQueue...)
+			observeDirectCodingPlanningResolution(runtime, resolved, len(children))
 		case directCodingApplicationRequirementRetained:
 			if !directCodingApplicationRequirementPartitionIsZero(resolved.Partition) {
 				return nil, fmt.Errorf("retained application requirement unexpectedly carries a partition receipt")
@@ -188,11 +200,13 @@ func resolveDirectCodingApplicationPlan(
 				accepted = append(accepted, assemblyline.ApplicationIntentCandidateRequirement{
 					Statement: resolved.Candidate, ResultRelation: resolved.ResultRelation,
 				})
+				observeDirectCodingPlanningResolution(runtime, resolved, 0)
 			}
 		default:
 			return nil, fmt.Errorf("application requirement candidate has unregistered disposition %d", resolved.Disposition)
 		}
 	}
+	observeDirectCodingPlanning(runtime, model.PlanningActivity{Schema: 1, Kind: "selected", Count: len(proposals)})
 	return proposals, nil
 }
 

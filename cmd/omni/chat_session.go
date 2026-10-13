@@ -410,7 +410,7 @@ func (session *chatSession) acceptRealtime(event client.RealtimeEvent) error {
 	if event.ID <= session.realtimeCursor && realtimeEventReflectedBySnapshot(event) {
 		return nil
 	}
-	if detail, changed := chatEventActivity(event); changed {
+	if detail, changed := session.renderer.eventActivity(event); changed {
 		if err := session.renderer.console.SetActivityDetail(event.JobID, event.StepID, detail); err != nil {
 			return err
 		}

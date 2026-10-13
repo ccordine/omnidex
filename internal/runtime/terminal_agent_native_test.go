@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/config"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/modelconfig"
@@ -73,12 +74,11 @@ func TestInstalledTerminalAgentsUpdateExistingProject(t *testing.T) {
 			t.Setenv(key, modelName)
 		}
 	}
-	// Qualify available public summaries with the same supported role setting
-	// a user can select. Low-effort turns may emit no summary at all.
-	if effort := os.Getenv("OMNI_TEST_CODEX_EFFORT"); effort != "" {
-		for _, role := range []string{"PLANNER", "EXECUTOR", "REVIEWER"} {
-			t.Setenv("CODING_"+role+"_EFFORT", effort)
-		}
+	// Acceptance exercises the normal low-effort/default-tier profile. Public
+	// native summaries remain optional; the observer never changes inference.
+	for _, role := range []string{"PLANNER", "EXECUTOR", "REVIEWER"} {
+		t.Setenv("CODING_"+role+"_EFFORT", "low")
+		t.Setenv("CODING_"+role+"_SERVICE_TIER", "default")
 	}
 	for key, value := range map[string]string{"DATABASE_URL": databaseURL, "DATABASE_SCHEMA": fmt.Sprintf("terminal_agents_%d", time.Now().UnixNano()), "LLM_PROVIDER": "codex", "CODEX_COMMAND": command, "CODEX_DIRECTORY": repository, "HOST_DIRECTORY_ACCESS_ROOT": filepath.Join(fixture, "server-only"), "WORKER_POLL_INTERVAL": "50ms", "REDIS_URL": "", "LISTEN_ADDR": "127.0.0.1:0"} {
 		t.Setenv(key, value)
@@ -86,6 +86,11 @@ func TestInstalledTerminalAgentsUpdateExistingProject(t *testing.T) {
 	cfg, err := config.Load()
 	if err != nil {
 		t.Fatal(err)
+	}
+	for _, route := range []codingagent.Route{cfg.CodingAgents.Planner, cfg.CodingAgents.Executor, cfg.CodingAgents.Reviewer} {
+		if route.Effort != "low" || route.ServiceTier != "default" {
+			t.Fatalf("terminal acceptance changed the default inference profile: %+v", route)
+		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
@@ -155,7 +160,11 @@ func TestInstalledTerminalAgentsUpdateExistingProject(t *testing.T) {
 			if err != nil {
 				return false
 			}
-			response, err := http.Get(fmt.Sprintf("%s/v1/jobs/%d", server.URL, id))
+			request, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/v1/jobs/%d", server.URL, id), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			response, err := http.DefaultClient.Do(request)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -184,17 +193,30 @@ func TestInstalledTerminalAgentsUpdateExistingProject(t *testing.T) {
 				t.Fatal(readErr)
 			}
 			cursor = next
-			activity.observe(currentText)
+			activity.observe(t, currentText)
 			statusObserved = statusObserved || (statusRequested && strings.Contains(transcript.text(), "task> "+instruction))
 			for _, step := range details.Steps {
-				if step.Action == "v3_coding_plan" && step.Status == model.StepStatusRunning && activity.seen["Collect requirements · started"] && activity.seen["Collect requirements · completed"] {
-					planningActivity = true
+				if step.Action == "v3_coding_plan" && step.Status == model.StepStatusRunning && !planningActivity && activity.seen["Candidate:"] && activity.seen["Code rule:"] {
+					for _, call := range readTerminalSemanticCalls(t, ctx, runtime, details.Job.ID) {
+						_, _, candidate, err := terminalSemanticFacts(call)
+						if err != nil {
+							t.Fatal(err)
+						}
+						_, visible, err := activity.planningCallVisible(call, nil)
+						if err != nil {
+							t.Fatal(err)
+						}
+						planningActivity = planningActivity || call.step == step.ID && candidate != "" && visible
+					}
+					if !planningActivity {
+						continue
+					}
 					if !statusRequested {
 						if _, err := io.WriteString(input, "/status\n"); err != nil {
 							t.Fatal(err)
 						}
 						statusRequested = true
-						t.Logf("job %d displayed actual requirement call start/result before plan completion; /status submitted while working", details.Job.ID)
+						t.Logf("job %d displayed an actual journal-bound candidate question, Why, all options, result and Code rule before plan completion; /status submitted while working", details.Job.ID)
 					}
 				}
 			}
@@ -203,16 +225,33 @@ func TestInstalledTerminalAgentsUpdateExistingProject(t *testing.T) {
 		if !planningActivity || !statusRequested || !statusObserved {
 			t.Fatal("real terminal planning stayed silent until completion")
 		}
+		catchupDeadline := time.Now().Add(10 * time.Second)
 		wait(func() bool {
+			if time.Now().After(catchupDeadline) {
+				t.Fatal("completed terminal job did not display its retained planning facts and written-files recap within the catch-up budget")
+			}
 			currentText, next, err := transcript.since(cursor)
 			if err != nil {
 				t.Fatal(err)
 			}
 			cursor = next
-			activity.observe(currentText)
-			return activity.seen["Written files:"]
+			activity.observe(t, currentText)
+			if !activity.seen["Written files:"] {
+				return false
+			}
+			for _, call := range readTerminalSemanticCalls(t, ctx, runtime, details.Job.ID) {
+				_, visible, err := activity.planningCallVisible(call, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !visible {
+					return false
+				}
+			}
+			return true
 		})
 		activity.assert(t)
+		activity.assertSemanticCalls(t, readTerminalSemanticCalls(t, ctx, runtime, details.Job.ID))
 		verification := exec.Command("python3", "-B", "-c", fmt.Sprintf("from greeting import greeting; assert greeting()==%q", value))
 		verification.Dir = root
 		if output, err := verification.CombinedOutput(); err != nil {

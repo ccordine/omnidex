@@ -14,7 +14,8 @@ var errPortableResponseMaximumKindMissing = errors.New(
 // candidate sets and correction inheritance are resolved from immutable job
 // payload authority.
 func PortableResponseMaximumBytesForJob(job PortableJob) (int, error) {
-	maximum, err := portableResponseMaximumBytesForValidatedJob(job)
+	contract, err := portableResponseContractForValidatedJob(job)
+	maximum := contract.maximum
 	if err != nil {
 		return 0, err
 	}
@@ -27,8 +28,8 @@ func PortableResponseMaximumBytesForJob(job PortableJob) (int, error) {
 	return maximum, nil
 }
 
-func portableResponseMaximumBytesForValidatedJob(job PortableJob) (int, error) {
-	for _, resolve := range []func(PortableJob) (int, bool, error){
+func portableResponseContractForValidatedJob(job PortableJob) (portableResponseContract, error) {
+	for _, resolve := range []func(PortableJob) (portableResponseContract, bool, error){
 		portableApplicationResponseMaximum,
 		portableRepositoryConversationResponseMaximum,
 		portableDatabaseResponseMaximum,
@@ -40,7 +41,7 @@ func portableResponseMaximumBytesForValidatedJob(job PortableJob) (int, error) {
 			return maximum, err
 		}
 	}
-	return 0, fmt.Errorf("%w: %q", errPortableResponseMaximumKindMissing, job.Kind)
+	return portableResponseContract{}, fmt.Errorf("%w: %q", errPortableResponseMaximumKindMissing, job.Kind)
 }
 
 func maximumStringBytes[T ~string](values ...T) int {

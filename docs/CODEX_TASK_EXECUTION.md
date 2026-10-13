@@ -1,5 +1,62 @@
 # Persistent task execution with Codex
 
+## Active correction: explain every actual planning check
+
+Root /home/gryph/Projects/tools/omnidex; same fix/planner-live-activity branch and
+PR #9. Prior delivery was marked complete too early: the owner reproduced default
+low-effort planning as repeated generic check names. Their explicit criterion is
+EVERY observed step: exact subject/question, why the call is necessary, actual
+offered choices, validated selected result and the action code takes. Do not hide
+checks, replace that with a summary, increase model effort or invent thoughts.
+Existing station uncertainty contracts supply reasons/consumers; the registered
+renderer supplies actual choices. Existing call journal receipts correlate completed checks; exact scoped work
+boundaries distinguish diagnostic duplicates. No content hashes or new ledger. Candidate dispositions describe actual retention,
+partitioning, duplication, exclusion and deferral after original validation.
+Model requests, call counts, contexts, authority, original results and existing
+owner jobs/settings/files remain unchanged. One authoritative tree, no deadline.
+
+Implemented: every original semantic call publishes its exact question, code-owned
+reason, actual offered choices, original configured model and validated result.
+Existing journal Call IDs correlate completed checks; scope/phase correlation
+removes only duplicate diagnostic headers after the full facts are visible.
+Candidate dispositions show actual inclusion, exclusion, duplication, partitioning
+and deferral. Native public activity, file/command streams, verbosity and controls
+remain intact. No additional inference, model context, effort or authority.
+
+Verified 2026-10-13 UTC: meaningful red regressions preceded candidate, transport,
+CLI, subject, formatter and full-result fixes. All ten affected Go packages passed
+under race; vet passed. Additional pure PTY parsing regressions reject reused
+openings and fake Call labels inside returned content and preserve paginated
+results. Final real-PTY two-turn default low-effort/default-tier gpt-6.1-sol
+qualification passed in 248.369 s: both ordinary existing-project requests showed
+a real journal-bound candidate question/reason/all choices/result/code rule before
+planning completed, responsive /status, every successful semantic journal Call ID
+with its own opening/completion facts, actual files/commands/exits, all four native
+role start/completion boundaries, verbose output, recaps and independent edited
+source/unchanged holdout checks. No native public summaries were emitted in either
+turn; summary availability is not claimed or fabricated. A fixture-only empty
+setting assertion failed before any model calls, then was corrected to the built-in
+low/default profile. Production settings were untouched.
+
+Actual choices now come from the existing response-contract registry; exact
+formatter suffixes preserve delimiter-like value text and multiline names. Sole
+choices remain resolved by code and describe their actual meaning. Valid subject
+source grammar is preserved; every byte of long validated results/choice lists is
+paged at the existing publication boundary without changing job limits or results.
+Qualified candidate SHA256:
+CLI 8319bc40165365b60af8f9872459062cb266b79ef021dc6864728717c2c78a69
+core 8afaccee96531f2cf03433a23f92fdc3f8fc04f8e786aaca37dcf48102ef4833
+Next: same PR #9 delivery, fresh no-active-job audit, matching local activation,
+installed launcher probe and cleanup. Preserve owner-canceled jobs 4 and 5.
+
+Resources before creation: one compiler/two workers, shared caches retained.
+Disposable native fixtures under existing ignored bin paths: source 1 MiB,
+scratch 128 MiB, real PTY transcript 256 KiB/15 min; retire after qualification.
+One task-owned PostgreSQL container two CPUs/512 MiB/1 GiB tmpfs; newly pulled
+postgres:18-alpine image at most 512 MiB, retire afterward if unshared. Candidate
+CLI/core 128 MiB each under bin, retired by verified activation. PR body helper
+under bin/planner-activity-qualification (32 MiB), removed immediately after use.
+
 ## Completed task: complete live terminal planning activity
 
 Root: /home/gryph/Projects/tools/omnidex. Branch: fix/planner-live-activity from

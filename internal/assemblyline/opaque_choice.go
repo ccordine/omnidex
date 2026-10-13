@@ -67,14 +67,8 @@ func RenderOpaqueModelChoiceQuestion(
 		parts = append(parts, value)
 	}
 	parts = append(parts, question)
-	for index, choice := range choices {
-		parts = append(parts, opaqueModelChoiceID(index)+". "+choice.Description)
-	}
-	ids := make([]string, len(choices))
-	for index := range choices {
-		ids[index] = opaqueModelChoiceID(index)
-	}
-	parts = append(parts, "Answer with "+strings.Join(ids, " or ")+".")
+	parts = append(parts, opaqueModelChoiceLabeledDescriptions(choices)...)
+	parts = append(parts, opaqueModelChoiceAnswerClause(len(choices)))
 	result := strings.Join(parts, "\n\n")
 	if len(result) > maxPortableResourceBytes {
 		return "", fmt.Errorf("opaque model choice input exceeds %d bytes", maxPortableResourceBytes)
@@ -107,14 +101,20 @@ func opaqueModelChoiceResponseMaximum(choices []OpaqueModelChoice) (int, error) 
 	return len(opaqueModelChoiceID(len(choices) - 1)), nil
 }
 
-func opaqueModelChoiceBuilderResponseMaximum(
-	build func() ([]OpaqueModelChoice, error),
-) (int, error) {
-	choices, err := build()
-	if err != nil {
-		return 0, err
+func opaqueModelChoiceLabeledDescriptions(choices []OpaqueModelChoice) []string {
+	options := make([]string, len(choices))
+	for index, choice := range choices {
+		options[index] = opaqueModelChoiceID(index) + ". " + choice.Description
 	}
-	return opaqueModelChoiceResponseMaximum(choices)
+	return options
+}
+
+func opaqueModelChoiceAnswerClause(count int) string {
+	ids := make([]string, count)
+	for index := range ids {
+		ids[index] = opaqueModelChoiceID(index)
+	}
+	return "Answer with " + strings.Join(ids, " or ") + "."
 }
 
 func validateOpaqueModelChoices(choices []OpaqueModelChoice) error {

@@ -1,83 +1,83 @@
 package assemblyline
 
-func portableApplicationResponseMaximum(job PortableJob) (int, bool, error) {
+func portableApplicationResponseMaximum(job PortableJob) (portableResponseContract, bool, error) {
 	switch job.Kind {
 	case WorkApplicationConstructionContext:
-		return maxConstructionContextBytes, true, nil
+		return portableResponseContract{maximum: maxConstructionContextBytes}, true, nil
 	case WorkApplicationInputSource:
-		maximum, err := opaqueModelChoiceBuilderResponseMaximum(applicationInputSourceChoices)
+		maximum, err := opaqueModelChoiceBuilderResponseContract(applicationInputSourceChoices)
 		return maximum, true, err
 	case WorkApplicationResultValueKind:
-		maximum, err := opaqueModelChoiceBuilderResponseMaximum(applicationResultValueKindChoices)
+		maximum, err := opaqueModelChoiceBuilderResponseContract(applicationResultValueKindChoices)
 		return maximum, true, err
 	case WorkApplicationProductContext:
-		return maxApplicationProductBytes, true, nil
+		return portableResponseContract{maximum: maxApplicationProductBytes}, true, nil
 	case WorkApplicationRequirementInventory:
-		return max(maxApplicationRequirementInventoryBytes, len(ApplicationNoRuntimeRequirementCandidates)), true, nil
+		return portableResponseContract{maximum: max(maxApplicationRequirementInventoryBytes, len(ApplicationNoRuntimeRequirementCandidates))}, true, nil
 	case WorkApplicationRequirementCandidateCardinality:
-		maximum, err := opaqueModelChoiceBuilderResponseMaximum(
+		maximum, err := opaqueModelChoiceBuilderResponseContract(
 			applicationRequirementCandidateCardinalityOpaqueChoices,
 		)
 		return maximum, true, err
 	case WorkApplicationRequirementCandidateKind:
 		var input ApplicationRequirementCandidateContentPresenceInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return 0, true, err
+			return portableResponseContract{}, true, err
 		}
-		maximum, err := opaqueModelChoiceBuilderResponseMaximum(func() ([]OpaqueModelChoice, error) {
+		maximum, err := opaqueModelChoiceBuilderResponseContract(func() ([]OpaqueModelChoice, error) {
 			return applicationRequirementCandidateContentPresenceOpaqueChoices(input.Dimension)
 		})
 		return maximum, true, err
 	case WorkApplicationRequirementCandidateAuthorization:
-		maximum, err := opaqueModelChoiceBuilderResponseMaximum(
+		maximum, err := opaqueModelChoiceBuilderResponseContract(
 			applicationRequirementCandidateAuthorizationOpaqueChoices,
 		)
 		return maximum, true, err
 	case WorkApplicationRequirementCandidateOutcomeRelation:
-		maximum, err := opaqueModelChoiceBuilderResponseMaximum(
+		maximum, err := opaqueModelChoiceBuilderResponseContract(
 			applicationRequirementCandidateOutcomeRelationOpaqueChoices,
 		)
 		return maximum, true, err
 	case WorkApplicationRequirementCandidateResultRelation:
 		var input ApplicationRequirementCandidateResultPresenceInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return 0, true, err
+			return portableResponseContract{}, true, err
 		}
 		present, absent, err := applicationRequirementCandidateResultPresenceDescriptions(input.Dimension)
 		if err != nil {
-			return 0, true, err
+			return portableResponseContract{}, true, err
 		}
-		maximum, err := opaqueModelChoiceBuilderResponseMaximum(func() ([]OpaqueModelChoice, error) {
+		maximum, err := opaqueModelChoiceBuilderResponseContract(func() ([]OpaqueModelChoice, error) {
 			return applicationRequirementCandidateResultPresenceOpaqueChoices(present, absent)
 		})
 		return maximum, true, err
 	case WorkApplicationRequirementCandidatePartition:
 		var input ApplicationRequirementCandidatePartitionInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return 0, true, err
+			return portableResponseContract{}, true, err
 		}
 		if err := input.validate(); err != nil {
-			return 0, true, err
+			return portableResponseContract{}, true, err
 		}
 		if input.Kind != nil {
-			return 2*maxRequirementQuoteBytes + 1, true, nil
+			return portableResponseContract{maximum: 2*maxRequirementQuoteBytes + 1}, true, nil
 		}
-		return maxApplicationRequirementCandidatePartitionBytes, true, nil
+		return portableResponseContract{maximum: maxApplicationRequirementCandidatePartitionBytes}, true, nil
 	case WorkApplicationProjectStackConstraint:
 		var input ApplicationProjectStackConstraintInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return 0, true, err
+			return portableResponseContract{}, true, err
 		}
-		maximum, err := opaqueModelChoiceBuilderResponseMaximum(func() ([]OpaqueModelChoice, error) {
+		maximum, err := opaqueModelChoiceBuilderResponseContract(func() ([]OpaqueModelChoice, error) {
 			return applicationProjectStackConstraintOpaqueChoices(input.Candidates)
 		})
 		return maximum, true, err
 	case WorkApplicationClassify:
-		maximum, err := opaqueModelChoiceBuilderResponseMaximum(
+		maximum, err := opaqueModelChoiceBuilderResponseContract(
 			applicationClassificationOpaqueChoices,
 		)
 		return maximum, true, err
 	default:
-		return 0, false, nil
+		return portableResponseContract{}, false, nil
 	}
 }

@@ -36,7 +36,7 @@ func runDirectCodingSemanticLeafCall[T any](
 	if runtime.Context == nil || runtime.Execute == nil || decode == nil {
 		return zero, fmt.Errorf("coding semantic leaf requires an exact portable runtime and decoder")
 	}
-	_, inferenceFree, err := assemblyline.ResolvePortableJobWithoutInference(job)
+	deterministic, inferenceFree, err := assemblyline.ResolvePortableJobWithoutInference(job)
 	if err != nil {
 		return zero, err
 	}
@@ -55,6 +55,10 @@ func runDirectCodingSemanticLeafCall[T any](
 			return zero, err
 		}
 	}
+	observation, err := beginSemanticObservation(runtime, job, modelName, subject, basePrompt, inferenceFree, deterministic.Candidate)
+	if err != nil {
+		return zero, err
+	}
 	emitTypedWorker(runtime, typedWorkerEvent{
 		State: typedWorkerStarted, Kind: typedWorkerSemantic, Subject: subject,
 		Model: modelName, Attempt: 1, MaxAttempts: 1,
@@ -68,6 +72,10 @@ func runDirectCodingSemanticLeafCall[T any](
 	result, err := runtime.Execute(job, modelName)
 	if err != nil {
 		return zero, failDirectCodingSemanticCall(runtime, modelName, subject, 1, err)
+	}
+	callID := int64(0)
+	if runtime.ReadCallEvidenceID != nil {
+		callID = runtime.ReadCallEvidenceID(job)
 	}
 	validationErr := result.ValidateFor(job)
 	var value T
@@ -94,6 +102,7 @@ func runDirectCodingSemanticLeafCall[T any](
 			&directCodingSemanticLeafRejection{subject: subject, err: validationErr},
 		)
 	}
+	completeSemanticObservation(runtime, observation, result.Candidate, callID)
 	emitTypedWorker(runtime, typedWorkerEvent{
 		State: typedWorkerCompleted, Kind: typedWorkerSemantic, Subject: subject,
 		Model: modelName, Attempt: 1, MaxAttempts: 1,

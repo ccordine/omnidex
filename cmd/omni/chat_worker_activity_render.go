@@ -7,7 +7,7 @@ import (
 )
 
 type chatWorkerActivity struct {
-	action, model, status string
+	action, subject, model, status string
 }
 
 func workerActivityForEvent(event client.RealtimeEvent) (chatWorkerActivity, bool) {
@@ -31,6 +31,7 @@ func workerActivityForEvent(event client.RealtimeEvent) (chatWorkerActivity, boo
 		name, value, _ := strings.Cut(field, "=")
 		switch name {
 		case "subject":
+			activity.subject = value
 			activity.action = workerSubjectAction(value)
 		case "model":
 			activity.model = value

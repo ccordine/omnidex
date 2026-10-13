@@ -18,16 +18,16 @@ func (event RealtimeEvent) validate(expectedChannelID model.ChannelID) error {
 	}
 	switch event.EventName {
 	case RealtimeConnected:
-		if event.AgentActivity != nil || event.AgentCallActivity != nil {
-			return fmt.Errorf("connection frame carries an agent projection")
+		if event.AgentActivity != nil || event.AgentCallActivity != nil || event.PlanningActivity != nil {
+			return fmt.Errorf("connection frame carries a runtime projection")
 		}
 		if event.ID != 0 || event.JobID != 0 || event.ReplayCount < 0 {
 			return fmt.Errorf("realtime connection frame carries invalid event authority")
 		}
 		return nil
 	case RealtimeJobProgress:
-		if event.AgentActivity != nil || event.AgentCallActivity != nil {
-			return fmt.Errorf("progress frame carries an agent projection")
+		if event.AgentActivity != nil || event.AgentCallActivity != nil || event.PlanningActivity != nil {
+			return fmt.Errorf("progress frame carries a runtime projection")
 		}
 		if event.ID == 0 || event.JobID < 1 || strings.TrimSpace(event.Summary) == "" {
 			return fmt.Errorf("realtime job progress frame is incomplete")
@@ -42,6 +42,18 @@ func (event RealtimeEvent) validate(expectedChannelID model.ChannelID) error {
 		if event.ID == 0 || event.JobID < 1 || event.StepID < 1 || event.Attempt < 1 ||
 			strings.TrimSpace(event.RuntimeEvent) == "" {
 			return fmt.Errorf("realtime job runtime frame is incomplete")
+		}
+		if event.RuntimeEvent == "planning_activity" {
+			if event.PlanningActivity == nil {
+				return fmt.Errorf("planning runtime event lacks its typed public observation")
+			}
+			if event.AgentActivity != nil || event.AgentCallActivity != nil || event.Detail != "" || event.FileOperation != "" || event.FilePath != "" || event.FileSourcePath != "" {
+				return fmt.Errorf("planning runtime event carries unrelated fields")
+			}
+			return event.PlanningActivity.Validate()
+		}
+		if event.PlanningActivity != nil {
+			return fmt.Errorf("non-planning runtime event carries a planning projection")
 		}
 		if event.RuntimeEvent == "agent_call_activity" {
 			if event.AgentCallActivity == nil {

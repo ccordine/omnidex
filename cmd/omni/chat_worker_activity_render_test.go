@@ -89,6 +89,6 @@ func TestWorkspaceReadObservationsShowActualPathsWithoutDiagnostics(t *testing.T
 }
 
 func workerRenderEvent(kind, subject string) client.RealtimeEvent {
-	return client.RealtimeEvent{EventName: client.RealtimeJobRuntimeEvent, JobID: 41, StepID: 12,
+	return client.RealtimeEvent{EventName: client.RealtimeJobRuntimeEvent, JobID: 41, StepID: 12, Attempt: 1,
 		RuntimeEvent: kind, Detail: "kind=semantic subject=" + subject + " model=fixture-model attempt=1/3"}
 }

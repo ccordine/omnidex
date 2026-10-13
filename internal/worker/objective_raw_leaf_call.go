@@ -56,6 +56,10 @@ func runObjectiveRawLeafWorkerCall[T any](
 	); err != nil {
 		return zero, err
 	}
+	observation, err := beginSemanticObservation(runtime, job, modelName, subject, prompt, false, "")
+	if err != nil {
+		return zero, err
+	}
 	emitTypedWorker(runtime, typedWorkerEvent{
 		State: typedWorkerStarted, Kind: typedWorkerSemantic, Subject: subject,
 		Model: modelName, Attempt: 1, MaxAttempts: 1, PromptBytes: len(prompt),
@@ -68,6 +72,10 @@ func runObjectiveRawLeafWorkerCall[T any](
 	result, err := runtime.Execute(job, modelName)
 	if err != nil {
 		return zero, failDirectCodingSemanticCall(runtime, modelName, subject, 1, err)
+	}
+	callID := int64(0)
+	if runtime.ReadCallEvidenceID != nil {
+		callID = runtime.ReadCallEvidenceID(job)
 	}
 	validationErr := result.ValidateFor(job)
 	var value T
@@ -90,6 +98,7 @@ func runObjectiveRawLeafWorkerCall[T any](
 			fmt.Errorf("invalid %s semantic result: %w", subject, validationErr),
 		)
 	}
+	completeSemanticObservation(runtime, observation, result.Candidate, callID)
 	emitTypedWorker(runtime, typedWorkerEvent{
 		State: typedWorkerCompleted, Kind: typedWorkerSemantic, Subject: subject,
 		Model: modelName, Attempt: 1, MaxAttempts: 1,

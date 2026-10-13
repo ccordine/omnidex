@@ -83,3 +83,10 @@ func PortableResponseFramingForWorkKind(
 func PortableResponseFramingForJob(job PortableJob) (PortableResponseFraming, error) {
 	return PortableResponseFramingForWorkKind(job.Kind)
 }
+
+// PortableJobUsesOpaqueChoices identifies the actual registered renderer's
+// output contract. Untrusted request text cannot select a choice formatter.
+func PortableJobUsesOpaqueChoices(job PortableJob) (bool, error) {
+	_, opaque, err := PortableJobOpaqueChoiceOptions(job)
+	return opaque, err
+}

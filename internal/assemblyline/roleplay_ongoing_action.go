@@ -123,10 +123,14 @@ func BuildRoleplayOngoingActionRelationPrompt(
 		}, context...)
 	}
 	return RenderOpaqueModelChoiceQuestion(
-		"At the end of this contribution, which description applies to "+input.CharacterName+"'s action?",
+		roleplayOngoingActionRelationQuestion(input),
 		context,
 		choices,
 	)
+}
+
+func roleplayOngoingActionRelationQuestion(input RoleplayOngoingActionRelationInput) string {
+	return "At the end of this contribution, which description applies to " + input.CharacterName + "'s action?"
 }
 
 func DecodeRoleplayOngoingActionRelation(

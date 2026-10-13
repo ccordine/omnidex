@@ -8,49 +8,49 @@ import (
 	"github.com/gryph/omnidex/internal/datasource"
 )
 
-func databaseFilterFieldMaximum(job PortableJob) (int, error) {
+func databaseFilterFieldMaximum(job PortableJob) (portableResponseContract, error) {
 	var input DatabaseQueryFilterLeafInput
 	if err := decodePortablePayload(job.Payload, &input); err != nil {
-		return 0, err
+		return portableResponseContract{}, err
 	}
-	return opaqueModelChoiceBuilderResponseMaximum(func() ([]OpaqueModelChoice, error) {
+	return opaqueModelChoiceBuilderResponseContract(func() ([]OpaqueModelChoice, error) {
 		return databaseQueryFieldChoices(input.State, input.ScopeRelationID, nil)
 	})
 }
 
-func databaseFilterOperatorMaximum(job PortableJob) (int, error) {
+func databaseFilterOperatorMaximum(job PortableJob) (portableResponseContract, error) {
 	var input DatabaseQueryFilterLeafInput
 	if err := decodePortablePayload(job.Payload, &input); err != nil {
-		return 0, err
+		return portableResponseContract{}, err
 	}
-	return opaqueModelChoiceBuilderResponseMaximum(func() ([]OpaqueModelChoice, error) {
+	return opaqueModelChoiceBuilderResponseContract(func() ([]OpaqueModelChoice, error) {
 		return databaseQueryFilterOperatorChoices(input)
 	})
 }
 
-func databaseFilterValueMaximum(job PortableJob) (int, error) {
+func databaseFilterValueMaximum(job PortableJob) (portableResponseContract, error) {
 	var input DatabaseQueryFilterLeafInput
 	if err := decodePortablePayload(job.Payload, &input); err != nil {
-		return 0, err
+		return portableResponseContract{}, err
 	}
 	choices, closed, err := databaseQueryFilterValueChoices(input)
 	if err != nil {
-		return 0, err
+		return portableResponseContract{}, err
 	}
 	if closed {
-		return opaqueModelChoiceResponseMaximum(choices)
+		return opaqueModelChoiceResponseContract(choices)
 	}
 	column, _, ok := databaseQueryColumn(input.State, input.FieldID)
 	if !ok {
-		return 0, fmt.Errorf("database query filter field %q was not projected", input.FieldID)
+		return portableResponseContract{}, fmt.Errorf("database query filter field %q was not projected", input.FieldID)
 	}
 	maximum := databaseLiteralTypeMaximum(column.TypeCategory)
 	if maximum == 0 {
-		return 0, fmt.Errorf(
+		return portableResponseContract{}, fmt.Errorf(
 			"database query field type %q has no accepted literal", column.TypeCategory,
 		)
 	}
-	return cappedResponseMaximum(maximum, maxDatabaseQueryLeafBytes), nil
+	return portableResponseContract{maximum: cappedResponseMaximum(maximum, maxDatabaseQueryLeafBytes)}, nil
 }
 
 func databaseLiteralTypeMaximum(category datasource.ColumnTypeCategory) int {
@@ -72,58 +72,58 @@ func databaseLiteralTypeMaximum(category datasource.ColumnTypeCategory) int {
 	}
 }
 
-func databaseWindowFieldMaximum(job PortableJob) (int, error) {
+func databaseWindowFieldMaximum(job PortableJob) (portableResponseContract, error) {
 	var input DatabaseQueryWindowLeafInput
 	if err := decodePortablePayload(job.Payload, &input); err != nil {
-		return 0, err
+		return portableResponseContract{}, err
 	}
-	return opaqueModelChoiceBuilderResponseMaximum(func() ([]OpaqueModelChoice, error) {
+	return opaqueModelChoiceBuilderResponseContract(func() ([]OpaqueModelChoice, error) {
 		return databaseQueryFieldChoices(input.State, "", databaseQueryTemporalFieldEligible)
 	})
 }
 
-func databaseExistenceRelationMaximum(job PortableJob) (int, error) {
+func databaseExistenceRelationMaximum(job PortableJob) (portableResponseContract, error) {
 	var input DatabaseQueryExistenceLeafInput
 	if err := decodePortablePayload(job.Payload, &input); err != nil {
-		return 0, err
+		return portableResponseContract{}, err
 	}
 	excluded := make(map[string]struct{}, len(input.State.Exists))
 	for _, accepted := range input.State.Exists {
 		excluded[accepted.RelationID] = struct{}{}
 	}
-	return opaqueModelChoiceBuilderResponseMaximum(func() ([]OpaqueModelChoice, error) {
+	return opaqueModelChoiceBuilderResponseContract(func() ([]OpaqueModelChoice, error) {
 		return databaseQueryRelationChoicesExcluding(input.State, excluded)
 	})
 }
 
-func databaseHavingFieldMaximum(job PortableJob) (int, error) {
+func databaseHavingFieldMaximum(job PortableJob) (portableResponseContract, error) {
 	var input DatabaseQueryHavingLeafInput
 	if err := decodePortablePayload(job.Payload, &input); err != nil {
-		return 0, err
+		return portableResponseContract{}, err
 	}
-	return opaqueModelChoiceBuilderResponseMaximum(func() ([]OpaqueModelChoice, error) {
+	return opaqueModelChoiceBuilderResponseContract(func() ([]OpaqueModelChoice, error) {
 		return databaseQueryFieldChoices(
 			input.State, "", databaseQueryAggregateFieldEligible(input.Aggregate),
 		)
 	})
 }
 
-func databaseOrderProjectionMaximum(job PortableJob) (int, error) {
+func databaseOrderProjectionMaximum(job PortableJob) (portableResponseContract, error) {
 	var input DatabaseQueryOrderLeafInput
 	if err := decodePortablePayload(job.Payload, &input); err != nil {
-		return 0, err
+		return portableResponseContract{}, err
 	}
-	return opaqueModelChoiceBuilderResponseMaximum(func() ([]OpaqueModelChoice, error) {
+	return opaqueModelChoiceBuilderResponseContract(func() ([]OpaqueModelChoice, error) {
 		return databaseQueryOrderProjectionChoices(input)
 	})
 }
 
-func databaseJoinPathMaximum(job PortableJob) (int, error) {
+func databaseJoinPathMaximum(job PortableJob) (portableResponseContract, error) {
 	var input DatabaseJoinPathSelectionInput
 	if err := decodePortablePayload(job.Payload, &input); err != nil {
-		return 0, err
+		return portableResponseContract{}, err
 	}
-	return opaqueModelChoiceBuilderResponseMaximum(func() ([]OpaqueModelChoice, error) {
+	return opaqueModelChoiceBuilderResponseContract(func() ([]OpaqueModelChoice, error) {
 		return databaseJoinPathSelectionChoices(input)
 	})
 }

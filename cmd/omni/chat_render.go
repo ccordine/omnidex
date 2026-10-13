@@ -10,9 +10,10 @@ import (
 )
 
 type chatRenderer struct {
-	console     *chatConsole
-	verbosity   chatVerbosity
-	agentStream *chatAgentStream
+	console       *chatConsole
+	verbosity     chatVerbosity
+	agentStream   *chatAgentStream
+	planningCalls *chatPlanningCalls
 }
 
 func (renderer chatRenderer) banner(channel model.Channel) error {
@@ -102,6 +103,7 @@ func (renderer chatRenderer) prompt(details *model.JobDetails) error {
 		label = fmt.Sprintf("you #%d> ", details.Job.ID)
 		activity = activityForJob(*details)
 	}
+	renderer.retainPlanningScope(activity)
 	if err := renderer.console.SetActivity(activity); err != nil {
 		return err
 	}
@@ -152,11 +154,19 @@ func renderAgentQuestions(destination *strings.Builder, pause *model.CodingAgent
 }
 
 func (renderer *chatRenderer) realtime(event client.RealtimeEvent) error {
+	if event.PlanningActivity != nil {
+		return renderer.planningActivity(event)
+	}
 	if event.AgentCallActivity != nil {
 		return renderer.agentCallActivity(*event.AgentCallActivity)
 	}
 	if event.AgentActivity != nil {
 		return renderer.nativeActivity(event)
+	}
+	observed := renderer.planningWorkerObserved(event)
+	renderer.retirePlanningWorker(event)
+	if observed && (renderer.verbosity == chatNormal || renderer.verbosity == chatQuiet) {
+		return nil
 	}
 	renderer.observeWorkspaceFile(event)
 	if renderer.verbosity != chatDebug {

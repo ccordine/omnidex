@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 )
 
@@ -353,6 +354,17 @@ func portableWorkerRuntimeWithIdentityGuard(
 		ProviderCalls: func() int {
 			return int(providerCalls.Load())
 		},
+		ReadCallEvidenceID: func(job assemblyline.PortableJob) int64 {
+			stored, exists := pending.Load(job.Key())
+			if !exists {
+				return 0
+			}
+			execution, ok := stored.(exactStationExecution)
+			if !ok {
+				return 0
+			}
+			return execution.CallEvidenceID
+		},
 		Release: func(job assemblyline.PortableJob) error {
 			if _, active := pending.Load(job.Key()); active {
 				return fmt.Errorf(
@@ -433,6 +445,12 @@ func portableWorkerRuntimeWithIdentityGuard(
 				eventNamespace+"_worker_"+string(event.State),
 				renderDirectCodingWorkerEvent(event),
 			)
+		},
+		ObservePlanning: func(activity model.PlanningActivity) {
+			runtime.svc.emitRuntimeEvent(RuntimeEvent{
+				JobID: runtime.claim.Authority.JobID, StepID: runtime.claim.Authority.StepID,
+				Attempt: runtime.claim.Authority.Attempt, Kind: "planning_activity", PlanningActivity: &activity,
+			})
 		},
 	}
 }

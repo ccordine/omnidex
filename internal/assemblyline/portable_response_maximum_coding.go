@@ -2,19 +2,19 @@ package assemblyline
 
 import "fmt"
 
-func portableCodingResponseMaximum(job PortableJob) (int, bool, error) {
+func portableCodingResponseMaximum(job PortableJob) (portableResponseContract, bool, error) {
 	switch job.Kind {
 	case WorkArtifactHandling:
-		maximum, err := opaqueModelChoiceBuilderResponseMaximum(artifactHandlingOpaqueChoices)
+		maximum, err := opaqueModelChoiceBuilderResponseContract(artifactHandlingOpaqueChoices)
 		return maximum, true, err
 	case WorkCapabilityRelation:
-		maximum, err := opaqueModelChoiceBuilderResponseMaximum(capabilityRelationOpaqueChoices)
+		maximum, err := opaqueModelChoiceBuilderResponseContract(capabilityRelationOpaqueChoices)
 		return maximum, true, err
 	case WorkFragmentGeneration:
 		maximum, err := fragmentGenerationResponseMaximum(job)
-		return maximum, true, err
+		return portableResponseContract{maximum: maximum}, true, err
 	default:
-		return 0, false, nil
+		return portableResponseContract{}, false, nil
 	}
 }
 
