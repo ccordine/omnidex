@@ -32,13 +32,9 @@ func (runtime *nativeRuntimeV3) runAgentCodingAction(configuration codingagent.C
 	if err := runtime.workspaceFence.Reattest(scope.Root); err != nil {
 		return fmt.Errorf("native agent environment must own the exact selected workspace: %w", err)
 	}
-	plan, err := runtime.svc.repo.LoadFrozenCodingPlan(runtime.ctx, runtime.claim.Authority)
+	workload, err := runtime.svc.repo.CodingAgentFrozenWorkload(runtime.ctx, runtime.claim.Authority)
 	if err != nil {
 		return err
-	}
-	requirements := make([]codingagent.Requirement, len(plan.Leaves))
-	for index, leaf := range plan.Leaves {
-		requirements[index] = codingagent.Requirement{ID: string(leaf.Leaf.ID), Outcome: leaf.Leaf.Statement}
 	}
 	providers, verifier, err := runtime.svc.agentProviders()
 	if err != nil {
@@ -48,17 +44,20 @@ func (runtime *nativeRuntimeV3) runAgentCodingAction(configuration codingagent.C
 	if err != nil {
 		return err
 	}
-	bindings, facts, planningEnvironment, err := runtime.agentPlanningContext(request, scope.Root)
+	intake, err := runtime.svc.repo.CodingAgentIntakeContext(runtime.ctx, runtime.claim.Authority)
 	if err != nil {
 		return err
 	}
+	if intake == nil {
+		return fmt.Errorf("native agent execution requires its approved intake context")
+	}
+	requirements := []codingagent.Requirement{{ID: codingAgentObjectiveRequirementID, Outcome: (&directCodingSession{request: request}).directCodingAuthority()}}
 	controller := codingagent.Controller{JobID: runtime.claim.Job.ID, Generation: runtime.claim.Authority.Generation,
 		Root: scope.Root, Configuration: configuration, Requirements: requirements, Providers: providers, Verifier: verifier,
 		Objective:        &codingagent.Objective{Instruction: request.Instruction, Clarifications: request.Feedback},
-		ArtifactBindings: bindings, PlanningEnvironment: planningEnvironment,
-		ConstructionFacts: facts,
-		Environment:       &codingAgentEnvironment{runtime: runtime, root: scope.Root, identity: identity},
-		Evidence:          runtime.svc.repo.CodingAgentEvidence(runtime.claim.Authority),
+		ArtifactBindings: intake.ArtifactBindings, ApprovedWorkload: workload,
+		Environment: &codingAgentEnvironment{runtime: runtime, root: scope.Root, identity: identity},
+		Evidence:    runtime.svc.repo.CodingAgentEvidence(runtime.claim.Authority),
 		Activity: func(activity model.AgentActivity) {
 			runtime.svc.emitRuntimeEvent(RuntimeEvent{
 				JobID: runtime.claim.Authority.JobID, StepID: runtime.claim.Authority.StepID,
@@ -94,6 +93,7 @@ func (runtime *nativeRuntimeV3) runAgentCodingAction(configuration codingagent.C
 	if err != nil {
 		return err
 	}
+	entries = append([]codingagent.Entry{{Generation: runtime.claim.Authority.Generation, Phase: "plan_frozen", Workload: workload}}, entries...)
 	recap, err := codingagent.CompletionRecap(entries, model.MaxChannelContentBytes)
 	if err != nil {
 		return err

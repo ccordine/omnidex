@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/codingagent"
-	"github.com/gryph/omnidex/internal/model"
 )
 
 func TestCodingAgentIntakeRetainsOriginalArtifactBindingsAcrossChangesAndResume(t *testing.T) {
@@ -26,8 +25,8 @@ func TestCodingAgentIntakeRetainsOriginalArtifactBindingsAcrossChangesAndResume(
 		t.Fatalf("planner: %v %v", planner, err)
 	}
 	retained := &codingagent.IntakeContext{RedactedRequest: "Handle ARTIFACT_1 and ARTIFACT_2 values.", ArtifactBindings: []codingagent.ArtifactBinding{{Token: "ARTIFACT_1", Value: "NaN"}, {Token: "ARTIFACT_2", Value: "infinity"}}}
-	leaf := codingPlanExecutableLeaf(t, "ARTIFACT_1 and ARTIFACT_2 are handled.", model.CodingPlanDecisionPending, 1)
-	command := StoreCodingPlanReviewCommand{Authority: planner.Authority, Leaves: []CodingPlanLeafWrite{leaf}, IntakeContext: retained}
+	command, _ := codingAgentPlanReviewFixture(t, repository, planner, "ARTIFACT_1 and ARTIFACT_2 are handled.")
+	command.IntakeContext = retained
 	if _, err := repository.StoreCodingPlanReview(ctx, command); err != nil {
 		t.Fatal(err)
 	}
@@ -41,6 +40,7 @@ func TestCodingAgentIntakeRetainsOriginalArtifactBindingsAcrossChangesAndResume(
 	if _, err := repository.StoreCodingPlanReview(ctx, altered); err == nil {
 		t.Fatal("completed intake replay changed artifact provenance")
 	}
+	freezeCodingAgentPlanFixture(t, repository, job, command)
 	executor, err := repository.ClaimNextStep(ctx, "retained-intake-execution-fixture")
 	if err != nil || executor == nil {
 		t.Fatalf("executor: %v %v", executor, err)
@@ -79,10 +79,10 @@ func TestCodingAgentIntakeRetainsOriginalArtifactBindingsAcrossChangesAndResume(
 	}
 }
 
-func TestCodingAgentIntakeAllowsAbsentSyntheticContext(t *testing.T) {
+func TestCodingAgentExecutionRequiresTheApprovedIntakeContext(t *testing.T) {
 	_, repository, _, claim, _ := freshAgentCodingClaim(t)
-	context, err := repository.CodingAgentIntakeContext(context.Background(), claim.Authority)
-	if err != nil || context != nil {
-		t.Fatalf("absent fixture intake became invented context: %#v %v", context, err)
+	retained, err := repository.CodingAgentIntakeContext(context.Background(), claim.Authority)
+	if err != nil || retained == nil || retained.RedactedRequest != "Approved behavior works" {
+		t.Fatalf("approved execution lost its planning intake: %#v %v", retained, err)
 	}
 }

@@ -11,9 +11,12 @@ import (
 
 func TestCLIChatSnapshotAcceptsExactAgentQuestionPause(t *testing.T) {
 	t.Parallel()
-	snapshot := agentQuestionSnapshot(t)
-	if err := validateChatSessionSnapshot(snapshot, testWorkspaceIdentity, MaxChatSessionMessages); err != nil {
-		t.Fatalf("durable agent question rejected by CLI chat: %v", err)
+	for _, action := range []string{"v3_coding_plan", "v3_coding"} {
+		snapshot := agentQuestionSnapshot(t)
+		snapshot.ActiveJob.Steps[0].Action = action
+		if err := validateChatSessionSnapshot(snapshot, testWorkspaceIdentity, MaxChatSessionMessages); err != nil {
+			t.Fatalf("durable %s agent question rejected by CLI chat: %v", action, err)
+		}
 	}
 }
 
@@ -73,7 +76,7 @@ func TestCLIChatSnapshotRejectsAgentPauseOutsideExactQuestionAuthority(t *testin
 		{name: "NUL question", change: func(snapshot *ChatSessionSnapshot) {
 			snapshot.ActiveJob.AgentPause.Questions = []string{"question\x00"}
 		}},
-		{name: "wrong step action", change: func(snapshot *ChatSessionSnapshot) { snapshot.ActiveJob.Steps[0].Action = "v3_coding_plan" }},
+		{name: "wrong step action", change: func(snapshot *ChatSessionSnapshot) { snapshot.ActiveJob.Steps[0].Action = "objective_resolve" }},
 		{name: "running step", change: func(snapshot *ChatSessionSnapshot) { snapshot.ActiveJob.Steps[0].Status = model.StepStatusRunning }},
 		{name: "normal mode", change: func(snapshot *ChatSessionSnapshot) {
 			var metadata map[string]any

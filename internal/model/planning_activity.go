@@ -8,8 +8,9 @@ import (
 )
 
 const (
-	MaxPlanningActivityBytes        = 48 * 1024
-	MaxPlanningSemanticSubjectBytes = 2000
+	MaxPlanningActivityBytes         = 48 * 1024
+	MaxPlanningCandidateSubjectBytes = 1024
+	MaxPlanningSemanticSubjectBytes  = 2000
 )
 
 var ErrPlanningActivityTooLarge = errors.New("planning observation exceeds the existing realtime publication boundary")
@@ -59,7 +60,7 @@ func (activity PlanningActivity) Validate() error {
 		return nil
 	case "candidate_started", "candidate_resolved":
 		if activity.Subject == "" || activity.Subject != strings.TrimSpace(activity.Subject) ||
-			!activityText(activity.Subject, MaxCodingPlanStatementBytes) || strings.ContainsAny(activity.Subject, "\r\n") {
+			!activityText(activity.Subject, MaxPlanningCandidateSubjectBytes) || strings.ContainsAny(activity.Subject, "\r\n") {
 			return fmt.Errorf("planning candidate requires its exact bounded statement")
 		}
 	default:

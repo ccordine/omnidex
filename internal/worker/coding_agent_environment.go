@@ -69,7 +69,7 @@ func (environment *codingAgentEnvironment) PrepareFiles(ctx context.Context, tas
 	if err := environment.Attest(ctx); err != nil {
 		return err
 	}
-	for _, file := range append(append([]string{}, task.ReadFiles...), task.WriteFiles...) {
+	for _, file := range append(append(append([]string{}, task.ReadFiles...), task.WriteFiles...), task.DeleteFiles...) {
 		if err := codingagent.ValidatePath(file); err != nil {
 			return err
 		}
@@ -106,6 +106,15 @@ func (environment *codingAgentEnvironment) PrepareFiles(ctx context.Context, tas
 			return fmt.Errorf("agent read scope %s is not a file", file)
 		}
 	}
+	for _, file := range task.DeleteFiles {
+		entry, err := environment.runtime.workspaceFence.Stat(ctx, file)
+		if err != nil {
+			return err
+		}
+		if entry.Kind != workspace.EntryFile {
+			return fmt.Errorf("agent delete scope %s is not a file", file)
+		}
+	}
 	return environment.Attest(ctx)
 }
 
@@ -128,6 +137,35 @@ func (environment *codingAgentEnvironment) WriteFile(ctx context.Context, edit c
 		return fmt.Errorf("source changed since the agent read it; inspect the file before editing")
 	}
 	prepared, err := environment.runtime.workspaceFence.Prepare(ctx, []workspace.DesiredFile{{Path: edit.Path, Present: true, Content: []byte(edit.Content), Mode: entry.Mode}}, []workspace.File{file})
+	if err != nil {
+		return err
+	}
+	result, err := prepared.ApplyVerified(ctx, nil)
+	if err != nil {
+		return err
+	}
+	return environment.recordWrittenFiles(ctx, result)
+}
+
+func (environment *codingAgentEnvironment) DeleteFile(ctx context.Context, deletion codingagent.FileDelete) error {
+	if err := environment.Attest(ctx); err != nil {
+		return err
+	}
+	entry, err := environment.runtime.workspaceFence.Stat(ctx, deletion.Path)
+	if err != nil {
+		return err
+	}
+	if entry.Kind != workspace.EntryFile {
+		return fmt.Errorf("agent deletion requires a pre-attested regular file")
+	}
+	file, err := environment.runtime.readObservedWorkspaceFile(ctx, deletion.Path)
+	if err != nil {
+		return err
+	}
+	if string(file.Content) != deletion.ExpectedContent {
+		return fmt.Errorf("source changed since the agent read it; inspect the file before deleting")
+	}
+	prepared, err := environment.runtime.workspaceFence.Prepare(ctx, []workspace.DesiredFile{{Path: deletion.Path, Present: false}}, []workspace.File{file})
 	if err != nil {
 		return err
 	}

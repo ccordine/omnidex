@@ -32,6 +32,9 @@ func newChannelSessionMessageConsumer(runtime *nativeRuntimeV3) (*channelSession
 	if runtime == nil || runtime.svc == nil || runtime.claim == nil {
 		return nil, fmt.Errorf("session conversation requires a claimed runtime")
 	}
+	if runtime.claim.Job.Pipeline != model.PipelineChat {
+		return nil, nil
+	}
 	var origin struct {
 		WorkspaceIdentity string `json:"client_workspace_identity"`
 	}

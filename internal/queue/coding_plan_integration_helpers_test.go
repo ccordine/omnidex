@@ -4,12 +4,14 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/gryph/omnidex/database"
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/db"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/modelconfig"
@@ -43,6 +45,76 @@ func freshCodingPlanRepository(t *testing.T) (*pgxpool.Pool, *Repository) {
 		t.Fatalf("freeze coding-plan model authority: %v", err)
 	}
 	return pool, New(pool, authority)
+}
+
+func codingAgentPlanReviewFixture(t *testing.T, repository *Repository, planner *model.ClaimedStep, goal string) (StoreCodingPlanReviewCommand, CodingPlanLeafWrite) {
+	t.Helper()
+	workload := &codingagent.Workload{Tasks: []codingagent.Task{{ID: "task", Goal: goal, Acceptance: []string{goal}, WriteFiles: []string{"agent-fixture.txt"}, RequirementIDs: []string{"objective"}, Checks: []codingagent.Check{{ID: "task-check", Argv: []string{"true"}}}}}, Checks: []codingagent.Check{{ID: "overall-check", Argv: []string{"true"}}}}
+	statement, err := codingagent.PlanTaskStatement(workload.Tasks[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf := codingAgentPlanLeaf(t, statement, model.CodingPlanDecisionPending, planner.Authority.Generation)
+	store := repository.CodingAgentEvidence(planner.Authority)
+	configuration, err := codingagent.ConfigurationFromMetadata(planner.Job.Metadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assignment := &codingagent.Assignment{
+		JobID: planner.Job.ID, Generation: planner.Authority.Generation, Role: codingagent.Plan,
+		Route:        configuration.Planner,
+		Requirements: []codingagent.Requirement{{ID: "objective", Outcome: planner.Job.Instruction}},
+		Objective:    &codingagent.Objective{Instruction: planner.Job.Instruction},
+	}
+	callID, err := store.Append(context.Background(), codingagent.Entry{Generation: planner.Authority.Generation, Phase: "call_opened", Role: codingagent.Plan, Assignment: assignment})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Append(context.Background(), codingagent.Entry{Generation: planner.Authority.Generation, Phase: "native_event", Role: codingagent.Plan, CallID: callID, Frame: []byte(`{"fixture":"native-plan"}`)}); err != nil {
+		t.Fatal(err)
+	}
+	content, err := json.Marshal(workload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := &codingagent.Result{CallID: callID, Provider: configuration.Planner.Provider, Model: configuration.Planner.Model, ThreadID: "fixture-plan-thread", TurnID: "fixture-plan-turn", Completed: true, Content: content}
+	if _, err := store.Append(context.Background(), codingagent.Entry{Generation: planner.Authority.Generation, Phase: "call_completed", Role: codingagent.Plan, CallID: callID, Result: result}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Append(context.Background(), codingagent.Entry{Generation: planner.Authority.Generation, Phase: "plan_proposed", CallID: callID, Workload: workload}); err != nil {
+		t.Fatal(err)
+	}
+	intake := &codingagent.IntakeContext{RedactedRequest: goal, ArtifactBindings: []codingagent.ArtifactBinding{}}
+	return StoreCodingPlanReviewCommand{Authority: planner.Authority, Leaves: []CodingPlanLeafWrite{leaf}, IntakeContext: intake, AgentWorkload: workload}, leaf
+}
+
+func codingAgentPlanLeaf(t *testing.T, statement string, decision model.CodingPlanDecision, originGeneration int64) CodingPlanLeafWrite {
+	t.Helper()
+	id, err := model.NewCodingPlanLeafID()
+	if err != nil {
+		t.Fatalf("construct agent plan leaf identity: %v", err)
+	}
+	receipt := assemblyline.ApplicationRequirementCandidateResultRelationResult{Schema: assemblyline.ApplicationRequirementCandidateResultRelationSchemaV1, Relation: assemblyline.ApplicationRequirementNoDerivedResult}
+	return CodingPlanLeafWrite{Leaf: model.CodingPlanLeaf{ID: id, Statement: statement, Decision: decision}, DecisionOriginGeneration: originGeneration, ResultRelation: &receipt}
+}
+
+func freezeCodingAgentPlanFixture(t *testing.T, repository *Repository, job model.Job, command StoreCodingPlanReviewCommand) model.CodingPlan {
+	t.Helper()
+	ctx := context.Background()
+	plan, err := repository.StoreCodingPlanReview(ctx, command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, identity := codingPlanWorkspaceAuthority(t, job)
+	decided, err := repository.ApplyCodingPlanDecisions(ctx, ApplyCodingPlanDecisionsCommand{OperationID: codingPlanOperationID(t, "approve-agent-plan", job.ID), JobID: job.ID, Generation: plan.Generation, Revision: plan.Revision, WorkspaceRoot: root, WorkspaceIdentity: identity, Decisions: []CodingPlanDecisionChange{{LeafID: plan.Leaves[0].ID, Decision: model.CodingPlanDecisionApproved}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	frozen, err := repository.FreezeCodingPlan(ctx, FreezeCodingPlanCommand{OperationID: codingPlanOperationID(t, "freeze-agent-plan", job.ID), JobID: job.ID, Generation: plan.Generation, Revision: decided.Plan.Revision, WorkspaceRoot: root, WorkspaceIdentity: identity})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return frozen.Plan
 }
 
 func storeCodingPlanFixture(

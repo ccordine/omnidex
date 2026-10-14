@@ -9,16 +9,10 @@ import (
 )
 
 func validateCodingAgentRequirementCoverage(entries []codingagent.Entry, plan model.CodingPlan) error {
-	requirements := map[string]string{}
-	for _, leaf := range plan.Leaves {
-		if leaf.Decision == model.CodingPlanDecisionApproved {
-			requirements[string(leaf.ID)] = leaf.Statement
-		}
-	}
-	covered := map[string]bool{}
 	tasks := map[string]codingagent.Task{}
 	opened := map[int64]codingagent.Entry{}
 	var workload *codingagent.Workload
+	var planning *codingagent.Assignment
 	for _, entry := range entries {
 		if entry.Phase == "call_opened" {
 			opened[entry.ID] = entry
@@ -30,21 +24,48 @@ func validateCodingAgentRequirementCoverage(entries []codingagent.Entry, plan mo
 			return fmt.Errorf("agent completion contains multiple frozen workloads")
 		}
 		workload = entry.Workload
+		call, known := opened[entry.CallID]
+		if !known || call.Assignment == nil || call.Assignment.Role != codingagent.Plan {
+			return fmt.Errorf("agent workload lacks its exact planning context")
+		}
+		planning = call.Assignment
 		for _, task := range workload.Tasks {
 			if len(task.RequirementIDs) == 0 {
 				return fmt.Errorf("agent task lacks its frozen requirement binding")
 			}
 			tasks[task.ID] = task
-			for _, id := range task.RequirementIDs {
-				if _, known := requirements[id]; !known {
-					return fmt.Errorf("agent task introduced an unapproved requirement")
-				}
-				covered[id] = true
-			}
 		}
 	}
-	if len(requirements) == 0 || len(covered) != len(requirements) || workload == nil {
-		return fmt.Errorf("agent completion omitted frozen requirements")
+	if workload == nil || planning == nil || planning.Objective == nil || len(planning.Requirements) == 0 {
+		return fmt.Errorf("agent completion omitted its approved objective or workload")
+	}
+	requirements := map[string]string{}
+	for _, requirement := range planning.Requirements {
+		if requirement.ID == "" || requirements[requirement.ID] != "" {
+			return fmt.Errorf("agent planning contains invalid parent requirement identity")
+		}
+		requirements[requirement.ID] = requirement.Outcome
+	}
+	covered := map[string]bool{}
+	for _, task := range workload.Tasks {
+		for _, id := range task.RequirementIDs {
+			if _, known := requirements[id]; !known {
+				return fmt.Errorf("agent task introduced an unapproved requirement")
+			}
+			covered[id] = true
+		}
+	}
+	if len(covered) != len(requirements) || len(plan.Leaves) != len(workload.Tasks) {
+		return fmt.Errorf("agent completion omitted approved objective coverage")
+	}
+	for index, leaf := range plan.Leaves {
+		statement, err := codingagent.PlanTaskStatement(workload.Tasks[index])
+		if err != nil {
+			return err
+		}
+		if leaf.Decision != model.CodingPlanDecisionApproved || leaf.Statement != statement {
+			return fmt.Errorf("agent frozen workload differs from the user-approved plan")
+		}
 	}
 	for _, entry := range entries {
 		var expected map[string]string
@@ -67,9 +88,6 @@ func validateCodingAgentRequirementCoverage(entries []codingagent.Entry, plan mo
 		if !known || call.Assignment == nil {
 			return fmt.Errorf("agent acceptance lacks its frozen requirement context")
 		}
-		if entry.Phase == "plan_frozen" && call.Assignment.Objective != nil {
-			return fmt.Errorf("agent task planner received an unapproved original objective")
-		}
 		if entry.Phase != "task_accepted" {
 			if err := codingAgentRequirementContextMatches(call.Assignment.Requirements, expected); err != nil {
 				return err
@@ -86,6 +104,9 @@ func validateCodingAgentRequirementCoverage(entries []codingagent.Entry, plan mo
 		}
 		if entry.Phase == "overall_accepted" && (call.Assignment.Workload == nil || !reflect.DeepEqual(*call.Assignment.Workload, *workload)) {
 			return fmt.Errorf("agent overall review changed the frozen workload")
+		}
+		if entry.Phase == "overall_accepted" && !reflect.DeepEqual(call.Assignment.Objective, planning.Objective) {
+			return fmt.Errorf("agent overall review changed the approved objective")
 		}
 	}
 	return nil

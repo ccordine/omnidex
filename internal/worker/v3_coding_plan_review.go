@@ -17,6 +17,9 @@ func (r *nativeRuntimeV3) runDirectCodingPlanAction() error {
 	if err != nil {
 		return err
 	}
+	if configuration.Mode == codingagent.Agents {
+		return r.runAgentPlanningAction(configuration)
+	}
 	request, err := r.directCodingRequest()
 	if err != nil {
 		return err
@@ -88,13 +91,6 @@ func (r *nativeRuntimeV3) runDirectCodingPlanAction() error {
 		Authority: r.claim.Authority,
 		Leaves:    writes,
 	}
-	if configuration.Mode == codingagent.Agents {
-		bindings := make([]codingagent.ArtifactBinding, len(inputs.Identities))
-		for i, identity := range inputs.Identities {
-			bindings[i] = codingagent.ArtifactBinding{Token: identity.Token, Value: identity.Value}
-		}
-		command.IntakeContext = &codingagent.IntakeContext{RedactedRequest: inputs.RequestAuthority.modelRequest, ArtifactBindings: bindings}
-	}
 	var plan model.CodingPlan
 	if err := r.transitionAfterSessionMessages(r.ctx, func() error {
 		var storeErr error
@@ -102,10 +98,6 @@ func (r *nativeRuntimeV3) runDirectCodingPlanAction() error {
 		return storeErr
 	}); err != nil {
 		return err
-	}
-	if configuration.Mode == codingagent.Agents {
-		r.svc.emitStepEvent(r.claim.Authority, "coding_plan_frozen", fmt.Sprintf("generation=%d revision=%d leaves=%d", plan.Generation, plan.Revision, len(plan.Leaves)))
-		return nil
 	}
 	r.svc.emitStepEvent(r.claim.Authority, "coding_plan_review_ready", fmt.Sprintf(
 		"generation=%d revision=%d leaves=%d", plan.Generation, plan.Revision, len(plan.Leaves),

@@ -75,6 +75,21 @@ func (client *Client) Run(parent context.Context, call codingagent.Assignment, w
 			return result, err
 		}
 		if frame.ID != nil {
+			questions, handled, questionErr := mapAgentUserInputRequest(call, frame, &result)
+			if questionErr != nil {
+				return result, questionErr
+			}
+			if handled {
+				if err := recordAgentFrame(&result, connection.lastFrame, event); err != nil {
+					return result, err
+				}
+				content, err := agentQuestionResult(call.Role, questions)
+				if err != nil {
+					return result, err
+				}
+				result.Content, result.Completed = content, true
+				return result, nil
+			}
 			if err := connection.handleAgentTool(ctx, frame, &result, call, writer, event); err != nil {
 				return result, err
 			}
@@ -137,7 +152,7 @@ func (connection *connection) startAgentThread(call codingagent.Assignment, scra
 		"serviceName":      "omnidex-agents", "ephemeral": true}
 	applyAgentInferenceOptions(parameters, call.Route)
 	if call.Role == codingagent.Execute {
-		parameters["dynamicTools"] = []any{agentWriteTool()}
+		parameters["dynamicTools"] = []any{agentWriteTool(), agentDeleteTool()}
 	}
 	raw, err := connection.call("thread/start", parameters, &thread)
 	if err == nil && (thread.Model != call.Route.Model || thread.Thread.ID == "") {
@@ -158,10 +173,10 @@ func validateAgentAssignment(call codingagent.Assignment) error {
 	default:
 		return fmt.Errorf("unknown agent assignment role")
 	}
-	if call.Role != codingagent.Execute && len(call.WriteFiles) != 0 {
+	if call.Role != codingagent.Execute && (len(call.WriteFiles) != 0 || len(call.DeleteFiles) != 0) {
 		return fmt.Errorf("planning and review agents cannot receive write access")
 	}
-	for _, file := range append(append([]string{}, call.ReadFiles...), call.WriteFiles...) {
+	for _, file := range append(append(append([]string{}, call.ReadFiles...), call.WriteFiles...), call.DeleteFiles...) {
 		if err := codingagent.ValidatePath(file); err != nil {
 			return err
 		}

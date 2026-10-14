@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
@@ -29,6 +30,7 @@ type codingAgentPlanSnapshot struct {
 
 type codingAgentPlanReceipt struct {
 	IntakeContext *codingagent.IntakeContext `json:"intake_context,omitempty"`
+	Workload      *codingagent.Workload      `json:"workload"`
 	Generation    int64                      `json:"generation"`
 	Phase         string                     `json:"phase"`
 	Authority     model.StepAttemptAuthority `json:"authority"`
@@ -45,22 +47,8 @@ func codingAgentPlanInputs(command StoreCodingPlanReviewCommand) []codingAgentPl
 	return inputs
 }
 
-func finalizeCodingAgentPlanTx(ctx context.Context, tx pgx.Tx, command StoreCodingPlanReviewCommand) error {
-	if _, err := tx.Exec(ctx, `UPDATE coding_plan_leaves SET decision='approved',decision_origin_generation=generation,updated_at=clock_timestamp() WHERE job_id=$1 AND generation=$2 AND decision='pending'`, command.Authority.JobID, command.Authority.Generation); err != nil {
-		return err
-	}
-	result, err := tx.Exec(ctx, `UPDATE coding_plans SET state='frozen',revision=revision+1,frozen_at=clock_timestamp(),updated_at=clock_timestamp() WHERE job_id=$1 AND generation=$2 AND state='review' AND revision=1`, command.Authority.JobID, command.Authority.Generation)
-	if err != nil {
-		return err
-	}
-	if result.RowsAffected() != 1 {
-		return fmt.Errorf("delegated agent plan lost its initial freeze authority")
-	}
-	return nil
-}
-
-func recordCodingAgentPlanFinalizationTx(ctx context.Context, tx pgx.Tx, command StoreCodingPlanReviewCommand, configuration codingagent.Configuration, plan model.CodingPlan) error {
-	receipt := codingAgentPlanReceipt{IntakeContext: command.IntakeContext, Generation: plan.Generation, Phase: "requirements_frozen", Authority: command.Authority, Delegation: configuration, Inputs: codingAgentPlanInputs(command), Snapshot: codingAgentPlanSnapshot{JobID: plan.JobID, Generation: plan.Generation, Revision: plan.Revision, State: plan.State, Leaves: plan.Leaves}}
+func recordCodingAgentPlanProposalTx(ctx context.Context, tx pgx.Tx, command StoreCodingPlanReviewCommand, configuration codingagent.Configuration, plan model.CodingPlan) error {
+	receipt := codingAgentPlanReceipt{IntakeContext: command.IntakeContext, Workload: command.AgentWorkload, Generation: plan.Generation, Phase: "plan_review_ready", Authority: command.Authority, Delegation: configuration, Inputs: codingAgentPlanInputs(command), Snapshot: codingAgentPlanSnapshot{JobID: plan.JobID, Generation: plan.Generation, Revision: plan.Revision, State: plan.State, Leaves: plan.Leaves}}
 	encoded, err := json.Marshal(receipt)
 	if err != nil {
 		return err
@@ -70,8 +58,8 @@ func recordCodingAgentPlanFinalizationTx(ctx context.Context, tx pgx.Tx, command
 }
 
 func requireStoredCodingAgentPlanCommandTx(ctx context.Context, tx pgx.Tx, plan model.CodingPlan, command StoreCodingPlanReviewCommand, configuration codingagent.Configuration) error {
-	if plan.State != model.CodingPlanStateFrozen {
-		return fmt.Errorf("delegated agent plan replay lacks the frozen result")
+	if plan.State != model.CodingPlanStateReview {
+		return fmt.Errorf("delegated agent plan replay lacks the reviewable result")
 	}
 	inputs, err := json.Marshal(codingAgentPlanInputs(command))
 	if err != nil {
@@ -89,19 +77,36 @@ func requireStoredCodingAgentPlanCommandTx(ctx context.Context, tx pgx.Tx, plan 
 	if err != nil {
 		return err
 	}
+	workload, err := json.Marshal(command.AgentWorkload)
+	if err != nil {
+		return err
+	}
 	var exact bool
-	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM evidence WHERE job_id=$1 AND step_id=$2 AND kind='coding_agent' AND payload_json->>'phase'='requirements_frozen' AND payload_json->>'generation'=$3 AND payload_json->'input_leaves'=$4::jsonb AND payload_json->'authority'=$5::jsonb AND payload_json->'delegation'=$6::jsonb AND COALESCE(payload_json->'intake_context','null'::jsonb)=$7::jsonb)`, plan.JobID, command.Authority.StepID, fmt.Sprint(plan.Generation), string(inputs), string(authority), string(delegation), string(intake)).Scan(&exact); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM evidence WHERE job_id=$1 AND step_id=$2 AND kind='coding_agent' AND payload_json->>'phase'='plan_review_ready' AND payload_json->>'generation'=$3 AND payload_json->'input_leaves'=$4::jsonb AND payload_json->'authority'=$5::jsonb AND payload_json->'delegation'=$6::jsonb AND COALESCE(payload_json->'intake_context','null'::jsonb)=$7::jsonb AND payload_json->'workload'=$8::jsonb)`, plan.JobID, command.Authority.StepID, fmt.Sprint(plan.Generation), string(inputs), string(authority), string(delegation), string(intake), string(workload)).Scan(&exact); err != nil {
 		return err
 	}
 	if !exact {
 		return fmt.Errorf("delegated agent plan replay differs from exact planning command")
 	}
-	expected := command
-	expected.Leaves = append([]CodingPlanLeafWrite{}, command.Leaves...)
-	for index := range expected.Leaves {
-		if expected.Leaves[index].Leaf.Decision == model.CodingPlanDecisionPending {
-			expected.Leaves[index].Leaf.Decision = model.CodingPlanDecisionApproved
+	return requireStoredCodingPlanCommandTx(ctx, tx, plan, command)
+}
+
+func requireCodingAgentPlanProjection(command StoreCodingPlanReviewCommand) error {
+	if len(command.Leaves) != len(command.AgentWorkload.Tasks) {
+		return fmt.Errorf("agent plan review leaves do not cover its exact tasks")
+	}
+	for index, task := range command.AgentWorkload.Tasks {
+		receipt := command.Leaves[index].ResultRelation
+		if receipt.Schema != assemblyline.ApplicationRequirementCandidateResultRelationSchemaV1 || receipt.Relation != assemblyline.ApplicationRequirementNoDerivedResult {
+			return fmt.Errorf("agent plan review leaf %d lacks its structural ledger receipt", index)
+		}
+		statement, err := codingagent.PlanTaskStatement(task)
+		if err != nil {
+			return err
+		}
+		if command.Leaves[index].Leaf.Statement != statement {
+			return fmt.Errorf("agent plan review leaf %d differs from task %s", index, task.ID)
 		}
 	}
-	return requireStoredCodingPlanCommandTx(ctx, tx, plan, expected)
+	return nil
 }

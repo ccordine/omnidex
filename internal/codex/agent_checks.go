@@ -57,5 +57,6 @@ func readOnlyCheckScope(scope codingagent.Assignment) (codingagent.Assignment, e
 		return scope, fmt.Errorf("deterministic checks require a task or overall review scope")
 	}
 	scope.WriteFiles = nil
+	scope.DeleteFiles = nil
 	return scope, validateAgentAssignment(scope)
 }

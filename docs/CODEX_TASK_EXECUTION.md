@@ -1,5 +1,51 @@
 # Persistent task execution with Codex
 
+## Completed correction: approval-gated native plan ledger
+
+Root `/home/gryph/Projects/tools/omnidex`; branch
+`feat/codex-ledger-agent-mode`; existing stacked PR #10. Agents mode must run
+native planning inside the authoritative planning step and remain conversational
+through durable questions or same-job replanning until the user explicitly
+approves the complete proposed workload. Approval alone freezes that exact typed
+workload into the existing queue ledger; execution must never plan again.
+
+Each frozen task receives a fresh ephemeral Codex execution session containing
+only its goal, acceptance criteria, dependencies, exact read/create-edit/delete
+scope, prior task-local findings, and checks. Omnidex enforces those mutations,
+runs the frozen checks, and opens a fresh read-only Review session before accepting
+the task. A final fresh Review receives the original objective, approved workload,
+all parent authority, completed workspace and integration checks; completion is
+legal only when every task and the final review are accepted with durable native
+evidence. Transient provider-capacity failures retry from durable workspace state,
+and review commands may not assume a Git repository.
+
+Acceptance: no semantic requirement-inventory cap precedes native planning; plan
+questions round-trip through ordinary chat; no workload freezes before the exact
+terminal freeze operation; execution loads the approved workload without a Plan
+call; each task uses isolated execution and review calls; create/edit/delete grants
+are enforced; overall review is bound to the original prompt and passing checks;
+queue lifecycle, restart, stale-authority, client review, and provider fixtures pass.
+Normal coding mode remains unchanged. Unrelated stateless-inference owner work is
+preserved and excluded.
+
+Implemented: `Propose` now produces a validated draft and cannot freeze it. The
+queue freezes only the exact workload explicitly approved through chat, and the
+execution step accepts only that persisted approved workload; it has no Plan
+capability. Native planner questions use the ordinary bounded
+`request_user_input` chat pause. Every leaf is dispatched to a new execution call,
+then a new read-only task-review call. Any task or overall finding durably reopens
+the affected work before a replacement execution; completion requires a separate
+overall review against the original instruction, frozen workload and recorded
+checks. Structured final answers, review locations, transient call recovery and
+restart replay retain their exact typed state. The terminal client renders native
+agent questions without attempting to fetch a nonexistent planning proposal.
+
+The real-chat runs also found a task-neutral provenance defect: on a POSIX client,
+a quoted stdout example ending in a literal `\\n` could be interpreted as a
+Windows path. Provenance now rejects backslash-bearing candidates as invalid POSIX
+client syntax while retaining Windows separator handling for Windows roots. The
+fix has direct POSIX and Windows fixtures in addition to the full worker suite.
+
 ## Completed qualification: real chat application gauntlet
 
 Root `/home/gryph/Projects/tools/omnidex`; branch
@@ -10,30 +56,42 @@ The candidate ran through the normal terminal client against an isolated core,
 database schema and empty project. No project source, plan or review result was
 injected or manually corrected.
 
-Two framework blockers found by the run are corrected generically. Instruction
-path provenance no longer mistakes inline JSON, command names or the stdin token
-`-` for workspace artifacts while retaining registered and path-qualified
-artifacts. Native Plan results canonicalize repeated leading `./` on declared
-workspace files before the existing strict workload validator runs.
+The final clean run used an exact 3,208-byte request for a new standard-library
+Go `relayplan` CLI: strict JSON model/codec, critical-path scheduling, atomic and
+rollback-capable storage, the four-command CLI, real-process integration tests,
+and final documentation/verification. Planning stayed conversational for two
+fresh native Plan calls. The terminal then showed exactly six proposed jobs; the
+owner's existing approval was applied through the two-step confirmation and froze
+revision 8 with all six leaves approved. Durable event ordering proves zero Plan
+calls occurred after `plan_frozen`.
 
-The qualification itself failed and does not establish end-to-end readiness.
-Intake took 9 minutes 52 seconds and 122 semantic calls, then admitted only 10
-outcomes and omitted the requested `ready` and `order` behavior. Native Plan
-asked for schema and syntax already present in the request, required three calls,
-and froze automatically without an explicit terminal approval. Execution wrote
-only the first task's `go.mod`, `main.go` and `main_test.go`. Its first narrow
-Review included `git status` in the intentionally fresh non-Git directory, then
-a provider `serverOverloaded` response failed the entire job without retry or
-resume after 18 minutes 15 seconds.
+Execution completed all six jobs with six distinct fresh execution threads, six
+distinct fresh task-review threads and one fresh overall-review thread. Each task
+check passed, each independent task review accepted its isolated result, and the
+overall review independently reran format, list, test, vet, build and smoke checks,
+then exercised 100 randomized DAGs plus schema, overflow, permissions, symlink,
+raw-path, rollback and broken-pipe cases. The run recorded 57 write events across
+19 distinct files, six passing task checks and two passing overall checks, and
+finished with `Tasks completed: 6. Checks passed: 8. Independent task and overall
+reviews passed.` No task needed correction in this final run.
 
-Independent post-run checks confirm that the partial project is gofmt-clean and
-its own `go test ./...` and `go vet ./...` pass, but all six required semantic
-validation failures return success, `ready` and `order` are absent, JSON output
-is absent and no README exists. Therefore the observed workflow is not yet
-sensible or productive enough for this gauntlet. Task-owned candidate binaries,
-cache, isolated schema, core process, database container and unshared image are
-retired after source verification; production and unrelated owner work remain
-untouched.
+Owner-independent verification after completion found no formatting changes,
+passed `go test ./... -count=1`, `go vet ./...`, offline build and exact compiled
+stdin smoke behavior, then passed ten additional black-box edge groups covering
+invalid UTF-8, decoded duplicate keys, numeric strictness, missing/cyclic graph
+edges, int64 overflow, forward-reference scheduling, canonical atomic replacement
+through raw symlink/`..` paths, mode preservation, cleanup and EPIPE rollback.
+
+Earlier bounded runs were retained only as diagnostic history, not qualification
+evidence: `_i` exposed the pre-correction workflow limits; `_j` exposed the native
+question bridge; `_k` exposed an unsupported `autoResolutionMs` assumption; `_l`
+completed before the terminal pause correction; and `_m` exposed the quoted
+stdout/POSIX provenance defect before planning. The completely fresh `_n` run
+started only after all resulting source fixes and is the sole final functional
+gauntlet evidence. This establishes the requested end-to-end application behavior,
+not general autonomy qualification. All run-specific core/client processes,
+schema, container, config, project, binaries, cache and scratch are retired after
+repository verification; production and unrelated owner work remain untouched.
 
 ## Completed task: port Codex Ledger native agent modes
 

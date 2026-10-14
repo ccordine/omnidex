@@ -27,13 +27,10 @@ func freshAgentCodingClaim(t *testing.T) (*pgxpool.Pool, *Repository, model.Job,
 	if err != nil || planner == nil {
 		t.Fatalf("claim planning: %v, %v", planner, err)
 	}
-	leaf := codingPlanExecutableLeaf(t, "Approved behavior works", model.CodingPlanDecisionPending, 1)
-	plan, err := repository.StoreCodingPlanReview(ctx, StoreCodingPlanReviewCommand{Authority: planner.Authority, Leaves: []CodingPlanLeafWrite{leaf}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	command, leaf := codingAgentPlanReviewFixture(t, repository, planner, "Approved behavior works")
+	plan := freezeCodingAgentPlanFixture(t, repository, job, command)
 	if plan.State != model.CodingPlanStateFrozen {
-		t.Fatalf("Agents planning was not atomically frozen: %#v", plan)
+		t.Fatalf("Agents planning was not explicitly frozen: %#v", plan)
 	}
 	claim, err := repository.ClaimNextStep(ctx, "agent-execution-fixture")
 	if err != nil || claim == nil || claim.Step.Action != "v3_coding" {
@@ -132,7 +129,7 @@ func TestCodingAgentQuestionsResumeSameGenerationAndReplayHistorically(t *testin
 }
 
 func TestCodingAgentCompletionTransactionRequiresCurrentAcceptance(t *testing.T) {
-	_, repository, job, claim, leafID := freshAgentCodingClaim(t)
+	_, repository, job, claim, _ := freshAgentCodingClaim(t)
 	ctx := context.Background()
 	operation, err := NewStepLifecycleOperationID(claim.Authority, LifecycleCompleteStep)
 	if err != nil {
@@ -142,10 +139,17 @@ func TestCodingAgentCompletionTransactionRequiresCurrentAcceptance(t *testing.T)
 	if err := repository.CompleteStep(ctx, command); err == nil {
 		t.Fatal("job completed without accepted agent evidence")
 	}
+	approved, err := repository.CodingAgentFrozenWorkload(ctx, claim.Authority)
+	if err != nil {
+		t.Fatal(err)
+	}
 	fixture := codingAgentCompletionJournalFixture()
 	mapping := map[int64]int64{}
 	store := repository.CodingAgentEvidence(claim.Authority)
 	for _, entry := range fixture {
+		if entry.Role == codingagent.Plan || entry.Phase == "plan_frozen" {
+			continue
+		}
 		oldID := entry.ID
 		entry.ID = 0
 		if entry.CallID != 0 {
@@ -154,15 +158,27 @@ func TestCodingAgentCompletionTransactionRequiresCurrentAcceptance(t *testing.T)
 		if entry.Result != nil {
 			entry.Result.CallID = entry.CallID
 		}
-		if entry.Workload != nil {
-			entry.Workload.Tasks[0].RequirementIDs = []string{string(leafID)}
-		}
 		if entry.Assignment != nil {
-			if entry.Assignment.Role == codingagent.Plan || entry.Assignment.Role == codingagent.OverallReview {
-				entry.Assignment.Requirements = []codingagent.Requirement{{ID: string(leafID), Outcome: "Approved behavior works"}}
+			if entry.Assignment.Role == codingagent.Review {
+				entry.Assignment.Task = &approved.Tasks[0]
+				entry.Assignment.ReadFiles = append(append([]string{}, approved.Tasks[0].ReadFiles...), approved.Tasks[0].WriteFiles...)
+			}
+			if entry.Assignment.Role == codingagent.OverallReview {
+				entry.Assignment.Requirements = []codingagent.Requirement{{ID: "objective", Outcome: job.Instruction}}
+				entry.Assignment.Objective = &codingagent.Objective{Instruction: job.Instruction}
+				entry.Assignment.Workload = approved
 			}
 			entry.Assignment.JobID = job.ID
 			entry.Assignment.Generation = 1
+		}
+		if entry.TaskID != "" {
+			entry.TaskID = approved.Tasks[0].ID
+		}
+		if entry.Phase == "task_accepted" {
+			entry.Checks = []codingagent.CheckResult{{ID: approved.Tasks[0].Checks[0].ID}}
+		}
+		if entry.Phase == "overall_accepted" {
+			entry.Checks = []codingagent.CheckResult{{ID: approved.Checks[0].ID}}
 		}
 		id, err := store.Append(ctx, entry)
 		if err != nil {

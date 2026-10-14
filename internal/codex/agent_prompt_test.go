@@ -10,9 +10,10 @@ import (
 )
 
 func TestAgentPlanningAcceptanceUsesFinalizedAuthority(t *testing.T) {
+	objective := &codingagent.Objective{Instruction: "Build the requested module."}
 	call := codingagent.Assignment{Role: codingagent.Plan,
 		Requirements:      []codingagent.Requirement{{ID: "r1", Outcome: "The module returns the requested result."}},
-		ConstructionFacts: []codingagent.ConstructionFact{{Kind: "verification", Quote: "automated tests"}}}
+		ConstructionFacts: []codingagent.ConstructionFact{{Kind: "verification", Quote: "automated tests"}}, Objective: objective}
 	prompt, err := renderAgentAssignment(call)
 	if err != nil {
 		t.Fatal(err)
@@ -25,14 +26,14 @@ func TestAgentPlanningAcceptanceUsesFinalizedAuthority(t *testing.T) {
 	if err := json.Unmarshal([]byte(assignment), &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(call.Requirements, decoded.Requirements) || !reflect.DeepEqual(call.ConstructionFacts, decoded.ConstructionFacts) || decoded.Objective != nil {
-		t.Fatal("task planning substituted authority or received the original objective")
+	if !reflect.DeepEqual(call.Requirements, decoded.Requirements) || !reflect.DeepEqual(call.ConstructionFacts, decoded.ConstructionFacts) || !reflect.DeepEqual(decoded.Objective, objective) {
+		t.Fatal("task planning substituted its exact objective authority")
 	}
 	for _, boundary := range []string{
-		"Derive acceptance criteria only from the frozen behavioral requirements and explicit construction facts",
+		"Derive acceptance criteria only from the objective, its clarifications, and explicit construction facts",
 		"Choosing a development method or implementation order does not authorize an additional acceptance obligation",
-		"Require historical process evidence only when the supplied construction facts explicitly require that process",
 		"workload-level checks array must also contain one or more executable integration checks",
+		"user explicitly approves it",
 	} {
 		if !strings.Contains(instruction, boundary) {
 			t.Fatalf("planner lacks authority boundary: %s", boundary)

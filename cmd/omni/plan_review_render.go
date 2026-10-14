@@ -102,6 +102,10 @@ func planReviewDecisionCounts(snapshot model.CodingPlan) (approved, rejected, pe
 }
 
 func planReviewTerminalText(value string) string {
-	quoted := strconv.QuoteToGraphic(value)
-	return quoted[1 : len(quoted)-1]
+	lines := strings.Split(value, "\n")
+	for index, line := range lines {
+		quoted := strconv.QuoteToGraphic(line)
+		lines[index] = quoted[1 : len(quoted)-1]
+	}
+	return strings.Join(lines, "\n      ")
 }

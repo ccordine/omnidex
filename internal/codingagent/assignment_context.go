@@ -12,6 +12,9 @@ func (call Assignment) ValidateTaskContext() error {
 		return fmt.Errorf("narrow agent context requires one task and excludes parent context")
 	}
 	allowed := uniqueFiles(append(append([]string{}, call.Task.ReadFiles...), call.Task.WriteFiles...))
+	if call.Role == Execute {
+		allowed = uniqueFiles(append(allowed, call.Task.DeleteFiles...))
+	}
 	if len(call.ReadFiles) != len(allowed) {
 		return fmt.Errorf("narrow agent context changed the task's exact read files")
 	}
@@ -21,9 +24,22 @@ func (call Assignment) ValidateTaskContext() error {
 		}
 	}
 	for _, finding := range call.Findings {
-		if finding.TaskID != call.Task.ID || finding.File != "" && !contains(allowed, finding.File) {
+		findingFiles := uniqueFiles(append(allowed, call.Task.DeleteFiles...))
+		if finding.TaskID != call.Task.ID || finding.File != "" && !contains(findingFiles, finding.File) {
 			return fmt.Errorf("narrow agent context includes an unrelated finding")
 		}
+	}
+	if call.Role == Execute {
+		if len(call.DeleteFiles) != len(call.Task.DeleteFiles) {
+			return fmt.Errorf("narrow execution context changed the task's exact delete files")
+		}
+		for _, file := range call.DeleteFiles {
+			if !contains(call.Task.DeleteFiles, file) {
+				return fmt.Errorf("narrow execution context includes an unrelated delete file")
+			}
+		}
+	} else if len(call.DeleteFiles) != 0 {
+		return fmt.Errorf("narrow review context received delete authority")
 	}
 	for _, check := range call.Checks {
 		known := false

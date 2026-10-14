@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/model"
@@ -29,9 +30,10 @@ type fixtureEnvironment struct{}
 func (fixtureEnvironment) ReadFiles(context.Context) ([]string, error) {
 	return []string{"reference.txt"}, nil
 }
-func (fixtureEnvironment) PrepareFiles(context.Context, Task) error   { return nil }
-func (fixtureEnvironment) Attest(context.Context) error               { return nil }
-func (fixtureEnvironment) WriteFile(context.Context, FileWrite) error { return nil }
+func (fixtureEnvironment) PrepareFiles(context.Context, Task) error     { return nil }
+func (fixtureEnvironment) Attest(context.Context) error                 { return nil }
+func (fixtureEnvironment) WriteFile(context.Context, FileWrite) error   { return nil }
+func (fixtureEnvironment) DeleteFile(context.Context, FileDelete) error { return nil }
 
 type providerFunc func(context.Context, Assignment, FileWriter, func(NativeEvent) error) (Result, error)
 
@@ -80,7 +82,8 @@ func fixtureController(t *testing.T, workload Workload, behavior func(Assignment
 		return Result{Provider: call.Route.Provider, Model: call.Route.Model, ThreadID: fmt.Sprint("thread-", sequence), TurnID: fmt.Sprint("turn-", sequence), Completed: true, Content: encoded}, nil
 	})
 	config := Configuration{Mode: Agents, Planner: Route{Provider: "planner", Model: "plan-model"}, Executor: Route{Provider: "executor", Model: "execute-model"}, Reviewer: Route{Provider: "reviewer", Model: "review-model"}}
-	return &Controller{JobID: 1, Generation: 1, Root: t.TempDir(), Configuration: config, Requirements: []Requirement{{"r1", "A works"}, {"r2", "B works"}}, Providers: map[string]Provider{"planner": provider, "executor": provider, "reviewer": provider}, Verifier: verify, Environment: fixtureEnvironment{}, Evidence: journal}, journal
+	approved := workload
+	return &Controller{JobID: 1, Generation: 1, Root: t.TempDir(), Configuration: config, Requirements: []Requirement{{"r1", "A works"}, {"r2", "B works"}}, ApprovedWorkload: &approved, Providers: map[string]Provider{"planner": provider, "executor": provider, "reviewer": provider}, Verifier: verify, Environment: fixtureEnvironment{}, Evidence: journal}, journal
 }
 func passingChecks(_ context.Context, _ Assignment, checks []Check) ([]CheckResult, error) {
 	results := make([]CheckResult, len(checks))
@@ -90,6 +93,60 @@ func passingChecks(_ context.Context, _ Assignment, checks []Check) ([]CheckResu
 	return results, nil
 }
 func cleanReview() ReviewResult { return ReviewResult{Findings: []Finding{}, Questions: []string{}} }
+
+type retryableFixtureError struct{}
+
+func (retryableFixtureError) Error() string   { return "provider capacity unavailable" }
+func (retryableFixtureError) Retryable() bool { return true }
+
+func TestExecutionRequiresApprovedWorkloadAndNeverPlans(t *testing.T) {
+	controller, journal := fixtureController(t, fixtureWorkload(), func(Assignment) (any, error) {
+		return nil, errors.New("execution must not reach a provider without approval")
+	}, passingChecks)
+	controller.ApprovedWorkload = nil
+	if err := controller.Run(context.Background()); err == nil || !strings.Contains(err.Error(), "explicitly approved workload") {
+		t.Fatalf("execution without approval error = %v", err)
+	}
+	if len(journal.entries) != 0 {
+		t.Fatal("execution opened a native session before approval")
+	}
+}
+
+func TestPlanningRetriesTransientProviderCapacityInFreshCalls(t *testing.T) {
+	controller, journal := fixtureController(t, fixtureWorkload(), func(Assignment) (any, error) {
+		return cleanReview(), nil
+	}, passingChecks)
+	provider := controller.Providers["planner"]
+	attempts := 0
+	controller.Providers["planner"] = providerFunc(func(ctx context.Context, call Assignment, writer FileWriter, event func(NativeEvent) error) (Result, error) {
+		attempts++
+		if attempts < 3 {
+			return Result{}, retryableFixtureError{}
+		}
+		return provider.Run(ctx, call, writer, event)
+	})
+	workload, err := controller.Propose(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 3 || len(workload.Tasks) != len(fixtureWorkload().Tasks) {
+		t.Fatalf("transient retry attempts=%d workload=%#v", attempts, workload)
+	}
+	opened, failed, proposed := 0, 0, 0
+	for _, entry := range journal.entries {
+		switch entry.Phase {
+		case "call_opened":
+			opened++
+		case "call_failed":
+			failed++
+		case "plan_proposed":
+			proposed++
+		}
+	}
+	if opened != 3 || failed != 2 || proposed != 1 {
+		t.Fatalf("retry journal opened=%d failed=%d proposed=%d", opened, failed, proposed)
+	}
+}
 
 func TestControllerConvergesAndOnlyReopensAffectedWork(t *testing.T) {
 	executions := map[string]int{}
@@ -144,6 +201,88 @@ func TestControllerConvergesAndOnlyReopensAffectedWork(t *testing.T) {
 	}
 }
 
+func TestOverallFindingExecutesCorrectionBeforeReview(t *testing.T) {
+	executions := map[string]int{}
+	overallFound := false
+	behavior := func(call Assignment) (any, error) {
+		switch call.Role {
+		case Execute:
+			executions[call.Task.ID]++
+			return ExecutionResult{Questions: []string{}}, nil
+		case Review:
+			if overallFound && call.Task.ID == "a" && executions["a"] < 2 {
+				t.Fatal("overall finding reached review before corrective execution")
+			}
+			return cleanReview(), nil
+		case OverallReview:
+			if !overallFound {
+				overallFound = true
+				return ReviewResult{Findings: []Finding{{TaskID: "a", File: "a.txt", Requirement: "A works", Observation: "A fails after integration"}}, Questions: []string{}}, nil
+			}
+			return cleanReview(), nil
+		default:
+			t.Fatalf("unexpected role %q", call.Role)
+			return nil, nil
+		}
+	}
+	controller, journal := fixtureController(t, fixtureWorkload(), behavior, passingChecks)
+	if err := controller.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if executions["a"] != 2 || executions["b"] != 1 {
+		t.Fatalf("overall correction executions=%v", executions)
+	}
+	entries := journal.entries
+	for i, entry := range entries {
+		if entry.Phase != "task_reopened" || entry.TaskID != "a" || len(entry.Findings) == 0 {
+			continue
+		}
+		if i+1 >= len(entries) || entries[i+1].Phase != "task_executing" || entries[i+1].TaskID != "a" {
+			t.Fatalf("overall reopening was not followed by corrective execution: %#v", entries[i:])
+		}
+		return
+	}
+	t.Fatal("overall finding did not reopen task a")
+}
+
+func TestRestartedCatalogFixtureExecutesOnlyReopenedRenderer(t *testing.T) {
+	workload := Workload{Tasks: []Task{
+		{ID: "catalog", Goal: "Load catalog", Acceptance: []string{"catalog loads"}, WriteFiles: []string{"catalog.go"}, RequirementIDs: []string{"catalog"}, Checks: []Check{{ID: "catalog-check", Argv: []string{"check-catalog"}}}},
+		{ID: "renderer", Goal: "Render catalog", Acceptance: []string{"catalog renders"}, WriteFiles: []string{"render.go"}, Dependencies: []string{"catalog"}, RequirementIDs: []string{"renderer"}, Checks: []Check{{ID: "renderer-check", Argv: []string{"check-renderer"}}}},
+		{ID: "manual", Goal: "Document catalog", Acceptance: []string{"manual is complete"}, WriteFiles: []string{"MANUAL.md"}, RequirementIDs: []string{"manual"}, Checks: []Check{{ID: "manual-check", Argv: []string{"check-manual"}}}},
+	}, Checks: []Check{{ID: "catalog-suite", Argv: []string{"check-catalog-suite"}}}}
+	executions := map[string]int{}
+	controller, journal := fixtureController(t, workload, func(call Assignment) (any, error) {
+		if call.Role == Execute {
+			executions[call.Task.ID]++
+			if call.Task.ID != "renderer" || len(call.Findings) != 1 {
+				t.Fatalf("restart executed wrong scope: task=%s findings=%#v", call.Task.ID, call.Findings)
+			}
+			return ExecutionResult{Questions: []string{}}, nil
+		}
+		return cleanReview(), nil
+	}, passingChecks)
+	controller.Requirements = []Requirement{{"catalog", "catalog loads"}, {"renderer", "catalog renders"}, {"manual", "manual is complete"}}
+	journal.entries = []Entry{
+		{ID: 1, Generation: 1, Phase: "task_executing", TaskID: "catalog", Round: 1},
+		{ID: 2, Generation: 1, Phase: "task_accepted", TaskID: "catalog", Round: 2},
+		{ID: 3, Generation: 1, Phase: "task_executing", TaskID: "renderer", Round: 3},
+		{ID: 4, Generation: 1, Phase: "task_accepted", TaskID: "renderer", Round: 4},
+		{ID: 5, Generation: 1, Phase: "task_executing", TaskID: "manual", Round: 5},
+		{ID: 6, Generation: 1, Phase: "task_accepted", TaskID: "manual", Round: 6},
+		{ID: 7, Generation: 1, Phase: "task_reopened", TaskID: "renderer", Round: 7, Findings: []Finding{{TaskID: "renderer", File: "render.go", Requirement: "catalog renders", Observation: "integrated rendering is stale"}}},
+	}
+	if err := controller.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if executions["renderer"] != 1 || executions["catalog"] != 0 || executions["manual"] != 0 {
+		t.Fatalf("restart correction executions=%v", executions)
+	}
+	if journal.entries[len(journal.entries)-1].Phase != "overall_accepted" {
+		t.Fatalf("restart did not converge: %#v", journal.entries[len(journal.entries)-1])
+	}
+}
+
 func TestQuestionsPersistAndAnswersResumeWithoutReplanning(t *testing.T) {
 	questioned := false
 	executed := map[string]bool{}
@@ -178,13 +317,12 @@ func TestQuestionsPersistAndAnswersResumeWithoutReplanning(t *testing.T) {
 	if err := controller.Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	plans := 0
 	for _, entry := range journal.entries {
-		if entry.Phase == "plan_frozen" {
-			plans++
+		if entry.Phase == "plan_proposed" {
+			t.Fatal("execution replanned instead of resuming its approved workload")
 		}
 	}
-	if plans != 1 || !executed["a"] || !executed["b"] {
+	if !executed["a"] || !executed["b"] {
 		t.Fatal("answer replanned instead of resuming frozen task")
 	}
 }
@@ -200,6 +338,7 @@ func TestControllerRejectsInventedScopeAndMissingRequirements(t *testing.T) {
 		plan := fixtureWorkload()
 		mutation(&plan)
 		controller, journal := fixtureController(t, plan, func(Assignment) (any, error) { t.Fatal("invalid plan reached execution"); return nil, nil }, passingChecks)
+		controller.ApprovedWorkload = nil
 		ctx, cancel := context.WithCancel(context.Background())
 		planner := controller.Providers["planner"]
 		controller.Providers["planner"] = providerFunc(func(ctx context.Context, call Assignment, writer FileWriter, event func(NativeEvent) error) (Result, error) {
@@ -209,12 +348,12 @@ func TestControllerRejectsInventedScopeAndMissingRequirements(t *testing.T) {
 			}
 			return planner.Run(ctx, call, writer, event)
 		})
-		if err := controller.Run(ctx); err == nil {
+		if _, err := controller.Propose(ctx); err == nil {
 			t.Fatal("invalid scope accepted")
 		}
 		cancel()
 		for _, entry := range journal.entries {
-			if entry.Phase == "plan_frozen" {
+			if entry.Phase == "plan_proposed" {
 				t.Fatal("invalid plan frozen")
 			}
 		}

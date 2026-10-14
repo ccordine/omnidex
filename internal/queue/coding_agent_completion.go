@@ -34,7 +34,7 @@ func requireCodingAgentCompletionTx(ctx context.Context, tx pgx.Tx, job model.Jo
 	if plan.State != model.CodingPlanStateFrozen {
 		return fmt.Errorf("agent completion requires the current frozen requirement plan")
 	}
-	rows, err := tx.Query(ctx, `SELECT id,payload_json-'frame' FROM evidence WHERE job_id=$1 AND step_id=$2 AND kind='coding_agent' AND payload_json->>'generation'=$3 ORDER BY id`, job.ID, stepID, fmt.Sprint(job.CurrentGeneration))
+	rows, err := tx.Query(ctx, `SELECT id,payload_json-'frame' FROM evidence WHERE job_id=$1 AND kind='coding_agent' AND payload_json->>'generation'=$2 ORDER BY id`, job.ID, fmt.Sprint(job.CurrentGeneration))
 	if err != nil {
 		return err
 	}

@@ -12,7 +12,7 @@ import (
 
 const (
 	MaxCodingPlanLeaves         = 30
-	MaxCodingPlanStatementBytes = 1024
+	MaxCodingPlanStatementBytes = 8 * 1024
 
 	CodingPlanStateReview     CodingPlanState = "review"
 	CodingPlanStateFrozen     CodingPlanState = "frozen"

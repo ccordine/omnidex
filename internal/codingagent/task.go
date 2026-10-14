@@ -33,6 +33,9 @@ func projectTaskState(workload Workload, entries []Entry) *taskState {
 		case "task_reopened", "task_reviewed":
 			state.accepted[entry.TaskID] = false
 			state.findings[entry.TaskID] = append([]Finding{}, entry.Findings...)
+			if entry.Phase == "task_reopened" && len(entry.Findings) > 0 {
+				state.started[entry.TaskID] = false
+			}
 		}
 	}
 	return state

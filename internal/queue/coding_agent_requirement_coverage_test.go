@@ -8,29 +8,35 @@ import (
 )
 
 func TestCodingAgentParentContextKeepsChildAcceptanceNarrow(t *testing.T) {
-	parent := codingagent.Requirement{ID: "coding_plan_leaf_00000000000000000000000000000001", Outcome: "The application provides its module and command-line interface."}
+	parent := codingagent.Requirement{ID: "objective", Outcome: "The application provides its module and command-line interface."}
+	objective := &codingagent.Objective{Instruction: parent.Outcome}
 	taskA := codingagent.Task{ID: "module", Goal: "Implement the module", Acceptance: []string{"The module returns the expected value."}, RequirementIDs: []string{parent.ID}, WriteFiles: []string{"module.go"}, Checks: []codingagent.Check{{ID: "module-check", Argv: []string{"go", "test"}}}}
 	taskB := codingagent.Task{ID: "cli", Goal: "Implement the CLI", Acceptance: []string{"The CLI prints the module value."}, RequirementIDs: []string{parent.ID}, ReadFiles: []string{"module.go"}, WriteFiles: []string{"cli.go"}, Dependencies: []string{taskA.ID}, Checks: []codingagent.Check{{ID: "cli-check", Argv: []string{"go", "test"}}}}
 	workload := codingagent.Workload{Tasks: []codingagent.Task{taskA, taskB}, Checks: []codingagent.Check{{ID: "overall", Argv: []string{"go", "test"}}}}
-	plan := model.CodingPlan{Leaves: []model.CodingPlanLeaf{{ID: model.CodingPlanLeafID(parent.ID), Statement: parent.Outcome, Decision: model.CodingPlanDecisionApproved}}}
+	statementA, _ := codingagent.PlanTaskStatement(taskA)
+	statementB, _ := codingagent.PlanTaskStatement(taskB)
+	plan := model.CodingPlan{Leaves: []model.CodingPlanLeaf{
+		{ID: "coding_plan_leaf_00000000000000000000000000000001", Statement: statementA, Decision: model.CodingPlanDecisionApproved},
+		{ID: "coding_plan_leaf_00000000000000000000000000000002", Statement: statementB, Decision: model.CodingPlanDecisionApproved},
+	}}
 	entries := []codingagent.Entry{
-		{ID: 1, Phase: "call_opened", Assignment: &codingagent.Assignment{Role: codingagent.Plan, Requirements: []codingagent.Requirement{parent}}},
+		{ID: 1, Phase: "call_opened", Assignment: &codingagent.Assignment{Role: codingagent.Plan, Requirements: []codingagent.Requirement{parent}, Objective: objective}},
 		{ID: 2, Phase: "plan_frozen", CallID: 1, Workload: &workload},
 		{ID: 3, Phase: "call_opened", Assignment: &codingagent.Assignment{Role: codingagent.Review, Task: &taskA, ReadFiles: []string{"module.go"}}},
 		{ID: 4, Phase: "task_accepted", TaskID: taskA.ID, CallID: 3},
 		{ID: 5, Phase: "call_opened", Assignment: &codingagent.Assignment{Role: codingagent.Review, Task: &taskB, ReadFiles: []string{"cli.go", "module.go"}}},
 		{ID: 6, Phase: "task_accepted", TaskID: taskB.ID, CallID: 5},
-		{ID: 7, Phase: "call_opened", Assignment: &codingagent.Assignment{Role: codingagent.OverallReview, Workload: &workload, Requirements: []codingagent.Requirement{parent}}},
+		{ID: 7, Phase: "call_opened", Assignment: &codingagent.Assignment{Role: codingagent.OverallReview, Workload: &workload, Requirements: []codingagent.Requirement{parent}, Objective: objective}},
 		{ID: 8, Phase: "overall_accepted", CallID: 7},
 	}
 	if err := validateCodingAgentRequirementCoverage(entries, plan); err != nil {
 		t.Fatalf("narrow tasks were forced to fulfill the whole parent: %v", err)
 	}
-	entries[0].Assignment.Objective = &codingagent.Objective{Instruction: "An unapproved original goal"}
+	entries[6].Assignment.Objective = &codingagent.Objective{Instruction: "A changed objective"}
 	if err := validateCodingAgentRequirementCoverage(entries, plan); err == nil {
-		t.Fatal("task planning received original user goal instead of approved criteria")
+		t.Fatal("overall review changed the user-approved objective")
 	}
-	entries[0].Assignment.Objective = nil
+	entries[6].Assignment.Objective = objective
 	entries[2].Assignment.Requirements = []codingagent.Requirement{{ID: parent.ID, Outcome: "An invented parent outcome."}}
 	if err := validateCodingAgentRequirementCoverage(entries, plan); err == nil {
 		t.Fatal("task reviewer received unassigned parent context")

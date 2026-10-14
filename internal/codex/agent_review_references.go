@@ -136,11 +136,12 @@ func splitNativeReviewDocument(text string) (json.RawMessage, string, error) {
 	if tail == "" {
 		return raw, "", nil
 	}
-	const heading = "Full review comments:"
-	if !strings.HasPrefix(tail, heading) {
-		return nil, "", errors.New("unexpected text after native review result")
+	for _, heading := range []string{"Full review comments:", "Review comments:", "Review comment:"} {
+		if strings.HasPrefix(tail, heading) {
+			return raw, strings.TrimSpace(strings.TrimPrefix(tail, heading)), nil
+		}
 	}
-	return raw, strings.TrimSpace(strings.TrimPrefix(tail, heading)), nil
+	return nil, "", errors.New("unexpected text after native review result")
 }
 
 func decodeAgentReviewReceipt(call codingagent.Assignment, content json.RawMessage) (codingagent.ReviewResult, error) {

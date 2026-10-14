@@ -14,6 +14,7 @@ type CodingPlanLeafWrite struct {
 
 type StoreCodingPlanReviewCommand struct {
 	IntakeContext *codingagent.IntakeContext
+	AgentWorkload *codingagent.Workload
 	Authority     model.StepAttemptAuthority
 	Leaves        []CodingPlanLeafWrite
 }

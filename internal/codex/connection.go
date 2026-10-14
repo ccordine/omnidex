@@ -135,7 +135,8 @@ func (connection *connection) readFrame(agent bool) (rpcFrame, error) {
 	if err := json.Unmarshal(connection.lastFrame, &frame); err != nil {
 		return frame, err
 	}
-	if frame.ID != nil && frame.Method != "" && !(agent && frame.Method == "item/tool/call") {
+	allowedAgentRequest := frame.Method == "item/tool/call" || frame.Method == "item/tool/requestUserInput"
+	if frame.ID != nil && frame.Method != "" && !(agent && allowedAgentRequest) {
 		return frame, fmt.Errorf("Codex attempted a client tool or approval request")
 	}
 	return frame, nil

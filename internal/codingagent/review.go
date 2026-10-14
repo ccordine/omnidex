@@ -1,6 +1,10 @@
 package codingagent
 
-import "context"
+import (
+	"context"
+	"strconv"
+	"strings"
+)
 
 // Invalid proposals are corrected within their role, without expanding grants.
 func (controller *Controller) review(ctx context.Context, scope Assignment, tasks map[string]Task, round int64) (ReviewResult, Result, error) {
@@ -12,6 +16,7 @@ func (controller *Controller) review(ctx context.Context, scope Assignment, task
 		var review ReviewResult
 		err = decodeContract(result.Content, &review)
 		if err == nil {
+			normalizeReviewFindingFiles(tasks, &review)
 			err = ValidateReview(tasks, review, scope.Requirements...)
 		}
 		if err == nil {
@@ -27,4 +32,48 @@ func (controller *Controller) review(ctx context.Context, scope Assignment, task
 		}
 	}
 	return ReviewResult{}, Result{}, ctx.Err()
+}
+
+// Reviewers commonly attach source locations to a file name. Preserve the
+// exact task grant as the contract value, but only when the prefix is itself
+// an authorized file and the suffix is a strictly numeric source location.
+func normalizeReviewFindingFiles(tasks map[string]Task, result *ReviewResult) {
+	for index := range result.Findings {
+		finding := &result.Findings[index]
+		task, known := tasks[finding.TaskID]
+		if !known || finding.File == "" {
+			continue
+		}
+		allowed := append(append(append([]string{}, task.WriteFiles...), task.ReadFiles...), task.DeleteFiles...)
+		if contains(allowed, finding.File) {
+			continue
+		}
+		for _, file := range allowed {
+			location, found := strings.CutPrefix(finding.File, file+":")
+			if found && validSourceLocation(location) {
+				finding.File = file
+				break
+			}
+		}
+	}
+}
+
+func validSourceLocation(value string) bool {
+	parts := strings.Split(value, "-")
+	if len(parts) == 0 || len(parts) > 2 {
+		return false
+	}
+	for _, part := range parts {
+		coordinates := strings.Split(part, ":")
+		if len(coordinates) == 0 || len(coordinates) > 2 {
+			return false
+		}
+		for _, coordinate := range coordinates {
+			number, err := strconv.ParseUint(coordinate, 10, 64)
+			if err != nil || number == 0 {
+				return false
+			}
+		}
+	}
+	return true
 }

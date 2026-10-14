@@ -83,6 +83,8 @@ func objectiveRelativeArtifactPath(root, candidate string) (string, error) {
 	if windows {
 		root = strings.ReplaceAll(root, `\`, "/")
 		candidate = strings.ReplaceAll(candidate, `\`, "/")
+	} else if strings.Contains(candidate, `\`) {
+		return "", fmt.Errorf("artifact path must use client path syntax")
 	}
 	absolute := strings.HasPrefix(candidate, "/")
 	if windows && strings.Contains(candidate, ":") {

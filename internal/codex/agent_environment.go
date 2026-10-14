@@ -78,6 +78,9 @@ func agentPermissionProfile(call codingagent.Assignment, scratch ...string) map[
 	for _, file := range call.WriteFiles {
 		files[filepath.Join(call.Root, filepath.FromSlash(file))] = "read"
 	}
+	for _, file := range call.DeleteFiles {
+		files[filepath.Join(call.Root, filepath.FromSlash(file))] = "read"
+	}
 	for _, directory := range scratch {
 		files[directory] = "write"
 	}

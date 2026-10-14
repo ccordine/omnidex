@@ -22,8 +22,8 @@ func validateChatSessionAgentPause(details model.JobDetails, execution *codingag
 		if step.Status != model.StepStatusWaiting {
 			continue
 		}
-		if step.Action != "v3_coding" || waitingStepID != 0 {
-			return fmt.Errorf("chat session agent question lacks one exact waiting coding step")
+		if (step.Action != "v3_coding_plan" && step.Action != "v3_coding") || waitingStepID != 0 {
+			return fmt.Errorf("chat session agent question lacks one exact waiting planning or coding step")
 		}
 		waitingStepID = step.ID
 	}

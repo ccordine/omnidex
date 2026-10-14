@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/codingagent"
 
@@ -38,8 +39,17 @@ func (r *Repository) StoreCodingPlanReview(
 		return model.CodingPlan{}, err
 	}
 	agents := configuration.Mode == codingagent.Agents
-	if !agents && command.IntakeContext != nil {
-		return model.CodingPlan{}, fmt.Errorf("retained agent intake context requires Agents mode")
+	if agents {
+		if command.IntakeContext == nil || command.AgentWorkload == nil {
+			return model.CodingPlan{}, fmt.Errorf("Agents plan review requires its exact intake context and proposed workload")
+		}
+		if err := requireCodingAgentPlanProjection(command); err != nil {
+			return model.CodingPlan{}, err
+		}
+	} else if command.IntakeContext != nil || command.AgentWorkload != nil {
+		return model.CodingPlan{}, fmt.Errorf("retained agent planning context requires Agents mode")
+	} else if err := validateNormalCodingPlanReceipts(command); err != nil {
+		return model.CodingPlan{}, err
 	}
 	var action string
 	if err := tx.QueryRow(ctx, `
@@ -59,7 +69,7 @@ func (r *Repository) StoreCodingPlanReview(
 	}
 
 	if locked.AttemptStatus == model.StepAttemptCompleted &&
-		((!agents && locked.StepStatus == model.StepStatusWaiting && job.Status == model.JobStatusWaiting) || (agents && locked.StepStatus == model.StepStatusCompleted)) {
+		locked.StepStatus == model.StepStatusWaiting && job.Status == model.JobStatusWaiting {
 		plan, err := readCodingPlan(ctx, tx, job.ID, command.Authority.Generation)
 		if err != nil {
 			return model.CodingPlan{}, err
@@ -111,18 +121,8 @@ func (r *Repository) StoreCodingPlanReview(
 			return model.CodingPlan{}, fmt.Errorf("store coding plan leaf %d: %w", index, err)
 		}
 	}
-	if agents {
-		if err := finalizeCodingAgentPlanTx(ctx, tx, command); err != nil {
-			return model.CodingPlan{}, err
-		}
-	}
 	stepStatus, jobStatus := model.StepStatusWaiting, model.JobStatusWaiting
 	var stepOutput *string
-	if agents {
-		stepStatus, jobStatus = model.StepStatusCompleted, model.JobStatusRunning
-		output := "coding plan approved and frozen"
-		stepOutput = &output
-	}
 	if err := terminalizeStepAttemptTx(
 		ctx, tx, command.Authority, model.StepAttemptCompleted,
 	); err != nil {
@@ -158,7 +158,7 @@ func (r *Repository) StoreCodingPlanReview(
 		return model.CodingPlan{}, err
 	}
 	if agents {
-		if err := recordCodingAgentPlanFinalizationTx(ctx, tx, command, configuration, plan); err != nil {
+		if err := recordCodingAgentPlanProposalTx(ctx, tx, command, configuration, plan); err != nil {
 			return model.CodingPlan{}, err
 		}
 	}

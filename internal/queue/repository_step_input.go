@@ -169,6 +169,10 @@ func applyJobFeedbackTx(
 	if command.ExpectedWaitingAttempt != nil && *command.ExpectedWaitingAttempt != waitingAttempt {
 		return model.Job{}, 0, fmt.Errorf("%w: observed %d, current %d", ErrJobFeedbackWaitingAttempt, *command.ExpectedWaitingAttempt, waitingAttempt)
 	}
+	if stepAction == "v3_coding_plan" && configuration.Mode == codingagent.Agents {
+		resumed, err := resumeCodingAgentQuestionTx(ctx, tx, job, stepID, command)
+		return resumed, stepID, err
+	}
 	if stepAction == "v3_coding_plan" {
 		return model.Job{}, 0, fmt.Errorf(
 			"%w: coding plan review accepts only persisted plan decisions, freeze, or same-job replan",

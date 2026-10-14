@@ -103,6 +103,33 @@ func TestObjectiveInstructionPathProvenanceDoesNotTreatInlineJSONAsAPath(t *test
 	}
 }
 
+func TestObjectiveInstructionPathProvenanceDoesNotTreatEscapedOutputAsAPath(t *testing.T) {
+	root := t.TempDir()
+	instruction := "Write exactly `completed ID\\n` on success and `usage: relayplan FILE\\n` on misuse. " +
+		"Implement cmd/relayplan/main.go and `docs/CLI Guide.md`."
+	provenance, err := objectiveInstructionPathProvenance(context.Background(), root, instruction)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"cmd/relayplan/main.go", "docs/CLI Guide.md"}
+	if got := provenance.Paths(); !slices.Equal(got, want) {
+		t.Fatalf("artifact provenance = %#v, want %#v", got, want)
+	}
+}
+
+func TestObjectiveInstructionPathProvenanceUsesWindowsClientSeparators(t *testing.T) {
+	provenance, err := objectiveInstructionPathProvenance(
+		context.Background(), `C:\work\source`, `Edit cmd\relayplan\main.go and "docs\CLI Guide.md".`,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"cmd/relayplan/main.go", "docs/CLI Guide.md"}
+	if got := provenance.Paths(); !slices.Equal(got, want) {
+		t.Fatalf("artifact provenance = %#v, want %#v", got, want)
+	}
+}
+
 func TestObjectiveRelativeArtifactPathsUseClientPathSyntax(t *testing.T) {
 	for _, fixture := range []struct{ root, candidate, want string }{
 		{`C:\work\source`, `C:\work\source\src\main.go`, "src/main.go"},

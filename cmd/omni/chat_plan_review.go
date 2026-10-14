@@ -156,6 +156,9 @@ func activeJobRequiresPlanReview(details *model.JobDetails) (bool, error) {
 			details.Job.Status,
 		)
 	}
+	if details.AgentPause != nil {
+		return false, nil
+	}
 	return true, nil
 }
 

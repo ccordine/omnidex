@@ -115,8 +115,8 @@ func requireCodingAgentStepTx(ctx context.Context, tx pgx.Tx, jobID, stepID, gen
 	if err != nil {
 		return err
 	}
-	if action != "v3_coding" || configuration.Mode != codingagent.Agents {
-		return fmt.Errorf("coding agent evidence requires the selected Agents execution step")
+	if (action != "v3_coding_plan" && action != "v3_coding") || configuration.Mode != codingagent.Agents {
+		return fmt.Errorf("coding agent evidence requires the selected Agents planning or execution step")
 	}
 	return nil
 }

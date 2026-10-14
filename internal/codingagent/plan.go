@@ -3,10 +3,43 @@ package codingagent
 import (
 	"context"
 	"fmt"
+	"sort"
 )
 
+const maxPlanValidationAttempts = 3
+
+// Propose returns a validated draft. It cannot freeze or execute the workload;
+// only the queue's explicit user approval transition can do that.
+func (controller *Controller) Propose(ctx context.Context) (Workload, error) {
+	if err := controller.validatePlanning(); err != nil {
+		return Workload{}, err
+	}
+	entries, err := controller.Evidence.Read(ctx)
+	if err != nil {
+		return Workload{}, err
+	}
+	if questions := unansweredQuestions(entries); len(questions) > 0 {
+		return Workload{}, &QuestionsPending{Questions: questions}
+	}
+	files, err := controller.Environment.ReadFiles(ctx)
+	if err != nil {
+		return Workload{}, err
+	}
+	sort.Strings(files)
+	call := controller.assignment(Plan, nil, controller.Configuration.Planner)
+	call.Requirements, call.Objective, call.ReadFiles = controller.Requirements, controller.Objective, files
+	call.ArtifactBindings, call.PlanningEnvironment = controller.ArtifactBindings, controller.PlanningEnvironment
+	call.ConstructionFacts = controller.ConstructionFacts
+	for _, entry := range entries {
+		if entry.Phase == "plan_rejected" {
+			call.ValidationNotes = entry.Notes
+		}
+	}
+	return controller.plan(ctx, call)
+}
+
 func (controller *Controller) plan(ctx context.Context, call Assignment) (Workload, error) {
-	for ctx.Err() == nil {
+	for attempt := 0; attempt < maxPlanValidationAttempts && ctx.Err() == nil; attempt++ {
 		result, err := controller.invoke(ctx, call, 1)
 		if err != nil {
 			return Workload{}, err
@@ -28,7 +61,7 @@ func (controller *Controller) plan(ctx context.Context, call Assignment) (Worklo
 			err = validatePlanFiles(workload, call.ReadFiles)
 		}
 		if err == nil {
-			_, err = controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "plan_frozen", CallID: result.CallID, Workload: &workload})
+			_, err = controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "plan_proposed", CallID: result.CallID, Workload: &workload})
 			return workload, err
 		}
 		call.ValidationNotes = []string{err.Error()}
@@ -36,7 +69,10 @@ func (controller *Controller) plan(ctx context.Context, call Assignment) (Worklo
 			return Workload{}, err
 		}
 	}
-	return Workload{}, ctx.Err()
+	if err := ctx.Err(); err != nil {
+		return Workload{}, err
+	}
+	return Workload{}, fmt.Errorf("native plan remained invalid after %d attempts", maxPlanValidationAttempts)
 }
 
 func validatePlanFiles(workload Workload, files []string) error {
@@ -56,6 +92,16 @@ func validatePlanFiles(workload Workload, files []string) error {
 		}
 		for _, file := range task.WriteFiles {
 			catalog[file] = task.ID
+		}
+		for _, file := range task.DeleteFiles {
+			writer, exists := catalog[file]
+			if !exists {
+				return fmt.Errorf("task %s requests deletion of an absent file %s", task.ID, file)
+			}
+			if writer != "" && !contains(task.Dependencies, writer) {
+				return fmt.Errorf("task %s omitted dependency %s for deleted file %s", task.ID, writer, file)
+			}
+			delete(catalog, file)
 		}
 	}
 	return nil

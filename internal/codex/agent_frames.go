@@ -10,6 +10,25 @@ import (
 	"github.com/gryph/omnidex/internal/llm"
 )
 
+const nativeItemStateSeparator = "\x00"
+
+func nativeItemState(kind, phase string) string {
+	if phase == "" {
+		return kind
+	}
+	return kind + nativeItemStateSeparator + phase
+}
+
+func nativeItemKind(state string) string {
+	kind, _, _ := strings.Cut(state, nativeItemStateSeparator)
+	return kind
+}
+
+func nativeItemPhase(state string) string {
+	_, phase, _ := strings.Cut(state, nativeItemStateSeparator)
+	return phase
+}
+
 func validateAgentItems(frame rpcFrame, role codingagent.Role, open map[string]string) error {
 	if kind := agentDeltaItemKind(frame.Method); kind != "" {
 		if kind == "plan" && role != codingagent.Plan {
@@ -21,7 +40,7 @@ func validateAgentItems(frame rpcFrame, role codingagent.Role, open map[string]s
 		if err := json.Unmarshal(frame.Params, &params); err != nil {
 			return err
 		}
-		if params.ItemID == "" || open[params.ItemID] != kind {
+		if params.ItemID == "" || nativeItemKind(open[params.ItemID]) != kind {
 			return fmt.Errorf("native agent delta belongs to an unbound item")
 		}
 		return nil
@@ -34,6 +53,7 @@ func validateAgentItems(frame rpcFrame, role codingagent.Role, open map[string]s
 			ID     string `json:"id"`
 			Type   string `json:"type"`
 			Status string `json:"status"`
+			Phase  string `json:"phase"`
 		} `json:"item"`
 	}
 	if err := json.Unmarshal(frame.Params, &params); err != nil {
@@ -56,10 +76,27 @@ func validateAgentItems(frame rpcFrame, role codingagent.Role, open map[string]s
 		if _, exists := open[item.ID]; exists {
 			return fmt.Errorf("native item identity reused")
 		}
-		open[item.ID] = item.Type
+		if item.Type == "agentMessage" && item.Phase == "final_answer" {
+			// The native server can abandon an output-limited structured final
+			// answer and start its complete replacement in the same turn without
+			// emitting item/completed for the superseded item. Preserve every
+			// receipt, but let exactly one explicit replacement own completion.
+			superseded := ""
+			for id, state := range open {
+				if nativeItemKind(state) != "agentMessage" || nativeItemPhase(state) != "final_answer" {
+					continue
+				}
+				if superseded != "" {
+					return fmt.Errorf("native agent left multiple final answers open")
+				}
+				superseded = id
+			}
+			delete(open, superseded)
+		}
+		open[item.ID] = nativeItemState(item.Type, item.Phase)
 		return nil
 	}
-	if open[item.ID] != item.Type {
+	if nativeItemKind(open[item.ID]) != item.Type {
 		return fmt.Errorf("native agent completed an unbound item")
 	}
 	if item.Status == "inProgress" || item.Status == "in_progress" {
@@ -67,20 +104,34 @@ func validateAgentItems(frame rpcFrame, role codingagent.Role, open map[string]s
 	}
 	delete(open, item.ID)
 	if item.Type == "exitedReviewMode" {
-		placeholder := ""
-		for id, kind := range open {
-			if kind != "agentMessage" {
+		answerPlaceholder := ""
+		commentaryPlaceholders := make([]string, 0)
+		for id, state := range open {
+			if nativeItemKind(state) != "agentMessage" {
 				continue
 			}
-			if placeholder != "" {
-				return fmt.Errorf("native review left multiple message placeholders open")
+			switch nativeItemPhase(state) {
+			case "commentary":
+				// Native Review emits complete progress messages as starts without
+				// matching completions. They remain distinct from the one review
+				// answer placeholder carried by exitedReviewMode.
+				commentaryPlaceholders = append(commentaryPlaceholders, id)
+			case "", "final_answer":
+				if answerPlaceholder != "" {
+					return fmt.Errorf("native review left multiple message placeholders open")
+				}
+				answerPlaceholder = id
+			default:
+				return fmt.Errorf("native review left an unfinished message phase open")
 			}
-			placeholder = id
 		}
-		// Native Review starts one placeholder agentMessage for the review body,
-		// then returns that body on exitedReviewMode instead of completing the
-		// placeholder. The exited receipt is its authoritative terminal event.
-		delete(open, placeholder)
+		for _, id := range commentaryPlaceholders {
+			delete(open, id)
+		}
+		// Native Review starts one answer placeholder, then returns that body on
+		// exitedReviewMode instead of completing the placeholder. The exited
+		// receipt is its authoritative terminal event.
+		delete(open, answerPlaceholder)
 	}
 	return nil
 }
@@ -157,6 +208,14 @@ type agentNativeError struct {
 	AdditionalDetails *string         `json:"additionalDetails"`
 	CodexErrorInfo    json.RawMessage `json:"codexErrorInfo"`
 }
+
+type agentInferenceFailure struct {
+	message   string
+	retryable bool
+}
+
+func (failure *agentInferenceFailure) Error() string   { return failure.message }
+func (failure *agentInferenceFailure) Retryable() bool { return failure.retryable }
 
 func collectAgentFrame(frame rpcFrame, raw json.RawMessage, result *codingagent.Result, role codingagent.Role) (bool, error) {
 	var params struct {
@@ -280,5 +339,16 @@ func nativeAgentFailure(detail *agentNativeError) error {
 		}
 		message += "...[truncated]"
 	}
-	return fmt.Errorf("%s", message)
+	retryable := false
+	if detail != nil && len(detail.CodexErrorInfo) != 0 {
+		var kinds map[string]json.RawMessage
+		if json.Unmarshal(detail.CodexErrorInfo, &kinds) == nil {
+			for _, kind := range []string{"serverOverloaded", "httpConnectionFailed", "rateLimitExceeded"} {
+				if _, present := kinds[kind]; present {
+					retryable = true
+				}
+			}
+		}
+	}
+	return &agentInferenceFailure{message: message, retryable: retryable}
 }

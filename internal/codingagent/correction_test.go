@@ -40,6 +40,11 @@ func TestRejectedProposalsReturnToTheirOwnRoleWithConcreteNotes(t *testing.T) {
 		}
 		return result, err
 	})
+	workload, err := controller.Propose(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	controller.ApprovedWorkload = &workload
 	if err := controller.Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -50,13 +55,13 @@ func TestRejectedProposalsReturnToTheirOwnRoleWithConcreteNotes(t *testing.T) {
 	for _, entry := range journal.entries {
 		phases[entry.Phase]++
 	}
-	if phases["plan_rejected"] != 1 || phases["review_rejected"] != 1 || phases["plan_frozen"] != 1 || phases["overall_accepted"] != 1 {
+	if phases["plan_rejected"] != 1 || phases["review_rejected"] != 1 || phases["plan_proposed"] != 1 || phases["overall_accepted"] != 1 {
 		t.Fatalf("invalid proposal changed accepted authority: %v", phases)
 	}
 }
 
 func TestFileWriterRequiresExactTaskGrantAndActiveContext(t *testing.T) {
-	writer := taskFileWriter{environment: fixtureEnvironment{}, files: []string{"allowed.txt"}}
+	writer := taskFileWriter{environment: fixtureEnvironment{}, files: []string{"allowed.txt"}, deletes: []string{"obsolete.txt"}}
 	for _, path := range []string{"other.txt", "../allowed.txt", ".git/config"} {
 		if err := writer.WriteFile(context.Background(), FileWrite{Path: path, Content: "effect"}); err == nil {
 			t.Fatalf("ungranted write %s accepted", path)
@@ -66,6 +71,14 @@ func TestFileWriterRequiresExactTaskGrantAndActiveContext(t *testing.T) {
 	cancel()
 	if err := writer.WriteFile(ctx, FileWrite{Path: "allowed.txt", Content: "effect"}); err == nil {
 		t.Fatal("canceled writer accepted an effect")
+	}
+	for _, path := range []string{"allowed.txt", "../obsolete.txt", ".git/config"} {
+		if err := writer.DeleteFile(context.Background(), FileDelete{Path: path, ExpectedContent: "old"}); err == nil {
+			t.Fatalf("ungranted delete %s accepted", path)
+		}
+	}
+	if err := writer.DeleteFile(ctx, FileDelete{Path: "obsolete.txt", ExpectedContent: "old"}); err == nil {
+		t.Fatal("canceled writer accepted a deletion")
 	}
 }
 

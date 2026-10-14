@@ -71,6 +71,27 @@ func TestAgentReviewReferencesPreserveTypedVerification(t *testing.T) {
 	}
 }
 
+func TestAgentReviewReferencesAcceptNativeReviewCommentHeading(t *testing.T) {
+	task := codingagent.Task{ID: "schedule", Acceptance: []string{"Total duration is exact."}}
+	call := codingagent.Assignment{Role: codingagent.Review, Task: &task}
+	raw := json.RawMessage(`{"findings":[{"task_id":"task_1","requirement":"criterion_1","file":"schedule.go:61","observation":"The total wraps."}],"questions":[]}
+
+Review comment:
+
+- [P2] Prevent overflow in total_duration — schedule.go:61`)
+	mapped, err := mapAgentReviewResult(call, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var review codingagent.ReviewResult
+	if err := json.Unmarshal(mapped, &review); err != nil {
+		t.Fatal(err)
+	}
+	if len(review.Findings) != 1 || !strings.Contains(review.Findings[0].Observation, "Prevent overflow") {
+		t.Fatalf("native review comment was lost: %+v", review)
+	}
+}
+
 func TestAgentReviewReferencesRejectUnreferencedNativeFinding(t *testing.T) {
 	task := codingagent.Task{ID: "task-a", Acceptance: []string{"Behavior remains exact."}}
 	call := codingagent.Assignment{Role: codingagent.Review, Task: &task}

@@ -28,7 +28,7 @@ func TestPlanningActivityRequiresExactPublicFactContract(t *testing.T) {
 		{Schema: 1, Kind: "thinking", Subject: "Invented native thought"},
 		{Schema: 1, Kind: "candidate_started"},
 		{Schema: 1, Kind: "candidate_started", Subject: " leading space"},
-		{Schema: 1, Kind: "candidate_started", Subject: strings.Repeat("x", MaxCodingPlanStatementBytes+1)},
+		{Schema: 1, Kind: "candidate_started", Subject: strings.Repeat("x", MaxPlanningCandidateSubjectBytes+1)},
 		{Schema: 1, Kind: "candidate_started", Subject: "two\nlines"},
 		{Schema: 1, Kind: "candidate_started", Subject: "\xff"},
 		{Schema: 1, Kind: "candidate_resolved", Subject: "An outcome.", Outcome: "native-approved"},

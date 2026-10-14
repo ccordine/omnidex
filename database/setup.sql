@@ -879,7 +879,7 @@ BEGIN
                  AND waiting.attempt=(answer.payload_json->>'waiting_attempt')::bigint
                  AND waiting.status='waiting_input'
                WHERE step.id=NEW.result_step_id AND step.job_id=NEW.job_id
-                 AND step.generation=NEW.result_generation AND step.action='v3_coding'
+                 AND step.generation=NEW.result_generation AND step.action IN ('v3_coding_plan','v3_coding')
                  AND step.status='running' AND job.metadata->'coding_execution'->>'mode'='agents'
                  AND answer.kind='coding_agent' AND question.kind='coding_agent'
                  AND answer.payload_json->>'generation'=NEW.result_generation::TEXT
@@ -9633,7 +9633,7 @@ CREATE TABLE coding_plan_leaves (
         leaf_id ~ '^coding_plan_leaf_[0-9a-f]{32}$'
     ),
     CONSTRAINT coding_plan_leaves_statement_check CHECK (
-        octet_length(statement) BETWEEN 1 AND 1024 AND statement=btrim(statement)
+        octet_length(statement) BETWEEN 1 AND 8192 AND statement=btrim(statement)
     ),
     CONSTRAINT coding_plan_leaves_sort_check CHECK (sort_index BETWEEN 0 AND 29),
     CONSTRAINT coding_plan_leaves_decision_check CHECK (decision IN ('pending','approved','rejected')),
@@ -9678,56 +9678,6 @@ CREATE INDEX idx_coding_plans_current_review
 CREATE INDEX idx_coding_plan_leaves_decision
     ON coding_plan_leaves(job_id,generation,decision,sort_index);
 
-CREATE FUNCTION coding_agent_plan_finalization_matches_current_authority(
-    plan_job_id BIGINT, plan_generation BIGINT
-) RETURNS boolean
-    LANGUAGE sql STABLE
-    AS $$
-    SELECT EXISTS (
-        SELECT 1 FROM coding_plans AS plan
-        JOIN jobs AS job ON job.id=plan.job_id
-        JOIN job_steps AS step ON step.id=plan.plan_step_id AND step.job_id=plan.job_id
-          AND step.generation=plan.generation
-        JOIN job_step_attempts AS attempt ON attempt.job_id=step.job_id
-          AND attempt.step_id=step.id AND attempt.generation=step.generation
-          AND attempt.attempt=step.current_attempt
-        JOIN evidence AS receipt ON receipt.job_id=plan.job_id AND receipt.step_id=step.id
-        WHERE plan.job_id=plan_job_id AND plan.generation=plan_generation
-          AND plan.state='frozen' AND job.current_generation=plan.generation
-          AND job.status='running' AND job.metadata->'coding_execution'->>'mode'='agents'
-          AND step.action='v3_coding_plan' AND step.status='completed'
-          AND step.superseded_at_generation IS NULL AND attempt.status='completed'
-          AND receipt.kind='coding_agent' AND receipt.payload_json->>'phase'='requirements_frozen'
-          AND receipt.payload_json->>'generation'=plan.generation::TEXT
-          AND receipt.payload_json->'delegation'=job.metadata->'coding_execution'
-          AND receipt.payload_json->'authority'=jsonb_build_object(
-            'job_id',plan.job_id,'generation',plan.generation,'step_id',step.id,
-            'attempt',attempt.attempt,'worker_id',attempt.worker_id)
-          AND receipt.payload_json->'snapshot'=jsonb_build_object(
-            'job_id',plan.job_id,'generation',plan.generation,'revision',plan.revision,'state',plan.state,
-            'leaves',(SELECT jsonb_agg(jsonb_build_object('id',leaf.leaf_id,
-                'statement',leaf.statement,'decision',leaf.decision) ORDER BY leaf.sort_index)
-              FROM coding_plan_leaves AS leaf
-              WHERE leaf.job_id=plan.job_id AND leaf.generation=plan.generation))
-          AND jsonb_array_length(receipt.payload_json->'input_leaves')=(
-              SELECT COUNT(*) FROM coding_plan_leaves
-              WHERE job_id=plan.job_id AND generation=plan.generation)
-          AND NOT EXISTS (
-            SELECT 1 FROM jsonb_array_elements(receipt.payload_json->'input_leaves')
-              WITH ORDINALITY AS input(value,position)
-            LEFT JOIN coding_plan_leaves AS leaf ON leaf.job_id=plan.job_id
-              AND leaf.generation=plan.generation AND leaf.sort_index=input.position-1
-            WHERE leaf.leaf_id IS NULL OR input.value->>'id' IS DISTINCT FROM leaf.leaf_id
-              OR input.value->>'statement' IS DISTINCT FROM leaf.statement
-              OR input.value->>'result_schema' IS DISTINCT FROM leaf.result_schema
-              OR input.value->>'result_relation' IS DISTINCT FROM leaf.result_relation
-              OR input.value->>'decision_origin_generation' IS DISTINCT FROM leaf.decision_origin_generation::TEXT
-              OR (CASE input.value->>'decision' WHEN 'pending' THEN 'approved'
-                    ELSE input.value->>'decision' END) IS DISTINCT FROM leaf.decision
-          )
-    );
-$$;
-
 CREATE FUNCTION coding_plan_result_matches_current_authority(
     plan_job_id BIGINT,
     plan_generation BIGINT,
@@ -9758,8 +9708,7 @@ CREATE FUNCTION coding_plan_result_matches_current_authority(
               FROM coding_plan_leaves AS leaf
               WHERE leaf.job_id=plan.job_id AND leaf.generation=plan.generation
           )
-    ) OR (operation_kind IN ('coding_plan_decisions','coding_plan_freeze') AND
-          coding_agent_plan_finalization_matches_current_authority(plan_job_id,plan_generation));
+    );
 $$;
 
 CREATE FUNCTION validate_coding_plan_update() RETURNS trigger
@@ -9926,11 +9875,6 @@ DECLARE
     plan_step_superseded_at_generation BIGINT;
     job_status TEXT;
 BEGIN
-    -- A delegated Store transaction inserts review and freezes before committing.
-    -- Its earlier deferred insert event is covered by the exact final receipt.
-    IF NEW.state='review' AND coding_agent_plan_finalization_matches_current_authority(NEW.job_id,NEW.generation) THEN
-        RETURN NULL;
-    END IF;
     SELECT status,superseded_at_generation
       INTO plan_step_status,plan_step_superseded_at_generation
       FROM job_steps
@@ -9973,6 +9917,22 @@ BEGIN
       FROM coding_plans
       WHERE job_id=NEW.job_id AND generation=NEW.generation;
     IF NOT FOUND THEN
+		IF NEW.status='waiting_input' AND EXISTS (
+			SELECT 1
+			FROM jobs AS job
+			JOIN evidence AS question
+			  ON question.job_id=job.id AND question.step_id=NEW.id
+			WHERE job.id=NEW.job_id AND job.current_generation=NEW.generation
+			  AND job.status='waiting_input'
+			  AND job.metadata->'coding_execution'->>'mode'='agents'
+			  AND question.kind='coding_agent'
+			  AND question.payload_json->>'generation'=NEW.generation::text
+			  AND question.payload_json->>'phase'='questions'
+			  AND jsonb_typeof(question.payload_json->'questions')='array'
+			  AND jsonb_array_length(question.payload_json->'questions')>0
+		) THEN
+			RETURN NULL;
+		END IF;
         IF NEW.status IN ('waiting_input','completed') THEN
             RAISE EXCEPTION 'coding plan review step cannot wait or complete without a persisted plan';
         END IF;

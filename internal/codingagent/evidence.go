@@ -46,6 +46,7 @@ type Environment interface {
 	PrepareFiles(context.Context, Task) error
 	Attest(context.Context) error
 	WriteFile(context.Context, FileWrite) error
+	DeleteFile(context.Context, FileDelete) error
 }
 
 type QuestionsPending struct{ Questions []string }

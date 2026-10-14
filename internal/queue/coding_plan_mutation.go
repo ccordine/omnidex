@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
 )
@@ -206,14 +207,14 @@ func (r *Repository) FreezeCodingPlan(
 			ErrCodingPlanRevision, revision, command.Revision,
 		)
 	}
-	var pending, approved int
+	var pending, approved, total int
 	if err := tx.QueryRow(ctx, `
 		SELECT COUNT(*) FILTER (WHERE decision=$3),
-		       COUNT(*) FILTER (WHERE decision=$4)
+		       COUNT(*) FILTER (WHERE decision=$4),COUNT(*)
 		FROM coding_plan_leaves
 		WHERE job_id=$1 AND generation=$2
 	`, command.JobID, command.Generation,
-		model.CodingPlanDecisionPending, model.CodingPlanDecisionApproved).Scan(&pending, &approved); err != nil {
+		model.CodingPlanDecisionPending, model.CodingPlanDecisionApproved).Scan(&pending, &approved, &total); err != nil {
 		return CodingPlanMutationResult{}, err
 	}
 	if pending != 0 {
@@ -224,6 +225,15 @@ func (r *Repository) FreezeCodingPlan(
 	if approved == 0 {
 		return CodingPlanMutationResult{}, fmt.Errorf(
 			"%w: coding plan requires at least one approved leaf", ErrCodingPlanState,
+		)
+	}
+	configuration, err := codingagent.ConfigurationFromMetadata(job.Metadata)
+	if err != nil {
+		return CodingPlanMutationResult{}, err
+	}
+	if configuration.Mode == codingagent.Agents && approved != total {
+		return CodingPlanMutationResult{}, fmt.Errorf(
+			"%w: Agents mode requires explicit approval of the complete proposed workload", ErrCodingPlanState,
 		)
 	}
 	result, err := tx.Exec(ctx, `
@@ -237,6 +247,11 @@ func (r *Repository) FreezeCodingPlan(
 	}
 	if result.RowsAffected() != 1 {
 		return CodingPlanMutationResult{}, fmt.Errorf("%w: coding plan changed during freeze", ErrCodingPlanRevision)
+	}
+	if configuration.Mode == codingagent.Agents {
+		if err := freezeCodingAgentWorkloadTx(ctx, tx, job.ID, command.Generation, planStepID); err != nil {
+			return CodingPlanMutationResult{}, err
+		}
 	}
 	result, err = tx.Exec(ctx, `
 		UPDATE job_steps

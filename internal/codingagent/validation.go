@@ -3,20 +3,22 @@ package codingagent
 import (
 	"fmt"
 	"strings"
+
+	"github.com/gryph/omnidex/internal/model"
 )
 
 func (workload Workload) Validate() error {
 	if len(workload.Questions) > 0 {
 		return fmt.Errorf("a frozen workload cannot contain unanswered planning questions")
 	}
-	if len(workload.Tasks) == 0 {
-		return fmt.Errorf("agent plan contains no tasks")
+	if len(workload.Tasks) == 0 || len(workload.Tasks) > model.MaxCodingPlanLeaves {
+		return fmt.Errorf("agent plan must contain between 1 and %d tasks", model.MaxCodingPlanLeaves)
 	}
 	known := map[string]bool{}
 	writers := map[string]string{}
 	for _, task := range workload.Tasks {
-		if task.ID == "" || known[task.ID] || strings.TrimSpace(task.Goal) == "" || len(task.Acceptance) == 0 || len(task.WriteFiles) == 0 {
-			return fmt.Errorf("agent task requires one unique identity, goal, acceptance and write scope")
+		if task.ID == "" || known[task.ID] || strings.TrimSpace(task.Goal) == "" || len(task.Acceptance) == 0 || len(task.WriteFiles)+len(task.DeleteFiles) == 0 {
+			return fmt.Errorf("agent task requires one unique identity, goal, acceptance and mutation scope")
 		}
 		if err := validateTextList(task.Acceptance, "acceptance"); err != nil {
 			return err
@@ -26,9 +28,14 @@ func (workload Workload) Validate() error {
 				return fmt.Errorf("task %s has unknown or unordered dependency %s", task.ID, dependency)
 			}
 		}
-		for _, file := range append(append([]string{}, task.ReadFiles...), task.WriteFiles...) {
+		for _, file := range append(append(append([]string{}, task.ReadFiles...), task.WriteFiles...), task.DeleteFiles...) {
 			if err := ValidatePath(file); err != nil {
 				return err
+			}
+		}
+		for _, file := range task.DeleteFiles {
+			if contains(task.WriteFiles, file) || contains(task.ReadFiles, file) {
+				return fmt.Errorf("task %s gives file %s contradictory read, write or delete authority", task.ID, file)
 			}
 		}
 		for _, file := range task.WriteFiles {
@@ -37,7 +44,16 @@ func (workload Workload) Validate() error {
 			}
 			writers[file] = task.ID
 		}
+		for _, file := range task.DeleteFiles {
+			if writer := writers[file]; writer != "" && !contains(task.Dependencies, writer) {
+				return fmt.Errorf("task %s deletes file %s without depending on %s", task.ID, file, writer)
+			}
+			writers[file] = task.ID
+		}
 		if err := validateChecks(task.Checks); err != nil {
+			return err
+		}
+		if _, err := PlanTaskStatement(task); err != nil {
 			return err
 		}
 		known[task.ID] = true
@@ -69,7 +85,7 @@ func ValidateReview(taskIDs map[string]Task, result ReviewResult, requirements .
 		if !bound {
 			return fmt.Errorf("review cannot introduce a new acceptance requirement")
 		}
-		if finding.File != "" && !contains(task.WriteFiles, finding.File) && !contains(task.ReadFiles, finding.File) {
+		if finding.File != "" && !contains(task.WriteFiles, finding.File) && !contains(task.ReadFiles, finding.File) && !contains(task.DeleteFiles, finding.File) {
 			return fmt.Errorf("review finding refers to an ungranted file")
 		}
 	}

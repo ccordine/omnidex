@@ -29,7 +29,7 @@ func (repository *Repository) CodingAgentIntakeContext(ctx context.Context, auth
 		return nil, err
 	}
 	var raw []byte
-	if err := tx.QueryRow(ctx, `SELECT receipt.payload_json->'intake_context' FROM coding_plans plan JOIN evidence receipt ON receipt.job_id=plan.job_id AND receipt.step_id=plan.plan_step_id AND receipt.kind='coding_agent' AND receipt.payload_json->>'phase'='requirements_frozen' AND receipt.payload_json->>'generation'=plan.generation::text WHERE plan.job_id=$1 AND plan.generation=$2 AND plan.state='frozen'`, authority.JobID, authority.Generation).Scan(&raw); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT receipt.payload_json->'intake_context' FROM coding_plans plan JOIN evidence receipt ON receipt.job_id=plan.job_id AND receipt.step_id=plan.plan_step_id AND receipt.kind='coding_agent' AND receipt.payload_json->>'phase'='plan_review_ready' AND receipt.payload_json->>'generation'=plan.generation::text WHERE plan.job_id=$1 AND plan.generation=$2 AND plan.state='frozen'`, authority.JobID, authority.Generation).Scan(&raw); err != nil {
 		return nil, err
 	}
 	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {

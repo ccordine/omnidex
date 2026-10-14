@@ -145,7 +145,7 @@ func TestRenderPlanReviewEscapesTerminalControlText(t *testing.T) {
 		strings.ContainsRune(rendered, '\u202e') || strings.Contains(rendered, "first line\nsecond") {
 		t.Fatalf("render contains raw terminal control text: %q", rendered)
 	}
-	if escaped := `first line\nsecond\t\x1b[2J\u009b31m\u202ereversed`; !strings.Contains(rendered, escaped) {
+	if escaped := "first line\n      second\\t\\x1b[2J\\u009b31m\\u202ereversed"; !strings.Contains(rendered, escaped) {
 		t.Errorf("safe render lacks %q: %q", escaped, rendered)
 	}
 }

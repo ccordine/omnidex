@@ -1,6 +1,7 @@
 package codex
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -144,6 +145,79 @@ func decodeAgentTestFrame(t *testing.T, raw string) rpcFrame {
 	return frame
 }
 
+func TestNativeUserInputRequestUsesDurableQuestionContract(t *testing.T) {
+	id := 9
+	frame := rpcFrame{ID: &id, Method: "item/tool/requestUserInput", Params: json.RawMessage(`{
+		"threadId":"thread","turnId":"turn","itemId":"question-item","isBlocking":true,"autoResolutionMs":null,
+		"questions":[
+			{"header":"Toolchain","id":"toolchain","question":"Which toolchain policy should apply?","options":[{"label":"Local","description":"Use the installed compiler offline."},{"label":"Exact","description":"Require Go 1.25 itself."}]},
+			{"header":"Scope","id":"scope","question":"Should documentation be included?","options":null}
+		]
+	}`)}
+	result := codingagent.Result{ThreadID: "thread", TurnID: "turn"}
+	questions, handled, err := mapAgentUserInputRequest(codingagent.Assignment{Role: codingagent.Plan}, frame, &result)
+	if err != nil || !handled || !reflect.DeepEqual(questions, []string{
+		"Which toolchain policy should apply? Options: Local — Use the installed compiler offline.; Exact — Require Go 1.25 itself.",
+		"Should documentation be included?",
+	}) {
+		t.Fatalf("native questions=%#v handled=%v error=%v", questions, handled, err)
+	}
+	content, err := agentQuestionResult(codingagent.Plan, questions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var workload codingagent.Workload
+	if err := json.Unmarshal(content, &workload); err != nil || len(workload.Tasks) != 0 || len(workload.Checks) != 0 || !reflect.DeepEqual(workload.Questions, questions) {
+		t.Fatalf("planning question result=%s error=%v", content, err)
+	}
+
+	for _, mutation := range []func(*rpcFrame){
+		func(frame *rpcFrame) {
+			frame.Params = json.RawMessage(strings.ReplaceAll(string(frame.Params), `"thread"`, `"foreign"`))
+		},
+		func(frame *rpcFrame) {
+			frame.Params = json.RawMessage(strings.ReplaceAll(string(frame.Params), `"isBlocking":true`, `"isBlocking":false`))
+		},
+		func(frame *rpcFrame) {
+			frame.Params = json.RawMessage(strings.ReplaceAll(string(frame.Params), `"id":"scope"`, `"id":"toolchain"`))
+		},
+		func(frame *rpcFrame) {
+			frame.Params = json.RawMessage(strings.ReplaceAll(string(frame.Params), `"isBlocking":true`, `"isBlocking":true,"extra":1`))
+		},
+		func(frame *rpcFrame) {
+			frame.Params = json.RawMessage(strings.ReplaceAll(string(frame.Params), `"header":"Scope"`, `"header":"Scope","isSecret":true`))
+		},
+	} {
+		invalid := frame
+		mutation(&invalid)
+		if _, handled, err := mapAgentUserInputRequest(codingagent.Assignment{Role: codingagent.Plan}, invalid, &result); !handled || err == nil {
+			t.Fatalf("invalid native question accepted: %s", invalid.Params)
+		}
+	}
+}
+
+func TestAgentTransportAllowsOnlyBoundToolsAndUserQuestions(t *testing.T) {
+	for _, fixture := range []struct {
+		name    string
+		method  string
+		wantErr bool
+	}{
+		{name: "scoped file tool", method: "item/tool/call"},
+		{name: "durable user question", method: "item/tool/requestUserInput"},
+		{name: "command approval", method: "item/commandExecution/requestApproval", wantErr: true},
+		{name: "foreign client tool", method: "mcpServer/elicitation/request", wantErr: true},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			scanner := bufio.NewScanner(strings.NewReader(`{"id":1,"method":"` + fixture.method + `","params":{}}` + "\n"))
+			connection := &connection{output: scanner}
+			_, err := connection.nextAgent()
+			if (err != nil) != fixture.wantErr {
+				t.Fatalf("method %s error=%v", fixture.method, err)
+			}
+		})
+	}
+}
+
 func TestAgentNativeReceiptsRejectForeignIncompleteAndUngrantableEvents(t *testing.T) {
 	for _, raw := range []string{
 		`{"method":"item/completed","params":{"threadId":"foreign","turnId":"turn","item":{"type":"agentMessage","phase":"final_answer","text":"{\"questions\":[]}"}}}`,
@@ -232,12 +306,48 @@ func TestNativeReviewExitClosesItsMessagePlaceholder(t *testing.T) {
 		t.Fatalf("native review placeholder remained open: %v", open)
 	}
 
-	open = map[string]string{}
-	for _, id := range []string{"first", "second"} {
-		raw := `{"method":"item/started","params":{"item":{"id":"` + id + `","type":"agentMessage"}}}`
-		if err := validateAgentItems(decodeAgentTestFrame(t, raw), codingagent.Review, open); err != nil {
-			t.Fatal(err)
-		}
+	// Native review commentary is delivered as complete message starts. The
+	// server does not send item/completed for those messages before it starts
+	// the final-answer placeholder whose body is carried by exitedReviewMode.
+	// Both the ordinary and overall-review roles must account for that observed
+	// lifecycle without treating an unrelated message phase as completed.
+	for _, fixture := range []struct {
+		name string
+		role codingagent.Role
+		ids  []string
+	}{
+		{name: "review commentary", role: codingagent.Review, ids: []string{"progress", "final"}},
+		{name: "overall review commentary sequence", role: codingagent.OverallReview, ids: []string{"initial", "followup", "final"}},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			open := map[string]string{}
+			for index, id := range fixture.ids {
+				phase := "commentary"
+				if index == len(fixture.ids)-1 {
+					phase = "final_answer"
+				}
+				raw := `{"method":"item/started","params":{"item":{"id":"` + id + `","type":"agentMessage","phase":"` + phase + `"}}}`
+				if err := validateAgentItems(decodeAgentTestFrame(t, raw), fixture.role, open); err != nil {
+					t.Fatal(err)
+				}
+			}
+			start := `{"method":"item/started","params":{"item":{"id":"review","type":"exitedReviewMode"}}}`
+			complete := `{"method":"item/completed","params":{"item":{"id":"review","type":"exitedReviewMode","status":"completed"}}}`
+			if err := validateAgentItems(decodeAgentTestFrame(t, start), fixture.role, open); err != nil {
+				t.Fatal(err)
+			}
+			if err := validateAgentItems(decodeAgentTestFrame(t, complete), fixture.role, open); err != nil {
+				t.Fatal(err)
+			}
+			if len(open) != 0 {
+				t.Fatalf("native review placeholders remained open: %v", open)
+			}
+		})
+	}
+
+	open = map[string]string{
+		"first":  nativeItemState("agentMessage", "final_answer"),
+		"second": nativeItemState("agentMessage", "final_answer"),
 	}
 	start := `{"method":"item/started","params":{"item":{"id":"review","type":"exitedReviewMode"}}}`
 	complete := `{"method":"item/completed","params":{"item":{"id":"review","type":"exitedReviewMode","status":"completed"}}}`
@@ -246,6 +356,42 @@ func TestNativeReviewExitClosesItsMessagePlaceholder(t *testing.T) {
 	}
 	if err := validateAgentItems(decodeAgentTestFrame(t, complete), codingagent.Review, open); err == nil {
 		t.Fatal("native review exit hid multiple incomplete messages")
+	}
+
+	open = map[string]string{"unknown": nativeItemState("agentMessage", "custom")}
+	if err := validateAgentItems(decodeAgentTestFrame(t, start), codingagent.Review, open); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateAgentItems(decodeAgentTestFrame(t, complete), codingagent.Review, open); err == nil {
+		t.Fatal("native review exit hid an unknown unfinished message phase")
+	}
+}
+
+func TestNativeStructuredFinalAnswerReplacementClosesSupersededItem(t *testing.T) {
+	open := map[string]string{}
+	frames := []string{
+		`{"method":"item/started","params":{"item":{"id":"truncated","type":"agentMessage","phase":"final_answer"}}}`,
+		`{"method":"item/agentMessage/delta","params":{"itemId":"truncated","delta":"partial"}}`,
+		`{"method":"item/started","params":{"item":{"id":"replacement","type":"agentMessage","phase":"final_answer"}}}`,
+		`{"method":"item/agentMessage/delta","params":{"itemId":"replacement","delta":"complete"}}`,
+		`{"method":"item/completed","params":{"item":{"id":"replacement","type":"agentMessage","phase":"final_answer","status":"completed"}}}`,
+	}
+	for _, raw := range frames {
+		if err := validateAgentItems(decodeAgentTestFrame(t, raw), codingagent.Plan, open); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(open) != 0 {
+		t.Fatalf("superseded structured answer remained open: %v", open)
+	}
+
+	open = map[string]string{
+		"first":  nativeItemState("agentMessage", "final_answer"),
+		"second": nativeItemState("agentMessage", "final_answer"),
+	}
+	replacement := `{"method":"item/started","params":{"item":{"id":"third","type":"agentMessage","phase":"final_answer"}}}`
+	if err := validateAgentItems(decodeAgentTestFrame(t, replacement), codingagent.Plan, open); err == nil {
+		t.Fatal("replacement hid multiple incomplete final answers")
 	}
 }
 
@@ -273,6 +419,10 @@ type agentTestFileWriter func(context.Context, codingagent.FileWrite) error
 
 func (writer agentTestFileWriter) WriteFile(ctx context.Context, edit codingagent.FileWrite) error {
 	return writer(ctx, edit)
+}
+
+func (writer agentTestFileWriter) DeleteFile(context.Context, codingagent.FileDelete) error {
+	return nil
 }
 
 func TestAgentFileWriteRejectsMalformedArgumentsBeforeSideEffects(t *testing.T) {
@@ -324,5 +474,29 @@ func TestAgentFileWriteRejectsMalformedArgumentsBeforeSideEffects(t *testing.T) 
 	}
 	if _, err := decodeAgentFileWrite(json.RawMessage(`{"path":"source.go","content":"","expected_content":""} {}`)); err == nil {
 		t.Fatal("trailing native arguments were accepted")
+	}
+}
+
+func TestAgentFileDeleteRequiresExactPathAndExpectedContent(t *testing.T) {
+	for _, arguments := range []string{
+		`null`, `[]`, `{}`,
+		`{"path":"source.go"}`,
+		`{"expected_content":"original"}`,
+		`{"path":null,"expected_content":"original"}`,
+		`{"path":"source.go","expected_content":null}`,
+		`{"path":"source.go","expected_content":1}`,
+		`{"path":"source.go","expected_content":"original","extra":true}`,
+		`{"path":"source.go","path":"other.go","expected_content":"original"}`,
+	} {
+		if _, err := decodeAgentFileDelete(json.RawMessage(arguments)); err == nil {
+			t.Fatalf("malformed deletion accepted: %s", arguments)
+		}
+	}
+	deletion, err := decodeAgentFileDelete(json.RawMessage(`{"path":"source.go","expected_content":""}`))
+	if err != nil || deletion.Path != "source.go" || deletion.ExpectedContent != "" {
+		t.Fatalf("valid deletion rejected: deletion=%+v error=%v", deletion, err)
+	}
+	if _, err := decodeAgentFileDelete(json.RawMessage(`{"path":"source.go","expected_content":""} {}`)); err == nil {
+		t.Fatal("trailing deletion arguments were accepted")
 	}
 }

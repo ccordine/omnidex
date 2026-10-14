@@ -3,6 +3,7 @@ package queue
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -29,7 +30,8 @@ func readCurrentCodingAgentPauseTx(ctx context.Context, tx pgx.Tx, job model.Job
 	}
 	if !slices.ContainsFunc(steps, func(step model.Step) bool {
 		return step.JobID == job.ID && step.Generation == job.CurrentGeneration &&
-			step.SupersededAtGeneration == nil && step.Action == "v3_coding" && step.Status == model.StepStatusWaiting
+			step.SupersededAtGeneration == nil &&
+			(step.Action == "v3_coding_plan" || step.Action == "v3_coding") && step.Status == model.StepStatusWaiting
 	}) {
 		return nil, nil
 	}
@@ -41,7 +43,11 @@ func readCurrentCodingAgentPauseTx(ctx context.Context, tx pgx.Tx, job model.Job
 	case jobGenerationPurposeInterrupt:
 		return nil, nil
 	case jobGenerationPurposeInitial, jobGenerationPurposeReplan:
-		return readCodingAgentPause(ctx, tx, job.ID, job.CurrentGeneration)
+		pause, err := readCodingAgentPause(ctx, tx, job.ID, job.CurrentGeneration)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return pause, err
 	default:
 		return nil, fmt.Errorf("%w: job %d generation %d has unregistered purpose %q", ErrInvalidJobGeneration, job.ID, job.CurrentGeneration, purpose)
 	}
@@ -55,7 +61,7 @@ func readCodingAgentPause(ctx context.Context, querier codingAgentPauseQuerier, 
 	 JOIN job_step_attempts attempt ON attempt.step_id=step.id AND attempt.attempt=step.current_attempt
 	 JOIN LATERAL (SELECT payload_json FROM evidence WHERE job_id=job.id AND step_id=step.id AND kind='coding_agent' AND payload_json->>'generation'=job.current_generation::text AND payload_json->>'phase'='questions' ORDER BY id DESC LIMIT 1) question ON TRUE
 	 WHERE job.id=$1 AND job.current_generation=$2 AND job.status='waiting_input'
-	 AND job.metadata->'coding_execution'->>'mode'='agents' AND step.action='v3_coding'
+	 AND job.metadata->'coding_execution'->>'mode'='agents' AND step.action IN ('v3_coding_plan','v3_coding')
 	 AND step.status='waiting_input' AND step.superseded_at_generation IS NULL AND attempt.status='waiting_input'`, jobID, generation).Scan(&pause.Generation, &pause.StepID, &pause.WaitingAttempt, &questions)
 	if err != nil {
 		return nil, err

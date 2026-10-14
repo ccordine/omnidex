@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/codingagent"
-	"github.com/gryph/omnidex/internal/model"
 )
 
 func TestCodingAgentFeedbackBindsObservedGenerationAndReplaysAfterReplan(t *testing.T) {
@@ -38,10 +37,8 @@ func TestCodingAgentFeedbackBindsObservedGenerationAndReplaysAfterReplan(t *test
 	if err != nil || planner == nil {
 		t.Fatalf("second planning: %v %v", planner, err)
 	}
-	leaf := codingPlanExecutableLeaf(t, "The second approved behavior works.", model.CodingPlanDecisionPending, 2)
-	if _, err := repository.StoreCodingPlanReview(ctx, StoreCodingPlanReviewCommand{Authority: planner.Authority, Leaves: []CodingPlanLeafWrite{leaf}}); err != nil {
-		t.Fatal(err)
-	}
+	planCommand, _ := codingAgentPlanReviewFixture(t, repository, planner, "The second approved behavior works.")
+	freezeCodingAgentPlanFixture(t, repository, accepted.Job, planCommand)
 	executor, err := repository.ClaimNextStep(ctx, "generation-two-executor-fixture")
 	if err != nil || executor == nil {
 		t.Fatalf("second execution: %v %v", executor, err)

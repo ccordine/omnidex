@@ -14,12 +14,9 @@ import (
 func TestActiveMessageIntakePreventsNativeQuestionPauseUntilResolved(t *testing.T) {
 	_, repository := freshCodingPlanRepository(t)
 	ctx := context.Background()
-	planner, session, leaf := messagePausePlannerClaim(t, repository, codingagent.Agents)
-	if _, err := repository.StoreCodingPlanReview(ctx, StoreCodingPlanReviewCommand{
-		Authority: planner.Authority, Leaves: []CodingPlanLeafWrite{leaf},
-	}); err != nil {
-		t.Fatal(err)
-	}
+	planner, session, _ := messagePausePlannerClaim(t, repository, codingagent.Agents)
+	planCommand, _ := codingAgentPlanReviewFixture(t, repository, planner, "The approved interaction works.")
+	freezeCodingAgentPlanFixture(t, repository, planner.Job, planCommand)
 	executor, err := repository.ClaimNextStep(ctx, "message-question-pause-fixture")
 	if err != nil || executor == nil || executor.Step.Action != "v3_coding" {
 		t.Fatalf("claim execution step: %#v %v", executor, err)
@@ -87,6 +84,19 @@ func TestActiveMessageIntakePreventsPlanReviewWaitUntilResolved(t *testing.T) {
 	if err != nil || replay.JobID != plan.JobID || replay.Generation != plan.Generation || replay.Revision != plan.Revision {
 		t.Fatalf("successful plan wait lost historical replay: %#v %v", replay, err)
 	}
+}
+
+func assertOriginalPlanningPause(t *testing.T, details model.JobDetails, planStepID int64) {
+	t.Helper()
+	if details.Job.Status != model.JobStatusWaiting || details.AgentPause != nil {
+		t.Fatal("ordinary plan review was presented as an Agent question")
+	}
+	for _, step := range details.Steps {
+		if step.ID == planStepID && step.Action == "v3_coding_plan" && step.Status == model.StepStatusWaiting {
+			return
+		}
+	}
+	t.Fatal("ordinary waiting plan step was not preserved")
 }
 
 func messagePausePlannerClaim(t *testing.T, repository *Repository, mode codingagent.Mode) (*model.ClaimedStep, ChannelSessionTurnCommand, CodingPlanLeafWrite) {

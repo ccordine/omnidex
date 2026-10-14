@@ -18,6 +18,11 @@ func normalizeStoreCodingPlanReviewCommand(
 			return StoreCodingPlanReviewCommand{}, err
 		}
 	}
+	if command.AgentWorkload != nil {
+		if err := command.AgentWorkload.Validate(); err != nil {
+			return StoreCodingPlanReviewCommand{}, fmt.Errorf("agent workload: %w", err)
+		}
+	}
 	if command.Leaves == nil || len(command.Leaves) > model.MaxCodingPlanLeaves {
 		return StoreCodingPlanReviewCommand{}, fmt.Errorf(
 			"coding plan leaves must be an array of at most %d entries",
@@ -69,14 +74,18 @@ func normalizeStoreCodingPlanReviewCommand(
 				"coding plan leaf %q is missing its execution receipt", write.Leaf.ID,
 			)
 		}
-		if err := write.ResultRelation.ValidateAcceptedFor(write.Leaf.Statement); err != nil {
-			return StoreCodingPlanReviewCommand{}, fmt.Errorf(
-				"coding plan leaf %q result relation: %w", write.Leaf.ID, err,
-			)
-		}
 	}
 	command.Leaves = append([]CodingPlanLeafWrite(nil), command.Leaves...)
 	return command, nil
+}
+
+func validateNormalCodingPlanReceipts(command StoreCodingPlanReviewCommand) error {
+	for _, write := range command.Leaves {
+		if err := write.ResultRelation.ValidateAcceptedFor(write.Leaf.Statement); err != nil {
+			return fmt.Errorf("coding plan leaf %q result relation: %w", write.Leaf.ID, err)
+		}
+	}
+	return nil
 }
 
 func normalizeApplyCodingPlanDecisionsCommand(

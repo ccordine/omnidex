@@ -16,6 +16,8 @@ func (controller *Controller) assignment(role Role, task *Task, route Route) Ass
 		call.ReadFiles = uniqueFiles(append(append([]string{}, task.ReadFiles...), task.WriteFiles...))
 		if role == Execute {
 			call.WriteFiles = append([]string{}, task.WriteFiles...)
+			call.DeleteFiles = append([]string{}, task.DeleteFiles...)
+			call.ReadFiles = uniqueFiles(append(call.ReadFiles, task.DeleteFiles...))
 		}
 	}
 	return call
@@ -48,6 +50,22 @@ func uniqueFiles(files []string) []string {
 }
 
 func (controller *Controller) invoke(ctx context.Context, call Assignment, round int64) (Result, error) {
+	var result Result
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		result, err = controller.invokeOnce(ctx, call, round)
+		if err == nil {
+			return result, nil
+		}
+		var transient interface{ Retryable() bool }
+		if !errors.As(err, &transient) || !transient.Retryable() {
+			return result, err
+		}
+	}
+	return result, fmt.Errorf("agent provider remained unavailable after 3 attempts: %w", err)
+}
+
+func (controller *Controller) invokeOnce(ctx context.Context, call Assignment, round int64) (Result, error) {
 	if err := call.ValidateTaskContext(); err != nil {
 		return Result{}, err
 	}
@@ -93,7 +111,7 @@ func (controller *Controller) invoke(ctx context.Context, call Assignment, round
 	}
 	var writer FileWriter
 	if call.Role == Execute {
-		writer = taskFileWriter{environment: controller.Environment, files: call.WriteFiles}
+		writer = taskFileWriter{environment: controller.Environment, files: call.WriteFiles, deletes: call.DeleteFiles}
 	}
 	frames := 0
 	result, runErr := provider.Run(ctx, providerCall, writer, func(event NativeEvent) error {
@@ -120,7 +138,7 @@ func (controller *Controller) invoke(ctx context.Context, call Assignment, round
 			for _, file := range activity.Paths {
 				granted := call.ReadFiles
 				if activity.Kind == model.AgentActivityFileEdit {
-					granted = call.WriteFiles
+					granted = append(append([]string{}, call.WriteFiles...), call.DeleteFiles...)
 				}
 				bound := false
 				for _, allowed := range granted {

@@ -3,7 +3,6 @@ package codingagent
 import (
 	"context"
 	"fmt"
-	"sort"
 
 	"github.com/gryph/omnidex/internal/model"
 )
@@ -17,6 +16,7 @@ type Controller struct {
 	ArtifactBindings    []ArtifactBinding
 	PlanningEnvironment *PlanningEnvironment
 	ConstructionFacts   []ConstructionFact
+	ApprovedWorkload    *Workload
 	Providers           map[string]Provider
 	Verifier            Verifier
 	Environment         Environment
@@ -26,7 +26,7 @@ type Controller struct {
 }
 
 func (controller *Controller) Run(ctx context.Context) error {
-	if err := controller.validate(); err != nil {
+	if err := controller.validateExecution(); err != nil {
 		return err
 	}
 	entries, err := controller.Evidence.Read(ctx)
@@ -78,6 +78,7 @@ func (controller *Controller) Run(ctx context.Context) error {
 		}
 		for _, finding := range review.Findings {
 			state.accepted[finding.TaskID] = false
+			state.started[finding.TaskID] = false
 			state.findings[finding.TaskID] = append(state.findings[finding.TaskID], finding)
 			if _, err := controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "task_reopened", TaskID: finding.TaskID, Findings: []Finding{finding}}); err != nil {
 				return err
@@ -99,8 +100,18 @@ func (controller *Controller) Run(ctx context.Context) error {
 }
 
 func (controller *Controller) validate() error {
-	if controller == nil || controller.JobID < 1 || controller.Generation < 1 || controller.Root == "" || controller.Verifier == nil || controller.Environment == nil || controller.Evidence == nil || len(controller.Requirements) == 0 {
-		return fmt.Errorf("agent controller lacks task, environment, verification or evidence authority")
+	if err := controller.validatePlanning(); err != nil {
+		return err
+	}
+	if controller.Verifier == nil {
+		return fmt.Errorf("agent controller lacks verification authority")
+	}
+	return nil
+}
+
+func (controller *Controller) validatePlanning() error {
+	if controller == nil || controller.JobID < 1 || controller.Generation < 1 || controller.Root == "" || controller.Environment == nil || controller.Evidence == nil || len(controller.Requirements) == 0 {
+		return fmt.Errorf("agent controller lacks task, environment or evidence authority")
 	}
 	if err := controller.Configuration.Validate(); err != nil {
 		return err
@@ -108,7 +119,20 @@ func (controller *Controller) validate() error {
 	if controller.Configuration.Mode != Agents {
 		return fmt.Errorf("agent controller requires explicit Agents mode")
 	}
-	for _, route := range []Route{controller.Configuration.Planner, controller.Configuration.Executor, controller.Configuration.Reviewer} {
+	if route := controller.Configuration.Planner; controller.Providers[route.Provider] == nil {
+		return fmt.Errorf("agent provider %q is not registered", route.Provider)
+	}
+	return nil
+}
+
+func (controller *Controller) validateExecution() error {
+	if err := controller.validate(); err != nil {
+		return err
+	}
+	if controller.ApprovedWorkload == nil {
+		return fmt.Errorf("agent execution requires one explicitly approved workload")
+	}
+	for _, route := range []Route{controller.Configuration.Executor, controller.Configuration.Reviewer} {
 		if controller.Providers[route.Provider] == nil {
 			return fmt.Errorf("agent provider %q is not registered", route.Provider)
 		}
@@ -117,33 +141,14 @@ func (controller *Controller) validate() error {
 }
 
 func (controller *Controller) frozenWorkload(ctx context.Context, entries []Entry) (Workload, error) {
-	for _, entry := range entries {
-		if entry.Phase == "plan_frozen" && entry.Workload != nil {
-			workload := *entry.Workload
-			if err := workload.Validate(); err != nil {
-				return Workload{}, err
-			}
-			if err := bindWorkloadRequirements(&workload, controller.Requirements); err != nil {
-				return Workload{}, err
-			}
-			return workload, nil
-		}
-	}
-	files, err := controller.Environment.ReadFiles(ctx)
-	if err != nil {
+	workload := *controller.ApprovedWorkload
+	if err := workload.Validate(); err != nil {
 		return Workload{}, err
 	}
-	sort.Strings(files)
-	call := controller.assignment(Plan, nil, controller.Configuration.Planner)
-	call.Requirements, call.ReadFiles = controller.Requirements, files
-	call.ArtifactBindings, call.PlanningEnvironment = controller.ArtifactBindings, controller.PlanningEnvironment
-	call.ConstructionFacts = controller.ConstructionFacts
-	for _, entry := range entries {
-		if entry.Phase == "plan_rejected" {
-			call.ValidationNotes = entry.Notes
-		}
+	if err := bindWorkloadRequirements(&workload, controller.Requirements); err != nil {
+		return Workload{}, err
 	}
-	return controller.plan(ctx, call)
+	return workload, nil
 }
 
 func checksPass(checks []CheckResult) bool {

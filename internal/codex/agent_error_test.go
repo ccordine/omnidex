@@ -55,6 +55,10 @@ func TestAgentNativeFinalFailurePersistsOriginalFrameAndReportsDetail(t *testing
 		if err == nil || finished || result.Completed {
 			t.Fatal("final native inference failure became accepted success")
 		}
+		var retryable interface{ Retryable() bool }
+		if !errors.As(err, &retryable) || !retryable.Retryable() {
+			t.Fatalf("provider capacity failure was not marked retryable: %v", err)
+		}
 		for _, detail := range []string{"The model is unavailable", "Choose an account-supported model", "httpStatusCode"} {
 			if !strings.Contains(err.Error(), detail) {
 				t.Fatalf("native failure lost actionable diagnostic %q: %v", detail, err)

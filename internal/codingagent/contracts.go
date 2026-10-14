@@ -67,6 +67,7 @@ type Task struct {
 	Acceptance     []string `json:"acceptance"`
 	ReadFiles      []string `json:"read_files"`
 	WriteFiles     []string `json:"write_files"`
+	DeleteFiles    []string `json:"delete_files"`
 	Dependencies   []string `json:"dependencies"`
 	RequirementIDs []string `json:"requirement_ids"`
 	Checks         []Check  `json:"checks"`
@@ -149,6 +150,7 @@ type Assignment struct {
 	Root                string               `json:"root"`
 	ReadFiles           []string             `json:"read_files"`
 	WriteFiles          []string             `json:"write_files"`
+	DeleteFiles         []string             `json:"delete_files"`
 	Route               Route                `json:"route"`
 }
 type Result struct {
@@ -178,8 +180,13 @@ type FileWrite struct {
 	Content         string `json:"content"`
 	ExpectedContent string `json:"expected_content"`
 }
+type FileDelete struct {
+	Path            string `json:"path"`
+	ExpectedContent string `json:"expected_content"`
+}
 type FileWriter interface {
 	WriteFile(context.Context, FileWrite) error
+	DeleteFile(context.Context, FileDelete) error
 }
 
 func ValidatePath(value string) error {

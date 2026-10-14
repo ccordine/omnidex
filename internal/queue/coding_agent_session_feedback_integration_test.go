@@ -43,10 +43,8 @@ func TestCodingAgentChannelSessionFeedbackResumesAndReplays(t *testing.T) {
 	if err != nil || planner == nil {
 		t.Fatalf("planner: %v %v", planner, err)
 	}
-	leaf := codingPlanExecutableLeaf(t, "The approved interaction works.", model.CodingPlanDecisionPending, 1)
-	if _, err := repository.StoreCodingPlanReview(ctx, StoreCodingPlanReviewCommand{Authority: planner.Authority, Leaves: []CodingPlanLeafWrite{leaf}}); err != nil {
-		t.Fatal(err)
-	}
+	planCommand, _ := codingAgentPlanReviewFixture(t, repository, planner, "The approved interaction works.")
+	freezeCodingAgentPlanFixture(t, repository, job, planCommand)
 	executor, err := repository.ClaimNextStep(ctx, "agent-session-executor-fixture")
 	if err != nil || executor == nil {
 		t.Fatalf("executor: %v %v", executor, err)

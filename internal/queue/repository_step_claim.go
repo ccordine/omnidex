@@ -46,7 +46,7 @@ func (r *Repository) ClaimNextStep(ctx context.Context, workerID string) (*model
 		                  AND attempts.step_id=candidate.id
 		                  AND attempts.attempt=candidate.current_attempt
 		                  AND ((attempts.status=$5 AND attempts.expires_at<=$6)
-		                       OR (attempts.status='waiting_input' AND candidate.action='v3_coding'
+					       OR (attempts.status='waiting_input' AND candidate.action IN ('v3_coding_plan','v3_coding')
                            AND jobs.metadata->'coding_execution'->>'mode'='agents'))
 		            ))
 		        )
@@ -93,7 +93,7 @@ func (r *Repository) ClaimNextStep(ctx context.Context, workerID string) (*model
 		            AND attempts.step_id=s.id
 		            AND attempts.attempt=s.current_attempt
 		            AND ((attempts.status=$6 AND attempts.expires_at<=$7)
-		                 OR (attempts.status='waiting_input' AND s.action='v3_coding'
+			         OR (attempts.status='waiting_input' AND s.action IN ('v3_coding_plan','v3_coding')
                      AND j.metadata->'coding_execution'->>'mode'='agents'))
 		      ))
 		  )
