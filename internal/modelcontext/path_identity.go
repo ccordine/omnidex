@@ -15,9 +15,9 @@ type PathIdentity struct {
 // artifact identity: callers must validate the complete token through one
 // code-owned artifact adapter before it can become authority.
 type LexicalPathToken struct {
-	Start int
-	End   int
-	Value string
+	Start  int
+	End    int
+	Value  string
 	Quoted bool
 }
 
@@ -48,6 +48,9 @@ func PathIdentities(value string, provenance ArtifactIdentityProvenance) []PathI
 		}
 		token := value[span.start:span.end]
 		resolved, proven := provenance.resolve(token)
+		if !proven && quotedTrailingEscapeLiteral(token, span.quoted) {
+			continue
+		}
 		if !proven && !isQualifiedPath(token) {
 			continue
 		}
@@ -60,6 +63,29 @@ func PathIdentities(value string, provenance ArtifactIdentityProvenance) []PathI
 	}
 	sortPathIdentities(identities)
 	return identities
+}
+
+// quotedTrailingEscapeLiteral distinguishes a quoted output example such as
+// `completed ID\n` from a backslash-qualified filesystem path. Only a suffix
+// made entirely of source-style escapes is exempt: path text after a separator,
+// drive-qualified paths, and forward-slash paths still reach isQualifiedPath.
+func quotedTrailingEscapeLiteral(value string, quoted bool) bool {
+	if !quoted || strings.ContainsRune(value, '/') ||
+		len(value) >= 2 && isASCIIAlpha(value[0]) && value[1] == ':' {
+		return false
+	}
+	escape := strings.IndexByte(value, '\\')
+	if escape < 0 {
+		return false
+	}
+	for cursor := escape; cursor < len(value); {
+		_, end, ok := decodeSourceLiteralEscape(value, cursor)
+		if !ok || end <= cursor {
+			return false
+		}
+		cursor = end
+	}
+	return true
 }
 
 // ContainsPathIdentity reports only qualified paths. Bare dotted atoms such as
@@ -136,8 +162,8 @@ func isASCIIAlpha(value byte) bool {
 }
 
 type pathTokenSpan struct {
-	start int
-	end   int
+	start  int
+	end    int
 	quoted bool
 }
 

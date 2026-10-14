@@ -285,8 +285,16 @@ func TestAgentItemLifecycleRejectsWriteAttemptsAndUnboundCompletion(t *testing.T
 		t.Fatalf("completed command not accounted for: %v", err)
 	}
 	write := decodeAgentTestFrame(t, `{"method":"item/started","params":{"item":{"id":"edit-1","type":"fileChange"}}}`)
-	if err := validateAgentItems(write, codingagent.Review, open); err == nil {
+	err := validateAgentItems(write, codingagent.Review, open)
+	if err == nil {
 		t.Fatal("independent review acquired source write authority")
+	}
+	var retryable interface{ Retryable() bool }
+	if !errors.As(err, &retryable) || !retryable.Retryable() {
+		t.Fatalf("blocked reviewer edit did not permit a fresh bounded review: %v", err)
+	}
+	if len(open) != 0 {
+		t.Fatalf("blocked reviewer edit changed native item authority: %v", open)
 	}
 }
 

@@ -6,7 +6,11 @@ import (
 	"sort"
 )
 
-const maxPlanValidationAttempts = 3
+// Plan validation is deliberately bounded, but complex workloads can expose a
+// different mechanical defect after each correction. Keep enough room for a
+// planner to repair several narrow validation notes without turning planning
+// into an unbounded retry loop.
+const maxPlanValidationAttempts = 5
 
 // Propose returns a validated draft. It cannot freeze or execute the workload;
 // only the queue's explicit user approval transition can do that.

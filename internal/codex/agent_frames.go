@@ -64,7 +64,11 @@ func validateAgentItems(frame rpcFrame, role codingagent.Role, open map[string]s
 		return fmt.Errorf("native agent item lacks identity")
 	}
 	if (item.Type == "fileChange" || item.Type == "dynamicToolCall") && role != codingagent.Execute {
-		return fmt.Errorf("read-only agent attempted a source edit")
+		// The boundary rejects the effect before it can acquire a writer. A
+		// fresh bounded call can still complete the same read-only assignment,
+		// so treat this model-role violation like other retryable inference
+		// failures instead of terminalizing the entire approved workload.
+		return &agentInferenceFailure{message: "read-only agent attempted a source edit", retryable: true}
 	}
 	if item.Type == "plan" && role != codingagent.Plan {
 		return fmt.Errorf("non-planning agent emitted a native plan")

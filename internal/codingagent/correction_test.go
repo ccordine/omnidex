@@ -60,6 +60,52 @@ func TestRejectedProposalsReturnToTheirOwnRoleWithConcreteNotes(t *testing.T) {
 	}
 }
 
+func TestPlannerCanConvergeAfterThreeMechanicalRejections(t *testing.T) {
+	controller, journal := fixtureController(t, fixtureWorkload(), func(Assignment) (any, error) {
+		return cleanReview(), nil
+	}, passingChecks)
+	planner := controller.Providers["planner"]
+	attempts := 0
+	controller.Providers["planner"] = providerFunc(func(ctx context.Context, call Assignment, writer FileWriter, event func(NativeEvent) error) (Result, error) {
+		attempts++
+		if attempts > 1 && len(call.ValidationNotes) != 1 {
+			t.Fatalf("attempt %d did not receive its mechanical rejection: %#v", attempts, call.ValidationNotes)
+		}
+		result, err := planner.Run(ctx, call, writer, event)
+		plan := fixtureWorkload()
+		switch attempts {
+		case 1:
+			plan.Tasks[0].ReadFiles = []string{"undeclared.txt"}
+		case 2:
+			plan.Tasks[0].Goal = ""
+		case 3:
+			plan.Tasks[1].WriteFiles = []string{"a.txt"}
+		}
+		result.Content, _ = json.Marshal(plan)
+		return result, err
+	})
+
+	workload, err := controller.Propose(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 4 || len(workload.Tasks) != len(fixtureWorkload().Tasks) {
+		t.Fatalf("planner stopped before convergence: attempts=%d workload=%#v", attempts, workload)
+	}
+	rejected, proposed := 0, 0
+	for _, entry := range journal.entries {
+		switch entry.Phase {
+		case "plan_rejected":
+			rejected++
+		case "plan_proposed":
+			proposed++
+		}
+	}
+	if rejected != 3 || proposed != 1 {
+		t.Fatalf("unexpected planning evidence: rejected=%d proposed=%d", rejected, proposed)
+	}
+}
+
 func TestFileWriterRequiresExactTaskGrantAndActiveContext(t *testing.T) {
 	writer := taskFileWriter{environment: fixtureEnvironment{}, files: []string{"allowed.txt"}, deletes: []string{"obsolete.txt"}}
 	for _, path := range []string{"other.txt", "../allowed.txt", ".git/config"} {
