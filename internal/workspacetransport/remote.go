@@ -51,7 +51,12 @@ func (r *remote) stop(err error) {
 func (r *remote) failure() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return fmt.Errorf("client workspace connection closed: %w", r.err)
+	// The connection is a disposable transport capability, not the durable
+	// task authority. Preserve the concrete websocket failure in the message,
+	// while exposing the recoverable connection-unavailable identity so the
+	// worker opens a fresh attempt after the client reconnects instead of
+	// terminalizing the job and its frozen ledger.
+	return fmt.Errorf("client workspace connection closed: %w: %v", ErrConnectionUnavailable, r.err)
 }
 
 func (r *remote) read() {

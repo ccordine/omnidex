@@ -84,7 +84,7 @@ func freshEvidenceRepository(
 	if err != nil {
 		t.Fatal(err)
 	}
-	return pool, New(pool, authority)
+	return pool, New(pool, authority).WithCodingAgents(codingAgentTestConfiguration())
 }
 
 func evidenceNonce(t *testing.T) string {
@@ -103,7 +103,7 @@ func TestEnqueueCodingJobHasNoScopePolicyOrAnnotationColumns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	repository := New(pool, authority)
+	repository := New(pool, authority).WithCodingAgents(codingAgentTestConfiguration())
 	job, err := repository.EnqueueCodingJob(
 		context.Background(), "exercise coding scope metadata", t.TempDir(),
 	)
@@ -128,5 +128,16 @@ func TestEnqueueCodingJobHasNoScopePolicyOrAnnotationColumns(t *testing.T) {
 	}
 	if obsoleteColumns != 0 {
 		t.Fatalf("fresh schema retains %d obsolete scope columns", obsoleteColumns)
+	}
+	var legacyTables int
+	if err := pool.QueryRow(context.Background(), `
+		SELECT count(*) FROM information_schema.tables
+		WHERE table_schema=current_schema()
+		  AND table_name IN ('coding_plans','coding_plan_leaves','coding_plan_operation_results')
+	`).Scan(&legacyTables); err != nil {
+		t.Fatal(err)
+	}
+	if legacyTables != 0 {
+		t.Fatalf("fresh schema retains %d legacy coding-plan tables", legacyTables)
 	}
 }

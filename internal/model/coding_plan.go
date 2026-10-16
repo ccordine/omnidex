@@ -25,7 +25,8 @@ const (
 )
 
 var (
-	codingPlanLeafIDPattern = regexp.MustCompile(`^coding_plan_leaf_[0-9a-f]{32}$`)
+	codingPlanLeafIDPattern   = regexp.MustCompile(`^coding_plan_leaf_[0-9a-f]{32}$`)
+	codingLedgerItemIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$`)
 )
 
 type CodingPlanState string
@@ -36,14 +37,15 @@ type CodingPlanLeafID string
 // exact job generation. Semantic receipts used by execution remain in the
 // repository record and are intentionally absent from this projection.
 type CodingPlan struct {
-	JobID      int64            `json:"job_id"`
-	Generation int64            `json:"generation"`
-	Revision   int64            `json:"revision"`
-	State      CodingPlanState  `json:"state"`
-	Leaves     []CodingPlanLeaf `json:"leaves"`
-	CreatedAt  time.Time        `json:"created_at"`
-	UpdatedAt  time.Time        `json:"updated_at"`
-	FrozenAt   *time.Time       `json:"frozen_at,omitempty"`
+	JobID                 int64                       `json:"job_id"`
+	Generation            int64                       `json:"generation"`
+	Revision              int64                       `json:"revision"`
+	State                 CodingPlanState             `json:"state"`
+	Leaves                []CodingPlanLeaf            `json:"leaves"`
+	OwnerTurnDispositions []OwnerStatementDisposition `json:"owner_turn_dispositions,omitempty"`
+	CreatedAt             time.Time                   `json:"created_at"`
+	UpdatedAt             time.Time                   `json:"updated_at"`
+	FrozenAt              *time.Time                  `json:"frozen_at,omitempty"`
 }
 
 type CodingPlanLeaf struct {
@@ -61,8 +63,10 @@ func NewCodingPlanLeafID() (CodingPlanLeafID, error) {
 }
 
 func ParseCodingPlanLeafID(value string) (CodingPlanLeafID, error) {
-	if !codingPlanLeafIDPattern.MatchString(value) {
-		return "", fmt.Errorf("coding plan leaf ID must match coding_plan_leaf_ plus 32 lowercase hex characters")
+	legacyPrefix := strings.HasPrefix(value, "coding_plan_leaf_")
+	if strings.HasPrefix(value, "leaf_") || (legacyPrefix && !codingPlanLeafIDPattern.MatchString(value)) ||
+		(!legacyPrefix && !codingLedgerItemIDPattern.MatchString(value)) {
+		return "", fmt.Errorf("coding plan item ID must be a legacy leaf or normalized ledger identity")
 	}
 	return CodingPlanLeafID(value), nil
 }
@@ -106,8 +110,8 @@ func (plan CodingPlan) Validate() error {
 	if err := plan.State.Validate(); err != nil {
 		return err
 	}
-	if plan.Leaves == nil || len(plan.Leaves) > MaxCodingPlanLeaves {
-		return fmt.Errorf("coding plan leaves must be an array of at most %d entries", MaxCodingPlanLeaves)
+	if plan.Leaves == nil {
+		return fmt.Errorf("coding plan leaves must be an array")
 	}
 	seen := make(map[CodingPlanLeafID]struct{}, len(plan.Leaves))
 	statements := make(map[string]struct{}, len(plan.Leaves))
@@ -129,6 +133,11 @@ func (plan CodingPlan) Validate() error {
 		}
 		if plan.State == CodingPlanStateFrozen && leaf.Decision == CodingPlanDecisionPending {
 			return fmt.Errorf("frozen coding plan contains pending leaf %q", leaf.ID)
+		}
+	}
+	for index, disposition := range plan.OwnerTurnDispositions {
+		if err := disposition.Validate(); err != nil {
+			return fmt.Errorf("coding plan owner-turn disposition %d: %w", index, err)
 		}
 	}
 	if plan.State == CodingPlanStateFrozen {

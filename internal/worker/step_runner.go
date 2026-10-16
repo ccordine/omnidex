@@ -93,7 +93,7 @@ func (s *Service) runClaim(ctx context.Context, workerID string, claim *model.Cl
 			s.emitStepEvent(claim.Authority, "step_waiting_input", questions.Error())
 			return nil
 		}
-		if errors.Is(err, errCodingPlanReviewPending) {
+		if errors.Is(err, errCodingLedgerReviewPending) {
 			s.emitStepEvent(
 				claim.Authority,
 				"step_waiting_input",
@@ -109,6 +109,19 @@ func (s *Service) runClaim(ctx context.Context, workerID string, claim *model.Cl
 			return nil
 		}
 		if s.skipFailureForControlledCancel(ctx, workerID, claim, err) {
+			return nil
+		}
+		if retryableAgentSessionFailure(err) && claim.Authority.Attempt < 3 {
+			// The attempt remains active but is no longer renewed after
+			// processStep returns. ClaimNextStep will expire it at the database
+			// lease boundary and open a fresh attempt against the same generation,
+			// frozen ledger task and evidence journal. A disposable provider session
+			// must never terminalize the durable job.
+			s.emitStepEvent(claim.Authority, "step_retry_pending", err.Error())
+			s.logf(
+				"worker=%s job=%d step=%d action=%s waiting for fresh agent session after retryable failure: %v",
+				workerID, claim.Job.ID, claim.Step.ID, claim.Step.Action, err,
+			)
 			return nil
 		}
 		s.emitStepEvent(claim.Authority, "step_error", err.Error())
@@ -143,6 +156,11 @@ func (s *Service) runClaim(ctx context.Context, workerID string, claim *model.Cl
 		workerID, claim.Job.ID, claim.Step.ID, claim.Step.Action,
 	)
 	return nil
+}
+
+func retryableAgentSessionFailure(err error) bool {
+	var retryable interface{ Retryable() bool }
+	return errors.As(err, &retryable) && retryable.Retryable()
 }
 
 func (s *Service) processStep(ctx context.Context, claim *model.ClaimedStep) error {

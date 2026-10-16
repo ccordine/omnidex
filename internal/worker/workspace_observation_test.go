@@ -105,7 +105,10 @@ func (access *observedDirectoryFixture) ReadDirectory(_ context.Context, directo
 		return workspace.DirectoryPage{Entries: []workspace.Entry{{Path: "src/b.go", Kind: workspace.EntryFile}}}, nil
 	}
 	if after == "" {
-		return workspace.DirectoryPage{Entries: []workspace.Entry{{Path: "a.txt", Kind: workspace.EntryFile}}, HasMore: true}, nil
+		return workspace.DirectoryPage{Entries: []workspace.Entry{
+			{Path: ".env.example", Kind: workspace.EntryFile},
+			{Path: "a.txt", Kind: workspace.EntryFile},
+		}, HasMore: true}, nil
 	}
 	return workspace.DirectoryPage{Entries: []workspace.Entry{{Path: "src", Kind: workspace.EntryDirectory}}}, nil
 }

@@ -1,4 +1,4 @@
-import { jsonRequest, readJSON } from "./api";
+import { HTTPResponseError, jsonRequest, readJSON } from "./api";
 import { fetchChatJobsPage, requireServerComponentBundle } from "./chat_component_api";
 import { requireJobDetails } from "./chat_execution_contract";
 import { LifecycleOperationAttempt } from "./lifecycle_operation";
@@ -129,11 +129,15 @@ export class ChatJobsCoordinator {
 
   private async postControl(id: string, action: "interrupt" | "replan", feedback: string): Promise<void> {
     const workspace = await this.controlWorkspace(id);
-    const attemptKey = { scope: JSON.stringify([id, workspace]), action, content: JSON.stringify(feedback) };
+    const observedLedgerRevision = action === "replan"
+      ? await this.observedPlanningLedgerRevision(id, workspace)
+      : 0;
+    const attemptKey = { scope: JSON.stringify([id, workspace, observedLedgerRevision]), action, content: JSON.stringify(feedback) };
     const operationID = this.lifecycleOperationAttempt.acquire(attemptKey);
     const control = await readJSON(await fetch(
       `/v1/jobs/${id}/${action}`,
-      jsonRequest({ operation_id: operationID, feedback, ...workspace }),
+      jsonRequest({ operation_id: operationID, feedback,
+        ...(action === "replan" ? { observed_ledger_revision: observedLedgerRevision } : {}), ...workspace }),
     ));
     const authoritativeID = authoritativeControlJobID(control, id, operationID);
     this.lifecycleOperationAttempt.confirm(attemptKey, operationID);
@@ -145,6 +149,30 @@ export class ChatJobsCoordinator {
   private async controlWorkspace(id: string): Promise<JobWorkspaceBinding> {
     const details = await readJSON<Record<string, unknown>>(await fetch(`/v1/jobs/${id}`));
     return requireJobWorkspaceBinding(details, Number(id));
+  }
+
+  private async observedPlanningLedgerRevision(id: string, workspace: JobWorkspaceBinding): Promise<number> {
+    if (workspace.workspace_root === undefined || workspace.workspace_identity === undefined) return 0;
+    const query = new URLSearchParams({
+      workspace_root: workspace.workspace_root,
+      workspace_identity: workspace.workspace_identity,
+    });
+    try {
+      const ledger = await readJSON<Record<string, unknown>>(await fetch(`/v1/jobs/${id}/plan?${query}`));
+      const revision = ledger.revision;
+      if (ledger.job_id !== Number(id) || !Number.isSafeInteger(revision) || Number(revision) < 1) {
+        throw new Error(`Job #${id} planning ledger has invalid revision authority.`);
+      }
+      const normalized = ledger.ledger;
+      if (!normalized || typeof normalized !== "object" || Array.isArray(normalized) ||
+          (normalized as Record<string, unknown>).revision !== revision) {
+        throw new Error(`Job #${id} planning ledger revision is contradictory.`);
+      }
+      return Number(revision);
+    } catch (error) {
+      if (error instanceof HTTPResponseError && error.status === 404) return 0;
+      throw error;
+    }
   }
 }
 

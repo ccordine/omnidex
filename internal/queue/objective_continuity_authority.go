@@ -43,8 +43,10 @@ type ObjectiveSessionContextAuthority struct {
 }
 
 type ObjectiveContinuityAuthority struct {
-	Replan  *assemblyline.ObjectiveReplanAuthority
-	Session *ObjectiveSessionContextAuthority
+	Replan                 *assemblyline.ObjectiveReplanAuthority
+	Session                *ObjectiveSessionContextAuthority
+	ReplanOperationID      model.LifecycleOperationID
+	ObservedLedgerRevision int64
 }
 
 // ObjectiveContinuityAuthorities loads the current generation's exact replan
@@ -122,6 +124,13 @@ func (r *Repository) ObjectiveContinuityAuthorities(
 		authority.Replan = &assemblyline.ObjectiveReplanAuthority{
 			JobID: stored.ID, Generation: stored.CurrentGeneration,
 			Feedback: feedback,
+		}
+		if err := tx.QueryRow(ctx, `
+			SELECT operation_id,COALESCE((command_payload->>'observed_ledger_revision')::bigint,0)
+			FROM job_lifecycle_operations
+			WHERE job_id=$1 AND kind='replan_job' AND result_generation=$2
+		`, stored.ID, stored.CurrentGeneration).Scan(&authority.ReplanOperationID, &authority.ObservedLedgerRevision); err != nil {
+			return ObjectiveContinuityAuthority{}, fmt.Errorf("load exact replan operation authority: %w", err)
 		}
 		if err := authority.ReplanContext().Validate(); err != nil {
 			return ObjectiveContinuityAuthority{}, err

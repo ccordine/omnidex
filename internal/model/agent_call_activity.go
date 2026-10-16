@@ -28,7 +28,7 @@ func (activity AgentCallActivity) Validate() error {
 		return fmt.Errorf("agent call activity requires its supported schema and exact journal identity")
 	}
 	switch activity.Role {
-	case "plan", "overall_review":
+	case "plan", "planning_initial", "planning_target", "planning_mutation", "planning_coverage", "planning_audit":
 		if activity.TaskID != "" {
 			return fmt.Errorf("global agent call activity cannot carry a task identity")
 		}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path"
+	"strings"
 
 	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/projectroot"
@@ -42,7 +43,7 @@ func (environment *codingAgentEnvironment) ReadFiles(ctx context.Context) ([]str
 			}
 			for _, entry := range page.Entries {
 				name := path.Base(entry.Path)
-				if name == ".git" || name == "node_modules" || name == ".env" || name == ".codex" || name == ".agent-cache" || name == "bin" {
+				if name == ".git" || name == "node_modules" || name == ".env" || strings.HasPrefix(name, ".env.") || name == ".codex" || name == ".agent-cache" || name == "bin" {
 					continue
 				}
 				switch entry.Kind {
@@ -63,6 +64,20 @@ func (environment *codingAgentEnvironment) ReadFiles(ctx context.Context) ([]str
 		}
 	}
 	return files, nil
+}
+
+func (environment *codingAgentEnvironment) ReadTaskFile(ctx context.Context, file string) (string, error) {
+	if err := environment.Attest(ctx); err != nil {
+		return "", err
+	}
+	if err := codingagent.ValidatePath(file); err != nil {
+		return "", err
+	}
+	observed, err := environment.runtime.readObservedWorkspaceFile(ctx, file)
+	if err != nil {
+		return "", err
+	}
+	return string(observed.Content), environment.Attest(ctx)
 }
 
 func (environment *codingAgentEnvironment) PrepareFiles(ctx context.Context, task codingagent.Task) error {
@@ -123,6 +138,20 @@ func (environment *codingAgentEnvironment) WriteFile(ctx context.Context, edit c
 		return err
 	}
 	entry, err := environment.runtime.workspaceFence.Stat(ctx, edit.Path)
+	if errors.Is(err, fs.ErrNotExist) {
+		if edit.ExpectedContent != "" {
+			return fmt.Errorf("missing source does not match the agent's expected content")
+		}
+		prepared, err := environment.runtime.workspaceFence.Prepare(ctx, []workspace.DesiredFile{{Path: edit.Path, Present: true, Content: []byte(edit.Content), Mode: 0o644, CreateOnly: true}}, nil)
+		if err != nil {
+			return err
+		}
+		result, err := prepared.ApplyVerified(ctx, nil)
+		if err != nil {
+			return err
+		}
+		return environment.recordWrittenFiles(ctx, result)
+	}
 	if err != nil {
 		return err
 	}

@@ -24,7 +24,15 @@ func (client *Client) agentScratch() (string, func(), error) {
 	if err != nil {
 		return "", nil, err
 	}
-	return directory, func() { _ = os.RemoveAll(directory) }, nil
+	return directory, func() {
+		_ = filepath.WalkDir(directory, func(path string, entry os.DirEntry, walkErr error) error {
+			if walkErr == nil && entry.IsDir() {
+				_ = os.Chmod(path, 0o700)
+			}
+			return nil
+		})
+		_ = os.RemoveAll(directory)
+	}, nil
 }
 
 func agentToolEnvironment(scratch string) map[string]string {

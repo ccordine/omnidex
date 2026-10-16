@@ -36,9 +36,7 @@ func (s *Server) enqueueJob(w http.ResponseWriter, r *http.Request) {
 	}
 	s.codingAgentsMu.RLock()
 	defer s.codingAgentsMu.RUnlock()
-	job, err := s.repo.EnqueueCodingJobMode(
-		r.Context(), request.Instruction, request.Metadata.ClientCWD, request.CodingMode,
-	)
+	job, err := s.repo.EnqueueCodingJob(r.Context(), request.Instruction, request.Metadata.ClientCWD)
 	if err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, queue.ErrInvalidJobInstruction) {

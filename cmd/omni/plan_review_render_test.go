@@ -33,6 +33,20 @@ func TestRenderPlanReviewShowsDecisionsWithoutModelScopeAnnotations(t *testing.T
 	}
 }
 
+func TestRenderPlanReviewShowsOutOfScopeOwnerDisposition(t *testing.T) {
+	plan := planReviewFixture(t)
+	plan.OwnerTurnDispositions = []model.OwnerStatementDisposition{{
+		Kind: model.OwnerTurnOutOfScope, Reason: "deployment belongs to a separate objective",
+	}}
+	rendered, err := renderPlanReview(mustPlanReviewState(t, plan))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(rendered, "Out of scope: deployment belongs to a separate objective") {
+		t.Fatalf("rendered plan does not show disposition:\n%s", rendered)
+	}
+}
+
 func TestRenderPlanReviewZeroLeafStateOffersOnlyGuidanceAndExit(t *testing.T) {
 	t.Parallel()
 

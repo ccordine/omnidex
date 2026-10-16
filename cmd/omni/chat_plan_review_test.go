@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/client"
+	"github.com/gryph/omnidex/internal/ledgerapi"
 	"github.com/gryph/omnidex/internal/model"
 )
 
@@ -33,36 +34,41 @@ func TestChatPlanReviewPersistsDecisionThenDeliberatelyFreezes(t *testing.T) {
 				len(query["workspace_identity"]) != 1 || query.Get("workspace_identity") != workspaceIdentity {
 				t.Errorf("plan read authority = %s %s", request.Method, request.URL.String())
 			}
-			writeChatPlanReviewJSON(t, writer, http.StatusOK, plan)
+			writeChatPlanReviewJSON(t, writer, http.StatusOK, codingLedgerPlanReviewFixture(plan))
 		case "/v1/jobs/73/plan/decisions":
 			decisionRequests++
 			var body struct {
-				OperationID       model.LifecycleOperationID        `json:"operation_id"`
-				Generation        int64                             `json:"generation"`
-				Revision          int64                             `json:"revision"`
-				WorkspaceRoot     string                            `json:"workspace_root"`
-				WorkspaceIdentity string                            `json:"workspace_identity"`
-				Decisions         []client.CodingPlanDecisionChange `json:"decisions"`
+				OperationID       model.LifecycleOperationID  `json:"operation_id"`
+				OwnerTurnID       string                      `json:"owner_turn_id"`
+				OwnerTurnText     string                      `json:"owner_turn_text"`
+				Revision          int64                       `json:"revision"`
+				WorkspaceRoot     string                      `json:"workspace_root"`
+				WorkspaceIdentity string                      `json:"workspace_identity"`
+				Action            client.DirectPlanningAction `json:"action"`
 			}
 			decodeChatPlanReviewJSON(t, request, &body)
 			if _, err := model.ParseLifecycleOperationID(string(body.OperationID)); err != nil {
 				t.Errorf("decision operation ID: %v", err)
 			}
-			if body.Generation != plan.Generation || body.Revision != plan.Revision ||
+			if body.Revision != plan.Revision ||
 				body.WorkspaceRoot != workspaceRoot || body.WorkspaceIdentity != workspaceIdentity ||
-				len(body.Decisions) != 1 || body.Decisions[0].LeafID != plan.Leaves[0].ID ||
-				body.Decisions[0].Decision != model.CodingPlanDecisionApproved {
+				body.Action.TargetID != model.LedgerItemID(plan.Leaves[0].ID) ||
+				body.Action.Kind != model.LedgerMutationReview || body.Action.ReviewState != model.LedgerReviewAgreed {
 				t.Errorf("decision body = %#v; plan = %#v", body, plan)
 			}
+			base := plan.Revision
 			plan.Revision++
 			plan.UpdatedAt = plan.UpdatedAt.Add(time.Second)
 			plan.Leaves[0].Decision = model.CodingPlanDecisionApproved
-			writeChatPlanReviewJSON(t, writer, http.StatusOK, plan)
+			writeChatPlanReviewJSON(t, writer, http.StatusOK, ledgerapi.CodingLedgerRevision{
+				LedgerID: 1, JobID: jobID, BaseRevision: base, Revision: plan.Revision, State: "proposed",
+			})
 		case "/v1/jobs/73/plan/freeze":
 			freezeRequests++
 			var body struct {
 				OperationID       model.LifecycleOperationID `json:"operation_id"`
-				Generation        int64                      `json:"generation"`
+				OwnerTurnID       string                     `json:"owner_turn_id"`
+				OwnerTurnText     string                     `json:"owner_turn_text"`
 				Revision          int64                      `json:"revision"`
 				WorkspaceRoot     string                     `json:"workspace_root"`
 				WorkspaceIdentity string                     `json:"workspace_identity"`
@@ -71,17 +77,12 @@ func TestChatPlanReviewPersistsDecisionThenDeliberatelyFreezes(t *testing.T) {
 			if _, err := model.ParseLifecycleOperationID(string(body.OperationID)); err != nil {
 				t.Errorf("freeze operation ID: %v", err)
 			}
-			if body.Generation != plan.Generation || body.Revision != plan.Revision ||
+			if body.Revision != plan.Revision ||
 				body.WorkspaceRoot != workspaceRoot || body.WorkspaceIdentity != workspaceIdentity {
 				t.Errorf("freeze body = %#v; plan = %#v", body, plan)
 			}
-			plan.Revision++
-			plan.State = model.CodingPlanStateFrozen
-			plan.UpdatedAt = plan.UpdatedAt.Add(time.Second)
-			frozenAt := plan.UpdatedAt
-			plan.FrozenAt = &frozenAt
-			writeChatPlanReviewJSON(t, writer, http.StatusOK, client.CodingPlanFreezeReceipt{
-				Plan: plan, JobStatus: model.JobStatusRunning,
+			writeChatPlanReviewJSON(t, writer, http.StatusOK, ledgerapi.CodingLedgerRevision{
+				LedgerID: 1, JobID: jobID, BaseRevision: plan.Revision, Revision: plan.Revision + 1, State: "frozen",
 			})
 		default:
 			if strings.HasPrefix(request.URL.Path, "/v1/channels/") &&
@@ -167,7 +168,7 @@ func TestChatPlanReviewZeroLeafPlanRequestsGuidanceWithoutMutation(t *testing.T)
 			http.Error(writer, "unexpected request", http.StatusInternalServerError)
 			return
 		}
-		writeChatPlanReviewJSON(t, writer, http.StatusOK, plan)
+		writeChatPlanReviewJSON(t, writer, http.StatusOK, codingLedgerPlanReviewFixture(plan))
 	}))
 	defer server.Close()
 
@@ -237,7 +238,7 @@ func TestChatPlanReviewClearsStaleWaitingObservationAfterConcurrentFreeze(t *tes
 		switch {
 		case request.Method == http.MethodGet && request.URL.Path == "/v1/jobs/75/plan":
 			planRequests++
-			writeChatPlanReviewJSON(t, writer, http.StatusOK, plan)
+			writeChatPlanReviewJSON(t, writer, http.StatusOK, codingLedgerPlanReviewFixture(plan))
 		case request.Method == http.MethodGet && strings.HasPrefix(request.URL.Path, "/v1/channels/") &&
 			strings.HasSuffix(request.URL.Path, "/session"):
 			sessionRequests++
@@ -282,7 +283,7 @@ func TestChatPlanReviewReloadsOnceForConcurrentReplanGeneration(t *testing.T) {
 		switch {
 		case request.Method == http.MethodGet && request.URL.Path == "/v1/jobs/76/plan":
 			planRequests++
-			writeChatPlanReviewJSON(t, writer, http.StatusOK, plan)
+			writeChatPlanReviewJSON(t, writer, http.StatusOK, codingLedgerPlanReviewFixture(plan))
 		case request.Method == http.MethodGet && strings.HasPrefix(request.URL.Path, "/v1/channels/") &&
 			strings.HasSuffix(request.URL.Path, "/session"):
 			sessionRequests++

@@ -27,7 +27,7 @@ func (r *Repository) EnqueueChannelTurnWithCodingMode(
 }
 
 func bindChannelCodingExecution(authority *lockedChannelTurnAuthority, config codingagent.Configuration) (string, error) {
-	if config.Mode == codingagent.Normal {
+	if config.Mode == "" {
 		return "", nil
 	}
 	if config.Mode != codingagent.Agents || authority.Mode != model.ChannelModeAssistant {

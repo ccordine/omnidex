@@ -131,6 +131,16 @@ func applyChannelSessionReplanTx(
 	command ChannelSessionTurnCommand,
 	job model.Job,
 ) (model.Job, error) {
+	configuration, err := codingagent.ConfigurationFromMetadata(job.Metadata)
+	if err != nil {
+		return model.Job{}, err
+	}
+	if configuration.Mode == codingagent.Agents {
+		return model.Job{}, fmt.Errorf(
+			"%w: Agents mode interruption must resume through an exact revision-bound planning ledger replan",
+			ErrChannelSessionTurnInvalid,
+		)
+	}
 	feedback, err := validateSessionReplanFeedback(command.Text)
 	if err != nil {
 		return model.Job{}, fmt.Errorf("%w: %v", ErrChannelSessionTurnInvalid, err)

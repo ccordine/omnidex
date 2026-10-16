@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"net/url"
+	"strings"
+	"time"
 
+	"github.com/gryph/omnidex/internal/ledgerapi"
 	"github.com/gryph/omnidex/internal/model"
 )
 
@@ -25,19 +27,79 @@ func (client *Client) CodingPlan(
 	workspaceIdentity string,
 	jobID int64,
 ) (model.CodingPlan, error) {
-	if err := validateCodingPlanAuthority(channel, workspaceIdentity, jobID); err != nil {
+	revision, err := client.CodingLedger(ctx, channel, workspaceIdentity, jobID)
+	if err != nil {
 		return model.CodingPlan{}, err
 	}
-	var plan model.CodingPlan
-	query := url.Values{}
-	query.Set("workspace_root", channel.WorkspaceRoot)
-	query.Set("workspace_identity", workspaceIdentity)
-	path := fmt.Sprintf("/v1/jobs/%d/plan?%s", jobID, query.Encode())
-	if err := client.doJSON(ctx, http.MethodGet, path, nil, &plan, http.StatusOK); err != nil {
-		return model.CodingPlan{}, err
-	}
-	if err := validateCodingPlanResponse(plan, jobID); err != nil {
+	plan, err := projectCodingLedgerForTerminal(revision)
+	if err != nil {
 		return model.CodingPlan{}, fmt.Errorf("invalid coding plan response: %w", err)
+	}
+	return plan, nil
+}
+
+func projectCodingLedgerForTerminal(revision ledgerapi.CodingLedgerRevision) (model.CodingPlan, error) {
+	state := model.CodingPlanStateReview
+	var frozenAt *time.Time
+	if revision.State == "frozen" {
+		state = model.CodingPlanStateFrozen
+		value := revision.UpdatedAt
+		frozenAt = &value
+	} else if revision.State != "proposed" && revision.State != "revising" {
+		return model.CodingPlan{}, fmt.Errorf("coding ledger state %q is not reviewable", revision.State)
+	}
+	plan := model.CodingPlan{JobID: revision.JobID, Generation: revision.Generation, Revision: revision.Revision,
+		State: state, CreatedAt: revision.CreatedAt, UpdatedAt: revision.UpdatedAt, FrozenAt: frozenAt,
+		Leaves: []model.CodingPlanLeaf{}, OwnerTurnDispositions: append([]model.OwnerStatementDisposition(nil), revision.OwnerTurnDispositions...)}
+	add := func(item model.LedgerItem, kind, statement string) {
+		if item.Disposition != model.LedgerDispositionActive {
+			return
+		}
+		decision := model.CodingPlanDecisionPending
+		switch item.ReviewState {
+		case model.LedgerReviewAgreed:
+			decision = model.CodingPlanDecisionApproved
+		case model.LedgerReviewNeedsDiscussion:
+			decision = model.CodingPlanDecisionRejected
+		}
+		plan.Leaves = append(plan.Leaves, model.CodingPlanLeaf{ID: model.CodingPlanLeafID(item.ID), Statement: "[" + kind + "] " + statement, Decision: decision})
+	}
+	for _, value := range revision.Ledger.Objectives {
+		add(value.LedgerItem, "objective", value.Outcome)
+	}
+	for _, value := range revision.Ledger.Requirements {
+		add(value.LedgerItem, "requirement", value.Outcome)
+	}
+	for _, value := range revision.Ledger.Constraints {
+		add(value.LedgerItem, "constraint", value.Rule)
+	}
+	for _, value := range revision.Ledger.Groups {
+		add(value.LedgerItem, "group", value.Title)
+	}
+	for _, value := range revision.Ledger.Tasks {
+		add(value.LedgerItem, "task", value.Goal)
+	}
+	for _, value := range revision.Ledger.AcceptanceCriteria {
+		add(value.LedgerItem, "acceptance", value.Outcome)
+	}
+	for _, value := range revision.Ledger.Checks {
+		statement := value.Observation
+		if statement == "" {
+			statement = strings.Join(value.Argv, " ")
+		}
+		add(value.LedgerItem, "check", statement)
+	}
+	for _, value := range revision.Ledger.DecisionsAndQuestions {
+		add(value.LedgerItem, string(value.Kind), value.Prompt)
+	}
+	for _, value := range revision.Ledger.Dependencies {
+		add(value.LedgerItem, "dependency", string(value.TaskID)+" "+string(value.Kind)+" "+string(value.PrerequisiteID))
+	}
+	for _, value := range revision.Ledger.Findings {
+		add(value.LedgerItem, "finding", value.Observation)
+	}
+	if err := plan.Validate(); err != nil {
+		return model.CodingPlan{}, err
 	}
 	return plan, nil
 }

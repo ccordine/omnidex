@@ -50,7 +50,7 @@ func normalizeChannelSessionTurnCommand(
 		return ChannelSessionTurnCommand{}, err
 	}
 	switch command.CodingMode {
-	case "", codingagent.Normal:
+	case "":
 		command.CodingMode = ""
 	case codingagent.Agents:
 	default:

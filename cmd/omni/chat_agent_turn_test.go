@@ -42,7 +42,7 @@ func TestTerminalTurnSelectsAgentsAndPreservesModeOnRetry(t *testing.T) {
 	}
 }
 
-func TestTerminalRetryUsesModeFrozenInPendingTurn(t *testing.T) {
+func TestTerminalRetryPreservesConversationWithoutCodingAuthority(t *testing.T) {
 	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		var payload struct {
@@ -51,8 +51,8 @@ func TestTerminalRetryUsesModeFrozenInPendingTurn(t *testing.T) {
 		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
 			t.Errorf("decode pending turn: %v", err)
 		}
-		if payload.CodingMode != codingagent.Normal {
-			t.Errorf("retry recomputed mode %q instead of retained normal", payload.CodingMode)
+		if payload.CodingMode != "" {
+			t.Errorf("retry added coding mode %q to a conversation turn", payload.CodingMode)
 		}
 		http.Error(writer, "outcome remains unknown", http.StatusServiceUnavailable)
 	}))
@@ -63,7 +63,7 @@ func TestTerminalRetryUsesModeFrozenInPendingTurn(t *testing.T) {
 		t.Fatal(err)
 	}
 	session.pendingTurn = &pendingSessionTurn{
-		exactText: "Retain the pending choice.", operationID: operationID, codingMode: codingagent.Normal,
+		exactText: "Retain the pending choice.", operationID: operationID,
 	}
 	if err := session.acceptText(session.pendingTurn.exactText); !client.IsHTTPStatus(err, http.StatusServiceUnavailable) {
 		t.Fatalf("resubmit frozen pending turn: %v", err)

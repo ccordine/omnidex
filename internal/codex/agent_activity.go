@@ -3,7 +3,6 @@ package codex
 import (
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/codingagent"
@@ -13,6 +12,7 @@ import (
 type agentActivityItem struct {
 	kind         string
 	phase        string
+	provisional  bool
 	streamed     bool
 	sent         string
 	summaryIndex int
@@ -30,20 +30,11 @@ type agentActivityParams struct {
 	Delta        string `json:"delta"`
 	SummaryIndex int    `json:"summaryIndex"`
 	Item         struct {
-		ID               string   `json:"id"`
-		Type             string   `json:"type"`
-		Phase            string   `json:"phase"`
-		Text             string   `json:"text"`
-		Summary          []string `json:"summary"`
-		Command          string   `json:"command"`
-		CWD              string   `json:"cwd"`
-		Status           string   `json:"status"`
-		AggregatedOutput *string  `json:"aggregatedOutput"`
-		ExitCode         *int     `json:"exitCode"`
-		CommandActions   []struct {
-			Type string `json:"type"`
-			Path string `json:"path"`
-		} `json:"commandActions"`
+		ID      string   `json:"id"`
+		Type    string   `json:"type"`
+		Phase   string   `json:"phase"`
+		Text    string   `json:"text"`
+		Summary []string `json:"summary"`
 	} `json:"item"`
 }
 
@@ -90,9 +81,10 @@ func (stream *agentActivityStream) observe(event codingagent.NativeEvent) error 
 		return err
 	}
 	if frame.Method == "item/started" {
-		stream.items[params.Item.ID] = &agentActivityItem{kind: params.Item.Type, phase: params.Item.Phase}
-		if params.Item.Type == "commandExecution" {
-			return stream.command(params, model.AgentActivityStarted)
+		if existing := stream.items[params.Item.ID]; existing != nil && existing.provisional {
+			existing.kind, existing.phase, existing.provisional = params.Item.Type, params.Item.Phase, false
+		} else {
+			stream.items[params.Item.ID] = &agentActivityItem{kind: params.Item.Type, phase: params.Item.Phase}
 		}
 		return nil
 	}
@@ -101,15 +93,23 @@ func (stream *agentActivityStream) observe(event codingagent.NativeEvent) error 
 		if item == nil {
 			return fmt.Errorf("native activity completed an unbound item")
 		}
-		defer delete(stream.items, params.Item.ID)
-		return stream.completed(params, item)
+		if err := stream.completed(params, item); err != nil {
+			return err
+		}
+		delete(stream.items, params.Item.ID)
+		return nil
 	}
 	item := stream.items[params.ItemID]
 	if item == nil {
-		return fmt.Errorf("native activity delta belongs to an unbound item")
+		item = &agentActivityItem{kind: agentDeltaItemKind(frame.Method), provisional: true}
+		stream.items[params.ItemID] = item
 	}
 	switch frame.Method {
 	case "item/agentMessage/delta":
+		if item.provisional {
+			item.sent += params.Delta
+			return nil
+		}
 		if item.phase != "commentary" {
 			return nil
 		}
@@ -134,21 +134,11 @@ func (stream *agentActivityStream) observe(event codingagent.NativeEvent) error 
 		item.streamed, item.summaryIndex = true, params.SummaryIndex
 		item.sent += text
 		return stream.text(params.ItemID, model.AgentActivityReasoningSummary, model.AgentActivityDelta, text)
-	case "item/commandExecution/outputDelta":
-		item.streamed = item.streamed || params.Delta != ""
-		return stream.text(params.ItemID, model.AgentActivityCommandOutput, model.AgentActivityDelta, params.Delta)
 	}
 	return nil
 }
 
 func (stream *agentActivityStream) completed(params agentActivityParams, item *agentActivityItem) error {
-	if params.Item.Type == "exitedReviewMode" {
-		for id, candidate := range stream.items {
-			if id != params.Item.ID && candidate.kind == "agentMessage" {
-				delete(stream.items, id)
-			}
-		}
-	}
 	switch params.Item.Type {
 	case "agentMessage":
 		if params.Item.Phase != "commentary" {
@@ -159,19 +149,6 @@ func (stream *agentActivityStream) completed(params agentActivityParams, item *a
 		return stream.completeText(params.Item.ID, model.AgentActivityMessage, model.AgentActivityCompleted, item.sent, params.Item.Text)
 	case "reasoning":
 		return stream.completeText(params.Item.ID, model.AgentActivityReasoningSummary, model.AgentActivityCompleted, item.sent, strings.Join(params.Item.Summary, "\n"))
-	case "commandExecution":
-		status := model.AgentActivityStatus(params.Item.Status)
-		if status != model.AgentActivityCompleted && status != model.AgentActivityFailed && status != model.AgentActivityDeclined {
-			return fmt.Errorf("native command has invalid terminal status")
-		}
-		// Native live deltas preserve arrival order. Its retained aggregate groups
-		// stdout before stderr and may be capped, so it is not a streamed prefix.
-		if !item.streamed && params.Item.AggregatedOutput != nil {
-			if err := stream.text(params.Item.ID, model.AgentActivityCommandOutput, model.AgentActivityDelta, *params.Item.AggregatedOutput); err != nil {
-				return err
-			}
-		}
-		return stream.command(params, status)
 	}
 	return nil
 }
@@ -181,50 +158,6 @@ func (stream *agentActivityStream) completeText(itemID string, kind model.AgentA
 		return fmt.Errorf("native completed public text contradicts its streamed prefix: kind=%s item=%.64q sentBytes=%d finalBytes=%d", kind, itemID, len(sent), len(final))
 	}
 	return stream.text(itemID, kind, status, final[len(sent):])
-}
-
-func (stream *agentActivityStream) command(params agentActivityParams, status model.AgentActivityStatus) error {
-	activity := agentActivityBase(stream.call, stream.result, params.Item.ID, model.AgentActivityCommand, status)
-	activity.Command, activity.CWD, activity.ExitCode = params.Item.Command, params.Item.CWD, params.Item.ExitCode
-	activity = model.BoundAgentActivityCommand(activity)
-	if err := stream.publish(activity); err != nil {
-		return err
-	}
-	if status != model.AgentActivityCompleted || activity.ExitCode == nil || *activity.ExitCode != 0 {
-		return nil
-	}
-	for _, action := range params.Item.CommandActions {
-		if action.Type != "read" || action.Path == "" {
-			continue
-		}
-		file := action.Path
-		if !filepath.IsAbs(file) {
-			file = filepath.Join(params.Item.CWD, file)
-		}
-		relative, err := filepath.Rel(stream.call.Root, file)
-		if err != nil {
-			return err
-		}
-		file = filepath.ToSlash(relative)
-		if !agentActivityReadablePath(stream.call, file) {
-			continue
-		}
-		read := agentActivityBase(stream.call, stream.result, params.Item.ID, model.AgentActivityFileRead, model.AgentActivityCompleted)
-		read.Paths = []string{file}
-		if err := stream.publish(read); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func agentActivityReadablePath(call codingagent.Assignment, file string) bool {
-	for _, granted := range call.ReadFiles {
-		if file == granted {
-			return true
-		}
-	}
-	return false
 }
 
 func (stream *agentActivityStream) text(itemID string, kind model.AgentActivityKind, status model.AgentActivityStatus, text string) error {

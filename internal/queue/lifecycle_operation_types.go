@@ -36,8 +36,6 @@ const (
 	LifecycleChannelSessionMessage LifecycleOperationKind = "channel_session_message"
 	LifecycleScrumChannel          LifecycleOperationKind = "scrum_channel_message"
 	LifecycleCancelJob             LifecycleOperationKind = "cancel_job"
-	LifecycleCodingPlanDecisions   LifecycleOperationKind = "coding_plan_decisions"
-	LifecycleCodingPlanFreeze      LifecycleOperationKind = "coding_plan_freeze"
 )
 
 type CompleteStepCommand struct {
@@ -98,11 +96,12 @@ type SubmitJobFeedbackCommand struct {
 }
 
 type ReplanJobCommand struct {
-	OperationID       model.LifecycleOperationID `json:"operation_id"`
-	JobID             int64                      `json:"job_id"`
-	Feedback          string                     `json:"feedback"`
-	WorkspaceRoot     string                     `json:"workspace_root,omitempty"`
-	WorkspaceIdentity string                     `json:"workspace_identity,omitempty"`
+	OperationID            model.LifecycleOperationID `json:"operation_id"`
+	JobID                  int64                      `json:"job_id"`
+	Feedback               string                     `json:"feedback"`
+	ObservedLedgerRevision int64                      `json:"observed_ledger_revision,omitempty"`
+	WorkspaceRoot          string                     `json:"workspace_root,omitempty"`
+	WorkspaceIdentity      string                     `json:"workspace_identity,omitempty"`
 }
 
 type CancelJobCommand struct {

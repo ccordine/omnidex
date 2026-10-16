@@ -15,7 +15,7 @@ type agentStartInput struct{ bytes.Buffer }
 
 func (*agentStartInput) Close() error { return nil }
 
-func TestNativeAgentRolesUsePlanAndReviewProtocol(t *testing.T) {
+func TestNativeAgentRolesUseOnlyIsolatedSchemaBoundTurns(t *testing.T) {
 	effort := "high"
 	thread := threadResult{Model: "fixture-model", ReasoningEffort: &effort}
 	thread.Thread.ID = "thread-1"
@@ -23,17 +23,16 @@ func TestNativeAgentRolesUsePlanAndReviewProtocol(t *testing.T) {
 		name       string
 		role       codingagent.Role
 		response   string
-		method     string
 		wantNotice bool
 	}{
 		{
-			name: "plan", role: codingagent.Plan, method: "turn/start", wantNotice: true,
-			response: `{"method":"item/started","params":{"threadId":"thread-1","turnId":"turn-1","item":{"id":"plan-1","type":"plan"}}}` + "\n" +
+			name: "planning", role: codingagent.PlanningInitial, wantNotice: true,
+			response: `{"method":"item/started","params":{"threadId":"thread-1","turnId":"turn-1","item":{"id":"message-1","type":"agentMessage"}}}` + "\n" +
 				`{"id":1,"result":{"turn":{"id":"turn-1"}}}` + "\n",
 		},
 		{
-			name: "review", role: codingagent.Review, method: "review/start",
-			response: `{"id":1,"result":{"turn":{"id":"turn-2"},"reviewThreadId":"thread-1"}}` + "\n",
+			name: "review", role: codingagent.Review,
+			response: `{"id":1,"result":{"turn":{"id":"turn-2"}}}` + "\n",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -54,33 +53,39 @@ func TestNativeAgentRolesUsePlanAndReviewProtocol(t *testing.T) {
 			if err := json.NewDecoder(bytes.NewReader(input.Bytes())).Decode(&request); err != nil {
 				t.Fatal(err)
 			}
-			if request.Method != test.method || request.Params["threadId"] != "thread-1" {
+			if request.Method != "turn/start" || request.Params["threadId"] != "thread-1" {
 				t.Fatalf("wrong native request: %+v", request)
 			}
-			if test.role == codingagent.Plan {
-				mode := request.Params["collaborationMode"].(map[string]any)
-				settings := mode["settings"].(map[string]any)
-				if mode["mode"] != "plan" || settings["model"] != "fixture-model" || settings["reasoning_effort"] != "high" || request.Params["outputSchema"] == nil {
-					t.Fatalf("native plan settings changed: %+v", request.Params)
-				}
-			} else {
-				target := request.Params["target"].(map[string]any)
-				if request.Params["delivery"] != "inline" || target["type"] != "custom" || target["instructions"] != "exact assignment" || request.Params["outputSchema"] != nil || request.Params["input"] != nil {
-					t.Fatalf("native review request changed: %+v", request.Params)
-				}
+			if request.Params["collaborationMode"] != nil || request.Params["outputSchema"] == nil || request.Params["target"] != nil || request.Params["delivery"] != nil {
+				t.Fatalf("isolated schema-bound settings changed: %+v", request.Params)
 			}
 		})
 	}
 }
 
-func TestNativeReviewRejectsDifferentInlineThread(t *testing.T) {
-	input := &agentStartInput{}
-	connection := &connection{input: input, output: bufio.NewScanner(strings.NewReader(`{"id":1,"result":{"turn":{"id":"turn"},"reviewThreadId":"foreign"}}` + "\n"))}
-	thread := threadResult{Model: "fixture-model"}
-	thread.Thread.ID = "thread"
-	_, _, _, err := connection.startAgentTurn(codingagent.Assignment{Role: codingagent.Review, Route: codingagent.Route{Model: "fixture-model"}}, thread, "review")
-	if err == nil || !strings.Contains(err.Error(), "different thread") {
-		t.Fatalf("foreign native review accepted: %v", err)
+func TestNativePlanningStationsUseTypedSchemasWithoutLegacyPlanMode(t *testing.T) {
+	for _, role := range []codingagent.Role{codingagent.PlanningInitial, codingagent.PlanningMutation, codingagent.PlanningCoverage, codingagent.PlanningAudit} {
+		t.Run(string(role), func(t *testing.T) {
+			schema := agentOutputSchema(codingagent.Assignment{Role: role})
+			properties := schema["properties"].(map[string]any)
+			if properties["tasks"] != nil || properties["questions"] != nil {
+				t.Fatalf("planning station inherited legacy workload schema: %#v", properties)
+			}
+			switch role {
+			case codingagent.PlanningInitial:
+				if properties["ledger"] == nil {
+					t.Fatal("initial station omitted ledger contract")
+				}
+			case codingagent.PlanningMutation:
+				if properties["operations"] == nil {
+					t.Fatal("mutation station omitted operations contract")
+				}
+			default:
+				if properties["covered"] == nil || properties["suggestions"] == nil || properties["mutation"] != nil {
+					t.Fatal("judgment station omitted coverage contract")
+				}
+			}
+		})
 	}
 }
 

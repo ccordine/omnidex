@@ -8,10 +8,11 @@ import (
 	"github.com/gryph/omnidex/internal/model"
 )
 
-func TestControllerActivityFollowsDurableReceiptAndExactTaskScope(t *testing.T) {
-	for _, foreign := range []bool{false, true} {
+func TestControllerActivityFollowsDurableReceiptAndWorkspaceScope(t *testing.T) {
+	for _, outsidePlan := range []bool{false, true} {
 		controller, journal := fixtureController(t, fixtureWorkload(), func(Assignment) (any, error) { return ExecutionResult{Questions: []string{}}, nil }, passingChecks)
-		call := controller.assignment(Execute, &fixtureWorkload().Tasks[0], controller.Configuration.Executor)
+		task := fixtureWorkload().Tasks[0]
+		call := controller.assignment(Execute, &task, controller.Configuration.Executor)
 		publications := 0
 		controller.Activity = func(activity model.AgentActivity) {
 			publications++
@@ -24,8 +25,8 @@ func TestControllerActivityFollowsDurableReceiptAndExactTaskScope(t *testing.T) 
 				return Result{}, err
 			}
 			file := call.WriteFiles[0]
-			if foreign {
-				file = "ungranted.txt"
+			if outsidePlan {
+				file = "unplanned.txt"
 			}
 			activity := &model.AgentActivity{Schema: 1, Source: model.AgentActivityNative, Kind: model.AgentActivityFileEdit, Status: model.AgentActivityCompleted, ThreadID: "thread", TurnID: "turn", ItemID: "edit", Role: string(call.Role), TaskID: call.Task.ID, Paths: []string{file}}
 			if err := event(NativeEvent{Activity: activity}); err != nil {
@@ -34,10 +35,11 @@ func TestControllerActivityFollowsDurableReceiptAndExactTaskScope(t *testing.T) 
 			return Result{Provider: call.Route.Provider, Model: call.Route.Model, ThreadID: "thread", TurnID: "turn", Completed: true, Content: json.RawMessage(`{"questions":[]}`)}, nil
 		})
 		_, err := controller.invoke(context.Background(), call, 1)
-		if foreign && (err == nil || publications != 0) {
-			t.Fatal("ungranted file activity was published")
-		}
-		if !foreign && (err != nil || publications != 1) {
+		if outsidePlan {
+			if err == nil || publications != 0 {
+				t.Fatalf("out-of-packet activity was accepted: publications=%d error=%v", publications, err)
+			}
+		} else if err != nil || publications != 1 {
 			t.Fatalf("bound activity lost: publications=%d error=%v", publications, err)
 		}
 	}

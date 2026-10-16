@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/database"
+	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/db"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/modelconfig"
@@ -159,7 +160,10 @@ func freshLifecycleRepository(t *testing.T, databaseURL string) (*pgxpool.Pool, 
 	if err != nil {
 		t.Fatalf("freeze empty model authority: %v", err)
 	}
-	return pool, queue.New(pool, authority)
+	route := codingagent.Route{Provider: "codex", Model: "fixture-model"}
+	return pool, queue.New(pool, authority).WithCodingAgents(codingagent.Configuration{
+		Mode: codingagent.Agents, Planner: route, Executor: route, Reviewer: route,
+	})
 }
 
 func lifecycleNonce(t *testing.T) string {

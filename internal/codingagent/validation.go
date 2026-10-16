@@ -3,62 +3,69 @@ package codingagent
 import (
 	"fmt"
 	"strings"
-
-	"github.com/gryph/omnidex/internal/model"
 )
 
-func (workload Workload) Validate() error {
-	if len(workload.Questions) > 0 {
-		return fmt.Errorf("a frozen workload cannot contain unanswered planning questions")
+func (task Task) Validate() error {
+	if strings.TrimSpace(task.ID) == "" || strings.TrimSpace(task.Goal) == "" || len(task.Acceptance) == 0 {
+		return fmt.Errorf("task packet requires identity, goal, and acceptance criteria")
 	}
-	if len(workload.Tasks) == 0 || len(workload.Tasks) > model.MaxCodingPlanLeaves {
-		return fmt.Errorf("agent plan must contain between 1 and %d tasks", model.MaxCodingPlanLeaves)
+	if err := validateTextList(task.Acceptance, "task acceptance criteria"); err != nil {
+		return err
 	}
-	known := map[string]bool{}
-	writers := map[string]string{}
-	for _, task := range workload.Tasks {
-		if task.ID == "" || known[task.ID] || strings.TrimSpace(task.Goal) == "" || len(task.Acceptance) == 0 || len(task.WriteFiles)+len(task.DeleteFiles) == 0 {
-			return fmt.Errorf("agent task requires one unique identity, goal, acceptance and mutation scope")
+	if err := validateTextList(task.KnownAffectedSystems, "task affected systems"); err != nil {
+		return err
+	}
+	guidance := map[string]bool{}
+	for _, item := range task.Guidance {
+		if strings.TrimSpace(item.ID) == "" || strings.TrimSpace(item.Kind) == "" || strings.TrimSpace(item.Text) == "" || guidance[item.ID] {
+			return fmt.Errorf("task guidance requires distinct identities, kinds, and concrete text")
 		}
-		if err := validateTextList(task.Acceptance, "acceptance"); err != nil {
+		guidance[item.ID] = true
+	}
+	write := map[string]bool{}
+	read := map[string]bool{}
+	deleted := map[string]bool{}
+	for _, file := range task.WriteFiles {
+		if err := ValidatePath(file); err != nil {
 			return err
 		}
-		for _, dependency := range task.Dependencies {
-			if !known[dependency] {
-				return fmt.Errorf("task %s has unknown or unordered dependency %s", task.ID, dependency)
-			}
+		if write[file] {
+			return fmt.Errorf("task packet repeats write file %q", file)
 		}
-		for _, file := range append(append(append([]string{}, task.ReadFiles...), task.WriteFiles...), task.DeleteFiles...) {
-			if err := ValidatePath(file); err != nil {
-				return err
-			}
-		}
-		for _, file := range task.DeleteFiles {
-			if contains(task.WriteFiles, file) || contains(task.ReadFiles, file) {
-				return fmt.Errorf("task %s gives file %s contradictory read, write or delete authority", task.ID, file)
-			}
-		}
-		for _, file := range task.WriteFiles {
-			if writer := writers[file]; writer != "" && !contains(task.Dependencies, writer) {
-				return fmt.Errorf("task %s shares writable file %s without depending on %s", task.ID, file, writer)
-			}
-			writers[file] = task.ID
-		}
-		for _, file := range task.DeleteFiles {
-			if writer := writers[file]; writer != "" && !contains(task.Dependencies, writer) {
-				return fmt.Errorf("task %s deletes file %s without depending on %s", task.ID, file, writer)
-			}
-			writers[file] = task.ID
-		}
-		if err := validateChecks(task.Checks); err != nil {
-			return err
-		}
-		if _, err := PlanTaskStatement(task); err != nil {
-			return err
-		}
-		known[task.ID] = true
+		write[file] = true
 	}
-	return validateChecks(workload.Checks)
+	for _, file := range task.DeleteFiles {
+		if err := ValidatePath(file); err != nil {
+			return err
+		}
+		if deleted[file] {
+			return fmt.Errorf("task packet repeats delete file %q", file)
+		}
+		if write[file] {
+			return fmt.Errorf("task packet both writes and deletes %q", file)
+		}
+		deleted[file] = true
+	}
+	for _, file := range task.ReadFiles {
+		if err := ValidatePath(file); err != nil {
+			return err
+		}
+		if read[file] {
+			return fmt.Errorf("task packet repeats read file %q", file)
+		}
+		if write[file] || deleted[file] {
+			return fmt.Errorf("task packet assigns file %q to multiple access classes", file)
+		}
+		read[file] = true
+	}
+	checks := map[string]bool{}
+	for _, check := range task.Checks {
+		if strings.TrimSpace(check.ID) == "" || len(check.Argv) == 0 || strings.TrimSpace(check.Argv[0]) == "" || checks[check.ID] {
+			return fmt.Errorf("task check requires a distinct identity and exact command")
+		}
+		checks[check.ID] = true
+	}
+	return nil
 }
 
 func ValidateReview(taskIDs map[string]Task, result ReviewResult, requirements ...Requirement) error {
@@ -68,8 +75,8 @@ func ValidateReview(taskIDs map[string]Task, result ReviewResult, requirements .
 	if err := validateTextList(result.Questions, "questions"); err != nil {
 		return err
 	}
-	if result.Verification != "" && strings.TrimSpace(result.Verification) == "" {
-		return fmt.Errorf("review verification must contain concrete text when present")
+	if strings.TrimSpace(result.Verification) == "" {
+		return fmt.Errorf("review requires concrete verification text")
 	}
 	for _, finding := range result.Findings {
 		task, known := taskIDs[finding.TaskID]
@@ -85,8 +92,14 @@ func ValidateReview(taskIDs map[string]Task, result ReviewResult, requirements .
 		if !bound {
 			return fmt.Errorf("review cannot introduce a new acceptance requirement")
 		}
-		if finding.File != "" && !contains(task.WriteFiles, finding.File) && !contains(task.ReadFiles, finding.File) && !contains(task.DeleteFiles, finding.File) {
-			return fmt.Errorf("review finding refers to an ungranted file")
+		if finding.File != "" {
+			if err := ValidatePath(finding.File); err != nil {
+				return fmt.Errorf("review finding file: %w", err)
+			}
+			allowed := uniqueFiles(append(append(append([]string{}, task.ReadFiles...), task.WriteFiles...), task.DeleteFiles...))
+			if !contains(allowed, finding.File) {
+				return fmt.Errorf("review finding escaped its task packet")
+			}
 		}
 	}
 	return nil
@@ -111,25 +124,6 @@ func validateCheckResults(expected []Check, results []CheckResult) error {
 		if results[index].ID != check.ID {
 			return fmt.Errorf("verification changed its frozen check identity")
 		}
-	}
-	return nil
-}
-
-func validateChecks(checks []Check) error {
-	if len(checks) == 0 {
-		return fmt.Errorf("agent plan requires real verification commands")
-	}
-	known := map[string]bool{}
-	for _, check := range checks {
-		if check.ID == "" || known[check.ID] || len(check.Argv) == 0 || strings.TrimSpace(check.Argv[0]) == "" {
-			return fmt.Errorf("verification check requires one unique ID and command")
-		}
-		for _, arg := range check.Argv {
-			if strings.ContainsRune(arg, 0) {
-				return fmt.Errorf("verification command contains NUL")
-			}
-		}
-		known[check.ID] = true
 	}
 	return nil
 }

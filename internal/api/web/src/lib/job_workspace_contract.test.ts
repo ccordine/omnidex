@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { requireJobWorkspaceBinding, requireWorkspaceIdentity } from "./job_workspace_contract";
 
 describe("frozen job workspace contract", () => {
-  it("preserves unbound Normal jobs and requires the direct coding workspace", () => {
+  it("preserves unbound conversation jobs and requires the coding-ledger workspace", () => {
     expect(requireJobWorkspaceBinding({ job: { id: 17, status: "running", current_generation: 1 }, steps: [] }, 17)).toEqual({});
     expect(() => requireJobWorkspaceBinding({ job: { id: 17, pipeline: "coding", status: "running", current_generation: 1 }, steps: [] }, 17)).toThrow("frozen workspace binding");
   });

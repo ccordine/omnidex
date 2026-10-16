@@ -36,7 +36,7 @@ func TestContextUsageRecordsActualSuccessAndFailureWithoutCallReceipts(t *testin
 				if err != nil {
 					t.Fatal(err)
 				}
-				repository := queue.New(pool, config)
+				repository := newWorkerTestRepository(pool, config)
 				ctx := context.Background()
 				job, err := repository.EnqueueCodingJob(ctx, fixture.question, t.TempDir())
 				if err != nil {

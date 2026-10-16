@@ -40,7 +40,8 @@ func (s *Server) replanJob(w http.ResponseWriter, r *http.Request, jobID int64) 
 	defer s.codingAgentsMu.RUnlock()
 	result, err := s.repo.ReplanJob(r.Context(), queue.ReplanJobCommand{
 		OperationID: req.OperationID, JobID: jobID, Feedback: req.Feedback,
-		WorkspaceRoot: req.WorkspaceRoot.Value, WorkspaceIdentity: req.WorkspaceIdentity.Value,
+		ObservedLedgerRevision: req.ObservedLedgerRevision,
+		WorkspaceRoot:          req.WorkspaceRoot.Value, WorkspaceIdentity: req.WorkspaceIdentity.Value,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

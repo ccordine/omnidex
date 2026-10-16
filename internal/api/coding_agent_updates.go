@@ -32,7 +32,7 @@ func (server *Server) handleCodingAgentUpdate(w http.ResponseWriter, r *http.Req
 	}
 	server.codingAgentsMu.Lock()
 	defer server.codingAgentsMu.Unlock()
-	busy, err := server.repo.CodingAgentsBusy(r.Context(), server.providerConfig.LLMProvider == "codex")
+	busy, err := server.repo.CodingAgentsBusy(r.Context())
 	if err != nil {
 		writeError(w, 500, err.Error())
 		return

@@ -23,19 +23,6 @@ func (controller *Controller) assignment(role Role, task *Task, route Route) Ass
 	return call
 }
 
-func (controller *Controller) overallAssignment(workload Workload) Assignment {
-	call := controller.assignment(OverallReview, nil, controller.Configuration.Reviewer)
-	call.Workload, call.Requirements = &workload, controller.Requirements
-	call.Objective = controller.Objective
-	call.ArtifactBindings = controller.ArtifactBindings
-	for _, task := range workload.Tasks {
-		call.ReadFiles = append(call.ReadFiles, task.ReadFiles...)
-		call.ReadFiles = append(call.ReadFiles, task.WriteFiles...)
-	}
-	call.ReadFiles = uniqueFiles(call.ReadFiles)
-	return call
-}
-
 func uniqueFiles(files []string) []string {
 	seen := map[string]bool{}
 	result := []string{}
@@ -87,7 +74,7 @@ func (controller *Controller) invokeOnce(ctx context.Context, call Assignment, r
 		}
 		if entry.Phase == "answers" {
 			question, known := questions[entry.QuestionID]
-			if known && (question.TaskID == taskID && taskID != "" || call.Role == Plan && question.TaskID == "" || call.Role == OverallReview) {
+			if known && call.Role.IsPlanning() && question.TaskID == "" {
 				call.QuestionContext = append(call.QuestionContext, QuestionContext{Questions: question.Questions, Answers: entry.Answers})
 			}
 		}
@@ -110,8 +97,8 @@ func (controller *Controller) invokeOnce(ctx context.Context, call Assignment, r
 		return Result{}, err
 	}
 	var writer FileWriter
-	if call.Role == Execute {
-		writer = taskFileWriter{environment: controller.Environment, files: call.WriteFiles, deletes: call.DeleteFiles}
+	if call.Role == Execute || call.Role == Review || call.Role.IsPlanning() && len(call.ReadFiles) > 0 {
+		writer = taskFileWriter{environment: controller.Environment, reads: call.ReadFiles, files: call.WriteFiles, deletes: call.DeleteFiles}
 	}
 	frames := 0
 	result, runErr := provider.Run(ctx, providerCall, writer, func(event NativeEvent) error {
@@ -136,19 +123,11 @@ func (controller *Controller) invokeOnce(ctx context.Context, call Assignment, r
 				return err
 			}
 			for _, file := range activity.Paths {
-				granted := call.ReadFiles
-				if activity.Kind == model.AgentActivityFileEdit {
-					granted = append(append([]string{}, call.WriteFiles...), call.DeleteFiles...)
+				if err := ValidatePath(file); err != nil {
+					return fmt.Errorf("agent activity path: %w", err)
 				}
-				bound := false
-				for _, allowed := range granted {
-					if file == allowed {
-						bound = true
-						break
-					}
-				}
-				if !bound {
-					return fmt.Errorf("agent activity names an ungranted file")
+				if !contains(call.ReadFiles, file) {
+					return fmt.Errorf("agent activity escaped its task packet: %s", file)
 				}
 			}
 			activity.Paths = append([]string(nil), activity.Paths...)

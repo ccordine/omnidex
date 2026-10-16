@@ -8,7 +8,7 @@ func (call Assignment) ValidateTaskContext() error {
 	if call.Role != Execute && call.Role != Review {
 		return nil
 	}
-	if call.Task == nil || call.Objective != nil || call.Workload != nil || len(call.Requirements) != 0 || len(call.ArtifactBindings) != 0 || call.PlanningEnvironment != nil || len(call.ConstructionFacts) != 0 {
+	if call.Task == nil || call.Objective != nil || len(call.Requirements) != 0 || len(call.ArtifactBindings) != 0 || call.PlanningEnvironment != nil || len(call.ConstructionFacts) != 0 || len(call.QuestionContext) != 0 {
 		return fmt.Errorf("narrow agent context requires one task and excludes parent context")
 	}
 	allowed := uniqueFiles(append(append([]string{}, call.Task.ReadFiles...), call.Task.WriteFiles...))
@@ -24,9 +24,16 @@ func (call Assignment) ValidateTaskContext() error {
 		}
 	}
 	for _, finding := range call.Findings {
-		findingFiles := uniqueFiles(append(allowed, call.Task.DeleteFiles...))
-		if finding.TaskID != call.Task.ID || finding.File != "" && !contains(findingFiles, finding.File) {
+		if finding.TaskID != call.Task.ID {
 			return fmt.Errorf("narrow agent context includes an unrelated finding")
+		}
+		if finding.File != "" {
+			if err := ValidatePath(finding.File); err != nil {
+				return fmt.Errorf("narrow agent context finding file: %w", err)
+			}
+			if !contains(allowed, finding.File) {
+				return fmt.Errorf("narrow agent context finding escaped its task packet")
+			}
 		}
 	}
 	if call.Role == Execute {
@@ -38,8 +45,8 @@ func (call Assignment) ValidateTaskContext() error {
 				return fmt.Errorf("narrow execution context includes an unrelated delete file")
 			}
 		}
-	} else if len(call.DeleteFiles) != 0 {
-		return fmt.Errorf("narrow review context received delete authority")
+	} else if len(call.WriteFiles) != 0 || len(call.DeleteFiles) != 0 {
+		return fmt.Errorf("narrow review context received mutation authority")
 	}
 	for _, check := range call.Checks {
 		known := false

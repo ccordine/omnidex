@@ -62,7 +62,7 @@ func TestFreshSchemaOutputLimitFailsOnceWithoutPartialConsumption(t *testing.T) 
 		t.Fatal(err)
 	}
 	decodedCandidates := make([]string, 0, 1)
-	_, err = runDirectCodingSemanticLeafCall(
+	_, err = runPortableSemanticLeafCall(
 		runtime, "fixture-model", "classification", classification, nil,
 		func(candidate string) (string, error) {
 			decodedCandidates = append(decodedCandidates, candidate)
@@ -145,7 +145,7 @@ func TestFreshSchemaExactStationPipelineJournalsDecoderAndProviderOutcomes(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	value, err := runDirectCodingSemanticLeafCall(
+	value, err := runPortableSemanticLeafCall(
 		runtime, "fixture-model", "classification", classification, nil,
 		func(candidate string) (string, error) {
 			decoded, err := assemblyline.DecodeApplicationClassification(

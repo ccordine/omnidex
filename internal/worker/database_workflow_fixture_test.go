@@ -57,7 +57,7 @@ func newDatabaseWorkflowFixture(t *testing.T, fixture databaseWorkflowCase) data
 	if err != nil {
 		t.Fatal(err)
 	}
-	repository := queue.New(pool, config)
+	repository := newWorkerTestRepository(pool, config)
 	source, err := repository.CreateDataSource(ctx, queue.DataSourceUpsert{
 		Name: "Database workflow fixture", Driver: datasource.DriverPostgres,
 		ExecutionMode: datasource.ExecutionModeDirect, UseDSN: true,

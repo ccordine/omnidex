@@ -15,11 +15,16 @@ func TestNarrowCallsRejectParentAndUnrelatedContext(t *testing.T) {
 		}
 		for _, mutate := range []func(*Assignment){
 			func(c *Assignment) { c.Objective = &Objective{Instruction: "entire original request"} },
-			func(c *Assignment) { c.Workload = &Workload{} },
 			func(c *Assignment) { c.Requirements = []Requirement{{ID: "r2", Outcome: "other responsibility"}} },
 			func(c *Assignment) { c.ReadFiles = append(c.ReadFiles, "b.txt") },
 			func(c *Assignment) { c.Findings = []Finding{{TaskID: "b", Observation: "unrelated"}} },
+			func(c *Assignment) {
+				c.Findings = []Finding{{TaskID: c.Task.ID, File: "../outside.go", Observation: "escaped workspace"}}
+			},
 			func(c *Assignment) { c.Checks = []CheckResult{{ID: "b-check"}} },
+			func(c *Assignment) {
+				c.QuestionContext = []QuestionContext{{Questions: []string{"expand scope"}, Answers: []string{"yes"}}}
+			},
 		} {
 			invalid := call
 			mutate(&invalid)
@@ -27,6 +32,19 @@ func TestNarrowCallsRejectParentAndUnrelatedContext(t *testing.T) {
 				t.Fatal("unrelated context reached a narrow agent")
 			}
 		}
+		if role == Review {
+			for _, mutate := range []func(*Assignment){
+				func(c *Assignment) { c.WriteFiles = []string{"a.txt"} },
+				func(c *Assignment) { c.DeleteFiles = []string{"a.txt"} },
+			} {
+				invalid := call
+				mutate(&invalid)
+				if err := invalid.ValidateTaskContext(); err == nil {
+					t.Fatal("mutation authority reached a narrow reviewer")
+				}
+			}
+		}
+
 	}
 }
 
@@ -44,18 +62,28 @@ func TestAnswersRemainSpecificToTheirAssignedStep(t *testing.T) {
 		question, _ := journal.Append(context.Background(), Entry{Generation: 1, Phase: "questions", TaskID: task, Questions: []string{"not this task's question"}})
 		_, _ = journal.Append(context.Background(), Entry{Generation: 1, Phase: "answers", QuestionID: question, Answers: []string{"unrelated context"}})
 	}
-	controller.Objective = &Objective{Instruction: "original request withheld from decomposition and execution"}
-	controller.ArtifactBindings = []ArtifactBinding{{Token: "ARTIFACT_1", Value: "NaN/infinity"}}
-	controller.PlanningEnvironment = &PlanningEnvironment{NewFilesAllowed: true, Executables: []string{"python3"}}
-	if err := controller.Run(context.Background()); err != nil {
+	if err := controller.RunTask(context.Background(), fixtureWorkload().Tasks[0]); err != nil {
 		t.Fatal(err)
 	}
 	for _, entry := range journal.entries {
-		if entry.Phase == "call_opened" && entry.Role == Plan && entry.Assignment.Objective != nil {
-			t.Fatal("task decomposition reinterpreted the original request")
+		if entry.Phase == "call_opened" && (entry.Assignment.Objective != nil || len(entry.Assignment.ArtifactBindings) != 0 || len(entry.Assignment.Requirements) != 0) {
+			t.Fatal("task call received planning context")
 		}
-		if entry.Phase == "call_opened" && entry.Role == Plan && (len(entry.Assignment.ArtifactBindings) != 1 || entry.Assignment.ArtifactBindings[0].Value != "NaN/infinity" || entry.Assignment.PlanningEnvironment == nil) {
-			t.Fatal("finalized planner context lost its actual artifact binding or capabilities")
+	}
+}
+
+func TestTaskRejectsRepeatedOrOverlappingFileGrants(t *testing.T) {
+	task := fixtureWorkload().Tasks[0]
+	for _, mutate := range []func(*Task){
+		func(task *Task) { task.ReadFiles = []string{"reference.txt", "reference.txt"} },
+		func(task *Task) { task.WriteFiles = []string{"a.txt", "a.txt"} },
+		func(task *Task) { task.DeleteFiles = []string{"old.txt", "old.txt"} },
+		func(task *Task) { task.ReadFiles = append(task.ReadFiles, "a.txt") },
+	} {
+		invalid := task
+		mutate(&invalid)
+		if err := invalid.Validate(); err == nil {
+			t.Fatal("repeated or overlapping task file grant was accepted")
 		}
 	}
 }

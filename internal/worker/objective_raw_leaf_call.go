@@ -26,7 +26,7 @@ func runObjectivePortableRawLeafCall[T any](
 	if modelName == "" {
 		return zero, 0, fmt.Errorf("objective raw leaf %s model is not configured", subject)
 	}
-	workerRuntime := portableWorkerRuntimeWithContext(runtime, "objective", ctx)
+	workerRuntime := portableSemanticRuntime(runtime, "objective", ctx)
 	value, err := runObjectiveRawLeafWorkerCall(
 		workerRuntime, modelName, subject, job, decode,
 	)
@@ -51,7 +51,7 @@ func runObjectiveRawLeafWorkerCall[T any](
 	if err != nil {
 		return zero, err
 	}
-	if err := validateDirectCodingSemanticPrompt(
+	if err := validatePortableSemanticPrompt(
 		prompt, nil, runtime.PathProvenance,
 	); err != nil {
 		return zero, err
@@ -65,13 +65,13 @@ func runObjectiveRawLeafWorkerCall[T any](
 		Model: modelName, Attempt: 1, MaxAttempts: 1, PromptBytes: len(prompt),
 	})
 	if err := runtime.Context.Err(); err != nil {
-		return zero, failDirectCodingSemanticCall(
+		return zero, failPortableSemanticCall(
 			runtime, modelName, subject, 0, fmt.Errorf("authority ended: %w", err),
 		)
 	}
 	result, err := runtime.Execute(job, modelName)
 	if err != nil {
-		return zero, failDirectCodingSemanticCall(runtime, modelName, subject, 1, err)
+		return zero, failPortableSemanticCall(runtime, modelName, subject, 1, err)
 	}
 	callID := int64(0)
 	if runtime.ReadCallEvidenceID != nil {
@@ -92,8 +92,8 @@ func runObjectiveRawLeafWorkerCall[T any](
 	}
 	validationErr = finalizeTypedWorkerResult(runtime, job, result, validationErr)
 	if validationErr != nil {
-		emitDirectCodingSemanticRejection(runtime, modelName, subject, 1, validationErr)
-		return zero, failDirectCodingSemanticCall(
+		emitPortableSemanticRejection(runtime, modelName, subject, 1, validationErr)
+		return zero, failPortableSemanticCall(
 			runtime, modelName, subject, 1,
 			fmt.Errorf("invalid %s semantic result: %w", subject, validationErr),
 		)

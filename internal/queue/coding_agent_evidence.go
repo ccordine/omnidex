@@ -57,7 +57,19 @@ func (store *CodingAgentEvidenceStore) Read(ctx context.Context) ([]codingagent.
 	if err := store.repository.RequireActiveStepAttempt(ctx, store.authority); err != nil {
 		return nil, err
 	}
-	rows, err := store.repository.pool.Query(ctx, `SELECT id,payload_json FROM evidence WHERE job_id=$1 AND step_id=$2 AND kind='coding_agent' AND payload_json->>'generation'=$3 AND payload_json->>'phase' NOT IN ('native_event','call_opened','call_completed') ORDER BY id`, store.authority.JobID, store.authority.StepID, fmt.Sprint(store.authority.Generation))
+	rows, err := store.repository.pool.Query(ctx, `
+		SELECT evidence.id,evidence.payload_json
+		FROM evidence
+		JOIN job_steps AS source_step ON source_step.id=evidence.step_id AND source_step.job_id=evidence.job_id
+		JOIN job_steps AS current_step ON current_step.id=$2 AND current_step.job_id=evidence.job_id
+		WHERE evidence.job_id=$1
+		  AND source_step.generation=$3
+		  AND source_step.action=current_step.action
+		  AND evidence.kind='coding_agent'
+		  AND evidence.payload_json->>'generation'=$3::text
+		  AND evidence.payload_json->>'phase' NOT IN ('native_event','call_opened','call_completed')
+		ORDER BY evidence.id
+	`, store.authority.JobID, store.authority.StepID, store.authority.Generation)
 	if err != nil {
 		return nil, err
 	}

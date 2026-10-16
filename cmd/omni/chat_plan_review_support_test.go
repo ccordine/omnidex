@@ -3,10 +3,12 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/gryph/omnidex/internal/client"
+	"github.com/gryph/omnidex/internal/ledgerapi"
 	"github.com/gryph/omnidex/internal/model"
 )
 
@@ -111,6 +113,30 @@ func singleLeafPlanReviewFixture(
 		}},
 		CreatedAt: now, UpdatedAt: now,
 	}
+}
+
+func codingLedgerPlanReviewFixture(plan model.CodingPlan) ledgerapi.CodingLedgerRevision {
+	ledger := model.EngineeringLedger{ID: "ledger-test", Revision: plan.Revision}
+	for index, leaf := range plan.Leaves {
+		state := model.LedgerReviewProposed
+		switch leaf.Decision {
+		case model.CodingPlanDecisionApproved:
+			state = model.LedgerReviewAgreed
+		case model.CodingPlanDecisionRejected:
+			state = model.LedgerReviewNeedsDiscussion
+		}
+		ledger.Constraints = append(ledger.Constraints, model.LedgerConstraint{
+			LedgerItem: model.LedgerItem{ID: model.LedgerItemID(leaf.ID), Provenance: model.LedgerProvenance{Kind: "owner_turn", Reference: "test", Revision: 1},
+				Rationale: "test", Priority: model.LedgerPriorityNormal, Rank: int64(index), Disposition: model.LedgerDispositionActive, ReviewState: state},
+			Rule: strings.TrimPrefix(leaf.Statement, "[constraint] "),
+		})
+	}
+	state := "proposed"
+	if plan.State == model.CodingPlanStateFrozen {
+		state = "frozen"
+	}
+	return ledgerapi.CodingLedgerRevision{LedgerID: 1, JobID: plan.JobID, Generation: plan.Generation, Revision: plan.Revision,
+		State: state, Ledger: ledger, CreatedAt: plan.CreatedAt, UpdatedAt: plan.UpdatedAt}
 }
 
 func decodeChatPlanReviewJSON(t *testing.T, request *http.Request, destination any) {

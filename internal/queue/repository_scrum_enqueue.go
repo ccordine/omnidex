@@ -20,6 +20,11 @@ func (r *Repository) enqueueScrumJobTx(
 	if projectID <= 0 {
 		return model.Job{}, fmt.Errorf("Scrum job requires one authoritative project")
 	}
+	configuration, _, err := r.loadCodingAgentConfiguration(ctx, tx)
+	if err != nil {
+		return model.Job{}, err
+	}
+	metadata.CodingExecution = configuration
 	if err := metadata.Validate(); err != nil {
 		return model.Job{}, err
 	}

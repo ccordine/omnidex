@@ -10,7 +10,7 @@ import (
 	"github.com/gryph/omnidex/internal/model"
 )
 
-func TestActiveSessionQuestionQueuesWithoutChangingRunningAuthority(t *testing.T) {
+func TestAgentsActiveSessionMessageCannotOpenAClassifierBesideTheLedger(t *testing.T) {
 	pool, repository := freshCodingPlanRepository(t)
 	repository.WithCodingAgents(codingAgentTestConfiguration())
 	ctx := context.Background()
@@ -25,14 +25,8 @@ func TestActiveSessionQuestionQueuesWithoutChangingRunningAuthority(t *testing.T
 		t.Fatalf("claim active objective: %v %v", claim, err)
 	}
 	question := observedSessionQuestion(t, command, initial.Job.ID, initial.Job.CurrentGeneration)
-	result, err := repository.SubmitChannelSessionTurn(ctx, question)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Disposition != model.ChannelSessionTurnDisposition("message_queued") ||
-		result.Job.ID != initial.Job.ID || result.Job.CurrentGeneration != initial.Job.CurrentGeneration ||
-		result.Job.Status != model.JobStatusRunning {
-		t.Fatalf("ordinary question changed active job before interpretation: %#v", result)
+	if _, err := repository.SubmitChannelSessionTurn(ctx, question); !errors.Is(err, ErrChannelSessionTurnInvalid) {
+		t.Fatalf("Agents mode admitted work outside its planning ledger: %v", err)
 	}
 	current, err := repository.CurrentJobDetails(ctx, initial.Job.ID)
 	if err != nil || current.Steps[0].ID != claim.Authority.StepID ||
@@ -43,15 +37,10 @@ func TestActiveSessionQuestionQueuesWithoutChangingRunningAuthority(t *testing.T
 	if err := pool.QueryRow(ctx, `SELECT current_attempt FROM job_steps WHERE id=$1`, claim.Authority.StepID).Scan(&attempt); err != nil || attempt != claim.Authority.Attempt {
 		t.Fatalf("question changed active attempt from %d to %d: %v", claim.Authority.Attempt, attempt, err)
 	}
-	replay, err := repository.SubmitChannelSessionTurn(ctx, question)
-	if err != nil || replay.Applied || replay.Disposition != result.Disposition ||
-		replay.Job.ID != result.Job.ID || replay.Job.CurrentGeneration != result.Job.CurrentGeneration {
-		t.Fatalf("queued question replay changed authority: %#v %v", replay, err)
-	}
 	snapshot, err := repository.ChannelSessionSnapshot(ctx, command.ChannelID, MaxChannelSessionMessages, command.WorkspaceIdentity)
 	if err != nil || snapshot.ActiveJob == nil || snapshot.ActiveJob.Job.ID != initial.Job.ID ||
-		len(snapshot.Turns) != 2 || snapshot.Turns[1].Disposition != result.Disposition || snapshot.Turns[1].Text != question.Text {
-		t.Fatalf("queued question is not durable session history: %#v %v", snapshot, err)
+		len(snapshot.Turns) != 1 {
+		t.Fatalf("rejected message entered durable session history: %#v %v", snapshot, err)
 	}
 }
 
@@ -85,5 +74,6 @@ func observedSessionQuestion(t *testing.T, command ChannelSessionTurnCommand, jo
 	if err := json.Unmarshal(raw, &question); err != nil {
 		t.Fatal(err)
 	}
+	question.CodingMode = command.CodingMode
 	return question
 }

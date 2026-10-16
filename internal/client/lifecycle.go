@@ -62,6 +62,33 @@ func (client *Client) Replan(
 	)
 }
 
+// ReplanPlanning submits one natural-language planning turn against the exact
+// normalized ledger revision currently displayed by the client.
+func (client *Client) ReplanPlanning(
+	ctx context.Context,
+	channel model.Channel,
+	workspaceIdentity string,
+	jobID int64,
+	operationID model.LifecycleOperationID,
+	feedback string,
+	observedLedgerRevision int64,
+) (model.Job, error) {
+	if observedLedgerRevision < 1 {
+		return model.Job{}, fmt.Errorf("planning replan requires a positive observed ledger revision")
+	}
+	if err := validateLifecycleControl(channel, workspaceIdentity, jobID, operationID,
+		feedback, "replan feedback", maxObjectiveControlBytes); err != nil {
+		return model.Job{}, err
+	}
+	return client.postLifecycleControl(ctx, channel, workspaceIdentity, jobID, operationID, "replan", struct {
+		OperationID            model.LifecycleOperationID `json:"operation_id"`
+		Feedback               string                     `json:"feedback"`
+		ObservedLedgerRevision int64                      `json:"observed_ledger_revision"`
+		WorkspaceRoot          string                     `json:"workspace_root"`
+		WorkspaceIdentity      string                     `json:"workspace_identity"`
+	}{operationID, feedback, observedLedgerRevision, channel.WorkspaceRoot, workspaceIdentity})
+}
+
 func (client *Client) Cancel(
 	ctx context.Context,
 	channel model.Channel,

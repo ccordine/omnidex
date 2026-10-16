@@ -15,7 +15,14 @@ func TestCLIActiveTranscriptKeepsOriginalTaskBindingWithConversationReplies(t *t
 	if err := validateChatSessionActiveTurn(messages, &job, 1); err != nil {
 		t.Fatalf("typed conversation reply displaced task binding: %v", err)
 	}
-	messages = append(messages, model.ChannelMessage{ID: 3, Role: model.ChannelMessageRoleUser, Content: "A different task."})
+	messages = append(messages, model.ChannelMessage{
+		ID: 3, Role: model.ChannelMessageRoleUser, Content: "Canceled later task.",
+		Turn: &model.ChannelMessageTurnState{JobID: 42, Status: model.JobStatusCanceled},
+	})
+	if err := validateChatSessionActiveTurn(messages, &job, 1); err != nil {
+		t.Fatalf("terminal task history displaced a recovered active task: %v", err)
+	}
+	messages = append(messages, model.ChannelMessage{ID: 4, Role: model.ChannelMessageRoleUser, Content: "A different task."})
 	if err := validateChatSessionActiveTurn(messages, &job, 1); err == nil {
 		t.Fatal("another user task bypassed active binding")
 	}

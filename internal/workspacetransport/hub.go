@@ -16,6 +16,16 @@ type Hub struct {
 	connections map[string]*remote
 }
 
+type connectionUnavailableError struct{}
+
+func (connectionUnavailableError) Error() string   { return "client workspace connection is unavailable" }
+func (connectionUnavailableError) Retryable() bool { return true }
+
+// ErrConnectionUnavailable marks a disconnected client as a recoverable
+// execution interruption. The durable job remains authoritative while a new
+// client connection is established.
+var ErrConnectionUnavailable error = connectionUnavailableError{}
+
 func NewHub() *Hub { return &Hub{connections: make(map[string]*remote)} }
 
 func (hub *Hub) Serve(ctx context.Context, conn *websocket.Conn) error {
@@ -105,7 +115,7 @@ func (hub *Hub) connection(ctx context.Context, root, identity string) (*remote,
 	r := hub.connections[identity]
 	hub.mu.Unlock()
 	if r == nil {
-		return nil, fmt.Errorf("client workspace connection is unavailable")
+		return nil, ErrConnectionUnavailable
 	}
 	if r.binding != value {
 		return nil, fmt.Errorf("workspace path differs from its exact client connection")

@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"unicode/utf8"
 
-	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/exactjson"
 )
 
@@ -18,7 +17,6 @@ const maxGenericCodingEnqueueBodyBytes int64 = 256 * 1024
 type enqueueRequest struct {
 	Instruction string                 `json:"instruction"`
 	Metadata    *genericCodingMetadata `json:"metadata"`
-	CodingMode  codingagent.Mode       `json:"coding_mode,omitempty"`
 }
 
 type genericCodingMetadata struct {
@@ -51,9 +49,6 @@ func decodeGenericCodingEnqueue(w http.ResponseWriter, r *http.Request) (enqueue
 	}
 	if request.Metadata == nil {
 		return enqueueRequest{}, fmt.Errorf("coding enqueue metadata must be one JSON object")
-	}
-	if request.CodingMode != "" && request.CodingMode != codingagent.Normal && request.CodingMode != codingagent.Agents {
-		return enqueueRequest{}, fmt.Errorf("unknown coding mode %q", request.CodingMode)
 	}
 	return request, nil
 }

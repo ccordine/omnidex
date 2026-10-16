@@ -9,7 +9,7 @@ import (
 )
 
 func TestControllerCallActivityFollowsDurableLifecycleForEveryRole(t *testing.T) {
-	for _, role := range []Role{Plan, Execute, Review, OverallReview} {
+	for _, role := range []Role{PlanningInitial, Execute, Review} {
 		t.Run(string(role), func(t *testing.T) {
 			controller, journal := fixtureController(t, fixtureWorkload(), func(call Assignment) (any, error) {
 				if call.Role == Execute {
@@ -19,7 +19,8 @@ func TestControllerCallActivityFollowsDurableLifecycleForEveryRole(t *testing.T)
 			}, passingChecks)
 			var task *Task
 			if role == Execute || role == Review {
-				task = &fixtureWorkload().Tasks[0]
+				value := fixtureWorkload().Tasks[0]
+				task = &value
 			}
 			call := controller.assignment(role, task, controller.Configuration.Executor)
 			var observed []model.AgentCallActivity
@@ -64,7 +65,8 @@ func TestControllerCallActivityPublishesOnlyPersistedFailures(t *testing.T) {
 				}
 				observed = append(observed, activity)
 			}
-			call := controller.assignment(Execute, &fixtureWorkload().Tasks[0], controller.Configuration.Executor)
+			task := fixtureWorkload().Tasks[0]
+			call := controller.assignment(Execute, &task, controller.Configuration.Executor)
 			if _, err := controller.invoke(context.Background(), call, 1); err == nil {
 				t.Fatal("provider or journal failure was hidden")
 			}
@@ -85,7 +87,8 @@ func TestControllerCallActivityRecordsRejectedNativeCompletionAsFailed(t *testin
 	controller, journal := fixtureController(t, fixtureWorkload(), func(Assignment) (any, error) {
 		return ExecutionResult{Questions: []string{}}, nil
 	}, passingChecks)
-	call := controller.assignment(Execute, &fixtureWorkload().Tasks[0], controller.Configuration.Executor)
+	task := fixtureWorkload().Tasks[0]
+	call := controller.assignment(Execute, &task, controller.Configuration.Executor)
 	provider := controller.Providers[call.Route.Provider]
 	controller.Providers[call.Route.Provider] = providerFunc(func(ctx context.Context, assignment Assignment, writer FileWriter, event func(NativeEvent) error) (Result, error) {
 		result, err := provider.Run(ctx, assignment, writer, event)

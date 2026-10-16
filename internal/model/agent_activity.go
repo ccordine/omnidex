@@ -78,7 +78,7 @@ func (activity AgentActivity) Validate() error {
 		return fmt.Errorf("agent activity has unregistered source %q", activity.Source)
 	}
 	switch activity.Role {
-	case "plan", "overall_review":
+	case "plan", "planning_initial", "planning_target", "planning_mutation", "planning_coverage", "planning_audit":
 		if activity.TaskID != "" {
 			return fmt.Errorf("global agent activity cannot carry a task identity")
 		}

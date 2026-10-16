@@ -279,7 +279,7 @@ export class ChatChannelCoordinator {
     }
   }
 
-  async createAndSubmit(prompt: string, codingMode: CodingMode = "normal"): Promise<NeutralChannelSubmitResult> {
+  async createAndSubmit(prompt: string, codingMode: CodingMode = "conversation"): Promise<NeutralChannelSubmitResult> {
     return this.transitions.run(async () => {
       if (this.selectedChannelID) throw new Error("Neutral channel creation requires neutral channel authority.");
       await this.creation.create();
@@ -292,7 +292,7 @@ export class ChatChannelCoordinator {
     await this.transitions.run(() => this.creation.create());
   }
 
-  async submit(prompt: string, roleplayTurn?: RoleplayTurnInput, codingMode: CodingMode = "normal"): Promise<ChatChannelTurnReceipt> {
+  async submit(prompt: string, roleplayTurn?: RoleplayTurnInput, codingMode: CodingMode = "conversation"): Promise<ChatChannelTurnReceipt> {
     return this.transitions.run(() => this.acceptTurnLocked(prompt, roleplayTurn, codingMode));
   }
 
@@ -303,7 +303,7 @@ export class ChatChannelCoordinator {
   private async acceptTurnLocked(
     prompt: string,
     roleplayTurn?: RoleplayTurnInput,
-    codingMode: CodingMode = "normal",
+    codingMode: CodingMode = "conversation",
   ): Promise<ChatChannelTurnReceipt> {
     const channelID = this.selectedChannelID;
     if (!channelID) throw new Error("A channel must be selected before sending a channel message.");

@@ -16,9 +16,9 @@ type Entry struct {
 	OperationID    string      `json:"operation_id,omitempty"`
 	QuestionID     int64       `json:"question_id,omitempty"`
 	WaitingAttempt int64       `json:"waiting_attempt,omitempty"`
+	LedgerRevision int64       `json:"ledger_revision,omitempty"`
 	Role           Role        `json:"role,omitempty"`
 	Assignment     *Assignment `json:"assignment,omitempty"`
-	Workload       *Workload   `json:"workload,omitempty"`
 	Result         *Result     `json:"result,omitempty"`
 	// Bytes are base64 encoded in JSON so JSONB preserves the original wire frame.
 	Frame             []byte             `json:"frame,omitempty"`
@@ -43,6 +43,7 @@ type Verifier interface {
 }
 type Environment interface {
 	ReadFiles(context.Context) ([]string, error)
+	ReadTaskFile(context.Context, string) (string, error)
 	PrepareFiles(context.Context, Task) error
 	Attest(context.Context) error
 	WriteFile(context.Context, FileWrite) error

@@ -359,16 +359,17 @@ Compatibility verification is independently required.
 
 It builds those edges itself.
 
-The direct coding path does not ask a model to plan or decompose the workload. It
-freezes one task per accepted atomic functional requirement. A partition call is legal
-only for one candidate whose mixed kind or multiple runtime outcomes were already
-established, and it returns only narrower candidate text to the code-owned queue.
-Other cognition consumers may ask one bounded semantic question among code-enumerated
-candidates only when one relation or fact is genuinely unresolved; the result binds
-that one leaf and cannot expand the objective graph.
+The coding planner receives the broad planning context and may propose a finite
+normalized PostgreSQL planning ledger. Code validates every item, edge, task contract,
+acceptance criterion, deterministic check, and workspace capability before presenting
+that exact revision for owner review. Only explicit owner approval can freeze the
+revision into executable task rows.
 
-There is no planner model. Code alone owns decomposition, scheduling, task state,
-retries, and execution.
+After freeze, code alone owns selection, ordering, task state, retries, checks, and
+completion. It selects the first incomplete task and gives one fresh executor only that
+task's frozen context. A fresh reviewer receives only the same task, its execution
+result, and deterministic check evidence. No model may expand, reorder, reopen, or
+otherwise own the ledger, and there is no alternate direct-coding path.
 
 ⸻
 

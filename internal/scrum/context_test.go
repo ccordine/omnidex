@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/modelconfig"
 )
 
@@ -13,6 +14,12 @@ func TestJobMetadataRejectsRemovedCodingScopePolicy(t *testing.T) {
 		CardID:      "metadata-card",
 		CardTitle:   "Exercise job metadata",
 		ModelConfig: modelconfig.Config{},
+		CodingExecution: codingagent.Configuration{
+			Mode:     codingagent.Agents,
+			Planner:  codingagent.Route{Provider: "codex", Model: "planner"},
+			Executor: codingagent.Route{Provider: "codex", Model: "executor"},
+			Reviewer: codingagent.Route{Provider: "codex", Model: "reviewer"},
+		},
 	}
 	raw, err := json.Marshal(metadata)
 	if err != nil {

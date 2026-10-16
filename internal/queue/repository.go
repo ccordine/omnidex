@@ -54,10 +54,16 @@ func (r *Repository) EnqueueCodingJob(
 	instruction string,
 	clientCWD string,
 ) (model.Job, error) {
-	return r.EnqueueCodingJobMode(ctx, instruction, clientCWD, codingagent.Normal)
+	return r.EnqueueCodingJobMode(ctx, instruction, clientCWD, codingagent.Agents)
 }
 
 func (r *Repository) EnqueueCodingJobMode(ctx context.Context, instruction, clientCWD string, mode codingagent.Mode) (model.Job, error) {
+	if mode == "" {
+		mode = codingagent.Agents
+	}
+	if mode != codingagent.Agents {
+		return model.Job{}, fmt.Errorf("coding jobs require the PostgreSQL task ledger")
+	}
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return model.Job{}, err
@@ -67,10 +73,7 @@ func (r *Repository) EnqueueCodingJobMode(ctx context.Context, instruction, clie
 	if err != nil {
 		return model.Job{}, err
 	}
-	var agents *codingagent.Configuration
-	if configuration.Mode == codingagent.Agents {
-		agents = &configuration
-	}
+	agents := &configuration
 	workspaceIdentity, err := projectroot.DirectoryIdentity(clientCWD)
 	if err != nil {
 		return model.Job{}, fmt.Errorf("attest coding job workspace identity: %w", err)

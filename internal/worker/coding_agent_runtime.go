@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/codingagent"
@@ -32,30 +31,16 @@ func (runtime *nativeRuntimeV3) runAgentCodingAction(configuration codingagent.C
 	if err := runtime.workspaceFence.Reattest(scope.Root); err != nil {
 		return fmt.Errorf("native agent environment must own the exact selected workspace: %w", err)
 	}
-	workload, err := runtime.svc.repo.CodingAgentFrozenWorkload(runtime.ctx, runtime.claim.Authority)
-	if err != nil {
-		return err
-	}
 	providers, verifier, err := runtime.svc.agentProviders()
 	if err != nil {
 		return err
 	}
-	request, err := runtime.directCodingRequest()
+	configuration, err = runtime.svc.repo.FrozenCodingLedgerConfiguration(runtime.ctx, runtime.claim.Authority)
 	if err != nil {
 		return err
 	}
-	intake, err := runtime.svc.repo.CodingAgentIntakeContext(runtime.ctx, runtime.claim.Authority)
-	if err != nil {
-		return err
-	}
-	if intake == nil {
-		return fmt.Errorf("native agent execution requires its approved intake context")
-	}
-	requirements := []codingagent.Requirement{{ID: codingAgentObjectiveRequirementID, Outcome: (&directCodingSession{request: request}).directCodingAuthority()}}
 	controller := codingagent.Controller{JobID: runtime.claim.Job.ID, Generation: runtime.claim.Authority.Generation,
-		Root: scope.Root, Configuration: configuration, Requirements: requirements, Providers: providers, Verifier: verifier,
-		Objective:        &codingagent.Objective{Instruction: request.Instruction, Clarifications: request.Feedback},
-		ArtifactBindings: intake.ArtifactBindings, ApprovedWorkload: workload,
+		Root: scope.Root, Configuration: configuration, Providers: providers, Verifier: verifier,
 		Environment: &codingAgentEnvironment{runtime: runtime, root: scope.Root, identity: identity},
 		Evidence:    runtime.svc.repo.CodingAgentEvidence(runtime.claim.Authority),
 		Activity: func(activity model.AgentActivity) {
@@ -72,16 +57,20 @@ func (runtime *nativeRuntimeV3) runAgentCodingAction(configuration codingagent.C
 		}}
 	stopHeartbeat := runtime.svc.startProgressHeartbeat(runtime.ctx, runtime.claim.Authority, "scoped-agent-work")
 	defer stopHeartbeat()
-	if err := runtime.runWithSessionMessages(agentContext, controller.Run); err != nil {
-		var questions *codingagent.QuestionsPending
-		if errors.As(err, &questions) {
-			if pauseErr := runtime.transitionAfterSessionMessages(agentContext, func() error {
-				return runtime.svc.repo.PauseCodingAgentStep(agentContext, runtime.claim.Authority, questions.Questions)
-			}); pauseErr != nil {
-				return pauseErr
-			}
+	for {
+		task, err := runtime.svc.repo.NextIncompleteCodingLedgerTask(agentContext, runtime.claim.Authority)
+		if err != nil {
+			return err
 		}
-		return err
+		if task == nil {
+			break
+		}
+		if err := controller.RunTask(agentContext, *task); err != nil {
+			return err
+		}
+		if err := runtime.svc.repo.AcceptCodingLedgerTask(agentContext, runtime.claim.Authority, task.ID); err != nil {
+			return err
+		}
 	}
 	if err := agentContext.Err(); err != nil {
 		return err
@@ -93,8 +82,11 @@ func (runtime *nativeRuntimeV3) runAgentCodingAction(configuration codingagent.C
 	if err != nil {
 		return err
 	}
-	entries = append([]codingagent.Entry{{Generation: runtime.claim.Authority.Generation, Phase: "plan_frozen", Workload: workload}}, entries...)
-	recap, err := codingagent.CompletionRecap(entries, model.MaxChannelContentBytes)
+	taskCount, checkCount, err := runtime.svc.repo.CodingLedgerCompletionCounts(agentContext, runtime.claim.Authority)
+	if err != nil {
+		return err
+	}
+	recap, err := codingagent.TaskLedgerCompletionRecap(entries, taskCount, checkCount, model.MaxChannelContentBytes)
 	if err != nil {
 		return err
 	}

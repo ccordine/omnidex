@@ -37,11 +37,12 @@ func newOperationID() (model.LifecycleOperationID, error) {
 }
 
 type pendingControl struct {
-	jobID         int64
-	action        string
-	exactText     string
-	locallyEchoed bool
-	operationID   model.LifecycleOperationID
+	jobID                  int64
+	action                 string
+	exactText              string
+	locallyEchoed          bool
+	operationID            model.LifecycleOperationID
+	observedLedgerRevision int64
 }
 
 func (session *chatSession) controlOperationID(
@@ -144,6 +145,9 @@ func (session *chatSession) control(
 	if err != nil {
 		return 0, err
 	}
+	if action == "redirect" && session.planReview != nil {
+		session.pendingControl.observedLedgerRevision = session.planReview.snapshot.Revision
+	}
 	var receipt model.Job
 	switch action {
 	case "interrupt":
@@ -166,6 +170,10 @@ func (session *chatSession) control(
 			session.ctx,
 			session.signals,
 			func(requestContext context.Context) (model.Job, error) {
+				if session.pendingControl.observedLedgerRevision > 0 {
+					return session.client.ReplanPlanning(requestContext, session.channel, session.workspaceIdentity,
+						jobID, operationID, text, session.pendingControl.observedLedgerRevision)
+				}
 				return session.client.Replan(
 					requestContext,
 					session.channel,

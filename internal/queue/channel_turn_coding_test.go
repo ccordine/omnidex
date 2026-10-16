@@ -50,12 +50,12 @@ func TestChannelAgentConfigurationRequiresExactWorkspaceBinding(t *testing.T) {
 	}
 }
 
-func TestChannelModesFreezeOnlyExplicitAgents(t *testing.T) {
+func TestChannelCodingExecutionFreezesOnlyExplicitAgents(t *testing.T) {
 	identity := "client_0123456789abcdef0123456789abcdef_directory_1_42"
 	authority := lockedChannelTurnAuthority{Mode: model.ChannelModeAssistant, CLIWorkspaceIdentity: &identity}
-	bound, err := bindChannelCodingExecution(&authority, codingagent.Configuration{Mode: codingagent.Normal})
+	bound, err := bindChannelCodingExecution(&authority, codingagent.Configuration{})
 	if err != nil || bound != "" || authority.CodingExecution != nil {
-		t.Fatalf("Normal changed prior channel binding: identity=%q error=%v", bound, err)
+		t.Fatalf("conversation changed prior channel binding: identity=%q error=%v", bound, err)
 	}
 	config := channelTestAgentConfig()
 	if _, err := bindChannelCodingExecution(&authority, config); err != nil {

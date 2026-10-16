@@ -98,21 +98,20 @@ Repeated polling state is coalesced. Full prompts and context remain available t
 
 ## Coding modes
 
-Normal uses the bounded semantic station workflow. Agents freezes a plan, gives
-an environment-capable executor one task with exact files and acceptance checks,
-then runs a fresh independent reviewer. Findings reopen the affected task;
-questions pause the same durable job until answered. Overall review checks the
-original objective and integration before completion. Restart preserves the
-plan, accepted tasks, questions and original native receipts.
+Normal uses the bounded semantic station workflow. Agents planning receives the
+broad planning context and persists a reviewed PostgreSQL planning ledger. Owner
+sign-off freezes that revision into a finite PostgreSQL task queue. Code selects
+the first ready task and compiles only its bound requirements, constraints,
+decisions, files, acceptance criteria, and checks into a task packet. A fresh
+Codex execution channel can read or mutate only that packet's files; Omnidex runs
+the checks, then a fresh read-only Codex review channel judges only that same
+packet. Code records acceptance and selects the next ready task. No model sees or
+controls the execution queue, sibling tasks, task transitions, or completion.
 
-The built-in Codex adapter uses Codex's native collaboration surfaces for those
-roles: task decomposition runs in native Plan mode, execution runs as a normal
-tool-capable turn through Omnidex's existing mutation fence, and task plus overall
-reviews run through native inline Review mode. Every invocation still receives a
-fresh ephemeral thread. Native plan/review lifecycle events, thread and turn IDs,
-token notifications, detailed review comments and the validated structured result
-are retained in the existing queue evidence journal and streamed through the same
-web and terminal activity surfaces; no second ledger is introduced.
+Every invocation receives a fresh ephemeral thread. Native lifecycle events,
+thread and turn IDs, token notifications, review comments, and validated results
+are retained as evidence beside the PostgreSQL ledger; they are not another
+state machine or source of workflow authority.
 
 Run **omni chat** from the local directory you want to work on. Terminal turns
 use Agents, show progress and concrete questions, and return a recap of written
@@ -128,13 +127,12 @@ Reply while work runs to give feedback, `/interrupt` to pause, `/redirect <text>
 to change the plan, or `/stop` or `/cancel` to stop. Cancellation reasons are
 optional. `/status` shows authoritative current work and `/help` lists controls.
 
-Alternatively, select **Agents** in a local CLI-bound assistant conversation, or submit
-`coding_mode: "agents"` to `POST /v1/jobs` with the selected workspace in
-`metadata.client_cwd`. The native service must own that workspace under
+Select **Code** in a local CLI-bound assistant conversation. Every request sent
+to `POST /v1/jobs` is a task-ledger coding run and supplies the selected workspace
+in `metadata.client_cwd`. The native service must own that workspace under
 `HOST_DIRECTORY_ACCESS_ROOT`; a remote directory with the same name grants no
-access. Unbound API jobs retain that configured boundary. Normal remains the
-default for ordinary web/API turns; terminal turns explicitly choose Agents.
-The API also accepts `coding_mode: "normal"`.
+access. Unbound API jobs retain that configured boundary. **Conversation** is
+the non-coding chat choice; it does not invoke an alternate coding pipeline.
 
 `CODING_PLANNER_PROVIDER/MODEL`, `CODING_EXECUTOR_PROVIDER/MODEL` and
 `CODING_REVIEWER_PROVIDER/MODEL` configure the independent roles at startup.
@@ -588,8 +586,8 @@ schema from `database/setup.sql` and retains existing jobs, evidence, and contex
 For native persistent operation from the existing checkout, build both binaries,
 then run `scripts/install-native.sh <codex-executable> <model> <postgres-bin> <valkey-server>`.
 It installs user services without copying source. The existing Codex sign-in owns
-authentication; PostgreSQL owns durable task state. See
-[persistent task execution](docs/CODEX_TASK_EXECUTION.md).
+authentication; PostgreSQL owns the finite approved coding ledger and durable
+task evidence.
 Run `omni chat` from the intended local directory. The native installer binds
 the managed CLI launchers to the current binary and retained server URL, including
 a recognized older Omnidex CLI that would otherwise shadow it on PATH. Configuration,

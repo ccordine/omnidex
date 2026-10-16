@@ -102,8 +102,9 @@ func applyJobCancellationTx(
 	); err != nil {
 		return model.Job{}, err
 	}
-	if err := transitionCodingPlanAuthorityTx(
-		ctx, tx, job, model.CodingPlanStateCanceled,
+	if err := transitionCodingAuthorityTx(
+		ctx, tx, job.ID, model.CodingPlanStateCanceled,
+		string(command.OperationID), command.Reason,
 	); err != nil {
 		return model.Job{}, err
 	}

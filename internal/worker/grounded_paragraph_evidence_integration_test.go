@@ -31,7 +31,7 @@ func TestGroundedParagraphPipelinesRecordSeparateRelationsAndReplay(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
-			repository := queue.New(pool, authority)
+			repository := newWorkerTestRepository(pool, authority)
 			ctx := context.Background()
 			job, err := repository.EnqueueCodingJob(ctx, "exercise bounded paragraph evidence", t.TempDir())
 			if err != nil {

@@ -66,7 +66,7 @@ func TestSemanticPlanningExplainsEveryCallAndValidatedSelection(t *testing.T) {
 					return assemblyline.DecodeApplicationRequirementCandidateAuthorizationResult(input, raw)
 				}
 				if runner == "coding" {
-					_, err = runDirectCodingSemanticLeafCall(runtime, "fixture-model", string(job.Kind), job, nil, decode)
+					_, err = runPortableSemanticLeafCall(runtime, "fixture-model", string(job.Kind), job, nil, decode)
 				} else {
 					_, err = runObjectiveRawLeafWorkerCall(runtime, "fixture-model", string(job.Kind), job, decode)
 				}

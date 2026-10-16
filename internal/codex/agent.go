@@ -15,8 +15,9 @@ func (client *Client) Run(parent context.Context, call codingagent.Assignment, w
 	if err := validateAgentAssignment(call); err != nil {
 		return result, err
 	}
-	if (call.Role == codingagent.Execute) != (writer != nil) {
-		return result, fmt.Errorf("execution requires its scoped file writer; other roles cannot receive one")
+	requiresFileAccess := call.Role == codingagent.Execute || call.Role == codingagent.Review || call.Role.IsPlanning() && len(call.ReadFiles) > 0
+	if requiresFileAccess != (writer != nil) {
+		return result, fmt.Errorf("agent assignment changed its exact scoped file access")
 	}
 	activity := newAgentActivityStream(call, &result, event)
 	event = activity.observe
@@ -27,18 +28,14 @@ func (client *Client) Run(parent context.Context, call codingagent.Assignment, w
 		return result, err
 	}
 	defer cleanup()
-	profile, err := client.executionPermissionProfile(call, scratch)
+	connection, err := startConfiguredConnection(ctx, client.command, call.Root, true, nil)
 	if err != nil {
-		return result, err
-	}
-	connection, err := startConfiguredConnection(ctx, client.command, call.Root, true, agentProfileFlags(profile))
-	if err != nil {
-		return result, err
+		return result, retryableAgentSessionError(err)
 	}
 	defer connection.close()
-	thread, raw, err := connection.startAgentThread(call, scratch, profile)
+	thread, raw, err := connection.startAgentThread(call, scratch)
 	if err != nil {
-		return result, err
+		return result, retryableAgentSessionError(err)
 	}
 	result.ThreadID = thread.Thread.ID
 	if err := recordAgentFrame(&result, raw, event); err != nil {
@@ -50,17 +47,18 @@ func (client *Client) Run(parent context.Context, call codingagent.Assignment, w
 	}
 	turnID, raw, pending, err := connection.startAgentTurn(call, thread, prompt)
 	if err != nil {
-		return result, err
+		return result, retryableAgentSessionError(err)
 	}
 	result.TurnID = turnID
 	if result.TurnID == "" {
 		return result, fmt.Errorf("agent turn lacks its native identity")
 	}
 	items := map[string]string{}
+	closedItems := map[string]string{}
 	finished := false
 	for _, notification := range pending {
 		var done bool
-		done, err = consumeAgentFrame(notification.frame, notification.raw, &result, call.Role, items, event)
+		done, err = consumeAgentFrameTracked(notification.frame, notification.raw, &result, call.Role, items, closedItems, event)
 		if err != nil {
 			return result, err
 		}
@@ -72,50 +70,48 @@ func (client *Client) Run(parent context.Context, call codingagent.Assignment, w
 	for !finished && ctx.Err() == nil {
 		frame, err := connection.nextAgent()
 		if err != nil {
-			return result, err
+			return result, retryableAgentSessionError(err)
 		}
 		if frame.ID != nil {
-			questions, handled, questionErr := mapAgentUserInputRequest(call, frame, &result)
-			if questionErr != nil {
-				return result, questionErr
-			}
-			if handled {
-				if err := recordAgentFrame(&result, connection.lastFrame, event); err != nil {
-					return result, err
-				}
-				content, err := agentQuestionResult(call.Role, questions)
-				if err != nil {
-					return result, err
-				}
-				result.Content, result.Completed = content, true
-				return result, nil
+			if frame.Method == "item/tool/requestUserInput" {
+				return result, fmt.Errorf("frozen task agents cannot request owner input")
 			}
 			if err := connection.handleAgentTool(ctx, frame, &result, call, writer, event); err != nil {
 				return result, err
 			}
 			continue
 		}
-		finished, err = consumeAgentFrame(frame, connection.lastFrame, &result, call.Role, items, event)
+		finished, err = consumeAgentFrameTracked(frame, connection.lastFrame, &result, call.Role, items, closedItems, event)
 		if err != nil {
 			return result, err
 		}
 	}
 	if !finished {
-		return result, ctx.Err()
+		err := ctx.Err()
+		if err == nil {
+			err = fmt.Errorf("agent session ended before its terminal frame")
+		}
+		return result, retryableAgentSessionError(err)
 	}
 	if len(items) > 0 {
 		return result, fmt.Errorf("agent ended with incomplete native items")
 	}
-	mapped, err := mapAgentPlanResult(call, result.Content)
-	if err != nil {
-		return result, err
-	}
-	mapped, err = mapAgentReviewResult(call, mapped)
+	mapped, err := mapAgentReviewRunResult(call, result.Content)
 	if err != nil {
 		return result, err
 	}
 	result.Content = mapped
 	return result, nil
+}
+
+// Provider processes and their streams are disposable. Losing one never proves
+// the durable task failed; the worker must open a fresh session against the same
+// frozen task and persisted evidence.
+func retryableAgentSessionError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &agentInferenceFailure{message: err.Error(), retryable: true}
 }
 
 func agentEvidenceMethod(method string) bool {
@@ -128,7 +124,7 @@ func agentEvidenceMethod(method string) bool {
 	}
 }
 
-func (connection *connection) startAgentThread(call codingagent.Assignment, scratch string, profile map[string]any) (threadResult, json.RawMessage, error) {
+func (connection *connection) startAgentThread(call codingagent.Assignment, scratch string) (threadResult, json.RawMessage, error) {
 	var thread threadResult
 	if _, err := connection.call("initialize", map[string]any{"clientInfo": map[string]string{"name": "omnidex", "title": "Omnidex", "version": "0.5.0"}, "capabilities": map[string]bool{"experimentalApi": true}}, nil); err != nil {
 		return thread, nil, err
@@ -140,19 +136,17 @@ func (connection *connection) startAgentThread(call codingagent.Assignment, scra
 	if err != nil {
 		return thread, nil, err
 	}
-	features := configuration["features"].(map[string]bool)
-	features["shell_tool"], features["unified_exec"] = true, true
-	features["shell_snapshot"] = false
-	features["fast_mode"] = true
-	configuration["permissions"] = map[string]any{"omnidex-task": profile}
+	baseInstructions := "Perform only the supplied assignment. Omnidex owns workflow and side effects. Use only explicitly supplied file tools and return the requested structured result."
 	configuration["shell_environment_policy"] = map[string]any{"inherit": "none", "set": agentToolEnvironment(scratch)}
 	parameters := map[string]any{"model": call.Route.Model, "allowProviderModelFallback": false,
-		"cwd": call.Root, "permissions": "omnidex-task", "approvalPolicy": "never", "config": configuration,
-		"baseInstructions": "Perform only the supplied scoped assignment. Use the granted files and tools. Return the requested structured result.",
+		"cwd": call.Root, "sandbox": "read-only", "approvalPolicy": "never", "config": configuration,
+		"baseInstructions": baseInstructions,
 		"serviceName":      "omnidex-agents", "ephemeral": true}
 	applyAgentInferenceOptions(parameters, call.Route)
 	if call.Role == codingagent.Execute {
-		parameters["dynamicTools"] = []any{agentWriteTool(), agentDeleteTool()}
+		parameters["dynamicTools"] = []any{agentReadTool(), agentWriteTool(), agentDeleteTool()}
+	} else if len(call.ReadFiles) > 0 {
+		parameters["dynamicTools"] = []any{agentReadTool()}
 	}
 	raw, err := connection.call("thread/start", parameters, &thread)
 	if err == nil && (thread.Model != call.Route.Model || thread.Thread.ID == "") {
@@ -169,7 +163,9 @@ func validateAgentAssignment(call codingagent.Assignment) error {
 		return fmt.Errorf("agent assignment lacks exact authority, workspace or route")
 	}
 	switch call.Role {
-	case codingagent.Plan, codingagent.Execute, codingagent.Review, codingagent.OverallReview:
+	case codingagent.PlanningInitial, codingagent.PlanningTarget, codingagent.PlanningMutation,
+		codingagent.PlanningCoverage, codingagent.PlanningAudit,
+		codingagent.Execute, codingagent.Review:
 	default:
 		return fmt.Errorf("unknown agent assignment role")
 	}

@@ -89,17 +89,6 @@ func requireLifecycleWorkspaceAuthority(
 	return nil
 }
 
-func requireCodingPlanWorkspaceAuthority(
-	job model.Job,
-	workspaceRoot string,
-	workspaceIdentity string,
-) error {
-	if err := validateRequiredLifecycleWorkspaceBinding(workspaceRoot, workspaceIdentity); err != nil {
-		return err
-	}
-	return requireLifecycleWorkspaceAuthority(job, workspaceRoot, workspaceIdentity)
-}
-
 func lifecycleJobWorkspaceBinding(job model.Job) (string, string, error) {
 	required, root, identity, err := lifecycleJobWorkspaceRequirement(job)
 	if err != nil {

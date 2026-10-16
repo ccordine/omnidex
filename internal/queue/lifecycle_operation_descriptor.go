@@ -216,6 +216,9 @@ func normalizeReplanJobCommand(command ReplanJobCommand) (ReplanJobCommand, erro
 	if command.JobID <= 0 {
 		return ReplanJobCommand{}, fmt.Errorf("replan command requires a positive job ID")
 	}
+	if command.ObservedLedgerRevision < 0 {
+		return ReplanJobCommand{}, fmt.Errorf("observed ledger revision cannot be negative")
+	}
 	feedback, err := validateReplanFeedback(command.Feedback)
 	if err != nil {
 		return ReplanJobCommand{}, err
@@ -296,8 +299,7 @@ func validateLifecycleText(name, value string, maximum int, allowEmpty bool) err
 func registeredLifecycleOperationKind(kind LifecycleOperationKind) bool {
 	switch kind {
 	case LifecycleCompleteStep, LifecycleFailStep, LifecycleSubmitFeedback, LifecycleInterruptJob,
-		LifecycleReplanJob, LifecycleChannelSession, LifecycleChannelSessionMessage, LifecycleCancelJob,
-		LifecycleCodingPlanDecisions, LifecycleCodingPlanFreeze:
+		LifecycleReplanJob, LifecycleChannelSession, LifecycleChannelSessionMessage, LifecycleCancelJob:
 		return true
 	default:
 		return false

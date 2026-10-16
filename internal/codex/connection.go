@@ -48,7 +48,10 @@ func startConnection(ctx context.Context, command, directory string) (*connectio
 }
 
 func startConfiguredConnection(ctx context.Context, command, directory string, agent bool, overrides []string) (*connection, error) {
-	enabled := fmt.Sprint(agent)
+	// Model-backed agent calls never receive native shell tools. The only caller
+	// that enables command execution is the deterministic frozen-check runner,
+	// which supplies its explicit permission overrides without a model turn.
+	enabled := fmt.Sprint(len(overrides) > 0)
 	arguments := []string{"app-server", "--listen", "stdio://",
 		"-c", "features.shell_tool=" + enabled, "-c", "features.unified_exec=" + enabled,
 		"-c", "features.apps=false", "-c", "features.plugins=false", "-c", "agents.enabled=false",
@@ -135,7 +138,7 @@ func (connection *connection) readFrame(agent bool) (rpcFrame, error) {
 	if err := json.Unmarshal(connection.lastFrame, &frame); err != nil {
 		return frame, err
 	}
-	allowedAgentRequest := frame.Method == "item/tool/call" || frame.Method == "item/tool/requestUserInput"
+	allowedAgentRequest := frame.Method == "item/tool/call"
 	if frame.ID != nil && frame.Method != "" && !(agent && allowedAgentRequest) {
 		return frame, fmt.Errorf("Codex attempted a client tool or approval request")
 	}

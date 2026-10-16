@@ -4380,13 +4380,13 @@ CREATE TABLE job_lifecycle_operations (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT job_lifecycle_operations_check CHECK (((jsonb_typeof(command_payload) = 'object'::text) AND (command_payload ? 'operation_id'::text) AND ((command_payload ->> 'operation_id'::text) = operation_id))),
     CONSTRAINT job_lifecycle_operations_check2 CHECK (((jsonb_typeof(result_job) = 'object'::text) AND (result_job ? 'id'::text) AND (result_job ? 'current_generation'::text) AND (result_job ? 'status'::text) AND (((result_job ->> 'id'::text))::bigint = job_id) AND (((result_job ->> 'current_generation'::text))::bigint = result_generation) AND ((result_job ->> 'status'::text) = result_job_status))),
-    CONSTRAINT job_lifecycle_operations_check3 CHECK ((((kind = 'complete_step'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'completed'::text)) OR ((kind = 'fail_step'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'failed'::text) AND (result_job_status = 'failed'::text)) OR ((kind = 'submit_feedback'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND ((result_step_status = 'completed'::text) OR ((result_step_status = 'running'::text) AND (result_job_status = 'running'::text) AND COALESCE(result_job->'metadata'->'coding_execution'->>'mode' = 'agents', false)))) OR ((kind = 'interrupt_job'::text) AND (step_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = (observed_generation + 1)) AND (result_job_status = 'waiting_input'::text)) OR ((kind = 'replan_job'::text) AND (step_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = (observed_generation + 1)) AND (result_job_status = 'running'::text)) OR ((kind = 'cancel_job'::text) AND (step_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = observed_generation) AND (result_job_status = 'canceled'::text)) OR ((kind = 'coding_plan_decisions'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'waiting_input'::text) AND (result_job_status = 'waiting_input'::text)) OR ((kind = 'coding_plan_freeze'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'completed'::text) AND (result_job_status = 'running'::text)))),
+    CONSTRAINT job_lifecycle_operations_check3 CHECK ((((kind = 'complete_step'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'completed'::text)) OR ((kind = 'fail_step'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'failed'::text) AND (result_job_status = 'failed'::text)) OR ((kind = 'submit_feedback'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND ((result_step_status = 'completed'::text) OR ((result_step_status = 'running'::text) AND (result_job_status = 'running'::text) AND COALESCE(result_job->'metadata'->'coding_execution'->>'mode' = 'agents', false)))) OR ((kind = 'interrupt_job'::text) AND (step_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = (observed_generation + 1)) AND (result_job_status = 'waiting_input'::text)) OR ((kind = 'replan_job'::text) AND (step_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = (observed_generation + 1)) AND (result_job_status = 'running'::text)) OR ((kind = 'cancel_job'::text) AND (step_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = observed_generation) AND (result_job_status = 'canceled'::text)))),
     CONSTRAINT job_lifecycle_operations_check4 CHECK (
 CASE
     WHEN (kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text])) THEN ((command_payload ? 'step_id'::text) AND (((command_payload ->> 'step_id'::text))::bigint = step_id))
     ELSE ((command_payload ? 'job_id'::text) AND (((command_payload ->> 'job_id'::text))::bigint = job_id))
 END),
-    CONSTRAINT job_lifecycle_operations_kind_check CHECK ((kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text, 'submit_feedback'::text, 'interrupt_job'::text, 'replan_job'::text, 'cancel_job'::text, 'coding_plan_decisions'::text, 'coding_plan_freeze'::text]))),
+    CONSTRAINT job_lifecycle_operations_kind_check CHECK ((kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text, 'submit_feedback'::text, 'interrupt_job'::text, 'replan_job'::text, 'cancel_job'::text]))),
     CONSTRAINT job_lifecycle_operations_observed_generation_check CHECK ((observed_generation > 0)),
     CONSTRAINT job_lifecycle_operations_operation_id_check CHECK ((operation_id ~ '^lifecycle_operation_[a-z0-9_]{1,128}$'::text)),
     CONSTRAINT job_lifecycle_operations_result_generation_check CHECK ((result_generation > 0)),
@@ -4519,7 +4519,7 @@ CREATE TABLE lifecycle_operation_registry (
     command_payload jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT lifecycle_operation_registry_check CHECK (((jsonb_typeof(command_payload) = 'object'::text) AND (command_payload ? 'operation_id'::text) AND ((command_payload ->> 'operation_id'::text) = operation_id))),
-    CONSTRAINT lifecycle_operation_registry_kind_check CHECK ((kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text, 'submit_feedback'::text, 'interrupt_job'::text, 'replan_job'::text, 'channel_session_turn'::text, 'channel_session_message'::text, 'scrum_channel_message'::text, 'cancel_job'::text, 'coding_plan_decisions'::text, 'coding_plan_freeze'::text]))),
+    CONSTRAINT lifecycle_operation_registry_kind_check CHECK ((kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text, 'submit_feedback'::text, 'interrupt_job'::text, 'replan_job'::text, 'channel_session_turn'::text, 'channel_session_message'::text, 'scrum_channel_message'::text, 'cancel_job'::text]))),
     CONSTRAINT lifecycle_operation_registry_operation_id_check CHECK ((operation_id ~ '^lifecycle_operation_[a-z0-9_]{1,128}$'::text))
 );
 
@@ -5965,6 +5965,9 @@ ALTER TABLE ONLY database_evidence
 ALTER TABLE ONLY evidence
     ADD CONSTRAINT evidence_pkey PRIMARY KEY (id);
 
+ALTER TABLE ONLY evidence
+    ADD CONSTRAINT evidence_id_job_id_key UNIQUE (id,job_id);
+
 
 --
 -- Name: job_generations job_generations_pkey; Type: CONSTRAINT; Schema: current runtime; Owner: -
@@ -6003,21 +6006,11 @@ ALTER TABLE job_lifecycle_operations
        lifecycle_workspace_payload_is_valid(command_payload)) OR
       ((kind = ANY (ARRAY['interrupt_job'::text, 'replan_job'::text])) AND
        (command_payload ?& ARRAY['operation_id'::text, 'job_id'::text, 'feedback'::text]) AND
-       ((command_payload - ARRAY['operation_id'::text, 'job_id'::text, 'feedback'::text, 'workspace_root'::text, 'workspace_identity'::text]) = '{}'::jsonb) AND
+       ((command_payload - ARRAY['operation_id'::text, 'job_id'::text, 'feedback'::text, 'observed_ledger_revision'::text, 'workspace_root'::text, 'workspace_identity'::text]) = '{}'::jsonb) AND
        lifecycle_workspace_payload_is_valid(command_payload)) OR
       ((kind = 'cancel_job'::text) AND
        (command_payload ?& ARRAY['operation_id'::text, 'job_id'::text, 'reason'::text]) AND
        ((command_payload - ARRAY['operation_id'::text, 'job_id'::text, 'reason'::text, 'workspace_root'::text, 'workspace_identity'::text]) = '{}'::jsonb) AND
-       lifecycle_workspace_payload_is_valid(command_payload)) OR
-      ((kind = 'coding_plan_decisions'::text) AND
-       (command_payload ?& ARRAY['operation_id'::text, 'job_id'::text, 'generation'::text, 'revision'::text, 'decisions'::text]) AND
-       ((command_payload - ARRAY['operation_id'::text, 'job_id'::text, 'generation'::text, 'revision'::text, 'decisions'::text, 'workspace_root'::text, 'workspace_identity'::text]) = '{}'::jsonb) AND
-       jsonb_typeof(command_payload->'decisions')='array' AND
-       jsonb_array_length(command_payload->'decisions') BETWEEN 1 AND 30 AND
-       lifecycle_workspace_payload_is_valid(command_payload)) OR
-      ((kind = 'coding_plan_freeze'::text) AND
-       (command_payload ?& ARRAY['operation_id'::text, 'job_id'::text, 'generation'::text, 'revision'::text]) AND
-       ((command_payload - ARRAY['operation_id'::text, 'job_id'::text, 'generation'::text, 'revision'::text, 'workspace_root'::text, 'workspace_identity'::text]) = '{}'::jsonb) AND
        lifecycle_workspace_payload_is_valid(command_payload))) NOT VALID;
 
 
@@ -9551,481 +9544,2422 @@ ALTER TABLE ONLY verification_command_evidence
 
 
 --
--- Code-owned coding-plan review authority.
---
+-- Normalized durable coding ledger and agent-execution authority.
+-- These records extend the existing queue; they are not a second scheduler.
 
-CREATE TABLE coding_plans (
-    job_id bigint NOT NULL,
-    generation bigint NOT NULL,
-    revision bigint DEFAULT 1 NOT NULL,
-    state text DEFAULT 'review'::text NOT NULL,
-    plan_step_id bigint NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    frozen_at timestamp with time zone,
-    CONSTRAINT coding_plans_pkey PRIMARY KEY (job_id,generation),
-    CONSTRAINT coding_plans_revision_positive CHECK (revision>0),
-    CONSTRAINT coding_plans_state_check CHECK (state IN ('review','frozen','superseded','canceled')),
-    CONSTRAINT coding_plans_timestamp_shape CHECK (
-        updated_at>=created_at AND
-        ((state='review' AND frozen_at IS NULL) OR
-         (state='frozen' AND frozen_at IS NOT NULL) OR
-         state IN ('superseded','canceled'))
-    ),
-    CONSTRAINT coding_plans_generation_fkey FOREIGN KEY (job_id,generation)
-        REFERENCES job_generations(job_id,generation) ON DELETE RESTRICT,
-    CONSTRAINT coding_plans_step_fkey FOREIGN KEY (job_id,generation,plan_step_id)
-        REFERENCES job_steps(job_id,generation,id) ON DELETE RESTRICT
+CREATE FUNCTION reject_agent_execution_history_mutation() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION 'agent execution history is immutable';
+END;
+$$;
+
+CREATE TABLE coding_ledgers (
+    id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    job_id bigint NOT NULL UNIQUE REFERENCES jobs(id) ON DELETE RESTRICT,
+    current_revision bigint NOT NULL DEFAULT 0 CHECK (current_revision>=0),
+    frozen_revision bigint,
+    state text NOT NULL DEFAULT 'proposed' CHECK (state IN ('proposed','frozen','revising','completed','cancelled')),
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    CONSTRAINT coding_ledgers_id_job_id_key UNIQUE (id,job_id),
+    CONSTRAINT coding_ledgers_finite_timestamps_check CHECK (isfinite(created_at) AND isfinite(updated_at)),
+    CONSTRAINT coding_ledgers_state_shape_check CHECK (
+           (state='frozen' AND frozen_revision=current_revision AND frozen_revision>0) OR
+           (state='completed' AND frozen_revision=current_revision AND frozen_revision>0) OR
+           (state='cancelled' AND
+            (frozen_revision IS NULL OR
+             (frozen_revision>0 AND frozen_revision<=current_revision))) OR
+           (state IN ('proposed','revising') AND frozen_revision IS NULL))
 );
 
-CREATE FUNCTION validate_coding_plan_insert() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-DECLARE
-    authoritative_generation BIGINT;
-    plan_action TEXT;
-    plan_status TEXT;
-    plan_superseded_at_generation BIGINT;
-    job_status TEXT;
+CREATE TABLE coding_ledger_revisions (
+    ledger_id bigint NOT NULL REFERENCES coding_ledgers(id) ON DELETE RESTRICT,
+    revision bigint NOT NULL CHECK (revision>0),
+    base_revision bigint NOT NULL CHECK (base_revision>=0),
+    operation_id text NOT NULL,
+    owner_turn_id text,
+    state text NOT NULL CHECK (state IN ('proposed','frozen')),
+    coverage_passed boolean NOT NULL DEFAULT false,
+    mutation_payload jsonb,
+    creation_transaction bigint NOT NULL DEFAULT txid_current(),
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (ledger_id,revision),
+    UNIQUE (ledger_id,operation_id),
+    CHECK (revision=base_revision+1),
+    CHECK (octet_length(operation_id) BETWEEN 1 AND 256 AND operation_id=btrim(operation_id))
+);
+
+ALTER TABLE coding_ledgers
+    ADD CONSTRAINT coding_ledgers_frozen_revision_fkey
+    FOREIGN KEY (id,frozen_revision) REFERENCES coding_ledger_revisions(ledger_id,revision) ON DELETE RESTRICT;
+
+CREATE TABLE coding_ledger_items (
+    ledger_id bigint NOT NULL REFERENCES coding_ledgers(id) ON DELETE RESTRICT,
+    item_id text NOT NULL,
+    item_kind text NOT NULL CHECK (item_kind IN ('objective','requirement','constraint','group','task','acceptance_criterion','check','decision','question','finding')),
+    created_revision bigint NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (ledger_id,item_id),
+    FOREIGN KEY (ledger_id,created_revision) REFERENCES coding_ledger_revisions(ledger_id,revision) ON DELETE RESTRICT,
+    CHECK (item_id ~ '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$')
+);
+
+CREATE TABLE coding_ledger_item_versions (
+    ledger_id bigint NOT NULL,
+    item_id text NOT NULL,
+    revision bigint NOT NULL,
+    disposition text NOT NULL CHECK (disposition IN ('active','removed')),
+    review_state text CHECK (review_state IN ('proposed','agreed','needs_discussion')),
+    rank bigint NOT NULL CHECK (rank>=0),
+    payload jsonb NOT NULL CHECK (jsonb_typeof(payload)='object' AND payload<>'{}'::jsonb),
+    rationale text NOT NULL CHECK (octet_length(btrim(rationale)) BETWEEN 1 AND 8192),
+    removed_by_turn_id text,
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (ledger_id,item_id,revision),
+    FOREIGN KEY (ledger_id,item_id) REFERENCES coding_ledger_items(ledger_id,item_id) ON DELETE RESTRICT,
+    FOREIGN KEY (ledger_id,revision) REFERENCES coding_ledger_revisions(ledger_id,revision) ON DELETE RESTRICT,
+    CHECK ((disposition='active' AND review_state IS NOT NULL AND removed_by_turn_id IS NULL) OR
+           (disposition='removed' AND review_state IS NULL AND removed_by_turn_id IS NOT NULL))
+);
+
+CREATE TABLE coding_ledger_revision_items (
+    ledger_id bigint NOT NULL,
+    revision bigint NOT NULL,
+    item_id text NOT NULL,
+    item_revision bigint NOT NULL,
+    PRIMARY KEY (ledger_id,revision,item_id),
+    FOREIGN KEY (ledger_id,revision) REFERENCES coding_ledger_revisions(ledger_id,revision) ON DELETE RESTRICT,
+    FOREIGN KEY (ledger_id,item_id,item_revision) REFERENCES coding_ledger_item_versions(ledger_id,item_id,revision) ON DELETE RESTRICT,
+    CHECK (item_revision<=revision)
+);
+
+CREATE TABLE coding_ledger_origins (
+    ledger_id bigint NOT NULL,
+    item_id text NOT NULL,
+    revision bigint NOT NULL,
+    origin_kind text NOT NULL CHECK (origin_kind IN ('owner_turn','planner','analysis','migration','execution_finding','review_finding')),
+    owner_turn_id text,
+    source_item_id text,
+    detail text NOT NULL CHECK (octet_length(btrim(detail)) BETWEEN 1 AND 8192),
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (ledger_id,item_id,revision,origin_kind),
+    FOREIGN KEY (ledger_id,item_id,revision) REFERENCES coding_ledger_item_versions(ledger_id,item_id,revision) ON DELETE RESTRICT,
+    FOREIGN KEY (ledger_id,source_item_id) REFERENCES coding_ledger_items(ledger_id,item_id) ON DELETE RESTRICT,
+    CHECK ((origin_kind='owner_turn')=(owner_turn_id IS NOT NULL))
+);
+
+CREATE TABLE coding_ledger_edges (
+    ledger_id bigint NOT NULL,
+    revision bigint NOT NULL,
+    edge_id text NOT NULL,
+    edge_kind text NOT NULL CHECK (edge_kind IN ('requires','blocks','covers','verifies','contains','affects','resolves')),
+    from_item_id text NOT NULL,
+    to_item_id text NOT NULL,
+    rationale text NOT NULL CHECK (octet_length(btrim(rationale)) BETWEEN 1 AND 8192),
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (ledger_id,revision,edge_id),
+    UNIQUE (ledger_id,revision,edge_kind,from_item_id,to_item_id),
+    FOREIGN KEY (ledger_id,revision) REFERENCES coding_ledger_revisions(ledger_id,revision) ON DELETE RESTRICT,
+    FOREIGN KEY (ledger_id,from_item_id) REFERENCES coding_ledger_items(ledger_id,item_id) ON DELETE RESTRICT,
+    FOREIGN KEY (ledger_id,to_item_id) REFERENCES coding_ledger_items(ledger_id,item_id) ON DELETE RESTRICT,
+    CHECK (from_item_id<>to_item_id)
+);
+
+CREATE TABLE coding_ledger_owner_turns (
+    ledger_id bigint NOT NULL REFERENCES coding_ledgers(id) ON DELETE RESTRICT,
+    owner_turn_id text NOT NULL,
+    base_revision bigint NOT NULL CHECK (base_revision>=0),
+    action text NOT NULL DEFAULT 'planning' CHECK (action IN ('planning','planning_control','execution_configuration','sign_off','cancel')),
+    exact_text text NOT NULL CHECK (octet_length(btrim(exact_text))>0),
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (ledger_id,owner_turn_id)
+);
+
+ALTER TABLE coding_ledger_revisions
+    ADD CONSTRAINT coding_ledger_revisions_owner_turn_fkey
+    FOREIGN KEY (ledger_id,owner_turn_id) REFERENCES coding_ledger_owner_turns(ledger_id,owner_turn_id) ON DELETE RESTRICT;
+
+ALTER TABLE coding_ledger_item_versions
+    ADD CONSTRAINT coding_ledger_item_versions_removed_turn_fkey
+    FOREIGN KEY (ledger_id,removed_by_turn_id) REFERENCES coding_ledger_owner_turns(ledger_id,owner_turn_id) ON DELETE RESTRICT;
+
+ALTER TABLE coding_ledger_origins
+    ADD CONSTRAINT coding_ledger_origins_owner_turn_fkey
+    FOREIGN KEY (ledger_id,owner_turn_id) REFERENCES coding_ledger_owner_turns(ledger_id,owner_turn_id) ON DELETE RESTRICT;
+
+CREATE TABLE coding_ledger_owner_turn_dispositions (
+    ledger_id bigint NOT NULL,
+    owner_turn_id text NOT NULL,
+    revision bigint NOT NULL,
+    disposition text NOT NULL CHECK (disposition IN ('represented','out_of_scope','unresolved','mixed')),
+    reason text,
+    statements jsonb NOT NULL CHECK (jsonb_typeof(statements)='array' AND jsonb_array_length(statements)>0),
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (ledger_id,owner_turn_id),
+    FOREIGN KEY (ledger_id,owner_turn_id) REFERENCES coding_ledger_owner_turns(ledger_id,owner_turn_id) ON DELETE RESTRICT,
+    FOREIGN KEY (ledger_id,revision) REFERENCES coding_ledger_revisions(ledger_id,revision) ON DELETE RESTRICT,
+    CHECK ((disposition='out_of_scope')=(reason IS NOT NULL AND octet_length(btrim(reason))>0) OR disposition='mixed')
+);
+
+CREATE TABLE coding_ledger_owner_turn_items (
+    ledger_id bigint NOT NULL,
+    owner_turn_id text NOT NULL,
+    item_id text NOT NULL,
+    PRIMARY KEY (ledger_id,owner_turn_id,item_id),
+    FOREIGN KEY (ledger_id,owner_turn_id) REFERENCES coding_ledger_owner_turn_dispositions(ledger_id,owner_turn_id) ON DELETE RESTRICT,
+    FOREIGN KEY (ledger_id,item_id) REFERENCES coding_ledger_items(ledger_id,item_id) ON DELETE RESTRICT
+);
+
+CREATE TABLE coding_ledger_planning_audits (
+    ledger_id bigint NOT NULL REFERENCES coding_ledgers(id) ON DELETE RESTRICT,
+    audit_id text NOT NULL,
+    revision bigint NOT NULL,
+    ready boolean NOT NULL,
+    explanation text NOT NULL CHECK (octet_length(btrim(explanation)) BETWEEN 1 AND 8192),
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (ledger_id,audit_id),
+    FOREIGN KEY (ledger_id,revision) REFERENCES coding_ledger_revisions(ledger_id,revision) ON DELETE RESTRICT,
+    CHECK (octet_length(btrim(audit_id)) BETWEEN 1 AND 256)
+);
+
+ALTER TABLE coding_ledger_revisions
+    ADD COLUMN planning_audit_id text,
+    ADD CONSTRAINT coding_ledger_revisions_planning_audit_fkey
+        FOREIGN KEY (ledger_id,planning_audit_id) REFERENCES coding_ledger_planning_audits(ledger_id,audit_id) ON DELETE RESTRICT,
+    ADD CONSTRAINT coding_ledger_revisions_planning_audit_shape_check
+        CHECK ((planning_audit_id IS NULL OR state='frozen') AND
+               (state<>'frozen' OR owner_turn_id IS NULL OR planning_audit_id IS NOT NULL));
+
+CREATE TABLE coding_ledger_questions (
+    ledger_id bigint NOT NULL,
+    question_id text NOT NULL,
+    item_id text NOT NULL,
+    revision bigint NOT NULL,
+    prompt text NOT NULL CHECK (octet_length(btrim(prompt)) BETWEEN 1 AND 8192),
+    status text NOT NULL CHECK (status IN ('open','answered','withdrawn')),
+    answer text,
+    answered_by_turn_id text,
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    answered_at timestamptz,
+    PRIMARY KEY (ledger_id,question_id),
+    FOREIGN KEY (ledger_id,item_id,revision) REFERENCES coding_ledger_item_versions(ledger_id,item_id,revision) ON DELETE RESTRICT,
+    FOREIGN KEY (ledger_id,answered_by_turn_id) REFERENCES coding_ledger_owner_turns(ledger_id,owner_turn_id) ON DELETE RESTRICT,
+    CHECK ((status='open' AND answer IS NULL AND answered_by_turn_id IS NULL AND answered_at IS NULL) OR
+           (status='answered' AND answer IS NOT NULL AND answered_by_turn_id IS NOT NULL AND answered_at IS NOT NULL) OR
+           (status='withdrawn' AND answer IS NULL AND answered_by_turn_id IS NULL AND answered_at IS NOT NULL))
+);
+
+CREATE TABLE coding_ledger_findings (
+    ledger_id bigint NOT NULL,
+    finding_id text NOT NULL,
+    item_id text NOT NULL,
+    revision bigint NOT NULL,
+    finding_kind text NOT NULL CHECK (finding_kind='planning'),
+    status text NOT NULL CHECK (status IN ('open','resolved','disposed')),
+    observation text NOT NULL CHECK (octet_length(btrim(observation)) BETWEEN 1 AND 16384),
+    resolution_item_id text,
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    resolved_at timestamptz,
+    PRIMARY KEY (ledger_id,finding_id),
+    FOREIGN KEY (ledger_id,revision,item_id) REFERENCES coding_ledger_revision_items(ledger_id,revision,item_id) ON DELETE RESTRICT,
+    FOREIGN KEY (ledger_id,resolution_item_id) REFERENCES coding_ledger_items(ledger_id,item_id) ON DELETE RESTRICT,
+    CHECK ((status='open' AND resolved_at IS NULL) OR (status<>'open' AND resolved_at IS NOT NULL))
+);
+
+CREATE TABLE coding_ledger_routes (
+    ledger_id bigint NOT NULL,
+    revision bigint NOT NULL,
+    role text NOT NULL CHECK (role IN ('planner','executor','reviewer')),
+    configuration_revision bigint NOT NULL DEFAULT 1 CHECK (configuration_revision>0),
+    provider text NOT NULL,
+    model text NOT NULL,
+    reasoning_effort text NOT NULL,
+    service_tier text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (ledger_id,revision,role),
+    FOREIGN KEY (ledger_id,revision) REFERENCES coding_ledger_revisions(ledger_id,revision) ON DELETE RESTRICT,
+    FOREIGN KEY (ledger_id,configuration_revision) REFERENCES coding_ledger_revisions(ledger_id,revision) ON DELETE RESTRICT,
+    CHECK (configuration_revision<=revision),
+    CHECK (provider=btrim(provider) AND model=btrim(model) AND provider<>'' AND model<>'')
+);
+
+CREATE TABLE coding_ledger_checks (
+    ledger_id bigint NOT NULL,
+    revision bigint NOT NULL,
+    check_item_id text NOT NULL,
+    required boolean NOT NULL,
+    argv jsonb,
+    observation text,
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (ledger_id,revision,check_item_id),
+    FOREIGN KEY (ledger_id,check_item_id,revision) REFERENCES coding_ledger_item_versions(ledger_id,item_id,revision) ON DELETE RESTRICT,
+    CHECK ((argv IS NOT NULL AND jsonb_typeof(argv)='array' AND jsonb_array_length(argv)>0
+            AND jsonb_typeof(argv->0)='string' AND octet_length(btrim(argv->>0))>0
+            AND NOT jsonb_path_exists(argv,'$[*] ? (@.type() != "string")')
+            AND observation IS NULL) OR
+           (argv IS NULL AND observation IS NOT NULL AND octet_length(btrim(observation))>0))
+);
+
+CREATE TABLE coding_agent_tasks (
+    ledger_id bigint NOT NULL,
+    frozen_revision bigint NOT NULL,
+    task_item_id text NOT NULL,
+    state text NOT NULL CHECK (state IN ('blocked','ready','accepted','cancelled')),
+    priority integer NOT NULL DEFAULT 0,
+    fairness_key bigint GENERATED ALWAYS AS IDENTITY,
+    state_version bigint NOT NULL DEFAULT 1 CHECK (state_version>0),
+    updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    accepted_at timestamptz,
+    cancelled_at timestamptz,
+    PRIMARY KEY (ledger_id,frozen_revision,task_item_id),
+    UNIQUE (fairness_key),
+    FOREIGN KEY (ledger_id,frozen_revision) REFERENCES coding_ledger_revisions(ledger_id,revision) ON DELETE RESTRICT,
+    FOREIGN KEY (ledger_id,task_item_id) REFERENCES coding_ledger_items(ledger_id,item_id) ON DELETE RESTRICT,
+    CHECK ((state='accepted')=(accepted_at IS NOT NULL)),
+    CHECK ((state='cancelled')=(cancelled_at IS NOT NULL)),
+    CHECK (isfinite(updated_at) AND
+           (accepted_at IS NULL OR isfinite(accepted_at)) AND
+           (cancelled_at IS NULL OR isfinite(cancelled_at)))
+);
+
+CREATE FUNCTION validate_coding_ledger_insert() RETURNS trigger
+    LANGUAGE plpgsql AS $ledger_insert$
 BEGIN
-    IF NEW.revision<>1 OR NEW.state<>'review' OR NEW.frozen_at IS NOT NULL THEN
-        RAISE EXCEPTION 'a coding plan must enter authority as revision 1 review state';
+    IF NEW.current_revision<>0 OR NEW.frozen_revision IS NOT NULL OR NEW.state<>'proposed' THEN
+        RAISE EXCEPTION 'new coding ledger must start proposed at revision zero';
     END IF;
-    SELECT current_generation,status
-      INTO authoritative_generation,job_status
-      FROM jobs WHERE id=NEW.job_id FOR SHARE;
-    IF authoritative_generation IS DISTINCT FROM NEW.generation OR
-       job_status IS DISTINCT FROM 'running' THEN
-        RAISE EXCEPTION 'coding plan does not match current running job authority';
+    RETURN NEW;
+END;
+$ledger_insert$;
+CREATE TRIGGER coding_ledger_insert_validate BEFORE INSERT ON coding_ledgers
+    FOR EACH ROW EXECUTE FUNCTION validate_coding_ledger_insert();
+CREATE TRIGGER coding_ledgers_history_immutable BEFORE DELETE OR TRUNCATE ON coding_ledgers
+    FOR EACH STATEMENT EXECUTE FUNCTION reject_agent_execution_history_mutation();
+
+CREATE FUNCTION validate_coding_ledger_update() RETURNS trigger
+    LANGUAGE plpgsql AS $ledger_update$
+BEGIN
+    IF ROW(OLD.id,OLD.job_id,OLD.created_at) IS DISTINCT FROM ROW(NEW.id,NEW.job_id,NEW.created_at) THEN
+        RAISE EXCEPTION 'coding ledger identity is immutable';
     END IF;
-    SELECT action,status,superseded_at_generation
-      INTO plan_action,plan_status,plan_superseded_at_generation
-      FROM job_steps
-      WHERE id=NEW.plan_step_id AND job_id=NEW.job_id AND generation=NEW.generation
-      FOR SHARE;
-    IF plan_action IS DISTINCT FROM 'v3_coding_plan' OR
-       plan_status IS DISTINCT FROM 'running' OR
-       plan_superseded_at_generation IS NOT NULL THEN
-        RAISE EXCEPTION 'coding plan requires the active v3_coding_plan step';
+    IF NEW.current_revision<>OLD.current_revision AND
+       (NEW.current_revision<>OLD.current_revision+1 OR NOT EXISTS (
+           SELECT 1 FROM coding_ledger_revisions r
+           WHERE r.ledger_id=NEW.id AND r.revision=NEW.current_revision
+       )) THEN
+        RAISE EXCEPTION 'coding ledger current revision requires its exact immutable revision';
+    END IF;
+    IF OLD.state='frozen' AND NEW.current_revision<>OLD.current_revision THEN
+        RAISE EXCEPTION 'frozen coding ledger requires an explicit revising transition before another revision';
+    END IF;
+    IF OLD.state IN ('completed','cancelled') OR
+       (OLD.state='proposed' AND NEW.state NOT IN ('proposed','frozen','cancelled')) OR
+       (OLD.state='frozen' AND NEW.state NOT IN ('frozen','revising','completed','cancelled')) OR
+       (OLD.state='revising' AND NEW.state NOT IN ('revising','proposed','cancelled')) THEN
+        RAISE EXCEPTION 'coding ledger state transition is invalid';
+    END IF;
+    IF NEW.state='cancelled' AND OLD.state<>'cancelled' AND
+       NEW.frozen_revision IS DISTINCT FROM COALESCE(
+           OLD.frozen_revision,
+           (
+               SELECT max(prior_frozen.revision)
+               FROM coding_ledger_revisions prior_frozen
+               WHERE prior_frozen.ledger_id=NEW.id
+                 AND prior_frozen.state='frozen'
+                 AND prior_frozen.revision<=OLD.current_revision
+           )
+       ) THEN
+        RAISE EXCEPTION 'ledger cancellation must preserve the last frozen revision';
+    END IF;
+    IF NEW.state='cancelled' AND OLD.state<>'cancelled' AND NOT EXISTS (
+        SELECT 1 FROM coding_ledger_owner_turns cancellation
+        WHERE cancellation.ledger_id=NEW.id
+          AND cancellation.base_revision=OLD.current_revision
+          AND cancellation.action='cancel'
+    ) THEN
+        RAISE EXCEPTION 'ledger cancellation requires an explicit owner cancel action';
+    END IF;
+    IF NEW.state='cancelled' AND OLD.state<>'cancelled' AND EXISTS (
+            SELECT 1 FROM coding_agent_tasks task
+            WHERE task.ledger_id=NEW.id
+              AND task.frozen_revision=COALESCE(
+                  OLD.frozen_revision,
+                  (
+                      SELECT max(prior_frozen.revision)
+                      FROM coding_ledger_revisions prior_frozen
+                      WHERE prior_frozen.ledger_id=NEW.id
+                        AND prior_frozen.state='frozen'
+                        AND prior_frozen.revision<=OLD.current_revision
+                  )
+              )
+              AND task.state IN ('blocked','ready')
+    ) THEN
+        RAISE EXCEPTION 'ledger cancellation requires every queued task cancelled';
+    END IF;
+    IF NEW.state='completed' AND OLD.state<>'completed' AND (
+        EXISTS (
+            SELECT 1
+            FROM coding_ledger_revision_items projection
+            JOIN coding_ledger_items item USING (ledger_id,item_id)
+            JOIN coding_ledger_item_versions version
+              ON (version.ledger_id,version.item_id,version.revision)=
+                 (projection.ledger_id,projection.item_id,projection.item_revision)
+            WHERE projection.ledger_id=NEW.id AND projection.revision=NEW.frozen_revision
+              AND item.item_kind='task' AND version.disposition='active'
+              AND NOT EXISTS (
+                  SELECT 1 FROM coding_agent_tasks task
+                  WHERE task.ledger_id=NEW.id AND task.frozen_revision=NEW.frozen_revision
+                    AND task.task_item_id=projection.item_id AND task.state='accepted'
+              )
+        ) OR EXISTS (
+            SELECT 1 FROM coding_agent_tasks task
+            WHERE task.ledger_id=NEW.id AND task.frozen_revision=NEW.frozen_revision
+              AND task.state<>'accepted'
+        )
+    ) THEN
+        RAISE EXCEPTION 'ledger completion requires every queued task accepted';
+    END IF;
+    IF NEW.state='frozen' AND OLD.state<>'frozen' THEN
+        IF NEW.frozen_revision<>NEW.current_revision OR NOT EXISTS (
+            SELECT 1 FROM coding_ledger_revisions r WHERE r.ledger_id=NEW.id
+              AND r.revision=NEW.current_revision AND r.state='frozen' AND r.coverage_passed
+        ) OR NOT EXISTS (
+            SELECT 1
+            FROM coding_ledger_owner_turns signoff
+            JOIN coding_ledger_revisions frozen_revision
+              ON frozen_revision.ledger_id=signoff.ledger_id
+             AND frozen_revision.revision=NEW.current_revision
+            WHERE signoff.ledger_id=NEW.id
+              AND signoff.base_revision=frozen_revision.base_revision
+              AND signoff.action='sign_off'
+        ) OR EXISTS (
+            WITH freeze_pair AS (
+                SELECT revision,base_revision
+                FROM coding_ledger_revisions
+                WHERE ledger_id=NEW.id AND revision=NEW.current_revision
+            )
+            SELECT signed_projection.item_id,
+                   signed_version.disposition,signed_version.review_state,
+                   signed_version.rank,signed_version.payload,signed_version.rationale
+            FROM freeze_pair
+            JOIN coding_ledger_revision_items signed_projection
+              ON signed_projection.ledger_id=NEW.id
+             AND signed_projection.revision=freeze_pair.base_revision
+            JOIN coding_ledger_item_versions signed_version
+              ON (signed_version.ledger_id,signed_version.item_id,signed_version.revision)=
+                 (signed_projection.ledger_id,signed_projection.item_id,signed_projection.item_revision)
+            EXCEPT
+            SELECT frozen_projection.item_id,
+                   frozen_version.disposition,frozen_version.review_state,
+                   frozen_version.rank,frozen_version.payload,frozen_version.rationale
+            FROM freeze_pair
+            JOIN coding_ledger_revision_items frozen_projection
+              ON frozen_projection.ledger_id=NEW.id
+             AND frozen_projection.revision=freeze_pair.revision
+            JOIN coding_ledger_item_versions frozen_version
+              ON (frozen_version.ledger_id,frozen_version.item_id,frozen_version.revision)=
+                 (frozen_projection.ledger_id,frozen_projection.item_id,frozen_projection.item_revision)
+        ) OR EXISTS (
+            WITH freeze_pair AS (
+                SELECT revision,base_revision
+                FROM coding_ledger_revisions
+                WHERE ledger_id=NEW.id AND revision=NEW.current_revision
+            )
+            SELECT frozen_projection.item_id,
+                   frozen_version.disposition,frozen_version.review_state,
+                   frozen_version.rank,frozen_version.payload,frozen_version.rationale
+            FROM freeze_pair
+            JOIN coding_ledger_revision_items frozen_projection
+              ON frozen_projection.ledger_id=NEW.id
+             AND frozen_projection.revision=freeze_pair.revision
+            JOIN coding_ledger_item_versions frozen_version
+              ON (frozen_version.ledger_id,frozen_version.item_id,frozen_version.revision)=
+                 (frozen_projection.ledger_id,frozen_projection.item_id,frozen_projection.item_revision)
+            EXCEPT
+            SELECT signed_projection.item_id,
+                   signed_version.disposition,signed_version.review_state,
+                   signed_version.rank,signed_version.payload,signed_version.rationale
+            FROM freeze_pair
+            JOIN coding_ledger_revision_items signed_projection
+              ON signed_projection.ledger_id=NEW.id
+             AND signed_projection.revision=freeze_pair.base_revision
+            JOIN coding_ledger_item_versions signed_version
+              ON (signed_version.ledger_id,signed_version.item_id,signed_version.revision)=
+                 (signed_projection.ledger_id,signed_projection.item_id,signed_projection.item_revision)
+        ) OR EXISTS (
+            WITH freeze_pair AS (
+                SELECT revision,base_revision
+                FROM coding_ledger_revisions
+                WHERE ledger_id=NEW.id AND revision=NEW.current_revision
+            )
+            SELECT signed_edge.edge_id,signed_edge.edge_kind,
+                   signed_edge.from_item_id,signed_edge.to_item_id,signed_edge.rationale
+            FROM freeze_pair
+            JOIN coding_ledger_edges signed_edge
+              ON signed_edge.ledger_id=NEW.id
+             AND signed_edge.revision=freeze_pair.base_revision
+            EXCEPT
+            SELECT frozen_edge.edge_id,frozen_edge.edge_kind,
+                   frozen_edge.from_item_id,frozen_edge.to_item_id,frozen_edge.rationale
+            FROM freeze_pair
+            JOIN coding_ledger_edges frozen_edge
+              ON frozen_edge.ledger_id=NEW.id
+             AND frozen_edge.revision=freeze_pair.revision
+        ) OR EXISTS (
+            WITH freeze_pair AS (
+                SELECT revision,base_revision
+                FROM coding_ledger_revisions
+                WHERE ledger_id=NEW.id AND revision=NEW.current_revision
+            )
+            SELECT frozen_edge.edge_id,frozen_edge.edge_kind,
+                   frozen_edge.from_item_id,frozen_edge.to_item_id,frozen_edge.rationale
+            FROM freeze_pair
+            JOIN coding_ledger_edges frozen_edge
+              ON frozen_edge.ledger_id=NEW.id
+             AND frozen_edge.revision=freeze_pair.revision
+            EXCEPT
+            SELECT signed_edge.edge_id,signed_edge.edge_kind,
+                   signed_edge.from_item_id,signed_edge.to_item_id,signed_edge.rationale
+            FROM freeze_pair
+            JOIN coding_ledger_edges signed_edge
+              ON signed_edge.ledger_id=NEW.id
+             AND signed_edge.revision=freeze_pair.base_revision
+        ) OR EXISTS (
+            WITH freeze_pair AS (
+                SELECT revision,base_revision
+                FROM coding_ledger_revisions
+                WHERE ledger_id=NEW.id AND revision=NEW.current_revision
+            )
+            SELECT signed_check.check_item_id,signed_check.required,
+                   signed_check.argv,signed_check.observation
+            FROM freeze_pair
+            JOIN coding_ledger_checks signed_check
+              ON signed_check.ledger_id=NEW.id
+             AND signed_check.revision=freeze_pair.base_revision
+            EXCEPT
+            SELECT frozen_check.check_item_id,frozen_check.required,
+                   frozen_check.argv,frozen_check.observation
+            FROM freeze_pair
+            JOIN coding_ledger_checks frozen_check
+              ON frozen_check.ledger_id=NEW.id
+             AND frozen_check.revision=freeze_pair.revision
+        ) OR EXISTS (
+            WITH freeze_pair AS (
+                SELECT revision,base_revision
+                FROM coding_ledger_revisions
+                WHERE ledger_id=NEW.id AND revision=NEW.current_revision
+            )
+            SELECT frozen_check.check_item_id,frozen_check.required,
+                   frozen_check.argv,frozen_check.observation
+            FROM freeze_pair
+            JOIN coding_ledger_checks frozen_check
+              ON frozen_check.ledger_id=NEW.id
+             AND frozen_check.revision=freeze_pair.revision
+            EXCEPT
+            SELECT signed_check.check_item_id,signed_check.required,
+                   signed_check.argv,signed_check.observation
+            FROM freeze_pair
+            JOIN coding_ledger_checks signed_check
+              ON signed_check.ledger_id=NEW.id
+             AND signed_check.revision=freeze_pair.base_revision
+        ) OR EXISTS (
+            WITH freeze_pair AS (
+                SELECT revision,base_revision
+                FROM coding_ledger_revisions
+                WHERE ledger_id=NEW.id AND revision=NEW.current_revision
+            )
+            SELECT signed_route.role,signed_route.configuration_revision,
+                   signed_route.provider,signed_route.model,
+                   signed_route.reasoning_effort,signed_route.service_tier
+            FROM freeze_pair
+            JOIN coding_ledger_routes signed_route
+              ON signed_route.ledger_id=NEW.id
+             AND signed_route.revision=freeze_pair.base_revision
+            EXCEPT
+            SELECT frozen_route.role,frozen_route.configuration_revision,
+                   frozen_route.provider,frozen_route.model,
+                   frozen_route.reasoning_effort,frozen_route.service_tier
+            FROM freeze_pair
+            JOIN coding_ledger_routes frozen_route
+              ON frozen_route.ledger_id=NEW.id
+             AND frozen_route.revision=freeze_pair.revision
+        ) OR EXISTS (
+            WITH freeze_pair AS (
+                SELECT revision,base_revision
+                FROM coding_ledger_revisions
+                WHERE ledger_id=NEW.id AND revision=NEW.current_revision
+            )
+            SELECT frozen_route.role,frozen_route.configuration_revision,
+                   frozen_route.provider,frozen_route.model,
+                   frozen_route.reasoning_effort,frozen_route.service_tier
+            FROM freeze_pair
+            JOIN coding_ledger_routes frozen_route
+              ON frozen_route.ledger_id=NEW.id
+             AND frozen_route.revision=freeze_pair.revision
+            EXCEPT
+            SELECT signed_route.role,signed_route.configuration_revision,
+                   signed_route.provider,signed_route.model,
+                   signed_route.reasoning_effort,signed_route.service_tier
+            FROM freeze_pair
+            JOIN coding_ledger_routes signed_route
+              ON signed_route.ledger_id=NEW.id
+             AND signed_route.revision=freeze_pair.base_revision
+        ) OR EXISTS (
+            SELECT 1
+            FROM coding_ledger_edges verification
+            JOIN coding_ledger_revision_items check_projection
+              ON check_projection.ledger_id=verification.ledger_id
+             AND check_projection.revision=verification.revision
+             AND check_projection.item_id=verification.from_item_id
+            JOIN coding_ledger_item_versions check_version
+              ON (check_version.ledger_id,check_version.item_id,check_version.revision)=
+                 (check_projection.ledger_id,check_projection.item_id,check_projection.item_revision)
+            WHERE verification.ledger_id=NEW.id
+              AND verification.revision=NEW.current_revision
+              AND verification.edge_kind='verifies'
+              AND check_version.disposition='active'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM coding_ledger_checks definition
+                  WHERE definition.ledger_id=verification.ledger_id
+                    AND definition.revision=verification.revision
+                    AND definition.check_item_id=verification.from_item_id
+              )
+        ) OR EXISTS (
+            SELECT 1 FROM coding_ledger_revision_items ri
+            JOIN coding_ledger_item_versions v ON (v.ledger_id,v.item_id,v.revision)=(ri.ledger_id,ri.item_id,ri.item_revision)
+            WHERE ri.ledger_id=NEW.id AND ri.revision=NEW.current_revision
+              AND v.disposition='active' AND v.review_state<>'agreed'
+        ) OR EXISTS (
+            SELECT 1
+            FROM coding_ledger_revision_items projected_item
+            WHERE projected_item.ledger_id=NEW.id
+              AND projected_item.revision=NEW.current_revision
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM coding_ledger_origins origin
+                  WHERE origin.ledger_id=projected_item.ledger_id
+                    AND origin.item_id=projected_item.item_id
+                    AND origin.revision=projected_item.item_revision
+              )
+        ) OR EXISTS (
+            SELECT 1
+            FROM coding_ledger_revisions frozen_revision
+            JOIN LATERAL (
+                SELECT changed_projection.item_id,
+                       changed_revision.revision AS changed_revision
+                FROM coding_ledger_revisions changed_revision
+                JOIN coding_ledger_revision_items changed_projection
+                  ON changed_projection.ledger_id=changed_revision.ledger_id
+                 AND changed_projection.revision=changed_revision.revision
+                JOIN coding_ledger_item_versions changed_version
+                  ON (changed_version.ledger_id,changed_version.item_id,changed_version.revision)=
+                     (changed_projection.ledger_id,changed_projection.item_id,changed_projection.item_revision)
+                LEFT JOIN coding_ledger_revision_items prior_projection
+                  ON prior_projection.ledger_id=changed_projection.ledger_id
+                 AND prior_projection.revision=changed_projection.revision-1
+                 AND prior_projection.item_id=changed_projection.item_id
+                LEFT JOIN coding_ledger_item_versions prior_version
+                  ON (prior_version.ledger_id,prior_version.item_id,prior_version.revision)=
+                     (prior_projection.ledger_id,prior_projection.item_id,prior_projection.item_revision)
+                WHERE changed_revision.ledger_id=frozen_revision.ledger_id
+                  AND changed_revision.revision BETWEEN 2 AND frozen_revision.base_revision
+                  AND changed_version.disposition='active'
+                  AND changed_version.review_state='agreed'
+                  AND (
+                      prior_projection.item_id IS NULL OR
+                      prior_version.disposition<>'active' OR
+                      prior_version.review_state<>'agreed' OR
+                      prior_version.payload IS DISTINCT FROM changed_version.payload
+                  )
+            ) changed_agreement ON true
+            JOIN coding_ledger_revision_items current_projection
+              ON current_projection.ledger_id=frozen_revision.ledger_id
+             AND current_projection.revision=frozen_revision.base_revision
+             AND current_projection.item_id=changed_agreement.item_id
+            JOIN coding_ledger_item_versions current_version
+              ON (current_version.ledger_id,current_version.item_id,current_version.revision)=
+                 (current_projection.ledger_id,current_projection.item_id,current_projection.item_revision)
+            WHERE frozen_revision.ledger_id=NEW.id
+              AND frozen_revision.revision=NEW.current_revision
+              AND current_version.disposition='active'
+              AND current_version.review_state='agreed'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM coding_ledger_owner_turn_items authorized_item
+                  JOIN coding_ledger_owner_turn_dispositions authorized_turn
+                    ON authorized_turn.ledger_id=authorized_item.ledger_id
+                   AND authorized_turn.owner_turn_id=authorized_item.owner_turn_id
+                  WHERE authorized_item.ledger_id=current_projection.ledger_id
+                    AND authorized_item.item_id=current_projection.item_id
+                    AND authorized_turn.revision BETWEEN changed_agreement.changed_revision
+                                                     AND frozen_revision.base_revision
+                    AND authorized_turn.disposition='represented'
+              )
+        ) OR EXISTS (
+            SELECT 1
+            FROM coding_ledger_revisions frozen_revision
+            JOIN LATERAL (
+                SELECT check_key.check_item_id,
+                       check_revision.revision AS changed_revision
+                FROM coding_ledger_revisions check_revision
+                JOIN LATERAL (
+                    SELECT check_item_id
+                    FROM coding_ledger_checks
+                    WHERE ledger_id=check_revision.ledger_id
+                      AND revision=check_revision.revision
+                    UNION
+                    SELECT check_item_id
+                    FROM coding_ledger_checks
+                    WHERE ledger_id=check_revision.ledger_id
+                      AND revision=check_revision.revision-1
+                ) check_key ON true
+                LEFT JOIN coding_ledger_checks current_check
+                  ON current_check.ledger_id=check_revision.ledger_id
+                 AND current_check.revision=check_revision.revision
+                 AND current_check.check_item_id=check_key.check_item_id
+                LEFT JOIN coding_ledger_checks prior_check
+                  ON prior_check.ledger_id=check_revision.ledger_id
+                 AND prior_check.revision=check_revision.revision-1
+                 AND prior_check.check_item_id=check_key.check_item_id
+                WHERE check_revision.ledger_id=frozen_revision.ledger_id
+                  AND check_revision.revision BETWEEN 2 AND frozen_revision.base_revision
+                  AND ROW(current_check.required,current_check.argv,current_check.observation)
+                      IS DISTINCT FROM
+                      ROW(prior_check.required,prior_check.argv,prior_check.observation)
+            ) changed_check ON true
+            JOIN coding_ledger_revision_items check_projection
+              ON check_projection.ledger_id=frozen_revision.ledger_id
+             AND check_projection.revision=frozen_revision.base_revision
+             AND check_projection.item_id=changed_check.check_item_id
+            JOIN coding_ledger_item_versions check_version
+              ON (check_version.ledger_id,check_version.item_id,check_version.revision)=
+                 (check_projection.ledger_id,check_projection.item_id,check_projection.item_revision)
+            WHERE frozen_revision.ledger_id=NEW.id
+              AND frozen_revision.revision=NEW.current_revision
+              AND check_version.disposition='active'
+              AND check_version.review_state='agreed'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM coding_ledger_owner_turn_items authorized_item
+                  JOIN coding_ledger_owner_turn_dispositions authorized_turn
+                    ON authorized_turn.ledger_id=authorized_item.ledger_id
+                   AND authorized_turn.owner_turn_id=authorized_item.owner_turn_id
+                  WHERE authorized_item.ledger_id=check_projection.ledger_id
+                    AND authorized_item.item_id=check_projection.item_id
+                    AND authorized_turn.revision BETWEEN changed_check.changed_revision
+                                                     AND frozen_revision.base_revision
+                    AND authorized_turn.disposition='represented'
+              )
+        ) OR EXISTS (
+            SELECT 1 FROM coding_ledger_questions q WHERE q.ledger_id=NEW.id AND q.status='open'
+        ) OR EXISTS (
+            SELECT 1 FROM coding_ledger_findings finding
+            WHERE finding.ledger_id=NEW.id AND finding.finding_kind='planning'
+              AND finding.status='open'
+        ) OR EXISTS (
+            SELECT 1 FROM coding_ledger_owner_turns turn_record
+            LEFT JOIN coding_ledger_owner_turn_dispositions disposition
+              ON disposition.ledger_id=turn_record.ledger_id
+             AND disposition.owner_turn_id=turn_record.owner_turn_id
+             AND disposition.revision<=NEW.current_revision
+            WHERE turn_record.ledger_id=NEW.id
+              AND turn_record.action<>'sign_off'
+              AND (
+                disposition.owner_turn_id IS NULL OR
+                (disposition.disposition='represented' AND (
+                    NOT EXISTS (
+                        SELECT 1 FROM coding_ledger_owner_turn_items represented_item
+                        WHERE represented_item.ledger_id=turn_record.ledger_id
+                          AND represented_item.owner_turn_id=turn_record.owner_turn_id
+                    ) OR EXISTS (
+                        SELECT 1
+                        FROM coding_ledger_owner_turn_items represented_item
+                        WHERE represented_item.ledger_id=turn_record.ledger_id
+                          AND represented_item.owner_turn_id=turn_record.owner_turn_id
+                          AND NOT EXISTS (
+                              SELECT 1
+                              FROM coding_ledger_revision_items represented_projection
+                              WHERE represented_projection.ledger_id=represented_item.ledger_id
+                                AND represented_projection.revision=NEW.current_revision
+                                AND represented_projection.item_id=represented_item.item_id
+                          )
+                    )
+                )) OR (
+                    disposition.disposition='unresolved' AND (
+                        NOT EXISTS (
+                            SELECT 1 FROM coding_ledger_owner_turn_items turn_item
+                            WHERE turn_item.ledger_id=turn_record.ledger_id
+                              AND turn_item.owner_turn_id=turn_record.owner_turn_id
+                        ) OR EXISTS (
+                            SELECT 1
+                            FROM coding_ledger_owner_turn_items turn_item
+                            LEFT JOIN coding_ledger_questions question
+                              ON question.ledger_id=turn_item.ledger_id AND question.item_id=turn_item.item_id
+                            WHERE turn_item.ledger_id=turn_record.ledger_id
+                              AND turn_item.owner_turn_id=turn_record.owner_turn_id
+                              AND (question.question_id IS NULL OR question.status='open')
+                        )
+                    )
+                )
+            )
+        ) OR (SELECT count(*) FROM coding_ledger_routes r WHERE r.ledger_id=NEW.id AND r.revision=NEW.current_revision)<>3
+          OR (SELECT count(DISTINCT r.configuration_revision) FROM coding_ledger_routes r
+              WHERE r.ledger_id=NEW.id AND r.revision=NEW.current_revision)<>1 OR EXISTS (
+            SELECT 1
+            FROM coding_ledger_routes current_route
+            JOIN coding_ledger_revisions current_revision
+              ON current_revision.ledger_id=current_route.ledger_id
+             AND current_revision.revision=current_route.revision
+            JOIN LATERAL (
+                SELECT prior_route.provider,prior_route.model,prior_route.reasoning_effort,prior_route.service_tier,
+                       prior_route.configuration_revision
+                FROM coding_ledger_revisions prior_frozen
+                JOIN coding_ledger_routes prior_route
+                  ON prior_route.ledger_id=prior_frozen.ledger_id
+                 AND prior_route.revision=prior_frozen.revision
+                 AND prior_route.role=current_route.role
+                WHERE prior_frozen.ledger_id=current_route.ledger_id
+                  AND prior_frozen.revision<current_route.revision
+                  AND prior_frozen.state='frozen'
+                ORDER BY prior_frozen.revision DESC
+                LIMIT 1
+            ) prior_route ON true
+            LEFT JOIN coding_ledger_owner_turns configuration_approval
+              ON configuration_approval.ledger_id=current_revision.ledger_id
+             AND configuration_approval.owner_turn_id=current_revision.owner_turn_id
+             AND configuration_approval.base_revision=current_revision.base_revision
+             AND configuration_approval.action='execution_configuration'
+            LEFT JOIN coding_ledger_owner_turn_dispositions route_approval
+              ON route_approval.ledger_id=current_revision.ledger_id
+             AND route_approval.owner_turn_id=configuration_approval.owner_turn_id
+             AND route_approval.revision=current_revision.revision
+             AND route_approval.disposition='represented'
+            WHERE current_route.ledger_id=NEW.id
+              AND current_route.revision=NEW.current_revision
+              AND ROW(current_route.provider,current_route.model,current_route.reasoning_effort,current_route.service_tier)
+                  IS DISTINCT FROM
+                  ROW(prior_route.provider,prior_route.model,prior_route.reasoning_effort,prior_route.service_tier)
+              AND (current_route.configuration_revision<>current_revision.base_revision
+                   OR current_route.configuration_revision<=prior_route.configuration_revision
+                   OR route_approval.owner_turn_id IS NULL)
+        ) OR NOT EXISTS (
+            SELECT 1 FROM coding_ledger_revision_items ri JOIN coding_ledger_items i USING (ledger_id,item_id)
+            JOIN coding_ledger_item_versions v ON (v.ledger_id,v.item_id,v.revision)=(ri.ledger_id,ri.item_id,ri.item_revision)
+            WHERE ri.ledger_id=NEW.id AND ri.revision=NEW.current_revision AND i.item_kind='objective' AND v.disposition='active'
+        ) OR NOT EXISTS (
+            SELECT 1 FROM coding_ledger_revision_items ri JOIN coding_ledger_items i USING (ledger_id,item_id)
+            JOIN coding_ledger_item_versions v ON (v.ledger_id,v.item_id,v.revision)=(ri.ledger_id,ri.item_id,ri.item_revision)
+            WHERE ri.ledger_id=NEW.id AND ri.revision=NEW.current_revision AND i.item_kind='task' AND v.disposition='active'
+                ) OR EXISTS (
+            SELECT 1
+            FROM coding_ledger_revision_items task_projection
+            JOIN coding_ledger_items task_item USING (ledger_id,item_id)
+            JOIN coding_ledger_item_versions task_version
+              ON (task_version.ledger_id,task_version.item_id,task_version.revision)=
+                 (task_projection.ledger_id,task_projection.item_id,task_projection.item_revision)
+            WHERE task_projection.ledger_id=NEW.id
+              AND task_projection.revision=NEW.current_revision
+              AND task_item.item_kind='task' AND task_version.disposition='active'
+              AND (
+              NOT EXISTS (
+                  SELECT 1
+                  FROM coding_ledger_edges task_acceptance
+                  JOIN coding_ledger_revision_items acceptance_projection
+                    ON acceptance_projection.ledger_id=task_acceptance.ledger_id
+                   AND acceptance_projection.revision=task_acceptance.revision
+                   AND acceptance_projection.item_id=task_acceptance.to_item_id
+                  JOIN coding_ledger_items acceptance_item
+                    ON acceptance_item.ledger_id=acceptance_projection.ledger_id
+                   AND acceptance_item.item_id=acceptance_projection.item_id
+                  JOIN coding_ledger_item_versions acceptance_version
+                    ON (acceptance_version.ledger_id,acceptance_version.item_id,acceptance_version.revision)=
+                       (acceptance_projection.ledger_id,acceptance_projection.item_id,acceptance_projection.item_revision)
+                  WHERE task_acceptance.ledger_id=NEW.id
+                    AND task_acceptance.revision=NEW.current_revision
+                    AND task_acceptance.edge_kind='covers'
+                    AND task_acceptance.from_item_id=task_projection.item_id
+                    AND acceptance_item.item_kind='acceptance_criterion'
+                    AND acceptance_version.disposition='active'
+                    AND EXISTS (
+                        SELECT 1
+                        FROM coding_ledger_edges verification
+                        JOIN coding_ledger_checks required_check
+                          ON required_check.ledger_id=verification.ledger_id
+                         AND required_check.revision=verification.revision
+                         AND required_check.check_item_id=verification.from_item_id
+                         AND required_check.required
+                        WHERE verification.ledger_id=NEW.id
+                          AND verification.revision=NEW.current_revision
+                          AND verification.edge_kind='verifies'
+                          AND verification.to_item_id=acceptance_projection.item_id
+                    )
+              )
+              OR NOT EXISTS (
+                  SELECT 1
+                  FROM coding_ledger_edges requirement_coverage
+                  JOIN coding_ledger_revision_items requirement_projection
+                    ON requirement_projection.ledger_id=requirement_coverage.ledger_id
+                   AND requirement_projection.revision=requirement_coverage.revision
+                   AND requirement_projection.item_id=requirement_coverage.to_item_id
+                  JOIN coding_ledger_items requirement_item
+                    ON requirement_item.ledger_id=requirement_projection.ledger_id
+                   AND requirement_item.item_id=requirement_projection.item_id
+                  JOIN coding_ledger_item_versions requirement_version
+                    ON (requirement_version.ledger_id,requirement_version.item_id,requirement_version.revision)=
+                       (requirement_projection.ledger_id,requirement_projection.item_id,requirement_projection.item_revision)
+                  WHERE requirement_coverage.ledger_id=NEW.id
+                    AND requirement_coverage.revision=NEW.current_revision
+                    AND requirement_coverage.edge_kind='covers'
+                    AND requirement_coverage.from_item_id=task_projection.item_id
+                    AND requirement_item.item_kind IN ('requirement','objective')
+                    AND requirement_version.disposition='active'
+              )
+              )
+        ) OR EXISTS (
+            SELECT 1
+            FROM coding_ledger_revision_items requirement_projection
+            JOIN coding_ledger_items requirement_item USING (ledger_id,item_id)
+            JOIN coding_ledger_item_versions requirement_version
+              ON (requirement_version.ledger_id,requirement_version.item_id,requirement_version.revision)=
+                 (requirement_projection.ledger_id,requirement_projection.item_id,requirement_projection.item_revision)
+            WHERE requirement_projection.ledger_id=NEW.id
+              AND requirement_projection.revision=NEW.current_revision
+              AND requirement_item.item_kind='requirement' AND requirement_version.disposition='active'
+              AND NOT EXISTS (
+                  SELECT 1 FROM coding_ledger_edges coverage
+                  JOIN coding_ledger_items covering_item
+                    ON covering_item.ledger_id=coverage.ledger_id AND covering_item.item_id=coverage.from_item_id
+                  WHERE coverage.ledger_id=NEW.id AND coverage.revision=NEW.current_revision
+                    AND coverage.edge_kind='covers' AND coverage.to_item_id=requirement_projection.item_id
+                    AND covering_item.item_kind='task'
+              )
+        ) OR EXISTS (
+            SELECT 1
+            FROM coding_ledger_revision_items requirement_projection
+            JOIN coding_ledger_items requirement_item USING (ledger_id,item_id)
+            JOIN coding_ledger_item_versions requirement_version
+              ON (requirement_version.ledger_id,requirement_version.item_id,requirement_version.revision)=
+                 (requirement_projection.ledger_id,requirement_projection.item_id,requirement_projection.item_revision)
+            WHERE requirement_projection.ledger_id=NEW.id
+              AND requirement_projection.revision=NEW.current_revision
+              AND requirement_item.item_kind='requirement' AND requirement_version.disposition='active'
+              AND NOT EXISTS (
+                  SELECT 1 FROM coding_ledger_edges coverage
+                  JOIN coding_ledger_items covering_item
+                    ON covering_item.ledger_id=coverage.ledger_id AND covering_item.item_id=coverage.from_item_id
+                  WHERE coverage.ledger_id=NEW.id AND coverage.revision=NEW.current_revision
+                    AND coverage.edge_kind='covers' AND coverage.to_item_id=requirement_projection.item_id
+                    AND covering_item.item_kind='acceptance_criterion'
+              )
+        ) OR EXISTS (
+            SELECT 1
+            FROM coding_ledger_revision_items acceptance_projection
+            JOIN coding_ledger_items acceptance_item USING (ledger_id,item_id)
+            JOIN coding_ledger_item_versions acceptance_version
+              ON (acceptance_version.ledger_id,acceptance_version.item_id,acceptance_version.revision)=
+                 (acceptance_projection.ledger_id,acceptance_projection.item_id,acceptance_projection.item_revision)
+            WHERE acceptance_projection.ledger_id=NEW.id
+              AND acceptance_projection.revision=NEW.current_revision
+              AND acceptance_item.item_kind='acceptance_criterion' AND acceptance_version.disposition='active'
+              AND NOT EXISTS (
+                  SELECT 1 FROM coding_ledger_edges verification
+                  JOIN coding_ledger_checks required_check
+                    ON required_check.ledger_id=verification.ledger_id
+                   AND required_check.revision=verification.revision
+                   AND required_check.check_item_id=verification.from_item_id
+                   AND required_check.required
+                  WHERE verification.ledger_id=NEW.id AND verification.revision=NEW.current_revision
+                    AND verification.edge_kind='verifies'
+                    AND verification.to_item_id=acceptance_projection.item_id
+              )
+        ) OR EXISTS (
+            SELECT 1
+            FROM coding_ledger_checks unbound_check
+            WHERE unbound_check.ledger_id=NEW.id
+              AND unbound_check.revision=NEW.current_revision
+              AND unbound_check.required
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM coding_ledger_edges verification
+                  WHERE verification.ledger_id=unbound_check.ledger_id
+                    AND verification.revision=unbound_check.revision
+                    AND verification.edge_kind='verifies'
+                    AND verification.from_item_id=unbound_check.check_item_id
+              )
+        ) OR EXISTS (
+            SELECT 1
+            FROM coding_ledger_revisions frozen_revision
+            JOIN LATERAL (
+                SELECT changed_revision.revision AS changed_revision,
+                       changed_edge.edge_kind,
+                       changed_edge.from_item_id,
+                       changed_edge.to_item_id
+                FROM coding_ledger_revisions changed_revision
+                JOIN LATERAL (
+                    (SELECT edge_kind,from_item_id,to_item_id FROM coding_ledger_edges
+                     WHERE ledger_id=changed_revision.ledger_id
+                       AND revision=changed_revision.revision
+                       AND edge_kind IN ('requires','blocks','covers','verifies','contains','affects')
+                     EXCEPT
+                     SELECT edge_kind,from_item_id,to_item_id FROM coding_ledger_edges
+                     WHERE ledger_id=changed_revision.ledger_id
+                       AND revision=changed_revision.revision-1
+                       AND edge_kind IN ('requires','blocks','covers','verifies','contains','affects'))
+                    UNION ALL
+                    (SELECT edge_kind,from_item_id,to_item_id FROM coding_ledger_edges
+                     WHERE ledger_id=changed_revision.ledger_id
+                       AND revision=changed_revision.revision-1
+                       AND edge_kind IN ('requires','blocks','covers','verifies','contains','affects')
+                     EXCEPT
+                     SELECT edge_kind,from_item_id,to_item_id FROM coding_ledger_edges
+                     WHERE ledger_id=changed_revision.ledger_id
+                       AND revision=changed_revision.revision
+                       AND edge_kind IN ('requires','blocks','covers','verifies','contains','affects'))
+                ) changed_edge ON true
+                WHERE changed_revision.ledger_id=frozen_revision.ledger_id
+                  AND changed_revision.revision BETWEEN 2 AND frozen_revision.base_revision
+            ) changed_dependency ON true
+            JOIN coding_ledger_revision_items affected_projection
+              ON affected_projection.ledger_id=frozen_revision.ledger_id
+             AND affected_projection.revision=frozen_revision.base_revision
+             AND affected_projection.item_id IN
+                 (changed_dependency.from_item_id,changed_dependency.to_item_id)
+            JOIN coding_ledger_item_versions affected_version
+              ON (affected_version.ledger_id,affected_version.item_id,affected_version.revision)=
+                 (affected_projection.ledger_id,affected_projection.item_id,affected_projection.item_revision)
+            WHERE frozen_revision.ledger_id=NEW.id
+              AND frozen_revision.revision=NEW.current_revision
+              AND affected_version.disposition='active'
+              AND affected_version.review_state='agreed'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM coding_ledger_owner_turn_items authorized_item
+                  JOIN coding_ledger_owner_turn_dispositions authorized_turn
+                    ON authorized_turn.ledger_id=authorized_item.ledger_id
+                   AND authorized_turn.owner_turn_id=authorized_item.owner_turn_id
+                  WHERE authorized_item.ledger_id=affected_projection.ledger_id
+                    AND authorized_item.item_id=affected_projection.item_id
+                    AND authorized_turn.revision BETWEEN changed_dependency.changed_revision
+                                                     AND frozen_revision.base_revision
+                    AND authorized_turn.disposition='represented'
+              )
+        ) THEN RAISE EXCEPTION 'ledger freeze requires one exact covered, agreed, resolved revision with frozen routes and tasks'; END IF;
+    END IF;
+    IF NOT isfinite(NEW.created_at) OR NOT isfinite(NEW.updated_at) OR
+       NEW.updated_at<=OLD.updated_at THEN
+        RAISE EXCEPTION 'coding ledger update timestamp must be finite and advance';
+    END IF;
+    RETURN NEW;
+END;
+$ledger_update$;
+CREATE TRIGGER coding_ledger_update_validate BEFORE UPDATE ON coding_ledgers
+    FOR EACH ROW EXECUTE FUNCTION validate_coding_ledger_update();
+
+CREATE FUNCTION require_removed_coding_agent_tasks_cancelled() RETURNS trigger
+    LANGUAGE plpgsql AS $removed_tasks$
+BEGIN
+    IF NEW.state='frozen' AND OLD.state<>'frozen' AND EXISTS (
+        SELECT 1
+        FROM coding_agent_tasks task
+        JOIN coding_ledger_revision_items projection
+          ON projection.ledger_id=task.ledger_id
+         AND projection.revision=NEW.current_revision
+         AND projection.item_id=task.task_item_id
+        JOIN coding_ledger_item_versions version
+          ON (version.ledger_id,version.item_id,version.revision)=
+             (projection.ledger_id,projection.item_id,projection.item_revision)
+        WHERE task.ledger_id=NEW.id
+          AND task.frozen_revision=(
+              SELECT max(prior.revision)
+              FROM coding_ledger_revisions prior
+              WHERE prior.ledger_id=NEW.id
+                AND prior.revision<NEW.current_revision
+                AND prior.state='frozen'
+          )
+          AND task.state IN ('blocked','ready')
+          AND version.disposition='removed'
+    ) THEN
+        RAISE EXCEPTION 'removed task must transition to cancelled before the replacement revision freezes';
+    END IF;
+    RETURN NULL;
+END;
+$removed_tasks$;
+CREATE CONSTRAINT TRIGGER coding_ledger_removed_tasks_cancelled
+    AFTER UPDATE OF state ON coding_ledgers
+    DEFERRABLE INITIALLY DEFERRED FOR EACH ROW
+    EXECUTE FUNCTION require_removed_coding_agent_tasks_cancelled();
+
+CREATE FUNCTION require_coding_ledger_frozen_tasks() RETURNS trigger
+    LANGUAGE plpgsql AS $frozen_tasks$
+BEGIN
+    IF NEW.state='frozen' AND EXISTS (
+        SELECT 1
+        FROM coding_ledger_revision_items task_projection
+        JOIN coding_ledger_items task_item USING (ledger_id,item_id)
+        JOIN coding_ledger_item_versions task_version
+          ON (task_version.ledger_id,task_version.item_id,task_version.revision)=
+             (task_projection.ledger_id,task_projection.item_id,task_projection.item_revision)
+        WHERE task_projection.ledger_id=NEW.id
+          AND task_projection.revision=NEW.frozen_revision
+          AND task_item.item_kind='task'
+          AND task_version.disposition='active'
+          AND NOT EXISTS (
+              SELECT 1 FROM coding_agent_tasks task
+              WHERE task.ledger_id=NEW.id
+                AND task.frozen_revision=NEW.frozen_revision
+                AND task.task_item_id=task_projection.item_id
+          )
+    ) THEN
+        RAISE EXCEPTION 'frozen ledger requires a durable state row for every active task';
+    END IF;
+    RETURN NULL;
+END;
+$frozen_tasks$;
+CREATE CONSTRAINT TRIGGER coding_ledger_frozen_tasks
+    AFTER UPDATE ON coding_ledgers
+    DEFERRABLE INITIALLY DEFERRED FOR EACH ROW
+    EXECUTE FUNCTION require_coding_ledger_frozen_tasks();
+
+CREATE FUNCTION validate_coding_ledger_revision_insert() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+DECLARE current_value bigint;
+BEGIN
+    SELECT current_revision INTO current_value FROM coding_ledgers WHERE id=NEW.ledger_id FOR UPDATE;
+    IF NOT FOUND OR NEW.base_revision<>current_value OR NEW.revision<>current_value+1 THEN
+        RAISE EXCEPTION 'stale ledger revision: expected base %, received %',current_value,NEW.base_revision;
+    END IF;
+    IF NEW.creation_transaction IS DISTINCT FROM txid_current() THEN
+        RAISE EXCEPTION 'ledger revision must be created in its recorded transaction';
+    END IF;
+    IF NEW.owner_turn_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1
+        FROM coding_ledger_owner_turns owner_turn
+        WHERE owner_turn.ledger_id=NEW.ledger_id
+          AND owner_turn.owner_turn_id=NEW.owner_turn_id
+          AND owner_turn.base_revision=NEW.base_revision
+    ) THEN
+        RAISE EXCEPTION 'ledger revision owner turn does not observe its exact base revision';
     END IF;
     RETURN NEW;
 END;
 $$;
+CREATE TRIGGER coding_ledger_revision_validate BEFORE INSERT ON coding_ledger_revisions
+    FOR EACH ROW EXECUTE FUNCTION validate_coding_ledger_revision_insert();
 
-CREATE TABLE coding_plan_leaves (
-    job_id bigint NOT NULL,
-    generation bigint NOT NULL,
-    leaf_id text NOT NULL,
-    sort_index integer NOT NULL,
-    statement text NOT NULL,
-    decision text NOT NULL,
-    decision_origin_generation bigint NOT NULL,
-    result_schema text NOT NULL,
-    result_relation text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT coding_plan_leaves_pkey PRIMARY KEY (job_id,generation,leaf_id),
-    CONSTRAINT coding_plan_leaves_sort_key UNIQUE (job_id,generation,sort_index),
-    CONSTRAINT coding_plan_leaves_statement_key UNIQUE (job_id,generation,statement),
-    CONSTRAINT coding_plan_leaves_plan_fkey FOREIGN KEY (job_id,generation)
-        REFERENCES coding_plans(job_id,generation) ON DELETE RESTRICT,
-    CONSTRAINT coding_plan_leaves_leaf_id_check CHECK (
-        leaf_id ~ '^coding_plan_leaf_[0-9a-f]{32}$'
-    ),
-    CONSTRAINT coding_plan_leaves_statement_check CHECK (
-        octet_length(statement) BETWEEN 1 AND 8192 AND statement=btrim(statement)
-    ),
-    CONSTRAINT coding_plan_leaves_sort_check CHECK (sort_index BETWEEN 0 AND 29),
-    CONSTRAINT coding_plan_leaves_decision_check CHECK (decision IN ('pending','approved','rejected')),
-    CONSTRAINT coding_plan_leaves_decision_origin_check CHECK (
-        decision_origin_generation BETWEEN 1 AND generation AND
-        (decision<>'pending' OR decision_origin_generation=generation)
-    ),
-    CONSTRAINT coding_plan_leaves_timestamp_shape CHECK (updated_at>=created_at),
-    CONSTRAINT coding_plan_leaves_receipt_shape CHECK (
-        result_schema='omnidex.application-requirement-candidate-result-relation.v1' AND
-        result_relation IN ('NO_DERIVED_RESULT','EXPLICIT_DERIVED_RESULT_RELATION')
-    )
-);
+CREATE FUNCTION advance_coding_ledger_revision() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+BEGIN
+    UPDATE coding_ledgers SET current_revision=NEW.revision,updated_at=clock_timestamp()
+    WHERE id=NEW.ledger_id;
+    RETURN NULL;
+END;
+$$;
+CREATE TRIGGER coding_ledger_revision_advance AFTER INSERT ON coding_ledger_revisions
+    FOR EACH ROW EXECUTE FUNCTION advance_coding_ledger_revision();
 
-CREATE TABLE coding_plan_operation_results (
-    operation_id text NOT NULL,
-    job_id bigint NOT NULL,
-    generation bigint NOT NULL,
-    kind text NOT NULL,
-    result_revision bigint NOT NULL,
-    result_plan jsonb NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT coding_plan_operation_results_pkey PRIMARY KEY (operation_id),
-    CONSTRAINT coding_plan_operation_results_kind_check CHECK (
-        kind IN ('coding_plan_decisions','coding_plan_freeze')
-    ),
-    CONSTRAINT coding_plan_operation_results_revision_check CHECK (result_revision>0),
-    CONSTRAINT coding_plan_operation_results_json_check CHECK (
-        jsonb_typeof(result_plan)='object' AND
-        (result_plan->>'job_id')::bigint=job_id AND
-        (result_plan->>'generation')::bigint=generation AND
-        (result_plan->>'revision')::bigint=result_revision
-    ),
-    CONSTRAINT coding_plan_operation_results_operation_fkey FOREIGN KEY (operation_id)
-        REFERENCES job_lifecycle_operations(operation_id) ON DELETE RESTRICT,
-    CONSTRAINT coding_plan_operation_results_plan_fkey FOREIGN KEY (job_id,generation)
-        REFERENCES coding_plans(job_id,generation) ON DELETE RESTRICT
-);
+CREATE FUNCTION require_frozen_coding_ledger_revision_parent() RETURNS trigger
+    LANGUAGE plpgsql AS $frozen_revision_parent$
+BEGIN
+    IF NEW.state='frozen' AND NOT EXISTS (
+        SELECT 1
+        FROM coding_ledgers ledger
+        WHERE ledger.id=NEW.ledger_id
+          AND ledger.current_revision=NEW.revision
+          AND ledger.frozen_revision=NEW.revision
+          AND ledger.state IN ('frozen','completed')
+    ) THEN
+        RAISE EXCEPTION 'frozen ledger revision requires an atomic frozen parent ledger transition';
+    END IF;
+    RETURN NULL;
+END;
+$frozen_revision_parent$;
+CREATE CONSTRAINT TRIGGER coding_ledger_revision_frozen_parent
+    AFTER INSERT ON coding_ledger_revisions
+    DEFERRABLE INITIALLY DEFERRED FOR EACH ROW
+    EXECUTE FUNCTION require_frozen_coding_ledger_revision_parent();
 
-CREATE INDEX idx_coding_plans_current_review
-    ON coding_plans(job_id,generation) WHERE state='review';
-CREATE INDEX idx_coding_plan_leaves_decision
-    ON coding_plan_leaves(job_id,generation,decision,sort_index);
+CREATE FUNCTION require_coding_ledger_revision_carry_forward() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM coding_ledger_items item
+        WHERE item.ledger_id=NEW.id
+          AND item.created_revision=NEW.current_revision
+          AND (
+              NOT EXISTS (
+                  SELECT 1
+                  FROM coding_ledger_item_versions version
+                  WHERE version.ledger_id=item.ledger_id
+                    AND version.item_id=item.item_id
+                    AND version.revision=NEW.current_revision
+              ) OR NOT EXISTS (
+                  SELECT 1
+                  FROM coding_ledger_revision_items projection
+                  WHERE projection.ledger_id=item.ledger_id
+                    AND projection.revision=NEW.current_revision
+                    AND projection.item_id=item.item_id
+                    AND projection.item_revision=NEW.current_revision
+              )
+          )
+    ) THEN
+        RAISE EXCEPTION 'ledger revision requires a complete version and projection for every newly created item';
+    END IF;
+    IF NEW.current_revision>1 AND EXISTS (
+        SELECT 1
+        FROM coding_ledger_revision_items prior
+        WHERE prior.ledger_id=NEW.id AND prior.revision=NEW.current_revision-1
+          AND NOT EXISTS (
+              SELECT 1 FROM coding_ledger_revision_items current_projection
+              WHERE current_projection.ledger_id=prior.ledger_id
+                AND current_projection.revision=NEW.current_revision
+                AND current_projection.item_id=prior.item_id
+          )
+    ) THEN
+        RAISE EXCEPTION 'ledger revision must carry every prior item forward with a version or tombstone';
+    END IF;
+    RETURN NULL;
+END;
+$$;
+CREATE CONSTRAINT TRIGGER coding_ledger_revision_carry_forward
+    AFTER UPDATE OF current_revision ON coding_ledgers
+    DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW EXECUTE FUNCTION require_coding_ledger_revision_carry_forward();
 
-CREATE FUNCTION coding_plan_result_matches_current_authority(
-    plan_job_id BIGINT,
-    plan_generation BIGINT,
-    operation_kind TEXT
+CREATE FUNCTION validate_coding_ledger_edge() RETURNS trigger
+    LANGUAGE plpgsql AS $edge$
+DECLARE from_kind text; to_kind text;
+BEGIN
+    PERFORM 1 FROM coding_ledgers WHERE id=NEW.ledger_id FOR UPDATE;
+    SELECT item.item_kind INTO from_kind
+      FROM coding_ledger_revision_items projection
+      JOIN coding_ledger_items item USING (ledger_id,item_id)
+      JOIN coding_ledger_item_versions version
+        ON (version.ledger_id,version.item_id,version.revision)=
+           (projection.ledger_id,projection.item_id,projection.item_revision)
+      WHERE projection.ledger_id=NEW.ledger_id AND projection.revision=NEW.revision
+        AND projection.item_id=NEW.from_item_id AND version.disposition='active';
+    SELECT item.item_kind INTO to_kind
+      FROM coding_ledger_revision_items projection
+      JOIN coding_ledger_items item USING (ledger_id,item_id)
+      JOIN coding_ledger_item_versions version
+        ON (version.ledger_id,version.item_id,version.revision)=
+           (projection.ledger_id,projection.item_id,projection.item_revision)
+      WHERE projection.ledger_id=NEW.ledger_id AND projection.revision=NEW.revision
+        AND projection.item_id=NEW.to_item_id AND version.disposition='active';
+    IF from_kind IS NULL OR to_kind IS NULL THEN
+        RAISE EXCEPTION 'ledger edge references an unknown item or an item not active in its revision';
+    END IF;
+    IF (NEW.edge_kind IN ('requires','blocks') AND (from_kind<>'task' OR to_kind<>'task')) OR
+       (NEW.edge_kind='contains' AND (from_kind<>'group' OR to_kind NOT IN ('group','task'))) OR
+       (NEW.edge_kind='verifies' AND (from_kind<>'check' OR to_kind<>'acceptance_criterion')) OR
+       (NEW.edge_kind='covers' AND NOT (
+           (from_kind='task' AND to_kind IN ('objective','requirement','acceptance_criterion')) OR
+           (from_kind='acceptance_criterion' AND to_kind IN ('objective','requirement'))
+       )) OR
+       (NEW.edge_kind='affects' AND (
+           from_kind NOT IN ('constraint','decision','question','finding') OR
+           to_kind NOT IN ('objective','requirement','constraint','group','task','acceptance_criterion','check','decision','question','finding')
+       )) OR
+       (NEW.edge_kind='resolves' AND (
+           from_kind<>'finding' OR to_kind NOT IN ('finding','question','decision')
+       )) THEN
+        RAISE EXCEPTION 'ledger edge kind % is incompatible with % -> %',NEW.edge_kind,from_kind,to_kind;
+    END IF;
+    IF NEW.edge_kind IN ('requires','blocks','contains') AND EXISTS (
+        WITH RECURSIVE reach(item_id) AS (
+            SELECT NEW.to_item_id UNION
+            SELECT edge.to_item_id FROM coding_ledger_edges edge JOIN reach ON edge.from_item_id=reach.item_id
+             WHERE edge.ledger_id=NEW.ledger_id AND edge.revision=NEW.revision
+               AND edge.edge_kind IN ('requires','blocks','contains')
+        ) SELECT 1 FROM reach WHERE item_id=NEW.from_item_id
+    ) THEN RAISE EXCEPTION 'ledger edge creates a cycle'; END IF;
+    RETURN NEW;
+END;
+$edge$;
+CREATE TRIGGER coding_ledger_edge_validate BEFORE INSERT ON coding_ledger_edges
+    FOR EACH ROW EXECUTE FUNCTION validate_coding_ledger_edge();
+
+CREATE FUNCTION coding_agent_task_contract_matches(
+    contract_ledger_id bigint,
+    prior_revision bigint,
+    current_revision bigint,
+    contract_task_item_id text
 ) RETURNS boolean
-    LANGUAGE sql STABLE
-    AS $$
+    LANGUAGE sql STABLE AS $contract$
+    SELECT NOT EXISTS (
+        (
+            SELECT 'acceptance'::text AS contract_kind,
+                   acceptance.to_item_id AS parent_item_id,
+                   acceptance.to_item_id AS contract_item_id,
+                   projection.item_revision::text,
+                   NULL::boolean AS required,
+                   NULL::jsonb AS argv,
+                   NULL::text AS observation
+            FROM coding_ledger_edges acceptance
+            JOIN coding_ledger_revision_items projection
+              ON projection.ledger_id=acceptance.ledger_id
+             AND projection.revision=acceptance.revision
+             AND projection.item_id=acceptance.to_item_id
+            JOIN coding_ledger_items item
+              ON item.ledger_id=projection.ledger_id
+             AND item.item_id=projection.item_id
+            JOIN coding_ledger_item_versions version
+              ON (version.ledger_id,version.item_id,version.revision)=
+                 (projection.ledger_id,projection.item_id,projection.item_revision)
+            WHERE acceptance.ledger_id=contract_ledger_id
+              AND acceptance.revision=current_revision
+              AND acceptance.edge_kind='covers'
+              AND acceptance.from_item_id=contract_task_item_id
+              AND item.item_kind='acceptance_criterion'
+              AND version.disposition='active'
+            UNION ALL
+            SELECT 'check'::text,
+                   verification.to_item_id,
+                   check_record.check_item_id,
+                   check_version.payload::text,
+                   check_record.required,
+                   check_record.argv,
+                   check_record.observation
+            FROM coding_ledger_edges acceptance
+            JOIN coding_ledger_edges verification
+              ON verification.ledger_id=acceptance.ledger_id
+             AND verification.revision=acceptance.revision
+             AND verification.edge_kind='verifies'
+             AND verification.to_item_id=acceptance.to_item_id
+            JOIN coding_ledger_checks check_record
+              ON check_record.ledger_id=verification.ledger_id
+             AND check_record.revision=verification.revision
+             AND check_record.check_item_id=verification.from_item_id
+            JOIN coding_ledger_revision_items check_projection
+              ON check_projection.ledger_id=check_record.ledger_id
+             AND check_projection.revision=check_record.revision
+             AND check_projection.item_id=check_record.check_item_id
+            JOIN coding_ledger_item_versions check_version
+              ON (check_version.ledger_id,check_version.item_id,check_version.revision)=
+                 (check_projection.ledger_id,check_projection.item_id,check_projection.item_revision)
+            WHERE acceptance.ledger_id=contract_ledger_id
+              AND acceptance.revision=current_revision
+              AND acceptance.edge_kind='covers'
+              AND acceptance.from_item_id=contract_task_item_id
+        )
+        EXCEPT
+        (
+            SELECT 'acceptance'::text,
+                   acceptance.to_item_id,
+                   acceptance.to_item_id,
+                   projection.item_revision::text,
+                   NULL::boolean,
+                   NULL::jsonb,
+                   NULL::text
+            FROM coding_ledger_edges acceptance
+            JOIN coding_ledger_revision_items projection
+              ON projection.ledger_id=acceptance.ledger_id
+             AND projection.revision=acceptance.revision
+             AND projection.item_id=acceptance.to_item_id
+            JOIN coding_ledger_items item
+              ON item.ledger_id=projection.ledger_id
+             AND item.item_id=projection.item_id
+            JOIN coding_ledger_item_versions version
+              ON (version.ledger_id,version.item_id,version.revision)=
+                 (projection.ledger_id,projection.item_id,projection.item_revision)
+            WHERE acceptance.ledger_id=contract_ledger_id
+              AND acceptance.revision=prior_revision
+              AND acceptance.edge_kind='covers'
+              AND acceptance.from_item_id=contract_task_item_id
+              AND item.item_kind='acceptance_criterion'
+              AND version.disposition='active'
+            UNION ALL
+            SELECT 'check'::text,
+                   verification.to_item_id,
+                   check_record.check_item_id,
+                   check_version.payload::text,
+                   check_record.required,
+                   check_record.argv,
+                   check_record.observation
+            FROM coding_ledger_edges acceptance
+            JOIN coding_ledger_edges verification
+              ON verification.ledger_id=acceptance.ledger_id
+             AND verification.revision=acceptance.revision
+             AND verification.edge_kind='verifies'
+             AND verification.to_item_id=acceptance.to_item_id
+            JOIN coding_ledger_checks check_record
+              ON check_record.ledger_id=verification.ledger_id
+             AND check_record.revision=verification.revision
+             AND check_record.check_item_id=verification.from_item_id
+            JOIN coding_ledger_revision_items check_projection
+              ON check_projection.ledger_id=check_record.ledger_id
+             AND check_projection.revision=check_record.revision
+             AND check_projection.item_id=check_record.check_item_id
+            JOIN coding_ledger_item_versions check_version
+              ON (check_version.ledger_id,check_version.item_id,check_version.revision)=
+                 (check_projection.ledger_id,check_projection.item_id,check_projection.item_revision)
+            WHERE acceptance.ledger_id=contract_ledger_id
+              AND acceptance.revision=prior_revision
+              AND acceptance.edge_kind='covers'
+              AND acceptance.from_item_id=contract_task_item_id
+        )
+    ) AND NOT EXISTS (
+        (
+            SELECT acceptance.to_item_id AS parent_item_id,
+                   acceptance.to_item_id AS contract_item_id,
+                   projection.item_revision::text,
+                   NULL::boolean AS required,
+                   NULL::jsonb AS argv,
+                   NULL::text AS observation
+            FROM coding_ledger_edges acceptance
+            JOIN coding_ledger_revision_items projection
+              ON projection.ledger_id=acceptance.ledger_id
+             AND projection.revision=acceptance.revision
+             AND projection.item_id=acceptance.to_item_id
+            WHERE acceptance.ledger_id=contract_ledger_id
+              AND acceptance.revision=prior_revision
+              AND acceptance.edge_kind='covers'
+              AND acceptance.from_item_id=contract_task_item_id
+            UNION ALL
+            SELECT verification.to_item_id,
+                   check_record.check_item_id,
+                   check_version.payload::text,
+                   check_record.required,
+                   check_record.argv,
+                   check_record.observation
+            FROM coding_ledger_edges acceptance
+            JOIN coding_ledger_edges verification
+              ON verification.ledger_id=acceptance.ledger_id
+             AND verification.revision=acceptance.revision
+             AND verification.edge_kind='verifies'
+             AND verification.to_item_id=acceptance.to_item_id
+            JOIN coding_ledger_checks check_record
+              ON check_record.ledger_id=verification.ledger_id
+             AND check_record.revision=verification.revision
+             AND check_record.check_item_id=verification.from_item_id
+            JOIN coding_ledger_revision_items check_projection
+              ON check_projection.ledger_id=check_record.ledger_id
+             AND check_projection.revision=check_record.revision
+             AND check_projection.item_id=check_record.check_item_id
+            JOIN coding_ledger_item_versions check_version
+              ON (check_version.ledger_id,check_version.item_id,check_version.revision)=
+                 (check_projection.ledger_id,check_projection.item_id,check_projection.item_revision)
+            WHERE acceptance.ledger_id=contract_ledger_id
+              AND acceptance.revision=prior_revision
+              AND acceptance.edge_kind='covers'
+              AND acceptance.from_item_id=contract_task_item_id
+        )
+        EXCEPT
+        (
+            SELECT acceptance.to_item_id,
+                   acceptance.to_item_id,
+                   projection.item_revision::text,
+                   NULL::boolean,
+                   NULL::jsonb,
+                   NULL::text
+            FROM coding_ledger_edges acceptance
+            JOIN coding_ledger_revision_items projection
+              ON projection.ledger_id=acceptance.ledger_id
+             AND projection.revision=acceptance.revision
+             AND projection.item_id=acceptance.to_item_id
+            WHERE acceptance.ledger_id=contract_ledger_id
+              AND acceptance.revision=current_revision
+              AND acceptance.edge_kind='covers'
+              AND acceptance.from_item_id=contract_task_item_id
+            UNION ALL
+            SELECT verification.to_item_id,
+                   check_record.check_item_id,
+                   check_version.payload::text,
+                   check_record.required,
+                   check_record.argv,
+                   check_record.observation
+            FROM coding_ledger_edges acceptance
+            JOIN coding_ledger_edges verification
+              ON verification.ledger_id=acceptance.ledger_id
+             AND verification.revision=acceptance.revision
+             AND verification.edge_kind='verifies'
+             AND verification.to_item_id=acceptance.to_item_id
+            JOIN coding_ledger_checks check_record
+              ON check_record.ledger_id=verification.ledger_id
+             AND check_record.revision=verification.revision
+             AND check_record.check_item_id=verification.from_item_id
+            JOIN coding_ledger_revision_items check_projection
+              ON check_projection.ledger_id=check_record.ledger_id
+             AND check_projection.revision=check_record.revision
+             AND check_projection.item_id=check_record.check_item_id
+            JOIN coding_ledger_item_versions check_version
+              ON (check_version.ledger_id,check_version.item_id,check_version.revision)=
+                 (check_projection.ledger_id,check_projection.item_id,check_projection.item_revision)
+            WHERE acceptance.ledger_id=contract_ledger_id
+              AND acceptance.revision=current_revision
+              AND acceptance.edge_kind='covers'
+              AND acceptance.from_item_id=contract_task_item_id
+        )
+    ) AND NOT EXISTS (
+        (
+            SELECT task_acceptance.to_item_id,
+                   acceptance_requirement.to_item_id,
+                   acceptance_projection.item_revision,
+                   requirement_projection.item_revision
+            FROM coding_ledger_edges task_acceptance
+            JOIN coding_ledger_edges acceptance_requirement
+              ON acceptance_requirement.ledger_id=task_acceptance.ledger_id
+             AND acceptance_requirement.revision=task_acceptance.revision
+             AND acceptance_requirement.edge_kind='covers'
+             AND acceptance_requirement.from_item_id=task_acceptance.to_item_id
+            JOIN coding_ledger_revision_items acceptance_projection
+              ON acceptance_projection.ledger_id=task_acceptance.ledger_id
+             AND acceptance_projection.revision=task_acceptance.revision
+             AND acceptance_projection.item_id=task_acceptance.to_item_id
+            JOIN coding_ledger_items acceptance_item
+              ON acceptance_item.ledger_id=acceptance_projection.ledger_id
+             AND acceptance_item.item_id=acceptance_projection.item_id
+             AND acceptance_item.item_kind='acceptance_criterion'
+            JOIN coding_ledger_item_versions acceptance_version
+              ON (acceptance_version.ledger_id,acceptance_version.item_id,acceptance_version.revision)=
+                 (acceptance_projection.ledger_id,acceptance_projection.item_id,acceptance_projection.item_revision)
+            JOIN coding_ledger_revision_items requirement_projection
+              ON requirement_projection.ledger_id=acceptance_requirement.ledger_id
+             AND requirement_projection.revision=acceptance_requirement.revision
+             AND requirement_projection.item_id=acceptance_requirement.to_item_id
+            JOIN coding_ledger_items requirement_item
+              ON requirement_item.ledger_id=requirement_projection.ledger_id
+             AND requirement_item.item_id=requirement_projection.item_id
+             AND requirement_item.item_kind IN ('requirement','objective')
+            JOIN coding_ledger_item_versions requirement_version
+              ON (requirement_version.ledger_id,requirement_version.item_id,requirement_version.revision)=
+                 (requirement_projection.ledger_id,requirement_projection.item_id,requirement_projection.item_revision)
+            WHERE task_acceptance.ledger_id=contract_ledger_id
+              AND task_acceptance.revision=current_revision
+              AND task_acceptance.edge_kind='covers'
+              AND task_acceptance.from_item_id=contract_task_item_id
+              AND acceptance_version.disposition='active'
+              AND requirement_version.disposition='active'
+        )
+        EXCEPT
+        (
+            SELECT task_acceptance.to_item_id,
+                   acceptance_requirement.to_item_id,
+                   acceptance_projection.item_revision,
+                   requirement_projection.item_revision
+            FROM coding_ledger_edges task_acceptance
+            JOIN coding_ledger_edges acceptance_requirement
+              ON acceptance_requirement.ledger_id=task_acceptance.ledger_id
+             AND acceptance_requirement.revision=task_acceptance.revision
+             AND acceptance_requirement.edge_kind='covers'
+             AND acceptance_requirement.from_item_id=task_acceptance.to_item_id
+            JOIN coding_ledger_revision_items acceptance_projection
+              ON acceptance_projection.ledger_id=task_acceptance.ledger_id
+             AND acceptance_projection.revision=task_acceptance.revision
+             AND acceptance_projection.item_id=task_acceptance.to_item_id
+            JOIN coding_ledger_items acceptance_item
+              ON acceptance_item.ledger_id=acceptance_projection.ledger_id
+             AND acceptance_item.item_id=acceptance_projection.item_id
+             AND acceptance_item.item_kind='acceptance_criterion'
+            JOIN coding_ledger_item_versions acceptance_version
+              ON (acceptance_version.ledger_id,acceptance_version.item_id,acceptance_version.revision)=
+                 (acceptance_projection.ledger_id,acceptance_projection.item_id,acceptance_projection.item_revision)
+            JOIN coding_ledger_revision_items requirement_projection
+              ON requirement_projection.ledger_id=acceptance_requirement.ledger_id
+             AND requirement_projection.revision=acceptance_requirement.revision
+             AND requirement_projection.item_id=acceptance_requirement.to_item_id
+            JOIN coding_ledger_items requirement_item
+              ON requirement_item.ledger_id=requirement_projection.ledger_id
+             AND requirement_item.item_id=requirement_projection.item_id
+             AND requirement_item.item_kind IN ('requirement','objective')
+            JOIN coding_ledger_item_versions requirement_version
+              ON (requirement_version.ledger_id,requirement_version.item_id,requirement_version.revision)=
+                 (requirement_projection.ledger_id,requirement_projection.item_id,requirement_projection.item_revision)
+            WHERE task_acceptance.ledger_id=contract_ledger_id
+              AND task_acceptance.revision=prior_revision
+              AND task_acceptance.edge_kind='covers'
+              AND task_acceptance.from_item_id=contract_task_item_id
+              AND acceptance_version.disposition='active'
+              AND requirement_version.disposition='active'
+        )
+    ) AND NOT EXISTS (
+        (
+            SELECT task_acceptance.to_item_id,
+                   acceptance_requirement.to_item_id,
+                   acceptance_projection.item_revision,
+                   requirement_projection.item_revision
+            FROM coding_ledger_edges task_acceptance
+            JOIN coding_ledger_edges acceptance_requirement
+              ON acceptance_requirement.ledger_id=task_acceptance.ledger_id
+             AND acceptance_requirement.revision=task_acceptance.revision
+             AND acceptance_requirement.edge_kind='covers'
+             AND acceptance_requirement.from_item_id=task_acceptance.to_item_id
+            JOIN coding_ledger_revision_items acceptance_projection
+              ON acceptance_projection.ledger_id=task_acceptance.ledger_id
+             AND acceptance_projection.revision=task_acceptance.revision
+             AND acceptance_projection.item_id=task_acceptance.to_item_id
+            JOIN coding_ledger_items acceptance_item
+              ON acceptance_item.ledger_id=acceptance_projection.ledger_id
+             AND acceptance_item.item_id=acceptance_projection.item_id
+             AND acceptance_item.item_kind='acceptance_criterion'
+            JOIN coding_ledger_item_versions acceptance_version
+              ON (acceptance_version.ledger_id,acceptance_version.item_id,acceptance_version.revision)=
+                 (acceptance_projection.ledger_id,acceptance_projection.item_id,acceptance_projection.item_revision)
+            JOIN coding_ledger_revision_items requirement_projection
+              ON requirement_projection.ledger_id=acceptance_requirement.ledger_id
+             AND requirement_projection.revision=acceptance_requirement.revision
+             AND requirement_projection.item_id=acceptance_requirement.to_item_id
+            JOIN coding_ledger_items requirement_item
+              ON requirement_item.ledger_id=requirement_projection.ledger_id
+             AND requirement_item.item_id=requirement_projection.item_id
+             AND requirement_item.item_kind IN ('requirement','objective')
+            JOIN coding_ledger_item_versions requirement_version
+              ON (requirement_version.ledger_id,requirement_version.item_id,requirement_version.revision)=
+                 (requirement_projection.ledger_id,requirement_projection.item_id,requirement_projection.item_revision)
+            WHERE task_acceptance.ledger_id=contract_ledger_id
+              AND task_acceptance.revision=prior_revision
+              AND task_acceptance.edge_kind='covers'
+              AND task_acceptance.from_item_id=contract_task_item_id
+              AND acceptance_version.disposition='active'
+              AND requirement_version.disposition='active'
+        )
+        EXCEPT
+        (
+            SELECT task_acceptance.to_item_id,
+                   acceptance_requirement.to_item_id,
+                   acceptance_projection.item_revision,
+                   requirement_projection.item_revision
+            FROM coding_ledger_edges task_acceptance
+            JOIN coding_ledger_edges acceptance_requirement
+              ON acceptance_requirement.ledger_id=task_acceptance.ledger_id
+             AND acceptance_requirement.revision=task_acceptance.revision
+             AND acceptance_requirement.edge_kind='covers'
+             AND acceptance_requirement.from_item_id=task_acceptance.to_item_id
+            JOIN coding_ledger_revision_items acceptance_projection
+              ON acceptance_projection.ledger_id=task_acceptance.ledger_id
+             AND acceptance_projection.revision=task_acceptance.revision
+             AND acceptance_projection.item_id=task_acceptance.to_item_id
+            JOIN coding_ledger_items acceptance_item
+              ON acceptance_item.ledger_id=acceptance_projection.ledger_id
+             AND acceptance_item.item_id=acceptance_projection.item_id
+             AND acceptance_item.item_kind='acceptance_criterion'
+            JOIN coding_ledger_item_versions acceptance_version
+              ON (acceptance_version.ledger_id,acceptance_version.item_id,acceptance_version.revision)=
+                 (acceptance_projection.ledger_id,acceptance_projection.item_id,acceptance_projection.item_revision)
+            JOIN coding_ledger_revision_items requirement_projection
+              ON requirement_projection.ledger_id=acceptance_requirement.ledger_id
+             AND requirement_projection.revision=acceptance_requirement.revision
+             AND requirement_projection.item_id=acceptance_requirement.to_item_id
+            JOIN coding_ledger_items requirement_item
+              ON requirement_item.ledger_id=requirement_projection.ledger_id
+             AND requirement_item.item_id=requirement_projection.item_id
+             AND requirement_item.item_kind IN ('requirement','objective')
+            JOIN coding_ledger_item_versions requirement_version
+              ON (requirement_version.ledger_id,requirement_version.item_id,requirement_version.revision)=
+                 (requirement_projection.ledger_id,requirement_projection.item_id,requirement_projection.item_revision)
+            WHERE task_acceptance.ledger_id=contract_ledger_id
+              AND task_acceptance.revision=current_revision
+              AND task_acceptance.edge_kind='covers'
+              AND task_acceptance.from_item_id=contract_task_item_id
+              AND acceptance_version.disposition='active'
+              AND requirement_version.disposition='active'
+        )
+    ) AND NOT EXISTS (
+        (SELECT requirement.to_item_id,requirement_projection.item_revision
+         FROM coding_ledger_edges requirement
+         JOIN coding_ledger_revision_items requirement_projection
+           ON requirement_projection.ledger_id=requirement.ledger_id
+          AND requirement_projection.revision=requirement.revision
+          AND requirement_projection.item_id=requirement.to_item_id
+         JOIN coding_ledger_items requirement_item
+           ON requirement_item.ledger_id=requirement_projection.ledger_id
+          AND requirement_item.item_id=requirement_projection.item_id
+         JOIN coding_ledger_item_versions requirement_version
+           ON (requirement_version.ledger_id,requirement_version.item_id,requirement_version.revision)=
+              (requirement_projection.ledger_id,requirement_projection.item_id,requirement_projection.item_revision)
+         WHERE requirement.ledger_id=contract_ledger_id
+           AND requirement.revision=current_revision
+           AND requirement.edge_kind='covers'
+           AND requirement.from_item_id=contract_task_item_id
+           AND requirement_item.item_kind IN ('requirement','objective')
+           AND requirement_version.disposition='active')
+        EXCEPT
+        (SELECT requirement.to_item_id,requirement_projection.item_revision
+         FROM coding_ledger_edges requirement
+         JOIN coding_ledger_revision_items requirement_projection
+           ON requirement_projection.ledger_id=requirement.ledger_id
+          AND requirement_projection.revision=requirement.revision
+          AND requirement_projection.item_id=requirement.to_item_id
+         JOIN coding_ledger_items requirement_item
+           ON requirement_item.ledger_id=requirement_projection.ledger_id
+          AND requirement_item.item_id=requirement_projection.item_id
+         JOIN coding_ledger_item_versions requirement_version
+           ON (requirement_version.ledger_id,requirement_version.item_id,requirement_version.revision)=
+              (requirement_projection.ledger_id,requirement_projection.item_id,requirement_projection.item_revision)
+         WHERE requirement.ledger_id=contract_ledger_id
+           AND requirement.revision=prior_revision
+           AND requirement.edge_kind='covers'
+           AND requirement.from_item_id=contract_task_item_id
+           AND requirement_item.item_kind IN ('requirement','objective')
+           AND requirement_version.disposition='active')
+    ) AND NOT EXISTS (
+        (SELECT requirement.to_item_id,requirement_projection.item_revision
+         FROM coding_ledger_edges requirement
+         JOIN coding_ledger_revision_items requirement_projection
+           ON requirement_projection.ledger_id=requirement.ledger_id
+          AND requirement_projection.revision=requirement.revision
+          AND requirement_projection.item_id=requirement.to_item_id
+         JOIN coding_ledger_items requirement_item
+           ON requirement_item.ledger_id=requirement_projection.ledger_id
+          AND requirement_item.item_id=requirement_projection.item_id
+         JOIN coding_ledger_item_versions requirement_version
+           ON (requirement_version.ledger_id,requirement_version.item_id,requirement_version.revision)=
+              (requirement_projection.ledger_id,requirement_projection.item_id,requirement_projection.item_revision)
+         WHERE requirement.ledger_id=contract_ledger_id
+           AND requirement.revision=prior_revision
+           AND requirement.edge_kind='covers'
+           AND requirement.from_item_id=contract_task_item_id
+           AND requirement_item.item_kind IN ('requirement','objective')
+           AND requirement_version.disposition='active')
+        EXCEPT
+        (SELECT requirement.to_item_id,requirement_projection.item_revision
+         FROM coding_ledger_edges requirement
+         JOIN coding_ledger_revision_items requirement_projection
+           ON requirement_projection.ledger_id=requirement.ledger_id
+          AND requirement_projection.revision=requirement.revision
+          AND requirement_projection.item_id=requirement.to_item_id
+         JOIN coding_ledger_items requirement_item
+           ON requirement_item.ledger_id=requirement_projection.ledger_id
+          AND requirement_item.item_id=requirement_projection.item_id
+         JOIN coding_ledger_item_versions requirement_version
+           ON (requirement_version.ledger_id,requirement_version.item_id,requirement_version.revision)=
+              (requirement_projection.ledger_id,requirement_projection.item_id,requirement_projection.item_revision)
+         WHERE requirement.ledger_id=contract_ledger_id
+           AND requirement.revision=current_revision
+           AND requirement.edge_kind='covers'
+           AND requirement.from_item_id=contract_task_item_id
+           AND requirement_item.item_kind IN ('requirement','objective')
+           AND requirement_version.disposition='active')
+    ) AND NOT EXISTS (
+        (SELECT edge_kind,from_item_id,to_item_id
+         FROM coding_ledger_edges
+         WHERE ledger_id=contract_ledger_id
+           AND revision=current_revision
+           AND edge_kind IN ('requires','blocks')
+           AND (from_item_id=contract_task_item_id OR to_item_id=contract_task_item_id))
+        EXCEPT
+        (SELECT edge_kind,from_item_id,to_item_id
+         FROM coding_ledger_edges
+         WHERE ledger_id=contract_ledger_id
+           AND revision=prior_revision
+           AND edge_kind IN ('requires','blocks')
+           AND (from_item_id=contract_task_item_id OR to_item_id=contract_task_item_id))
+    ) AND NOT EXISTS (
+        (SELECT edge_kind,from_item_id,to_item_id
+         FROM coding_ledger_edges
+         WHERE ledger_id=contract_ledger_id
+           AND revision=prior_revision
+           AND edge_kind IN ('requires','blocks')
+           AND (from_item_id=contract_task_item_id OR to_item_id=contract_task_item_id))
+        EXCEPT
+        (SELECT edge_kind,from_item_id,to_item_id
+         FROM coding_ledger_edges
+         WHERE ledger_id=contract_ledger_id
+           AND revision=current_revision
+           AND edge_kind IN ('requires','blocks')
+           AND (from_item_id=contract_task_item_id OR to_item_id=contract_task_item_id))
+    ) AND NOT EXISTS (
+        (SELECT applicability.from_item_id,applicability.to_item_id,source_projection.item_revision
+         FROM coding_ledger_edges applicability
+         JOIN coding_ledger_revision_items source_projection
+           ON source_projection.ledger_id=applicability.ledger_id
+          AND source_projection.revision=applicability.revision
+          AND source_projection.item_id=applicability.from_item_id
+         WHERE applicability.ledger_id=contract_ledger_id
+           AND applicability.revision=current_revision
+           AND applicability.edge_kind='affects'
+           AND (
+               applicability.to_item_id=contract_task_item_id OR
+               EXISTS (
+                   SELECT 1
+                   FROM coding_ledger_edges direct_binding
+                   WHERE direct_binding.ledger_id=applicability.ledger_id
+                     AND direct_binding.revision=applicability.revision
+                     AND (
+                         (direct_binding.edge_kind='covers'
+                          AND direct_binding.from_item_id=contract_task_item_id
+                          AND direct_binding.to_item_id=applicability.to_item_id) OR
+                         (direct_binding.edge_kind IN ('affects','contains')
+                          AND direct_binding.from_item_id=applicability.to_item_id
+                          AND direct_binding.to_item_id=contract_task_item_id)
+                     )
+               ) OR EXISTS (
+                   SELECT 1
+                   FROM coding_ledger_edges task_acceptance
+                   JOIN coding_ledger_edges verification
+                     ON verification.ledger_id=task_acceptance.ledger_id
+                    AND verification.revision=task_acceptance.revision
+                    AND verification.edge_kind='verifies'
+                    AND verification.to_item_id=task_acceptance.to_item_id
+                   WHERE task_acceptance.ledger_id=applicability.ledger_id
+                     AND task_acceptance.revision=applicability.revision
+                     AND task_acceptance.edge_kind='covers'
+                     AND task_acceptance.from_item_id=contract_task_item_id
+                     AND verification.from_item_id=applicability.to_item_id
+               )
+           ))
+        EXCEPT
+        (SELECT applicability.from_item_id,applicability.to_item_id,source_projection.item_revision
+         FROM coding_ledger_edges applicability
+         JOIN coding_ledger_revision_items source_projection
+           ON source_projection.ledger_id=applicability.ledger_id
+          AND source_projection.revision=applicability.revision
+          AND source_projection.item_id=applicability.from_item_id
+         WHERE applicability.ledger_id=contract_ledger_id
+           AND applicability.revision=prior_revision
+           AND applicability.edge_kind='affects'
+           AND (
+               applicability.to_item_id=contract_task_item_id OR
+               EXISTS (
+                   SELECT 1
+                   FROM coding_ledger_edges direct_binding
+                   WHERE direct_binding.ledger_id=applicability.ledger_id
+                     AND direct_binding.revision=applicability.revision
+                     AND (
+                         (direct_binding.edge_kind='covers'
+                          AND direct_binding.from_item_id=contract_task_item_id
+                          AND direct_binding.to_item_id=applicability.to_item_id) OR
+                         (direct_binding.edge_kind IN ('affects','contains')
+                          AND direct_binding.from_item_id=applicability.to_item_id
+                          AND direct_binding.to_item_id=contract_task_item_id)
+                     )
+               ) OR EXISTS (
+                   SELECT 1
+                   FROM coding_ledger_edges task_acceptance
+                   JOIN coding_ledger_edges verification
+                     ON verification.ledger_id=task_acceptance.ledger_id
+                    AND verification.revision=task_acceptance.revision
+                    AND verification.edge_kind='verifies'
+                    AND verification.to_item_id=task_acceptance.to_item_id
+                   WHERE task_acceptance.ledger_id=applicability.ledger_id
+                     AND task_acceptance.revision=applicability.revision
+                     AND task_acceptance.edge_kind='covers'
+                     AND task_acceptance.from_item_id=contract_task_item_id
+                     AND verification.from_item_id=applicability.to_item_id
+               )
+           ))
+    ) AND NOT EXISTS (
+        (SELECT applicability.from_item_id,applicability.to_item_id,source_projection.item_revision
+         FROM coding_ledger_edges applicability
+         JOIN coding_ledger_revision_items source_projection
+           ON source_projection.ledger_id=applicability.ledger_id
+          AND source_projection.revision=applicability.revision
+          AND source_projection.item_id=applicability.from_item_id
+         WHERE applicability.ledger_id=contract_ledger_id
+           AND applicability.revision=prior_revision
+           AND applicability.edge_kind='affects'
+           AND (
+               applicability.to_item_id=contract_task_item_id OR
+               EXISTS (
+                   SELECT 1
+                   FROM coding_ledger_edges direct_binding
+                   WHERE direct_binding.ledger_id=applicability.ledger_id
+                     AND direct_binding.revision=applicability.revision
+                     AND (
+                         (direct_binding.edge_kind='covers'
+                          AND direct_binding.from_item_id=contract_task_item_id
+                          AND direct_binding.to_item_id=applicability.to_item_id) OR
+                         (direct_binding.edge_kind IN ('affects','contains')
+                          AND direct_binding.from_item_id=applicability.to_item_id
+                          AND direct_binding.to_item_id=contract_task_item_id)
+                     )
+               ) OR EXISTS (
+                   SELECT 1
+                   FROM coding_ledger_edges task_acceptance
+                   JOIN coding_ledger_edges verification
+                     ON verification.ledger_id=task_acceptance.ledger_id
+                    AND verification.revision=task_acceptance.revision
+                    AND verification.edge_kind='verifies'
+                    AND verification.to_item_id=task_acceptance.to_item_id
+                   WHERE task_acceptance.ledger_id=applicability.ledger_id
+                     AND task_acceptance.revision=applicability.revision
+                     AND task_acceptance.edge_kind='covers'
+                     AND task_acceptance.from_item_id=contract_task_item_id
+                     AND verification.from_item_id=applicability.to_item_id
+               )
+           ))
+        EXCEPT
+        (SELECT applicability.from_item_id,applicability.to_item_id,source_projection.item_revision
+         FROM coding_ledger_edges applicability
+         JOIN coding_ledger_revision_items source_projection
+           ON source_projection.ledger_id=applicability.ledger_id
+          AND source_projection.revision=applicability.revision
+          AND source_projection.item_id=applicability.from_item_id
+         WHERE applicability.ledger_id=contract_ledger_id
+           AND applicability.revision=current_revision
+           AND applicability.edge_kind='affects'
+           AND (
+               applicability.to_item_id=contract_task_item_id OR
+               EXISTS (
+                   SELECT 1
+                   FROM coding_ledger_edges direct_binding
+                   WHERE direct_binding.ledger_id=applicability.ledger_id
+                     AND direct_binding.revision=applicability.revision
+                     AND (
+                         (direct_binding.edge_kind='covers'
+                          AND direct_binding.from_item_id=contract_task_item_id
+                          AND direct_binding.to_item_id=applicability.to_item_id) OR
+                         (direct_binding.edge_kind IN ('affects','contains')
+                          AND direct_binding.from_item_id=applicability.to_item_id
+                          AND direct_binding.to_item_id=contract_task_item_id)
+                     )
+               ) OR EXISTS (
+                   SELECT 1
+                   FROM coding_ledger_edges task_acceptance
+                   JOIN coding_ledger_edges verification
+                     ON verification.ledger_id=task_acceptance.ledger_id
+                    AND verification.revision=task_acceptance.revision
+                    AND verification.edge_kind='verifies'
+                    AND verification.to_item_id=task_acceptance.to_item_id
+                   WHERE task_acceptance.ledger_id=applicability.ledger_id
+                     AND task_acceptance.revision=applicability.revision
+                     AND task_acceptance.edge_kind='covers'
+                     AND task_acceptance.from_item_id=contract_task_item_id
+                     AND verification.from_item_id=applicability.to_item_id
+               )
+           ))
+    ) AND NOT EXISTS (
+        (SELECT membership.from_item_id,group_projection.item_revision
+         FROM coding_ledger_edges membership
+         JOIN coding_ledger_revision_items group_projection
+           ON group_projection.ledger_id=membership.ledger_id
+          AND group_projection.revision=membership.revision
+          AND group_projection.item_id=membership.from_item_id
+         JOIN coding_ledger_items group_item
+           ON group_item.ledger_id=group_projection.ledger_id
+          AND group_item.item_id=group_projection.item_id
+          AND group_item.item_kind='group'
+         JOIN coding_ledger_item_versions group_version
+           ON (group_version.ledger_id,group_version.item_id,group_version.revision)=
+              (group_projection.ledger_id,group_projection.item_id,group_projection.item_revision)
+         WHERE membership.ledger_id=contract_ledger_id
+           AND membership.revision=current_revision
+           AND membership.edge_kind='contains'
+           AND membership.to_item_id=contract_task_item_id
+           AND group_version.disposition='active')
+        EXCEPT
+        (SELECT membership.from_item_id,group_projection.item_revision
+         FROM coding_ledger_edges membership
+         JOIN coding_ledger_revision_items group_projection
+           ON group_projection.ledger_id=membership.ledger_id
+          AND group_projection.revision=membership.revision
+          AND group_projection.item_id=membership.from_item_id
+         JOIN coding_ledger_items group_item
+           ON group_item.ledger_id=group_projection.ledger_id
+          AND group_item.item_id=group_projection.item_id
+          AND group_item.item_kind='group'
+         JOIN coding_ledger_item_versions group_version
+           ON (group_version.ledger_id,group_version.item_id,group_version.revision)=
+              (group_projection.ledger_id,group_projection.item_id,group_projection.item_revision)
+         WHERE membership.ledger_id=contract_ledger_id
+           AND membership.revision=prior_revision
+           AND membership.edge_kind='contains'
+           AND membership.to_item_id=contract_task_item_id
+           AND group_version.disposition='active')
+    ) AND NOT EXISTS (
+        (SELECT membership.from_item_id,group_projection.item_revision
+         FROM coding_ledger_edges membership
+         JOIN coding_ledger_revision_items group_projection
+           ON group_projection.ledger_id=membership.ledger_id
+          AND group_projection.revision=membership.revision
+          AND group_projection.item_id=membership.from_item_id
+         JOIN coding_ledger_items group_item
+           ON group_item.ledger_id=group_projection.ledger_id
+          AND group_item.item_id=group_projection.item_id
+          AND group_item.item_kind='group'
+         JOIN coding_ledger_item_versions group_version
+           ON (group_version.ledger_id,group_version.item_id,group_version.revision)=
+              (group_projection.ledger_id,group_projection.item_id,group_projection.item_revision)
+         WHERE membership.ledger_id=contract_ledger_id
+           AND membership.revision=prior_revision
+           AND membership.edge_kind='contains'
+           AND membership.to_item_id=contract_task_item_id
+           AND group_version.disposition='active')
+        EXCEPT
+        (SELECT membership.from_item_id,group_projection.item_revision
+         FROM coding_ledger_edges membership
+         JOIN coding_ledger_revision_items group_projection
+           ON group_projection.ledger_id=membership.ledger_id
+          AND group_projection.revision=membership.revision
+          AND group_projection.item_id=membership.from_item_id
+         JOIN coding_ledger_items group_item
+           ON group_item.ledger_id=group_projection.ledger_id
+          AND group_item.item_id=group_projection.item_id
+          AND group_item.item_kind='group'
+         JOIN coding_ledger_item_versions group_version
+           ON (group_version.ledger_id,group_version.item_id,group_version.revision)=
+              (group_projection.ledger_id,group_projection.item_id,group_projection.item_revision)
+         WHERE membership.ledger_id=contract_ledger_id
+           AND membership.revision=current_revision
+           AND membership.edge_kind='contains'
+           AND membership.to_item_id=contract_task_item_id
+           AND group_version.disposition='active')
+    );
+$contract$;
+
+CREATE FUNCTION validate_coding_agent_task_transition() RETURNS trigger
+    LANGUAGE plpgsql AS $task_transition$
+DECLARE ledger_state text; ledger_revision bigint; ledger_current_revision bigint;
+        projected_kind text; projected_version bigint; journal_accepted boolean;
+        removal_authorized boolean;
+BEGIN
+    IF TG_OP='INSERT' THEN
+        SELECT ledger.state,ledger.frozen_revision,item.item_kind,projection.item_revision
+          INTO ledger_state,ledger_revision,projected_kind,projected_version
+          FROM coding_ledgers ledger
+          JOIN coding_ledger_revision_items projection
+            ON projection.ledger_id=ledger.id AND projection.revision=ledger.frozen_revision
+          JOIN coding_ledger_items item
+            ON item.ledger_id=projection.ledger_id AND item.item_id=projection.item_id
+          JOIN coding_ledger_item_versions version
+            ON (version.ledger_id,version.item_id,version.revision)=
+               (projection.ledger_id,projection.item_id,projection.item_revision)
+          WHERE ledger.id=NEW.ledger_id AND projection.item_id=NEW.task_item_id
+            AND version.disposition='active'
+          FOR SHARE OF ledger;
+        IF ledger_state IS DISTINCT FROM 'frozen' OR
+           ledger_revision IS DISTINCT FROM NEW.frozen_revision OR
+           projected_kind IS DISTINCT FROM 'task' OR
+           NEW.state NOT IN ('blocked','ready','accepted') OR
+           NEW.state_version<>1 OR NEW.cancelled_at IS NOT NULL OR
+           (NEW.state='accepted') IS DISTINCT FROM (NEW.accepted_at IS NOT NULL) OR
+           (NEW.state='blocked') IS DISTINCT FROM EXISTS (
+               SELECT 1
+               FROM coding_ledger_edges dependency
+               WHERE dependency.ledger_id=NEW.ledger_id
+                 AND dependency.revision=NEW.frozen_revision
+                 AND dependency.edge_kind IN ('requires','blocks')
+                 AND dependency.from_item_id=NEW.task_item_id
+                 AND NOT EXISTS (
+                     SELECT 1
+                     FROM coding_agent_tasks prerequisite
+                     WHERE prerequisite.ledger_id=NEW.ledger_id
+                       AND prerequisite.frozen_revision=NEW.frozen_revision
+                       AND prerequisite.task_item_id=dependency.to_item_id
+                       AND prerequisite.state='accepted'
+                 )
+           ) OR
+           (NEW.state='accepted' AND NOT EXISTS (
+               SELECT 1
+               FROM coding_agent_tasks prior_task
+               JOIN coding_ledger_revision_items prior_projection
+                 ON prior_projection.ledger_id=prior_task.ledger_id
+                AND prior_projection.revision=prior_task.frozen_revision
+                AND prior_projection.item_id=prior_task.task_item_id
+               WHERE prior_task.ledger_id=NEW.ledger_id
+                 AND prior_task.frozen_revision=(
+                     SELECT max(prior_frozen.revision)
+                     FROM coding_ledger_revisions prior_frozen
+                     WHERE prior_frozen.ledger_id=NEW.ledger_id
+                       AND prior_frozen.revision<NEW.frozen_revision
+                       AND prior_frozen.state='frozen'
+                 )
+                 AND prior_task.task_item_id=NEW.task_item_id
+                 AND prior_task.state='accepted'
+                 AND prior_projection.item_revision=projected_version
+                 AND coding_agent_task_contract_matches(
+                     NEW.ledger_id,prior_task.frozen_revision,
+                     NEW.frozen_revision,NEW.task_item_id
+                 )
+           )) THEN
+            RAISE EXCEPTION 'queued task insert requires one active task in the exact frozen ledger';
+        END IF;
+        RETURN NEW;
+    END IF;
+
+    IF ROW(OLD.ledger_id,OLD.frozen_revision,OLD.task_item_id,OLD.priority,OLD.fairness_key)
+       IS DISTINCT FROM ROW(NEW.ledger_id,NEW.frozen_revision,NEW.task_item_id,NEW.priority,NEW.fairness_key) THEN
+        RAISE EXCEPTION 'queued task identity is immutable';
+    END IF;
+    IF NEW.state_version<>OLD.state_version+1 OR
+       NOT isfinite(NEW.updated_at) OR NEW.updated_at<=OLD.updated_at THEN
+        RAISE EXCEPTION 'queued task transition requires one current state version';
+    END IF;
+
+    SELECT state,frozen_revision,current_revision
+      INTO ledger_state,ledger_revision,ledger_current_revision
+      FROM coding_ledgers WHERE id=OLD.ledger_id FOR SHARE;
     SELECT EXISTS (
         SELECT 1
-        FROM coding_plans AS plan
-        JOIN coding_plan_operation_results AS result
-          ON result.job_id=plan.job_id AND result.generation=plan.generation
-        WHERE plan.job_id=plan_job_id AND plan.generation=plan_generation
-          AND result.kind=operation_kind
-          AND result.result_revision=plan.revision
-          AND result.result_plan->>'state'=plan.state
-          AND result.result_plan->'leaves'=(
-              SELECT COALESCE(
-                  jsonb_agg(
-                      jsonb_build_object(
-                          'id',leaf.leaf_id,
-                          'statement',leaf.statement,
-                          'decision',leaf.decision
-                      ) ORDER BY leaf.sort_index
-                  ),
-                  '[]'::jsonb
-              )
-              FROM coding_plan_leaves AS leaf
-              WHERE leaf.job_id=plan.job_id AND leaf.generation=plan.generation
+        FROM coding_ledger_revisions approved_revision
+        JOIN coding_ledger_revision_items projection
+          ON projection.ledger_id=approved_revision.ledger_id
+         AND projection.revision=approved_revision.revision
+         AND projection.item_id=OLD.task_item_id
+        JOIN coding_ledger_item_versions version
+          ON (version.ledger_id,version.item_id,version.revision)=
+             (projection.ledger_id,projection.item_id,projection.item_revision)
+        WHERE approved_revision.ledger_id=OLD.ledger_id
+          AND approved_revision.revision=ledger_current_revision
+          AND approved_revision.revision>OLD.frozen_revision
+          AND approved_revision.state='frozen'
+          AND approved_revision.coverage_passed
+          AND version.disposition='removed'
+    ) INTO removal_authorized;
+
+    IF NEW.state='cancelled' THEN
+        IF OLD.state='cancelled' OR NEW.accepted_at IS NOT NULL OR NEW.cancelled_at IS NULL OR NOT (
+            ((ledger_state IN ('proposed','frozen','revising') AND EXISTS (
+                SELECT 1
+                FROM coding_ledger_owner_turns cancellation
+                WHERE cancellation.ledger_id=OLD.ledger_id
+                  AND cancellation.base_revision=ledger_current_revision
+                  AND cancellation.action='cancel'
+            )) OR removal_authorized)
+        ) THEN
+            RAISE EXCEPTION 'queued task cancellation requires explicit owner authority or an approved removal';
+        END IF;
+        RETURN NEW;
+    END IF;
+
+    IF ledger_state IS DISTINCT FROM 'frozen' OR
+       ledger_revision IS DISTINCT FROM OLD.frozen_revision OR
+       NEW.cancelled_at IS NOT NULL THEN
+        RAISE EXCEPTION 'queued task transitions require the exact active frozen ledger';
+    END IF;
+
+    SELECT COALESCE((
+        SELECT event.payload_json->>'phase'
+        FROM coding_ledgers ledger
+        JOIN jobs job ON job.id=ledger.job_id
+        JOIN evidence event ON event.job_id=ledger.job_id
+        WHERE ledger.id=OLD.ledger_id
+          AND event.kind='coding_agent'
+          AND event.payload_json->>'generation'=job.current_generation::text
+          AND event.payload_json->>'task_id'=OLD.task_item_id
+          AND event.payload_json->>'phase' IN ('task_accepted','task_reviewed')
+        ORDER BY event.id DESC
+        LIMIT 1
+    ),'')='task_accepted' INTO journal_accepted;
+
+    IF OLD.state='accepted' OR
+       (NEW.state='accepted' AND (OLD.state NOT IN ('ready','blocked') OR NOT journal_accepted OR NEW.accepted_at IS NULL)) OR
+       (NEW.state IN ('ready','blocked') AND NEW.accepted_at IS NOT NULL) OR
+       (OLD.state='blocked' AND NEW.state NOT IN ('blocked','ready','accepted')) OR
+       (OLD.state='ready' AND NEW.state NOT IN ('ready','blocked','accepted')) THEN
+        RAISE EXCEPTION 'incompatible queued task state transition % -> %',OLD.state,NEW.state;
+    END IF;
+
+    IF NEW.state IN ('ready','accepted') AND EXISTS (
+        SELECT 1
+        FROM coding_ledger_edges dependency
+        WHERE dependency.ledger_id=OLD.ledger_id
+          AND dependency.revision=OLD.frozen_revision
+          AND dependency.edge_kind IN ('requires','blocks')
+          AND dependency.from_item_id=OLD.task_item_id
+          AND NOT EXISTS (
+              SELECT 1
+              FROM coding_agent_tasks prerequisite
+              WHERE prerequisite.ledger_id=OLD.ledger_id
+                AND prerequisite.frozen_revision=OLD.frozen_revision
+                AND prerequisite.task_item_id=dependency.to_item_id
+                AND prerequisite.state='accepted'
           )
-    );
-$$;
-
-CREATE FUNCTION validate_coding_plan_update() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-DECLARE
-    approved_leaf_count BIGINT;
-    pending_leaf_count BIGINT;
-BEGIN
-    IF ROW(OLD.job_id,OLD.generation,OLD.plan_step_id,OLD.created_at)
-       IS DISTINCT FROM
-       ROW(NEW.job_id,NEW.generation,NEW.plan_step_id,NEW.created_at) THEN
-        RAISE EXCEPTION 'coding plan identity and authority are immutable';
-    END IF;
-    IF OLD.state IN ('superseded','canceled') OR
-       (OLD.state='frozen' AND NEW.state NOT IN ('superseded','canceled')) OR
-       (OLD.state='review' AND NEW.state NOT IN ('review','frozen','superseded','canceled')) THEN
-        RAISE EXCEPTION 'coding plan state transition is invalid';
-    END IF;
-    IF NEW.revision<>OLD.revision+1 OR NEW.updated_at<=OLD.updated_at THEN
-        RAISE EXCEPTION 'coding plan update requires one monotonic revision';
-    END IF;
-    IF NEW.state='frozen' AND (OLD.state<>'review' OR NEW.frozen_at IS NULL) THEN
-        RAISE EXCEPTION 'coding plan freeze transition is invalid';
-    END IF;
-    IF NEW.state='frozen' THEN
-        SELECT COUNT(*) FILTER (WHERE decision='approved'),
-               COUNT(*) FILTER (WHERE decision='pending')
-          INTO approved_leaf_count,pending_leaf_count
-          FROM coding_plan_leaves
-          WHERE job_id=NEW.job_id AND generation=NEW.generation;
-        IF approved_leaf_count=0 OR pending_leaf_count<>0 THEN
-            RAISE EXCEPTION 'coding plan freeze requires every leaf decided and at least one approved leaf';
-        END IF;
-    END IF;
-    IF NEW.state='review' AND NEW.frozen_at IS NOT NULL THEN
-        RAISE EXCEPTION 'review coding plan cannot have a frozen timestamp';
-    END IF;
-    RETURN NEW;
-END;
-$$;
-
-CREATE FUNCTION validate_coding_plan_leaf_insert() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-DECLARE
-    plan_state TEXT;
-    plan_step_status TEXT;
-    job_status TEXT;
-    prior_decision TEXT;
-    prior_origin_generation BIGINT;
-    prior_leaf_id TEXT;
-BEGIN
-    SELECT plan.state,step.status,job.status
-      INTO plan_state,plan_step_status,job_status
-      FROM coding_plans AS plan
-      JOIN job_steps AS step
-        ON step.id=plan.plan_step_id AND step.job_id=plan.job_id
-       AND step.generation=plan.generation
-      JOIN jobs AS job ON job.id=plan.job_id
-      WHERE plan.job_id=NEW.job_id AND plan.generation=NEW.generation
-      FOR SHARE OF plan,step,job;
-    IF plan_state IS DISTINCT FROM 'review' OR
-       plan_step_status IS DISTINCT FROM 'running' OR
-       job_status IS DISTINCT FROM 'running' THEN
-        RAISE EXCEPTION 'coding plan leaves may be inserted only during the active initial StoreCodingPlanReview transaction';
-    END IF;
-    SELECT leaf.leaf_id,leaf.decision,leaf.decision_origin_generation
-      INTO prior_leaf_id,prior_decision,prior_origin_generation
-      FROM coding_plan_leaves AS leaf
-      JOIN coding_plans AS plan
-        ON plan.job_id=leaf.job_id AND plan.generation=leaf.generation
-      WHERE leaf.job_id=NEW.job_id AND leaf.generation<NEW.generation
-        AND leaf.statement=NEW.statement
-        AND leaf.decision IN ('approved','rejected')
-        AND plan.state='superseded'
-      ORDER BY leaf.generation DESC
-      LIMIT 1;
-    IF FOUND THEN
-        IF NEW.leaf_id IS DISTINCT FROM prior_leaf_id OR
-           NEW.decision IS DISTINCT FROM prior_decision OR
-           NEW.decision_origin_generation IS DISTINCT FROM prior_origin_generation THEN
-            RAISE EXCEPTION 'coding plan leaf decision differs from its exact superseded prior-generation decision';
-        END IF;
-    ELSIF NEW.decision<>'pending' OR NEW.decision_origin_generation<>NEW.generation THEN
-        RAISE EXCEPTION 'coding plan leaf has no exact superseded prior-generation decision to carry';
-    END IF;
-    RETURN NEW;
-END;
-$$;
-
-CREATE FUNCTION validate_coding_plan_leaf_update() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-DECLARE
-    plan_state TEXT;
-BEGIN
-    IF ROW(OLD.job_id,OLD.generation,OLD.leaf_id,OLD.sort_index,OLD.statement,
-           OLD.result_schema,OLD.result_relation,OLD.created_at)
-       IS DISTINCT FROM
-       ROW(NEW.job_id,NEW.generation,NEW.leaf_id,NEW.sort_index,NEW.statement,
-           NEW.result_schema,NEW.result_relation,NEW.created_at) THEN
-        RAISE EXCEPTION 'coding plan leaf semantic identity is immutable';
-    END IF;
-    SELECT state INTO plan_state FROM coding_plans
-      WHERE job_id=OLD.job_id AND generation=OLD.generation FOR SHARE;
-    IF plan_state IS DISTINCT FROM 'review' THEN
-        RAISE EXCEPTION 'only a review coding plan accepts leaf decisions';
-    END IF;
-    IF ROW(OLD.decision,OLD.decision_origin_generation)
-       IS NOT DISTINCT FROM ROW(NEW.decision,NEW.decision_origin_generation) THEN
-        RAISE EXCEPTION 'coding plan leaf update requires one actual decision change';
-    END IF;
-    IF NEW.decision='pending' OR NEW.decision_origin_generation<>NEW.generation THEN
-        RAISE EXCEPTION 'coding plan decisions may only change to an explicit current-generation decision';
-    END IF;
-    IF NEW.updated_at<=OLD.updated_at THEN
-        RAISE EXCEPTION 'coding plan leaf update timestamp must advance';
-    END IF;
-    RETURN NEW;
-END;
-$$;
-
-CREATE FUNCTION require_coding_plan_leaf_decision_operation() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    IF NOT coding_plan_result_matches_current_authority(
-        NEW.job_id,NEW.generation,'coding_plan_decisions'
     ) THEN
-        RAISE EXCEPTION 'coding plan leaf decision requires its exact lifecycle operation result';
+        RAISE EXCEPTION 'ready or accepted task requires every prerequisite accepted';
+    END IF;
+    IF NEW.state='blocked' AND NOT EXISTS (
+        SELECT 1
+        FROM coding_ledger_edges dependency
+        WHERE dependency.ledger_id=OLD.ledger_id
+          AND dependency.revision=OLD.frozen_revision
+          AND dependency.edge_kind IN ('requires','blocks')
+          AND dependency.from_item_id=OLD.task_item_id
+          AND NOT EXISTS (
+              SELECT 1
+              FROM coding_agent_tasks prerequisite
+              WHERE prerequisite.ledger_id=OLD.ledger_id
+                AND prerequisite.frozen_revision=OLD.frozen_revision
+                AND prerequisite.task_item_id=dependency.to_item_id
+                AND prerequisite.state='accepted'
+          )
+    ) THEN
+        RAISE EXCEPTION 'blocked task requires an incomplete prerequisite';
+    END IF;
+    RETURN NEW;
+END;
+$task_transition$;
+CREATE TRIGGER coding_agent_task_transition_validate BEFORE INSERT OR UPDATE ON coding_agent_tasks
+    FOR EACH ROW EXECUTE FUNCTION validate_coding_agent_task_transition();
+
+CREATE FUNCTION require_coding_agent_dependency_state() RETURNS trigger
+    LANGUAGE plpgsql AS $dependency_state$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM coding_agent_tasks task
+        WHERE task.ledger_id=NEW.ledger_id
+          AND task.frozen_revision=NEW.frozen_revision
+          AND (
+              (task.state IN ('ready','accepted') AND EXISTS (
+                  SELECT 1
+                  FROM coding_ledger_edges dependency
+                  WHERE dependency.ledger_id=task.ledger_id
+                    AND dependency.revision=task.frozen_revision
+                    AND dependency.edge_kind IN ('requires','blocks')
+                    AND dependency.from_item_id=task.task_item_id
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM coding_agent_tasks prerequisite
+                        WHERE prerequisite.ledger_id=task.ledger_id
+                          AND prerequisite.frozen_revision=task.frozen_revision
+                          AND prerequisite.task_item_id=dependency.to_item_id
+                          AND prerequisite.state='accepted'
+                    )
+              )) OR
+              (task.state='blocked' AND NOT EXISTS (
+                  SELECT 1
+                  FROM coding_ledger_edges dependency
+                  WHERE dependency.ledger_id=task.ledger_id
+                    AND dependency.revision=task.frozen_revision
+                    AND dependency.edge_kind IN ('requires','blocks')
+                    AND dependency.from_item_id=task.task_item_id
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM coding_agent_tasks prerequisite
+                        WHERE prerequisite.ledger_id=task.ledger_id
+                          AND prerequisite.frozen_revision=task.frozen_revision
+                          AND prerequisite.task_item_id=dependency.to_item_id
+                          AND prerequisite.state='accepted'
+                    )
+              ))
+          )
+    ) THEN
+        RAISE EXCEPTION 'queued task state is incompatible with its prerequisites';
     END IF;
     RETURN NULL;
 END;
-$$;
+$dependency_state$;
+CREATE CONSTRAINT TRIGGER coding_agent_task_dependency_state
+    AFTER INSERT OR UPDATE ON coding_agent_tasks
+    DEFERRABLE INITIALLY DEFERRED FOR EACH ROW
+    EXECUTE FUNCTION require_coding_agent_dependency_state();
 
-CREATE FUNCTION require_coding_plan_update_operation() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-DECLARE
-    required_kind TEXT;
+CREATE FUNCTION invalidate_ready_coding_agent_dependents() RETURNS trigger
+    LANGUAGE plpgsql AS $dependents$
 BEGIN
-    IF OLD.state='review' AND NEW.state='review' THEN
-        required_kind := 'coding_plan_decisions';
-    ELSIF OLD.state='review' AND NEW.state='frozen' THEN
-        required_kind := 'coding_plan_freeze';
+    IF OLD.state<>'accepted' AND NEW.state='accepted' THEN
+        UPDATE coding_agent_tasks dependent
+        SET state='ready',state_version=dependent.state_version+1,
+            updated_at=clock_timestamp()
+        WHERE dependent.ledger_id=OLD.ledger_id
+          AND dependent.frozen_revision=OLD.frozen_revision
+          AND dependent.state='blocked'
+          AND NOT EXISTS (
+              SELECT 1
+              FROM coding_ledger_edges dependency
+              WHERE dependency.ledger_id=dependent.ledger_id
+                AND dependency.revision=dependent.frozen_revision
+                AND dependency.edge_kind IN ('requires','blocks')
+                AND dependency.from_item_id=dependent.task_item_id
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM coding_agent_tasks prerequisite
+                    WHERE prerequisite.ledger_id=dependent.ledger_id
+                      AND prerequisite.frozen_revision=dependent.frozen_revision
+                      AND prerequisite.task_item_id=dependency.to_item_id
+                      AND prerequisite.state='accepted'
+                )
+          );
+    END IF;
+    RETURN NULL;
+END;
+$dependents$;
+CREATE TRIGGER coding_agent_ready_dependents_invalidate
+    AFTER UPDATE OF state ON coding_agent_tasks
+    FOR EACH ROW EXECUTE FUNCTION invalidate_ready_coding_agent_dependents();
+
+
+CREATE FUNCTION validate_coding_ledger_content_insert() RETURNS trigger
+    LANGUAGE plpgsql AS $content$
+DECLARE ledger_key bigint; target_revision bigint; ledger_state text; current_value bigint;
+        revision_transaction bigint; stale_content boolean;
+BEGIN
+    ledger_key:=NEW.ledger_id;
+    stale_content:=false;
+    IF TG_TABLE_NAME='coding_ledger_owner_turns' THEN
+        target_revision:=CASE WHEN NEW.action IN ('cancel','sign_off')
+                              THEN NEW.base_revision ELSE NEW.base_revision+1 END;
+        stale_content:=true;
+    ELSIF TG_TABLE_NAME='coding_ledger_items' THEN
+        target_revision:=NEW.created_revision;
+    ELSIF TG_TABLE_NAME='coding_ledger_owner_turn_items' THEN
+        SELECT disposition.revision INTO target_revision
+        FROM coding_ledger_owner_turn_dispositions disposition
+        WHERE disposition.ledger_id=NEW.ledger_id AND disposition.owner_turn_id=NEW.owner_turn_id;
     ELSE
-        RETURN NULL;
+        target_revision:=NEW.revision;
     END IF;
-    IF NOT coding_plan_result_matches_current_authority(
-        NEW.job_id,NEW.generation,required_kind
-    ) THEN
-        RAISE EXCEPTION 'coding plan update requires its exact lifecycle operation result';
+    SELECT state,current_revision INTO ledger_state,current_value
+      FROM coding_ledgers WHERE id=ledger_key FOR SHARE;
+    IF TG_TABLE_NAME<>'coding_ledger_owner_turns' THEN
+        SELECT creation_transaction INTO revision_transaction
+        FROM coding_ledger_revisions
+        WHERE ledger_id=ledger_key AND revision=target_revision;
     END IF;
-    RETURN NULL;
-END;
-$$;
-
-CREATE FUNCTION require_coding_plan_step_state() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-DECLARE
-    plan_step_status TEXT;
-    plan_step_superseded_at_generation BIGINT;
-    job_status TEXT;
-BEGIN
-    SELECT status,superseded_at_generation
-      INTO plan_step_status,plan_step_superseded_at_generation
-      FROM job_steps
-      WHERE id=NEW.plan_step_id AND job_id=NEW.job_id AND generation=NEW.generation;
-    SELECT status INTO job_status FROM jobs WHERE id=NEW.job_id;
-    IF NEW.state='review' AND
-       (plan_step_status IS DISTINCT FROM 'waiting_input' OR
-        plan_step_superseded_at_generation IS NOT NULL OR
-        job_status IS DISTINCT FROM 'waiting_input') THEN
-        RAISE EXCEPTION 'review coding plan requires its current waiting review step';
-    END IF;
-    IF NEW.state='frozen' AND
-       (plan_step_status IS DISTINCT FROM 'completed' OR
-        plan_step_superseded_at_generation IS NOT NULL) THEN
-        RAISE EXCEPTION 'frozen coding plan requires its current completed review step';
-    END IF;
-    IF NEW.state='superseded' AND plan_step_superseded_at_generation IS NULL THEN
-        RAISE EXCEPTION 'superseded coding plan requires its superseded review step';
-    END IF;
-    IF NEW.state='canceled' AND
-       (job_status IS DISTINCT FROM 'canceled' OR
-        plan_step_superseded_at_generation IS NOT NULL OR
-        plan_step_status NOT IN ('completed','canceled')) THEN
-        RAISE EXCEPTION 'canceled coding plan requires its canceled job and retired review step';
-    END IF;
-    RETURN NULL;
-END;
-$$;
-
-CREATE FUNCTION require_coding_plan_state_for_step() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-DECLARE
-    plan_state TEXT;
-BEGIN
-    IF NEW.action<>'v3_coding_plan' THEN
-        RETURN NULL;
-    END IF;
-    SELECT state INTO plan_state
-      FROM coding_plans
-      WHERE job_id=NEW.job_id AND generation=NEW.generation;
-    IF NOT FOUND THEN
-		IF NEW.status='waiting_input' AND EXISTS (
-			SELECT 1
-			FROM jobs AS job
-			JOIN evidence AS question
-			  ON question.job_id=job.id AND question.step_id=NEW.id
-			WHERE job.id=NEW.job_id AND job.current_generation=NEW.generation
-			  AND job.status='waiting_input'
-			  AND job.metadata->'coding_execution'->>'mode'='agents'
-			  AND question.kind='coding_agent'
-			  AND question.payload_json->>'generation'=NEW.generation::text
-			  AND question.payload_json->>'phase'='questions'
-			  AND jsonb_typeof(question.payload_json->'questions')='array'
-			  AND jsonb_array_length(question.payload_json->'questions')>0
-		) THEN
-			RETURN NULL;
-		END IF;
-        IF NEW.status IN ('waiting_input','completed') THEN
-            RAISE EXCEPTION 'coding plan review step cannot wait or complete without a persisted plan';
+    IF TG_TABLE_NAME='coding_ledger_owner_turns' THEN
+        IF NEW.action='cancel' THEN
+            IF ledger_state NOT IN ('proposed','frozen','revising') OR NEW.base_revision<>current_value THEN
+                RAISE EXCEPTION 'owner cancel action requires the exact active proposed, frozen, or revising revision';
+            END IF;
+            RETURN NEW;
+        ELSIF NEW.action='sign_off' THEN
+            IF ledger_state<>'proposed' OR NEW.base_revision<>current_value OR current_value=0 THEN
+                RAISE EXCEPTION 'owner sign-off requires the exact current proposed revision';
+            END IF;
+            RETURN NEW;
         END IF;
-        RETURN NULL;
     END IF;
-    IF NEW.superseded_at_generation IS NOT NULL THEN
-        IF plan_state IS DISTINCT FROM 'superseded' THEN
-            RAISE EXCEPTION 'superseded coding plan review step requires a superseded plan';
+    IF TG_TABLE_NAME='coding_ledger_owner_turns' THEN
+        stale_content:=target_revision<>current_value+1;
+    END IF;
+    IF ledger_state NOT IN ('proposed','revising') OR stale_content OR
+       (TG_TABLE_NAME<>'coding_ledger_owner_turns' AND
+           (target_revision<>current_value OR revision_transaction IS DISTINCT FROM txid_current())) THEN
+        RAISE EXCEPTION 'frozen or historical ledger revision contents are immutable';
+    END IF;
+    IF TG_TABLE_NAME='coding_ledger_item_versions' THEN
+        IF NEW.disposition='active' AND NEW.review_state<>'proposed' AND EXISTS (
+            SELECT 1 FROM coding_ledger_items item
+            WHERE item.ledger_id=NEW.ledger_id AND item.item_id=NEW.item_id
+              AND item.created_revision=NEW.revision
+        ) THEN
+            RAISE EXCEPTION 'new ledger item must start in proposed review state';
         END IF;
-        RETURN NULL;
+        IF NEW.review_state='agreed' AND EXISTS (
+            SELECT 1 FROM coding_ledger_revision_items prior_projection
+            JOIN coding_ledger_item_versions prior_version
+              ON (prior_version.ledger_id,prior_version.item_id,prior_version.revision)=
+                 (prior_projection.ledger_id,prior_projection.item_id,prior_projection.item_revision)
+            WHERE prior_projection.ledger_id=NEW.ledger_id AND prior_projection.revision=NEW.revision-1
+              AND prior_projection.item_id=NEW.item_id AND prior_version.review_state='agreed'
+              AND (prior_version.disposition<>NEW.disposition OR prior_version.payload<>NEW.payload)
+        ) THEN
+            RAISE EXCEPTION 'changed agreed ledger item must return to proposed review state';
+        END IF;
     END IF;
-    IF NEW.status='waiting_input' AND plan_state IS DISTINCT FROM 'review' THEN
-        RAISE EXCEPTION 'waiting coding plan review step requires a review plan';
-    END IF;
-    IF NEW.status='completed' AND plan_state NOT IN ('frozen','canceled') THEN
-        RAISE EXCEPTION 'completed coding plan review step requires a frozen or canceled plan';
-    END IF;
-    IF NEW.status='canceled' AND plan_state IS DISTINCT FROM 'canceled' THEN
-        RAISE EXCEPTION 'canceled coding plan review step requires a canceled plan';
-    END IF;
-    IF NEW.status NOT IN ('waiting_input','completed','canceled') THEN
-        RAISE EXCEPTION 'persisted coding plan has incompatible review step state %', NEW.status;
-    END IF;
-    RETURN NULL;
+    RETURN NEW;
 END;
-$$;
+$content$;
 
-CREATE TRIGGER coding_plans_validate_insert
-    BEFORE INSERT ON coding_plans FOR EACH ROW EXECUTE FUNCTION validate_coding_plan_insert();
-CREATE TRIGGER coding_plans_validate_update
-    BEFORE UPDATE ON coding_plans FOR EACH ROW EXECUTE FUNCTION validate_coding_plan_update();
-CREATE TRIGGER coding_plans_preserve_history
-    BEFORE DELETE OR TRUNCATE ON coding_plans FOR EACH STATEMENT
-    EXECUTE FUNCTION prevent_job_lifecycle_operation_mutation();
-CREATE CONSTRAINT TRIGGER coding_plans_require_step_state
-    AFTER INSERT OR UPDATE ON coding_plans
-    DEFERRABLE INITIALLY DEFERRED
-    FOR EACH ROW EXECUTE FUNCTION require_coding_plan_step_state();
-CREATE CONSTRAINT TRIGGER coding_plans_require_update_operation
-    AFTER UPDATE ON coding_plans
-    DEFERRABLE INITIALLY DEFERRED
-    FOR EACH ROW EXECUTE FUNCTION require_coding_plan_update_operation();
-CREATE CONSTRAINT TRIGGER coding_plan_steps_require_plan_state
-    AFTER UPDATE OF status,superseded_at_generation ON job_steps
-    DEFERRABLE INITIALLY DEFERRED
-    FOR EACH ROW EXECUTE FUNCTION require_coding_plan_state_for_step();
-CREATE TRIGGER coding_plan_leaves_validate_insert
-    BEFORE INSERT ON coding_plan_leaves FOR EACH ROW EXECUTE FUNCTION validate_coding_plan_leaf_insert();
-CREATE TRIGGER coding_plan_leaves_validate_update
-    BEFORE UPDATE ON coding_plan_leaves FOR EACH ROW EXECUTE FUNCTION validate_coding_plan_leaf_update();
-CREATE CONSTRAINT TRIGGER coding_plan_leaves_require_decision_operation
-    AFTER UPDATE ON coding_plan_leaves
-    DEFERRABLE INITIALLY DEFERRED
-    FOR EACH ROW EXECUTE FUNCTION require_coding_plan_leaf_decision_operation();
-CREATE TRIGGER coding_plan_leaves_preserve_history
-    BEFORE DELETE OR TRUNCATE ON coding_plan_leaves FOR EACH STATEMENT
-    EXECUTE FUNCTION prevent_job_lifecycle_operation_mutation();
-CREATE TRIGGER coding_plan_operation_results_immutable
-    BEFORE UPDATE OR DELETE OR TRUNCATE ON coding_plan_operation_results FOR EACH STATEMENT
-    EXECUTE FUNCTION prevent_job_lifecycle_operation_mutation();
+CREATE TRIGGER coding_ledger_items_insert_mutable BEFORE INSERT ON coding_ledger_items
+    FOR EACH ROW EXECUTE FUNCTION validate_coding_ledger_content_insert();
+CREATE TRIGGER coding_ledger_item_versions_insert_mutable BEFORE INSERT ON coding_ledger_item_versions
+    FOR EACH ROW EXECUTE FUNCTION validate_coding_ledger_content_insert();
+CREATE TRIGGER coding_ledger_revision_items_insert_mutable BEFORE INSERT ON coding_ledger_revision_items
+    FOR EACH ROW EXECUTE FUNCTION validate_coding_ledger_content_insert();
+CREATE TRIGGER coding_ledger_edges_insert_mutable BEFORE INSERT ON coding_ledger_edges
+    FOR EACH ROW EXECUTE FUNCTION validate_coding_ledger_content_insert();
+CREATE TRIGGER coding_ledger_origins_insert_mutable BEFORE INSERT ON coding_ledger_origins
+    FOR EACH ROW EXECUTE FUNCTION validate_coding_ledger_content_insert();
+CREATE TRIGGER coding_ledger_turns_insert_mutable BEFORE INSERT ON coding_ledger_owner_turns
+    FOR EACH ROW EXECUTE FUNCTION validate_coding_ledger_content_insert();
+CREATE TRIGGER coding_ledger_turn_dispositions_insert_mutable BEFORE INSERT ON coding_ledger_owner_turn_dispositions
+    FOR EACH ROW EXECUTE FUNCTION validate_coding_ledger_content_insert();
+CREATE TRIGGER coding_ledger_turn_items_insert_mutable BEFORE INSERT ON coding_ledger_owner_turn_items
+    FOR EACH ROW EXECUTE FUNCTION validate_coding_ledger_content_insert();
+CREATE TRIGGER coding_ledger_routes_insert_mutable BEFORE INSERT ON coding_ledger_routes
+    FOR EACH ROW EXECUTE FUNCTION validate_coding_ledger_content_insert();
+CREATE TRIGGER coding_ledger_checks_insert_mutable BEFORE INSERT ON coding_ledger_checks
+    FOR EACH ROW EXECUTE FUNCTION validate_coding_ledger_content_insert();
+CREATE TRIGGER coding_ledger_questions_insert_mutable BEFORE INSERT ON coding_ledger_questions
+    FOR EACH ROW EXECUTE FUNCTION validate_coding_ledger_content_insert();
 
-ALTER TABLE ONLY job_lifecycle_operations
-    ADD CONSTRAINT job_lifecycle_operations_coding_plan_result_identity_key
-    UNIQUE (operation_id,job_id,result_generation,kind);
-
-ALTER TABLE ONLY coding_plan_operation_results
-    ADD CONSTRAINT coding_plan_operation_results_exact_operation_fkey
-    FOREIGN KEY (operation_id,job_id,generation,kind)
-    REFERENCES job_lifecycle_operations(operation_id,job_id,result_generation,kind)
-    ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED;
-
-CREATE FUNCTION require_coding_plan_lifecycle_result() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
+CREATE FUNCTION validate_coding_ledger_question_change() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+DECLARE ledger_state text; ledger_revision bigint; answering_turn_base bigint;
 BEGIN
-    IF NEW.kind IN ('coding_plan_decisions','coding_plan_freeze') AND NOT EXISTS (
-        SELECT 1 FROM coding_plan_operation_results AS result
-        WHERE result.operation_id=NEW.operation_id
-          AND result.job_id=NEW.job_id
-          AND result.generation=NEW.result_generation
-          AND result.kind=NEW.kind
-    ) THEN
-        RAISE EXCEPTION 'coding-plan lifecycle operation requires its exact immutable plan result';
+    IF TG_OP='DELETE' THEN
+        RAISE EXCEPTION 'coding ledger question history is durable';
     END IF;
-    RETURN NULL;
+    SELECT state,current_revision INTO ledger_state,ledger_revision
+      FROM coding_ledgers WHERE id=NEW.ledger_id FOR SHARE;
+    IF ledger_state NOT IN ('proposed','revising') OR NOT EXISTS (
+        SELECT 1 FROM coding_ledger_revision_items projection
+        WHERE projection.ledger_id=NEW.ledger_id
+          AND projection.revision=ledger_revision
+          AND projection.item_id=NEW.item_id
+    ) THEN
+        RAISE EXCEPTION 'frozen or uncarried ledger questions are immutable';
+    END IF;
+    IF TG_OP='UPDATE' AND (
+       ROW(OLD.ledger_id,OLD.question_id,OLD.item_id,OLD.revision,OLD.prompt,OLD.created_at)
+       IS DISTINCT FROM
+       ROW(NEW.ledger_id,NEW.question_id,NEW.item_id,NEW.revision,NEW.prompt,NEW.created_at) OR
+       OLD.status<>'open' OR NEW.status NOT IN ('answered','withdrawn')
+    ) THEN
+        RAISE EXCEPTION 'coding ledger question identity and disposition are monotonic';
+    END IF;
+    IF NEW.status='answered' THEN
+        SELECT base_revision INTO answering_turn_base
+        FROM coding_ledger_owner_turns
+        WHERE ledger_id=NEW.ledger_id AND owner_turn_id=NEW.answered_by_turn_id;
+        IF answering_turn_base IS DISTINCT FROM ledger_revision THEN
+            RAISE EXCEPTION 'question answer requires an owner turn at the exact current ledger revision';
+        END IF;
+    END IF;
+    RETURN NEW;
 END;
 $$;
+CREATE TRIGGER coding_ledger_questions_change_validate
+    BEFORE INSERT OR UPDATE OR DELETE ON coding_ledger_questions
+    FOR EACH ROW EXECUTE FUNCTION validate_coding_ledger_question_change();
+CREATE TRIGGER coding_ledger_questions_truncate_immutable
+    BEFORE TRUNCATE ON coding_ledger_questions
+    FOR EACH STATEMENT EXECUTE FUNCTION reject_agent_execution_history_mutation();
 
-CREATE CONSTRAINT TRIGGER job_lifecycle_operations_require_coding_plan_result
-    AFTER INSERT ON job_lifecycle_operations
-    DEFERRABLE INITIALLY DEFERRED
-    FOR EACH ROW EXECUTE FUNCTION require_coding_plan_lifecycle_result();
+CREATE FUNCTION validate_coding_ledger_finding_change() RETURNS trigger
+    LANGUAGE plpgsql AS $finding_change$
+BEGIN
+    IF ROW(OLD.ledger_id,OLD.finding_id,OLD.item_id,OLD.revision,OLD.finding_kind,
+           OLD.observation,OLD.created_at)
+       IS DISTINCT FROM
+       ROW(NEW.ledger_id,NEW.finding_id,NEW.item_id,NEW.revision,NEW.finding_kind,
+           NEW.observation,NEW.created_at) OR
+       OLD.status<>'open' OR NEW.status NOT IN ('resolved','disposed') THEN
+        RAISE EXCEPTION 'coding ledger finding identity and disposition are monotonic';
+    END IF;
+    RETURN NEW;
+END;
+$finding_change$;
+CREATE TRIGGER coding_ledger_findings_change_validate
+    BEFORE UPDATE ON coding_ledger_findings
+    FOR EACH ROW EXECUTE FUNCTION validate_coding_ledger_finding_change();
+CREATE TRIGGER coding_ledger_findings_history_immutable
+    BEFORE DELETE OR TRUNCATE ON coding_ledger_findings
+    FOR EACH STATEMENT EXECUTE FUNCTION reject_agent_execution_history_mutation();
 
+CREATE TRIGGER coding_agent_tasks_history_immutable
+    BEFORE DELETE OR TRUNCATE ON coding_agent_tasks
+    FOR EACH STATEMENT EXECUTE FUNCTION reject_agent_execution_history_mutation();
+
+CREATE TRIGGER coding_ledger_items_immutable BEFORE UPDATE OR DELETE OR TRUNCATE ON coding_ledger_items
+    FOR EACH STATEMENT EXECUTE FUNCTION reject_agent_execution_history_mutation();
+CREATE TRIGGER coding_ledger_turn_items_immutable BEFORE UPDATE OR DELETE OR TRUNCATE ON coding_ledger_owner_turn_items
+    FOR EACH STATEMENT EXECUTE FUNCTION reject_agent_execution_history_mutation();
+CREATE TRIGGER coding_ledger_revisions_immutable BEFORE UPDATE OR DELETE OR TRUNCATE ON coding_ledger_revisions
+    FOR EACH STATEMENT EXECUTE FUNCTION reject_agent_execution_history_mutation();
+CREATE TRIGGER coding_ledger_planning_audits_immutable BEFORE UPDATE OR DELETE OR TRUNCATE ON coding_ledger_planning_audits
+    FOR EACH STATEMENT EXECUTE FUNCTION reject_agent_execution_history_mutation();
+CREATE TRIGGER coding_ledger_item_versions_immutable BEFORE UPDATE OR DELETE OR TRUNCATE ON coding_ledger_item_versions
+    FOR EACH STATEMENT EXECUTE FUNCTION reject_agent_execution_history_mutation();
+CREATE TRIGGER coding_ledger_revision_items_immutable BEFORE UPDATE OR DELETE OR TRUNCATE ON coding_ledger_revision_items
+    FOR EACH STATEMENT EXECUTE FUNCTION reject_agent_execution_history_mutation();
+CREATE TRIGGER coding_ledger_edges_immutable BEFORE UPDATE OR DELETE OR TRUNCATE ON coding_ledger_edges
+    FOR EACH STATEMENT EXECUTE FUNCTION reject_agent_execution_history_mutation();
+CREATE TRIGGER coding_ledger_origins_immutable BEFORE UPDATE OR DELETE OR TRUNCATE ON coding_ledger_origins
+    FOR EACH STATEMENT EXECUTE FUNCTION reject_agent_execution_history_mutation();
+CREATE TRIGGER coding_ledger_turns_immutable BEFORE UPDATE OR DELETE OR TRUNCATE ON coding_ledger_owner_turns
+    FOR EACH STATEMENT EXECUTE FUNCTION reject_agent_execution_history_mutation();
+CREATE TRIGGER coding_ledger_turn_dispositions_immutable BEFORE UPDATE OR DELETE OR TRUNCATE ON coding_ledger_owner_turn_dispositions
+    FOR EACH STATEMENT EXECUTE FUNCTION reject_agent_execution_history_mutation();
+CREATE TRIGGER coding_ledger_routes_immutable BEFORE UPDATE OR DELETE OR TRUNCATE ON coding_ledger_routes
+    FOR EACH STATEMENT EXECUTE FUNCTION reject_agent_execution_history_mutation();
+CREATE TRIGGER coding_ledger_checks_immutable BEFORE UPDATE OR DELETE OR TRUNCATE ON coding_ledger_checks
+    FOR EACH STATEMENT EXECUTE FUNCTION reject_agent_execution_history_mutation();
 -- Actual search/fetch observations for the current service lifecycle.
 CREATE TABLE web_evidence (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -10061,13 +11995,13 @@ ALTER TABLE job_lifecycle_operations
         (command_payload->>'expected_generation') ~ '^[1-9][0-9]{0,18}$' AND
         (command_payload->>'expected_generation')::numeric BETWEEN 1 AND 9223372036854775807 AND
         (command_payload->>'expected_generation')::numeric=observed_generation
-      ELSE COALESCE(result_job->'metadata'->'coding_execution'->>'mode','normal')<>'agents'
+      ELSE COALESCE(result_job->'metadata'->'coding_execution'->>'mode','')<>'agents'
       END AND
       CASE WHEN command_payload ? 'expected_waiting_attempt' THEN
         jsonb_typeof(command_payload->'expected_waiting_attempt')='number' AND
         (command_payload->>'expected_waiting_attempt') ~ '^[1-9][0-9]{0,18}$' AND
         (command_payload->>'expected_waiting_attempt')::numeric BETWEEN 1 AND 9223372036854775807
-      ELSE COALESCE(result_job->'metadata'->'coding_execution'->>'mode','normal')<>'agents'
+      ELSE COALESCE(result_job->'metadata'->'coding_execution'->>'mode','')<>'agents'
       END)
     ) NOT VALID;
 

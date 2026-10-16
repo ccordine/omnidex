@@ -2,6 +2,7 @@ package codex
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -38,6 +39,16 @@ func TestAgentNativeRetryNotificationPreservesEvidenceAndWaitsForCompletion(t *t
 	}
 	if len(persisted) != len(frames) || len(items) != 0 {
 		t.Fatal("completed native retry sequence lost evidence or native item accounting")
+	}
+}
+
+func TestAgentTransportTerminationRequiresFreshRetryableSession(t *testing.T) {
+	for _, cause := range []error{errors.New("unexpected EOF"), context.DeadlineExceeded} {
+		err := retryableAgentSessionError(cause)
+		var retryable interface{ Retryable() bool }
+		if !errors.As(err, &retryable) || !retryable.Retryable() || !strings.Contains(err.Error(), cause.Error()) {
+			t.Fatalf("provider stream termination was not preserved as retryable: %v", err)
+		}
 	}
 }
 
