@@ -131,31 +131,11 @@ func TestInstalledCodexAgentExecutionAndIndependentReview(t *testing.T) {
 	reviewScope := scope
 	reviewScope.Role, reviewScope.WriteFiles, reviewScope.Checks = codingagent.Review, nil, checks
 	reviewActivityProof := nativeActivityQualification{call: reviewScope}
-	reviewLifecycle := []string{}
-	reviewTerminal := ""
-	review, err := client.Run(ctx, reviewScope, nil, func(event codingagent.NativeEvent) error {
-		if len(event.Frame) != 0 {
-			var frame struct {
-				Method string `json:"method"`
-				Params struct {
-					Item struct {
-						ID     string `json:"id"`
-						Type   string `json:"type"`
-						Review string `json:"review"`
-					} `json:"item"`
-				} `json:"params"`
-			}
-			if json.Unmarshal(event.Frame, &frame) == nil && (frame.Method == "item/started" || frame.Method == "item/completed") {
-				reviewLifecycle = append(reviewLifecycle, frame.Method+":"+frame.Params.Item.ID+":"+frame.Params.Item.Type)
-				if frame.Method == "item/completed" && frame.Params.Item.Type == "exitedReviewMode" {
-					reviewTerminal = frame.Params.Item.Review
-				}
-			}
-		}
+	review, err := client.Run(ctx, reviewScope, &agentFixtureWriter{scope: reviewScope}, func(event codingagent.NativeEvent) error {
 		return reviewActivityProof.native(event)
 	})
 	if err != nil {
-		t.Fatalf("%v; native review content=%s terminal=%q lifecycle=%v", err, review.Content, reviewTerminal, reviewLifecycle)
+		t.Fatalf("%v; task-local review content=%s", err, review.Content)
 	}
 	if !review.Completed || review.ThreadID == result.ThreadID {
 		t.Fatal("review reused the executor's retained conversation")
@@ -169,41 +149,6 @@ func TestInstalledCodexAgentExecutionAndIndependentReview(t *testing.T) {
 		t.Fatal("native execution changed an undeclared adjacent file")
 	}
 	t.Logf("native execution thread=%s turn=%s frames=%d effects=%d; independent review thread=%s turn=%s", result.ThreadID, result.TurnID, frames, effects, review.ThreadID, review.TurnID)
-}
-
-func TestInstalledCodexAgentNativePlanning(t *testing.T) {
-	client, model := installedAgentClient(t)
-	fixture := nativeAgentFixture(t, model)
-	call := codingagent.Assignment{
-		JobID: 18, Generation: 1, Role: codingagent.Plan, Root: fixture.Root,
-		Requirements:        []codingagent.Requirement{{ID: "greeting-result", Outcome: "greet(name) returns Hello, followed by one space, the exact name, and an exclamation point."}},
-		PlanningEnvironment: &codingagent.PlanningEnvironment{Executables: []string{fixture.Task.Checks[0].Argv[0]}},
-		ReadFiles:           []string{"allowed.py", "contract.txt"},
-		Route:               codingagent.Route{Provider: "codex", Model: model},
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-	result, err := client.Run(ctx, call, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var workload codingagent.Workload
-	if err := json.Unmarshal(result.Content, &workload); err != nil {
-		t.Fatal(err)
-	}
-	if err := workload.Validate(); err != nil {
-		t.Fatalf("%v; native plan=%s", err, result.Content)
-	}
-	covered := false
-	for _, task := range workload.Tasks {
-		for _, requirement := range task.RequirementIDs {
-			covered = covered || requirement == "greeting-result"
-		}
-	}
-	if !covered || !result.Completed || result.ThreadID == "" || result.TurnID == "" {
-		t.Fatalf("native plan lacks frozen requirement coverage or native identity: result=%+v workload=%+v", result, workload)
-	}
-	t.Logf("native planning thread=%s turn=%s tasks=%d checks=%d", result.ThreadID, result.TurnID, len(workload.Tasks), len(workload.Checks))
 }
 
 func TestInstalledCodexAgentSandboxAndServiceEnvironment(t *testing.T) {

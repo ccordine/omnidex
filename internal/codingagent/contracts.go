@@ -22,11 +22,24 @@ const (
 type Role string
 
 const (
-	Plan          Role = "plan"
-	Execute       Role = "execute"
-	Review        Role = "review"
-	OverallReview Role = "overall_review"
+	Plan             Role = "plan"
+	PlanningInitial  Role = "planning_initial"
+	PlanningTarget   Role = "planning_target"
+	PlanningMutation Role = "planning_mutation"
+	PlanningCoverage Role = "planning_coverage"
+	PlanningAudit    Role = "planning_audit"
+	Execute          Role = "execute"
+	Review           Role = "review"
 )
+
+func (role Role) IsPlanning() bool {
+	switch role {
+	case Plan, PlanningInitial, PlanningTarget, PlanningMutation, PlanningCoverage, PlanningAudit:
+		return true
+	default:
+		return false
+	}
+}
 
 type Route struct {
 	Provider    string `json:"provider"`
@@ -48,33 +61,34 @@ func (config Configuration) Validate() error {
 	if config.Mode != Agents {
 		return fmt.Errorf("unknown coding mode %q", config.Mode)
 	}
-	for _, route := range []Route{config.Planner, config.Executor, config.Reviewer} {
-		if strings.TrimSpace(route.Provider) == "" || strings.TrimSpace(route.Model) == "" {
-			return fmt.Errorf("Agents mode requires explicit planner, executor and reviewer routes")
-		}
-		for _, option := range []string{route.Effort, route.ServiceTier} {
-			if len(option) > 64 || strings.TrimSpace(option) != option || strings.ContainsAny(option, "\x00\r\n") {
-				return fmt.Errorf("agent inference option must be an exact supported value")
-			}
-		}
-	}
-	return nil
+	return (RouteSet{Planner: config.Planner, Executor: config.Executor, Reviewer: config.Reviewer}).Validate()
 }
 
 type Task struct {
-	ID             string   `json:"id"`
-	Goal           string   `json:"goal"`
-	Acceptance     []string `json:"acceptance"`
-	ReadFiles      []string `json:"read_files"`
-	WriteFiles     []string `json:"write_files"`
-	DeleteFiles    []string `json:"delete_files"`
-	Dependencies   []string `json:"dependencies"`
-	RequirementIDs []string `json:"requirement_ids"`
-	Checks         []Check  `json:"checks"`
+	ID                     string         `json:"id"`
+	Goal                   string         `json:"goal"`
+	Guidance               []TaskGuidance `json:"guidance"`
+	KnownAffectedSystems   []string       `json:"known_affected_systems"`
+	Acceptance             []string       `json:"acceptance"`
+	ReadFiles              []string       `json:"read_files"`
+	WriteFiles             []string       `json:"write_files"`
+	DeleteFiles            []string       `json:"delete_files"`
+	Dependencies           []string       `json:"dependencies"`
+	RequirementIDs         []string       `json:"requirement_ids"`
+	AcceptanceCriterionIDs []string       `json:"acceptance_criterion_ids,omitempty"`
+	Checks                 []Check        `json:"checks"`
+}
+
+type TaskGuidance struct {
+	ID   string `json:"id"`
+	Kind string `json:"kind"`
+	Text string `json:"text"`
 }
 type Check struct {
-	ID   string   `json:"id"`
-	Argv []string `json:"argv"`
+	ID                     string   `json:"id"`
+	Argv                   []string `json:"argv"`
+	RequirementIDs         []string `json:"requirement_ids,omitempty"`
+	AcceptanceCriterionIDs []string `json:"acceptance_criterion_ids,omitempty"`
 }
 
 type Requirement struct {
@@ -101,11 +115,6 @@ type ConstructionFact struct {
 type PlanningEnvironment struct {
 	NewFilesAllowed bool     `json:"new_files_allowed"`
 	Executables     []string `json:"executables"`
-}
-type Workload struct {
-	Tasks     []Task   `json:"tasks"`
-	Checks    []Check  `json:"checks"`
-	Questions []string `json:"questions,omitempty"`
 }
 type Finding struct {
 	TaskID      string `json:"task_id"`
@@ -142,7 +151,6 @@ type Assignment struct {
 	ArtifactBindings    []ArtifactBinding    `json:"artifact_bindings,omitempty"`
 	PlanningEnvironment *PlanningEnvironment `json:"planning_environment,omitempty"`
 	ConstructionFacts   []ConstructionFact   `json:"construction_facts,omitempty"`
-	Workload            *Workload            `json:"workload,omitempty"`
 	Findings            []Finding            `json:"findings,omitempty"`
 	Checks              []CheckResult        `json:"checks,omitempty"`
 	QuestionContext     []QuestionContext    `json:"question_context,omitempty"`
@@ -185,6 +193,7 @@ type FileDelete struct {
 	ExpectedContent string `json:"expected_content"`
 }
 type FileWriter interface {
+	ReadFile(context.Context, string) (string, error)
 	WriteFile(context.Context, FileWrite) error
 	DeleteFile(context.Context, FileDelete) error
 }

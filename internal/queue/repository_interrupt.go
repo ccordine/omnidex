@@ -131,6 +131,7 @@ func interruptJobTx(
 	}
 	if err := transitionCodingPlanAuthorityTx(
 		ctx, tx, job, model.CodingPlanStateSuperseded,
+		string(command.OperationID), command.Feedback,
 	); err != nil {
 		return LifecycleJobResult{}, err
 	}

@@ -14,7 +14,7 @@ import (
 func TestCodingPlanClientRejectsRemovedScopeFields(t *testing.T) {
 	for _, field := range []string{"scope_mode", "annotation"} {
 		t.Run(field, func(t *testing.T) {
-			plan := codingPlanFixture(t, 91, 1, 1, model.CodingPlanStateReview)
+			plan := codingLedgerFixture(codingPlanFixture(t, 91, 1, 1, model.CodingPlanStateReview))
 			raw, err := json.Marshal(plan)
 			if err != nil {
 				t.Fatal(err)
@@ -26,12 +26,19 @@ func TestCodingPlanClientRejectsRemovedScopeFields(t *testing.T) {
 			if field == "scope_mode" {
 				response[field] = json.RawMessage(`"expansive"`)
 			} else {
-				var leaves []map[string]json.RawMessage
-				if err := json.Unmarshal(response["leaves"], &leaves); err != nil {
+				var ledger map[string]json.RawMessage
+				if err := json.Unmarshal(response["ledger"], &ledger); err != nil {
 					t.Fatal(err)
 				}
-				leaves[0][field] = json.RawMessage(`"speculative_review"`)
-				response["leaves"], err = json.Marshal(leaves)
+				var constraints []map[string]json.RawMessage
+				if err := json.Unmarshal(ledger["constraints"], &constraints); err != nil {
+					t.Fatal(err)
+				}
+				constraints[0][field] = json.RawMessage(`"speculative_review"`)
+				ledger["constraints"], err = json.Marshal(constraints)
+				if err == nil {
+					response["ledger"], err = json.Marshal(ledger)
+				}
 				if err != nil {
 					t.Fatal(err)
 				}

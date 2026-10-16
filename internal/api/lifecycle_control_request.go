@@ -53,6 +53,9 @@ func decodeLifecycleFeedbackRequest(w http.ResponseWriter, r *http.Request) (fee
 	if request.ExpectedWaitingAttempt != nil && *request.ExpectedWaitingAttempt <= 0 {
 		return feedbackRequest{}, fmt.Errorf("expected_waiting_attempt must be positive")
 	}
+	if request.ObservedLedgerRevision < 0 {
+		return feedbackRequest{}, fmt.Errorf("observed_ledger_revision cannot be negative")
+	}
 	operationID, err := model.ParseLifecycleOperationID(string(request.OperationID))
 	if err != nil {
 		return feedbackRequest{}, err

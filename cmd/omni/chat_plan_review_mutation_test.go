@@ -22,12 +22,13 @@ func TestChatPlanReviewDecisionReusesOperationAfterAmbiguousTransport(t *testing
 		defer guard.Unlock()
 		requests++
 		var body struct {
-			OperationID       model.LifecycleOperationID        `json:"operation_id"`
-			Generation        int64                             `json:"generation"`
-			Revision          int64                             `json:"revision"`
-			WorkspaceRoot     string                            `json:"workspace_root"`
-			WorkspaceIdentity string                            `json:"workspace_identity"`
-			Decisions         []client.CodingPlanDecisionChange `json:"decisions"`
+			OperationID       model.LifecycleOperationID  `json:"operation_id"`
+			OwnerTurnID       string                      `json:"owner_turn_id"`
+			OwnerTurnText     string                      `json:"owner_turn_text"`
+			Revision          int64                       `json:"revision"`
+			WorkspaceRoot     string                      `json:"workspace_root"`
+			WorkspaceIdentity string                      `json:"workspace_identity"`
+			Action            client.DirectPlanningAction `json:"action"`
 		}
 		decodeChatPlanReviewJSON(t, request, &body)
 		if requests == 1 {
@@ -38,10 +39,13 @@ func TestChatPlanReviewDecisionReusesOperationAfterAmbiguousTransport(t *testing
 		if body.OperationID != firstOperation {
 			t.Errorf("ambiguous decision operation changed from %q to %q", firstOperation, body.OperationID)
 		}
+		base := plan.Revision
 		plan.Revision++
 		plan.UpdatedAt = plan.UpdatedAt.Add(time.Second)
 		plan.Leaves[0].Decision = model.CodingPlanDecisionApproved
-		writeChatPlanReviewJSON(t, writer, http.StatusOK, plan)
+		writeChatPlanReviewJSON(t, writer, http.StatusOK, client.CodingLedgerRevision{
+			LedgerID: 1, JobID: jobID, BaseRevision: base, Revision: plan.Revision, State: "proposed",
+		})
 	}))
 	defer server.Close()
 

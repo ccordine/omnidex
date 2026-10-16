@@ -13,6 +13,24 @@ type agentFixtureWriter struct {
 	writes, deletes int
 }
 
+func (writer *agentFixtureWriter) ReadFile(ctx context.Context, file string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if err := codingagent.ValidatePath(file); err != nil {
+		return "", err
+	}
+	allowed := false
+	for _, candidate := range writer.scope.ReadFiles {
+		allowed = allowed || candidate == file
+	}
+	if !allowed || writer.scope.Role != codingagent.Execute && writer.scope.Role != codingagent.Review && !writer.scope.Role.IsPlanning() {
+		return "", fmt.Errorf("fixture reader denied an ungranted source file")
+	}
+	content, err := os.ReadFile(filepath.Join(writer.scope.Root, filepath.FromSlash(file)))
+	return string(content), err
+}
+
 func (writer *agentFixtureWriter) WriteFile(ctx context.Context, write codingagent.FileWrite) error {
 	if err := ctx.Err(); err != nil {
 		return err

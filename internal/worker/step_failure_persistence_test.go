@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -48,6 +49,21 @@ func TestRunClaimDoesNotFailAfterDurableFailureCommit(t *testing.T) {
 	if committed.StepID != claim.Step.ID || committed.Authority != claim.Authority ||
 		!strings.Contains(committed.Error, `worker action "unregistered_fixture_action" is not registered`) {
 		t.Fatalf("committed failure command = %#v", committed)
+	}
+}
+
+type retryableAgentSessionFixture struct{}
+
+func (retryableAgentSessionFixture) Error() string   { return "review session ended before its receipt" }
+func (retryableAgentSessionFixture) Retryable() bool { return true }
+
+func TestRetryableAgentSessionFailureDoesNotAuthorizeTerminalFailure(t *testing.T) {
+	wrapped := fmt.Errorf("fresh session required: %w", retryableAgentSessionFixture{})
+	if !retryableAgentSessionFailure(wrapped) {
+		t.Fatal("retryable agent session failure would terminalize the durable job")
+	}
+	if retryableAgentSessionFailure(errors.New("deterministic task defect")) {
+		t.Fatal("ordinary deterministic failure was incorrectly made retryable")
 	}
 }
 

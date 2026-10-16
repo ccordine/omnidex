@@ -143,7 +143,7 @@ func (client *Client) executeAgentCheck(connection *connection, scope codingagen
 		Stdout   string `json:"stdout"`
 		Stderr   string `json:"stderr"`
 	}
-	_, err = connection.callObserved("command/exec", map[string]any{"command": check.Argv, "cwd": scope.Root, "permissionProfile": "omnidex-task",
+	_, err = connection.callObserved("command/exec", map[string]any{"command": check.Argv, "cwd": scope.Root, "permissionProfile": agentPermissionProfileName,
 		"timeoutMs": int64(client.timeout / time.Millisecond), "outputBytesCap": maxAgentCheckOutputBytes,
 		"env": agentToolEnvironment(scratch), "processId": stream.processID, "streamStdoutStderr": true}, &response,
 		func() error { stream.started = true; return stream.command(model.AgentActivityStarted, nil) }, stream.notification)

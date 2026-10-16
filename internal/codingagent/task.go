@@ -13,28 +13,33 @@ type taskState struct {
 	round    int64
 }
 
-func projectTaskState(workload Workload, entries []Entry) *taskState {
+func projectTaskState(task Task, entries []Entry) *taskState {
 	state := &taskState{accepted: map[string]bool{}, findings: map[string][]Finding{}, tasks: map[string]Task{}, started: map[string]bool{}}
-	for _, task := range workload.Tasks {
-		state.tasks[task.ID] = task
-	}
+	state.tasks[task.ID] = task
 	for _, entry := range entries {
-		if entry.Round > state.round {
-			state.round = entry.Round
-		}
-		switch entry.Phase {
-		case "task_executing", "task_reviewed", "task_reopened":
-			state.started[entry.TaskID] = true
-		}
 		switch entry.Phase {
 		case "task_accepted":
 			state.accepted[entry.TaskID] = true
 			delete(state.findings, entry.TaskID)
-		case "task_reopened", "task_reviewed":
+		case "task_reviewed":
 			state.accepted[entry.TaskID] = false
 			state.findings[entry.TaskID] = append([]Finding{}, entry.Findings...)
-			if entry.Phase == "task_reopened" && len(entry.Findings) > 0 {
-				state.started[entry.TaskID] = false
+		}
+		if entry.TaskID != task.ID {
+			continue
+		}
+		if entry.Round > state.round {
+			state.round = entry.Round
+		}
+		switch entry.Phase {
+		case "task_executing", "task_reviewed":
+			// These entries record work that still requires a successful fresh
+			// executor result. A provider session ending after task_executing must
+			// not make recovery skip execution and advance directly to review.
+			state.started[entry.TaskID] = false
+		case "call_completed":
+			if entry.Role == Execute {
+				state.started[entry.TaskID] = true
 			}
 		}
 	}
@@ -56,15 +61,19 @@ func (controller *Controller) runTask(ctx context.Context, task Task, state *tas
 			return err
 		}
 	}
-	for ctx.Err() == nil {
+	for state.round < 3 && ctx.Err() == nil {
 		if err := controller.Environment.Attest(ctx); err != nil {
 			return err
 		}
 		scope := controller.assignment(Review, &task, controller.Configuration.Reviewer)
 		scope.Findings = state.findings[task.ID]
-		checks, err := controller.executeChecks(ctx, scope, task.Checks)
-		if err != nil {
-			return err
+		checks := []CheckResult{}
+		if len(task.Checks) > 0 {
+			var err error
+			checks, err = controller.executeChecks(ctx, scope, task.Checks)
+			if err != nil {
+				return err
+			}
 		}
 		if err := validateCheckResults(task.Checks, checks); err != nil {
 			return err
@@ -75,9 +84,9 @@ func (controller *Controller) runTask(ctx context.Context, task Task, state *tas
 			return err
 		}
 		if len(review.Questions) > 0 {
-			return controller.questions(ctx, task.ID, review.Questions)
+			return fmt.Errorf("frozen task review cannot request new owner decisions")
 		}
-		if checksPass(checks) && len(review.Findings) == 0 {
+		if (len(checks) == 0 || checksPass(checks)) && len(review.Findings) == 0 {
 			state.accepted[task.ID] = true
 			_, err := controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "task_accepted", TaskID: task.ID, CallID: reviewResult.CallID, Round: state.round + 1, Checks: checks})
 			return err
@@ -90,7 +99,10 @@ func (controller *Controller) runTask(ctx context.Context, task Task, state *tas
 			return err
 		}
 	}
-	return ctx.Err()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return fmt.Errorf("task %s was not fulfilled after three bounded execution-review rounds", task.ID)
 }
 
 func (controller *Controller) executeTask(ctx context.Context, task Task, state *taskState, checks []CheckResult) error {
@@ -114,16 +126,8 @@ func (controller *Controller) executeTask(ctx context.Context, task Task, state 
 		return err
 	}
 	if len(response.Questions) > 0 {
-		return controller.questions(ctx, task.ID, response.Questions)
+		return fmt.Errorf("frozen task execution cannot request new owner decisions")
 	}
 	state.round++
 	return nil
-}
-
-func (controller *Controller) questions(ctx context.Context, taskID string, questions []string) error {
-	_, err := controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "questions", TaskID: taskID, Questions: questions})
-	if err != nil {
-		return err
-	}
-	return &QuestionsPending{Questions: questions}
 }

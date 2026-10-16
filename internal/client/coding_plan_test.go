@@ -38,6 +38,11 @@ func TestCodingPlanTransportUsesExactPersistedReviewAuthority(t *testing.T) {
 	frozen.UpdatedAt = frozen.UpdatedAt.Add(time.Second)
 	frozenAt := frozen.UpdatedAt
 	frozen.FrozenAt = &frozenAt
+	reviewLedger := codingLedgerFixture(review)
+	decidedLedger := codingLedgerFixture(decided)
+	decidedLedger.BaseRevision = revision
+	frozenLedger := codingLedgerFixture(frozen)
+	frozenLedger.State = "frozen"
 
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
@@ -50,32 +55,33 @@ func TestCodingPlanTransportUsesExactPersistedReviewAuthority(t *testing.T) {
 				query.Get("workspace_identity") != testWorkspaceIdentity {
 				t.Errorf("coding plan read query = %#v", query)
 			}
-			writeJSON(t, writer, http.StatusOK, review)
+			writeJSON(t, writer, http.StatusOK, reviewLedger)
 		case "/v1/jobs/73/plan/decisions":
 			requireRequestAuthority(t, request, http.MethodPost, request.URL.Path, "")
 			requireJSONBody(t, request, map[string]any{
 				"operation_id":       string(decisionOperationID),
-				"generation":         float64(generation),
+				"owner_turn_id":      "terminal-" + string(decisionOperationID),
+				"owner_turn_text":    "Set the displayed item review state.",
 				"revision":           float64(revision),
 				"workspace_root":     workspaceRoot,
 				"workspace_identity": testWorkspaceIdentity,
-				"decisions": []any{map[string]any{
-					"leaf_id": string(review.Leaves[0].ID), "decision": "approved",
-				}},
+				"action": map[string]any{
+					"kind": "set_review_state", "target_id": string(review.Leaves[0].ID),
+					"review_state": "agreed", "rationale": "explicit terminal item control",
+				},
 			})
-			writeJSON(t, writer, http.StatusOK, decided)
+			writeJSON(t, writer, http.StatusOK, decidedLedger)
 		case "/v1/jobs/73/plan/freeze":
 			requireRequestAuthority(t, request, http.MethodPost, request.URL.Path, "")
 			requireJSONBody(t, request, map[string]any{
 				"operation_id":       string(freezeOperationID),
-				"generation":         float64(generation),
+				"owner_turn_id":      "terminal-" + string(freezeOperationID),
+				"owner_turn_text":    "Sign off the exact displayed planning revision.",
 				"revision":           float64(decided.Revision),
 				"workspace_root":     workspaceRoot,
 				"workspace_identity": testWorkspaceIdentity,
 			})
-			writeJSON(t, writer, http.StatusOK, CodingPlanFreezeReceipt{
-				Plan: frozen, JobStatus: model.JobStatusRunning,
-			})
+			writeJSON(t, writer, http.StatusOK, frozenLedger)
 		default:
 			t.Errorf("unexpected coding plan request %s %s", request.Method, request.URL.Path)
 		}
@@ -89,23 +95,19 @@ func TestCodingPlanTransportUsesExactPersistedReviewAuthority(t *testing.T) {
 	if err != nil || actual.Revision != revision {
 		t.Fatalf("load coding plan = %#v, error %v", actual, err)
 	}
-	actual, err = apiClient.DecideCodingPlan(
-		context.Background(), channel, testWorkspaceIdentity, jobID,
-		decisionOperationID, generation, revision,
-		[]CodingPlanDecisionChange{{
-			LeafID: review.Leaves[0].ID, Decision: model.CodingPlanDecisionApproved,
-		}},
-	)
-	if err != nil || actual.Leaves[0].Decision != model.CodingPlanDecisionApproved {
-		t.Fatalf("persist coding plan decision = %#v, error %v", actual, err)
+	turn := PlanningTurn{OperationID: string(decisionOperationID), OwnerTurnID: "terminal-" + string(decisionOperationID),
+		Text: "Set the displayed item review state.", ObservedRevision: revision}
+	changed, err := apiClient.MutateCodingLedgerDirect(context.Background(), channel, testWorkspaceIdentity, jobID, turn,
+		DirectPlanningAction{Kind: model.LedgerMutationReview, TargetID: model.LedgerItemID(review.Leaves[0].ID),
+			ReviewState: model.LedgerReviewAgreed, Rationale: "explicit terminal item control"})
+	if err != nil || changed.Revision != decided.Revision {
+		t.Fatalf("persist coding ledger decision = %#v, error %v", changed, err)
 	}
-	receipt, err := apiClient.FreezeCodingPlan(
-		context.Background(), channel, testWorkspaceIdentity, jobID,
-		freezeOperationID, generation, actual.Revision,
-	)
-	if err != nil || receipt.Plan.State != model.CodingPlanStateFrozen ||
-		receipt.JobStatus != model.JobStatusRunning {
-		t.Fatalf("freeze coding plan = %#v, error %v", receipt, err)
+	freezeTurn := PlanningTurn{OperationID: string(freezeOperationID), OwnerTurnID: "terminal-" + string(freezeOperationID),
+		Text: "Sign off the exact displayed planning revision.", ObservedRevision: changed.Revision}
+	receipt, err := apiClient.FreezeCodingLedger(context.Background(), channel, testWorkspaceIdentity, jobID, freezeTurn)
+	if err != nil || receipt.State != "frozen" {
+		t.Fatalf("freeze coding ledger = %#v, error %v", receipt, err)
 	}
 }
 
@@ -113,22 +115,22 @@ func TestCodingPlanClientRejectsContradictoryServerAuthority(t *testing.T) {
 	t.Parallel()
 
 	channel := testCLIChannel("/tmp/coding-plan-invalid-response")
-	valid := codingPlanFixture(t, 91, 1, 1, model.CodingPlanStateReview)
+	valid := codingLedgerFixture(codingPlanFixture(t, 91, 1, 1, model.CodingPlanStateReview))
 	tests := []struct {
 		name   string
-		mutate func(*model.CodingPlan)
+		mutate func(*CodingLedgerRevision)
 		want   string
 	}{
-		{name: "wrong job", mutate: func(plan *model.CodingPlan) { plan.JobID++ }, want: "differs from requested job"},
-		{name: "duplicate leaf", mutate: func(plan *model.CodingPlan) { plan.Leaves[1].ID = plan.Leaves[0].ID }, want: "duplicate leaf"},
-		{name: "duplicate statement", mutate: func(plan *model.CodingPlan) { plan.Leaves[1].Statement = plan.Leaves[0].Statement }, want: "repeats the statement"},
-		{name: "unknown decision", mutate: func(plan *model.CodingPlan) { plan.Leaves[0].Decision = "maybe" }, want: "unsupported"},
+		{name: "wrong job", mutate: func(plan *CodingLedgerRevision) { plan.JobID++ }, want: "differs from requested authority"},
+		{name: "duplicate leaf", mutate: func(plan *CodingLedgerRevision) { plan.Ledger.Constraints[1].ID = plan.Ledger.Constraints[0].ID }, want: "is both constraint and constraint"},
+		{name: "duplicate statement", mutate: func(plan *CodingLedgerRevision) { plan.Ledger.Constraints[1].Rule = plan.Ledger.Constraints[0].Rule }, want: "repeats the statement"},
+		{name: "unknown decision", mutate: func(plan *CodingLedgerRevision) { plan.Ledger.Constraints[0].ReviewState = "maybe" }, want: "requires a review state"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			response := valid
-			response.Leaves = append([]model.CodingPlanLeaf(nil), valid.Leaves...)
+			response.Ledger.Constraints = append([]model.LedgerConstraint(nil), valid.Ledger.Constraints...)
 			test.mutate(&response)
 			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 				writeJSON(t, writer, http.StatusOK, response)
@@ -141,6 +143,52 @@ func TestCodingPlanClientRejectsContradictoryServerAuthority(t *testing.T) {
 				t.Fatalf("coding plan response error = %v, want %q", err, test.want)
 			}
 		})
+	}
+}
+
+func codingLedgerFixture(plan model.CodingPlan) CodingLedgerRevision {
+	ledger := model.EngineeringLedger{ID: "ledger-test", Revision: plan.Revision}
+	for index, leaf := range plan.Leaves {
+		reviewState := model.LedgerReviewProposed
+		switch leaf.Decision {
+		case model.CodingPlanDecisionApproved:
+			reviewState = model.LedgerReviewAgreed
+		case model.CodingPlanDecisionRejected:
+			reviewState = model.LedgerReviewNeedsDiscussion
+		}
+		ledger.Constraints = append(ledger.Constraints, model.LedgerConstraint{
+			LedgerItem: model.LedgerItem{
+				ID:         model.LedgerItemID(leaf.ID),
+				Provenance: model.LedgerProvenance{Kind: "owner_turn", Reference: "test", Revision: 1},
+				Rationale:  "test", Priority: model.LedgerPriorityNormal, Rank: int64(index),
+				Disposition: model.LedgerDispositionActive, ReviewState: reviewState,
+			},
+			Rule: leaf.Statement,
+		})
+	}
+	state := "proposed"
+	if plan.State == model.CodingPlanStateFrozen {
+		state = "frozen"
+	}
+	return CodingLedgerRevision{LedgerID: 1, JobID: plan.JobID, Generation: plan.Generation,
+		Revision: plan.Revision, State: state, CreatedAt: plan.CreatedAt, UpdatedAt: plan.UpdatedAt, Ledger: ledger}
+}
+
+func TestCodingPlanProjectionPreservesOutOfScopeOwnerDisposition(t *testing.T) {
+	plan := codingPlanFixture(t, 91, 1, 2, model.CodingPlanStateReview)
+	revision := codingLedgerFixture(plan)
+	revision.OwnerTurnDispositions = []model.OwnerStatementDisposition{{
+		Kind: model.OwnerTurnOutOfScope, Reason: "deployment belongs to a separate objective",
+	}}
+
+	projected, err := projectCodingLedgerForTerminal(revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(projected.OwnerTurnDispositions) != 1 ||
+		projected.OwnerTurnDispositions[0].Kind != model.OwnerTurnOutOfScope ||
+		projected.OwnerTurnDispositions[0].Reason != "deployment belongs to a separate objective" {
+		t.Fatalf("terminal projection dispositions = %#v", projected.OwnerTurnDispositions)
 	}
 }
 

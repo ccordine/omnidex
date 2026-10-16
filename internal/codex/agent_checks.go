@@ -22,11 +22,7 @@ func (client *Client) ExecuteChecks(parent context.Context, scope codingagent.As
 		return nil, err
 	}
 	defer cleanup()
-	profile, err := client.executionPermissionProfile(scope, scratch)
-	if err != nil {
-		return nil, err
-	}
-	connection, err := startConfiguredConnection(ctx, client.command, scope.Root, true, agentProfileFlags(profile))
+	connection, err := startConfiguredConnection(ctx, client.command, scope.Root, true, agentPermissionFlags())
 	if err != nil {
 		return nil, err
 	}
@@ -52,9 +48,9 @@ func readOnlyCheckScope(scope codingagent.Assignment) (codingagent.Assignment, e
 	switch scope.Role {
 	case codingagent.Execute:
 		scope.Role = codingagent.Review
-	case codingagent.Review, codingagent.OverallReview:
+	case codingagent.Review:
 	default:
-		return scope, fmt.Errorf("deterministic checks require a task or overall review scope")
+		return scope, fmt.Errorf("deterministic checks require one task scope")
 	}
 	scope.WriteFiles = nil
 	scope.DeleteFiles = nil

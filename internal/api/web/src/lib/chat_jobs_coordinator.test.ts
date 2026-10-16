@@ -75,7 +75,8 @@ describe("ChatJobsCoordinator lifecycle retries", () => {
 		const request = JSON.parse(String(controlRequests[0]?.body));
 		expect(request.feedback).toBe("  use the corrected plan\nwith trailing space  ");
 		expect(request.operation_id).toMatch(/^lifecycle_operation_[0-9a-f]{64}$/);
-		expect(Object.keys(request).sort()).toEqual(["feedback", "operation_id"]);
+		expect(request.observed_ledger_revision).toBe(0);
+		expect(Object.keys(request).sort()).toEqual(["feedback", "observed_ledger_revision", "operation_id"]);
 		expect(button.disabled).toBe(false);
 		expect(button.getAttribute("aria-busy")).toBe("false");
 		expect(button.textContent).toBe("Replan");
@@ -126,6 +127,7 @@ describe("ChatJobsCoordinator lifecycle retries", () => {
 		const workspaceIdentity = "client_0123456789abcdef0123456789abcdef_directory_0_42";
 		vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
 			if (input === "/v1/jobs/42") return jsonResponse(jobDetails({ client_cwd: "C:\\Projects\\target", client_workspace_identity: workspaceIdentity, coding_execution: { mode: "agents" } }));
+			if (input.startsWith("/v1/jobs/42/plan?")) return jsonResponse({ job_id: 42, revision: 7, ledger: { revision: 7 } });
 			if (input === `/v1/jobs/42/${action}`) {
 				const body = JSON.parse(String(init?.body)); bodies.push(body);
 				return jsonResponse({ job_id: 42, operation_id: body.operation_id, status: action === "cancel" ? "canceled" : "running" });
@@ -140,6 +142,7 @@ describe("ChatJobsCoordinator lifecycle retries", () => {
 		expect(bodies).toEqual([{
 			operation_id: expect.stringMatching(/^lifecycle_operation_[0-9a-f]{64}$/),
 			[action === "cancel" ? "reason" : "feedback"]: "  exact user instruction  ",
+			...(action === "replan" ? { observed_ledger_revision: 7 } : {}),
 			workspace_root: "C:\\Projects\\target", workspace_identity: workspaceIdentity,
 		}]);
 	});
@@ -151,6 +154,7 @@ describe("ChatJobsCoordinator lifecycle retries", () => {
 			const details = jobDetails({ client_cwd: "/workspace/target", client_workspace_identity: "directory_1_42" });
 			details.job.current_generation = generation;
 			if (input === "/v1/jobs/42") return jsonResponse(details);
+			if (input.startsWith("/v1/jobs/42/plan?")) return jsonResponse({ job_id: 42, revision: 3, ledger: { revision: 3 } });
 			if (input === "/v1/jobs/42/replan") {
 				const body = JSON.parse(String(init?.body)); bodies.push(body);
 				if (bodies.length === 1) { generation++; throw new Error("response lost after commit"); }

@@ -51,17 +51,18 @@ func TestChatPlanReviewNoteReplansTheSamePersistedJob(t *testing.T) {
 		case request.URL.Path == "/v1/jobs/84/replan":
 			replanRequests++
 			var body struct {
-				OperationID       model.LifecycleOperationID `json:"operation_id"`
-				Feedback          string                     `json:"feedback"`
-				WorkspaceRoot     string                     `json:"workspace_root"`
-				WorkspaceIdentity string                     `json:"workspace_identity"`
+				OperationID            model.LifecycleOperationID `json:"operation_id"`
+				Feedback               string                     `json:"feedback"`
+				WorkspaceRoot          string                     `json:"workspace_root"`
+				WorkspaceIdentity      string                     `json:"workspace_identity"`
+				ObservedLedgerRevision int64                      `json:"observed_ledger_revision"`
 			}
 			decodeChatPlanReviewJSON(t, request, &body)
 			if _, err := model.ParseLifecycleOperationID(string(body.OperationID)); err != nil {
 				t.Errorf("replan operation ID: %v", err)
 			}
 			operationID = body.OperationID
-			if body.Feedback != expectedFeedback || body.WorkspaceRoot != workspaceRoot ||
+			if body.Feedback != expectedFeedback || body.ObservedLedgerRevision != 1 || body.WorkspaceRoot != workspaceRoot ||
 				body.WorkspaceIdentity != workspaceIdentity {
 				t.Errorf("replan body = %#v", body)
 			}

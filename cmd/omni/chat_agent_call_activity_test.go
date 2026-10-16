@@ -9,7 +9,7 @@ import (
 )
 
 func TestAgentCallLifecycleShowsTypedActualRoleAndStatus(t *testing.T) {
-	for _, role := range []string{"plan", "execute", "review", "overall_review"} {
+	for _, role := range []string{"plan", "execute", "review"} {
 		for _, status := range []model.AgentCallActivityStatus{model.AgentCallActivityStarted, model.AgentCallActivityCompleted, model.AgentCallActivityFailed} {
 			t.Run(role+"/"+string(status), func(t *testing.T) {
 				console, output := planReviewTestConsole(t)
@@ -22,7 +22,7 @@ func TestAgentCallLifecycleShowsTypedActualRoleAndStatus(t *testing.T) {
 					RuntimeEvent: "agent_call_activity", AgentCallActivity: &activity}); err != nil {
 					t.Fatal(err)
 				}
-				labels := map[string]string{"plan": "Planning", "execute": "Executing task", "review": "Reviewing", "overall_review": "Overall review"}
+				labels := map[string]string{"plan": "Planning", "execute": "Executing task", "review": "Reviewing"}
 				if !strings.Contains(output.String(), labels[role]) || !strings.Contains(output.String(), string(status)) {
 					t.Fatalf("actual native role handoff was hidden: %q", output.String())
 				}

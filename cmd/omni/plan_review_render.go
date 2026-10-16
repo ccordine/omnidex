@@ -47,6 +47,11 @@ func renderPlanReview(state planReviewState) (string, error) {
 			planReviewTerminalText(leaf.Statement),
 		)
 	}
+	for _, disposition := range state.snapshot.OwnerTurnDispositions {
+		if disposition.Kind == model.OwnerTurnOutOfScope {
+			fmt.Fprintf(&rendered, "\nOut of scope: %s\n", planReviewTerminalText(disposition.Reason))
+		}
+	}
 
 	fmt.Fprintln(&rendered)
 	approved, rejected, pending := planReviewDecisionCounts(state.snapshot)

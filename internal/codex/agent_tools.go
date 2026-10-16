@@ -2,111 +2,29 @@ package codex
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
-	"strings"
-	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/exactjson"
 	"github.com/gryph/omnidex/internal/model"
 )
 
-type agentUserInputOption struct {
-	Description string `json:"description"`
-	Label       string `json:"label"`
-}
-
-type agentUserInputQuestion struct {
-	Header   string                 `json:"header"`
-	ID       string                 `json:"id"`
-	IsOther  bool                   `json:"isOther"`
-	IsSecret bool                   `json:"isSecret"`
-	Options  []agentUserInputOption `json:"options"`
-	Question string                 `json:"question"`
-}
-
-type agentUserInputRequest struct {
-	AutoResolutionMs *uint64                  `json:"autoResolutionMs"`
-	IsBlocking       bool                     `json:"isBlocking"`
-	ItemID           string                   `json:"itemId"`
-	Questions        []agentUserInputQuestion `json:"questions"`
-	ThreadID         string                   `json:"threadId"`
-	TurnID           string                   `json:"turnId"`
-}
-
-// Native Codex modes may ask a user question before they can emit their
-// structured result. Convert that bounded request into the same durable
-// Omnidex question flow used by explicit result questions. Closing the native
-// call then preserves the fresh-session boundary when the answer resumes work.
-func mapAgentUserInputRequest(call codingagent.Assignment, frame rpcFrame, result *codingagent.Result) ([]string, bool, error) {
-	if frame.Method != "item/tool/requestUserInput" {
-		return nil, false, nil
-	}
-	if frame.ID == nil {
-		return nil, true, fmt.Errorf("native user-input request lacks an RPC identity")
-	}
-	var request agentUserInputRequest
-	if err := exactjson.ValidateObject(frame.Params, &request, "native user-input request"); err != nil {
-		return nil, true, err
-	}
-	if err := json.Unmarshal(frame.Params, &request); err != nil {
-		return nil, true, err
-	}
-	if !request.IsBlocking || request.ItemID == "" || request.ThreadID != result.ThreadID || request.TurnID != result.TurnID || len(request.Questions) < 1 || len(request.Questions) > 3 {
-		return nil, true, fmt.Errorf("native user-input request lacks exact call binding or bounded questions")
-	}
-	seen := map[string]bool{}
-	questions := make([]string, len(request.Questions))
-	for index, question := range request.Questions {
-		if !agentQuestionText(question.ID, 128) || !agentQuestionText(question.Header, 64) || !agentQuestionText(question.Question, 4096) || question.IsSecret || seen[question.ID] || len(question.Options) > 3 {
-			return nil, true, fmt.Errorf("native user-input request contains an invalid question")
-		}
-		seen[question.ID] = true
-		formatted := question.Question
-		if len(question.Options) > 0 {
-			options := make([]string, len(question.Options))
-			for optionIndex, option := range question.Options {
-				if !agentQuestionText(option.Label, 256) || !agentQuestionText(option.Description, 1024) {
-					return nil, true, fmt.Errorf("native user-input request contains an invalid option")
-				}
-				options[optionIndex] = option.Label + " — " + option.Description
-			}
-			formatted += " Options: " + strings.Join(options, "; ")
-		}
-		questions[index] = formatted
-	}
-	return questions, true, nil
-}
-
-func agentQuestionText(value string, maximum int) bool {
-	return value != "" && strings.TrimSpace(value) == value && utf8.ValidString(value) && len(value) <= maximum && !strings.ContainsAny(value, "\x00\r\n")
-}
-
-func agentQuestionResult(role codingagent.Role, questions []string) (json.RawMessage, error) {
-	var value any
-	switch role {
-	case codingagent.Plan:
-		value = codingagent.Workload{Tasks: []codingagent.Task{}, Checks: []codingagent.Check{}, Questions: questions}
-	case codingagent.Execute:
-		value = codingagent.ExecutionResult{Questions: questions}
-	case codingagent.Review, codingagent.OverallReview:
-		value = codingagent.ReviewResult{Findings: []codingagent.Finding{}, Questions: questions}
-	default:
-		return nil, fmt.Errorf("native user-input request belongs to an unknown agent role")
-	}
-	return json.Marshal(value)
-}
-
 func agentWriteTool() map[string]any {
 	text := map[string]string{"type": "string"}
-	return map[string]any{"type": "function", "name": "omnidex_write_file", "description": "Write complete source content to one granted file. First read the file. Supply its exact original contents as expected_content to prevent overwriting an intervening edit.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"path": text, "content": text, "expected_content": text}, "required": []string{"path", "content", "expected_content"}, "additionalProperties": false}}
+	return map[string]any{"type": "function", "name": "omnidex_write_file", "description": "Write complete source content to one file explicitly authorized by this task packet. First read an existing file and supply its exact original contents as expected_content; use an empty expected_content to create a missing authorized file.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"path": text, "content": text, "expected_content": text}, "required": []string{"path", "content", "expected_content"}, "additionalProperties": false}}
 }
 
 func agentDeleteTool() map[string]any {
 	text := map[string]string{"type": "string"}
-	return map[string]any{"type": "function", "name": "omnidex_delete_file", "description": "Delete one granted file. First read the file. Supply its exact original contents as expected_content to prevent deleting an intervening edit.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"path": text, "expected_content": text}, "required": []string{"path", "expected_content"}, "additionalProperties": false}}
+	return map[string]any{"type": "function", "name": "omnidex_delete_file", "description": "Delete one file explicitly authorized by this task packet. First read the file and supply its exact original contents as expected_content.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"path": text, "expected_content": text}, "required": []string{"path", "expected_content"}, "additionalProperties": false}}
+}
+
+func agentReadTool() map[string]any {
+	text := map[string]string{"type": "string"}
+	return map[string]any{"type": "function", "name": "omnidex_read_file", "description": "Read one exact file from the assignment's explicit file inventory.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"path": text}, "required": []string{"path"}, "additionalProperties": false}}
 }
 
 func (connection *connection) handleAgentTool(ctx context.Context, frame rpcFrame, result *codingagent.Result, call codingagent.Assignment, writer codingagent.FileWriter, event func(codingagent.NativeEvent) error) error {
@@ -121,15 +39,32 @@ func (connection *connection) handleAgentTool(ctx context.Context, frame rpcFram
 	if err := json.Unmarshal(frame.Params, &params); err != nil {
 		return err
 	}
-	if call.Role != codingagent.Execute || writer == nil || frame.Method != "item/tool/call" || frame.ID == nil || params.ThreadID != result.ThreadID || params.TurnID != result.TurnID || params.CallID == "" || (params.Tool != "omnidex_write_file" && params.Tool != "omnidex_delete_file") || (params.Namespace != nil && *params.Namespace != "") {
+	read := params.Tool == "omnidex_read_file"
+	mutate := params.Tool == "omnidex_write_file" || params.Tool == "omnidex_delete_file"
+	if writer == nil || frame.Method != "item/tool/call" || frame.ID == nil || params.ThreadID != result.ThreadID || params.TurnID != result.TurnID || params.CallID == "" ||
+		(!read && !mutate) || mutate && call.Role != codingagent.Execute || read && call.Role != codingagent.Execute && call.Role != codingagent.Review && !call.Role.IsPlanning() ||
+		(params.Namespace != nil && *params.Namespace != "") {
 		return fmt.Errorf("agent requested an ungranted or unbound tool")
 	}
 	if err := recordAgentFrame(result, connection.lastFrame, event); err != nil {
 		return err
 	}
 	path := ""
+	content := ""
 	var writeErr error
-	if params.Tool == "omnidex_write_file" {
+	if read {
+		var request struct {
+			Path string `json:"path"`
+		}
+		writeErr = exactjson.ValidateObject(params.Arguments, &request, "agent file read")
+		if writeErr == nil {
+			writeErr = json.Unmarshal(params.Arguments, &request)
+		}
+		path = request.Path
+		if writeErr == nil {
+			content, writeErr = writer.ReadFile(ctx, path)
+		}
+	} else if params.Tool == "omnidex_write_file" {
 		var edit codingagent.FileWrite
 		edit, writeErr = decodeAgentFileWrite(params.Arguments)
 		path = edit.Path
@@ -148,6 +83,9 @@ func (connection *connection) handleAgentTool(ctx context.Context, frame rpcFram
 		return ctx.Err()
 	}
 	message := "Saved."
+	if read {
+		message = content
+	}
 	if writeErr != nil {
 		message = writeErr.Error()
 	}
@@ -155,11 +93,23 @@ func (connection *connection) handleAgentTool(ctx context.Context, frame rpcFram
 	if err != nil {
 		return err
 	}
-	if err := recordAgentFrame(result, encoded, event); err != nil {
+	receipt := encoded
+	if read && writeErr == nil {
+		digest := sha256.Sum256([]byte(content))
+		receipt, err = json.Marshal(map[string]any{"id": *frame.ID, "result": map[string]any{"contentItems": []any{map[string]string{"type": "inputText", "text": fmt.Sprintf("Read %d bytes (sha256 %x).", len(content), digest)}}, "success": true}})
+		if err != nil {
+			return err
+		}
+	}
+	if err := recordAgentFrame(result, receipt, event); err != nil {
 		return err
 	}
 	if writeErr == nil && event != nil {
-		activity := agentActivityBase(call, result, params.CallID, model.AgentActivityFileEdit, model.AgentActivityCompleted)
+		kind := model.AgentActivityFileEdit
+		if read {
+			kind = model.AgentActivityFileRead
+		}
+		activity := agentActivityBase(call, result, params.CallID, kind, model.AgentActivityCompleted)
 		activity.Paths = []string{path}
 		if err := event(codingagent.NativeEvent{Activity: &activity}); err != nil {
 			return err

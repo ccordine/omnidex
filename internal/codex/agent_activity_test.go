@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
-	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/model"
@@ -29,7 +28,7 @@ func TestAgentNativeForeignActivityNeverPublished(t *testing.T) {
 }
 
 func TestAgentNativeActivityDeltasAreRetained(t *testing.T) {
-	for method, kind := range map[string]string{"item/commandExecution/outputDelta": "commandExecution", "item/reasoning/summaryTextDelta": "reasoning", "item/agentMessage/delta": "agentMessage"} {
+	for method, kind := range map[string]string{"item/reasoning/summaryTextDelta": "reasoning", "item/agentMessage/delta": "agentMessage"} {
 		raw := json.RawMessage(`{"method":"` + method + `","params":{"threadId":"thread","turnId":"turn","itemId":"item","delta":"observed output"}}`)
 		result := codingagent.Result{ThreadID: "thread", TurnID: "turn"}
 		var receipt json.RawMessage
@@ -92,36 +91,6 @@ func TestAgentNativeProjectsPublicSummaryAndCommentaryWithoutPrivateOrFinalOutpu
 	}
 }
 
-func TestAgentNativeCommandOutputChunksRetainCompletionAndGrantedReadPaths(t *testing.T) {
-	output := strings.Repeat("界", 4000)
-	delta, _ := json.Marshal(map[string]any{"method": "item/commandExecution/outputDelta", "params": map[string]any{"threadId": "thread", "turnId": "turn", "itemId": "command", "delta": output}})
-	frames := []string{
-		`{"method":"item/started","params":{"threadId":"thread","turnId":"turn","item":{"id":"command","type":"commandExecution","command":"cat source.go","cwd":"/project","status":"inProgress"}}}`,
-		string(delta),
-		`{"method":"item/completed","params":{"threadId":"thread","turnId":"turn","item":{"id":"command","type":"commandExecution","command":"cat source.go","cwd":"/project","status":"completed","exitCode":0,"commandActions":[{"type":"read","path":"source.go"},{"type":"read","path":"ungranted.txt"}]}}}`,
-	}
-	activities, _ := collectNativeActivities(t, codingagent.Assignment{Role: codingagent.Execute, Root: "/project", Task: &codingagent.Task{ID: "source"}, ReadFiles: []string{"source.go"}}, frames)
-	var observed string
-	completed, read := false, false
-	for _, activity := range activities {
-		if len(activity.Text) > model.MaxAgentActivityTextBytes || !utf8.ValidString(activity.Text) {
-			t.Fatal("native chunk exceeded its UTF-8 bound")
-		}
-		if activity.Kind == model.AgentActivityCommandOutput {
-			observed += activity.Text
-		}
-		if activity.Kind == model.AgentActivityCommand && activity.Status == model.AgentActivityCompleted {
-			completed = activity.ExitCode != nil && *activity.ExitCode == 0
-		}
-		if activity.Kind == model.AgentActivityFileRead {
-			read = len(activity.Paths) == 1 && activity.Paths[0] == "source.go"
-		}
-	}
-	if observed != output || !completed || !read {
-		t.Fatalf("chunked output lost text, completion or scope: bytes=%d completed=%v read=%v", len(observed), completed, read)
-	}
-}
-
 func TestAgentNativeUnknownMessagePhaseWaitsUntilPublicCompletion(t *testing.T) {
 	frames := []string{
 		`{"method":"item/started","params":{"threadId":"thread","turnId":"turn","item":{"id":"message","type":"agentMessage"}}}`,
@@ -153,36 +122,27 @@ func TestAgentNativePublicCompletionRetainsUnstreamedRemainder(t *testing.T) {
 	}
 }
 
-func TestAgentNativeLongCommandPresentationPreservesOriginalReceipts(t *testing.T) {
-	command := strings.Repeat("界", 2000)
-	var frames []string
-	for _, phase := range []string{"started", "completed"} {
-		item := map[string]any{"id": "command", "type": "commandExecution", "command": command, "cwd": "/project", "status": "completed", "exitCode": 0}
-		if phase == "started" {
-			item["status"] = "inProgress"
-			delete(item, "exitCode")
-		}
-		raw, _ := json.Marshal(map[string]any{"method": "item/" + phase, "params": map[string]any{"threadId": "thread", "turnId": "turn", "item": item}})
-		frames = append(frames, string(raw))
+func TestAgentNativeActivityBindsDeltaThatArrivesImmediatelyBeforeStart(t *testing.T) {
+	frames := []string{
+		`{"method":"item/reasoning/summaryTextDelta","params":{"threadId":"thread","turnId":"turn","itemId":"summary","summaryIndex":0,"delta":"Observed first."}}`,
+		`{"method":"item/started","params":{"threadId":"thread","turnId":"turn","item":{"id":"summary","type":"reasoning"}}}`,
+		`{"method":"item/completed","params":{"threadId":"thread","turnId":"turn","item":{"id":"summary","type":"reasoning","summary":["Observed first."]}}}`,
 	}
 	activities, receipts := collectNativeActivities(t, codingagent.Assignment{Role: codingagent.Plan}, frames)
-	if len(activities) != 2 || !activities[0].Truncated || !activities[1].Truncated || len(activities[0].Command) > 4096 || !utf8.ValidString(activities[0].Command) || activities[1].Status != model.AgentActivityCompleted {
-		t.Fatalf("long native command lost its bounded presentation/completion: %+v", activities)
-	}
-	if len(receipts) != 2 || string(receipts[0]) != frames[0] || string(receipts[1]) != frames[1] {
-		t.Fatal("presentation clipping changed original native receipts")
+	if len(receipts) != 3 || len(activities) != 2 || activities[0].Text != "Observed first." || activities[1].Status != model.AgentActivityCompleted {
+		t.Fatalf("delta-before-start lifecycle was not reconciled: activities=%+v receipts=%d", activities, len(receipts))
 	}
 }
 
-func TestAgentNativeActivityDeltaRequiresItsOpenItem(t *testing.T) {
-	raw := `{"method":"item/commandExecution/outputDelta","params":{"threadId":"thread","turnId":"turn","itemId":"missing","delta":"output"}}`
+func TestAgentNativeActivityRejectsProvisionalStartWithDifferentKind(t *testing.T) {
 	result := codingagent.Result{ThreadID: "thread", TurnID: "turn"}
-	published := 0
-	_, err := consumeAgentFrame(decodeAgentTestFrame(t, raw), json.RawMessage(raw), &result, codingagent.Execute, map[string]string{}, func(codingagent.NativeEvent) error {
-		published++
-		return nil
-	})
-	if err == nil || published != 0 {
-		t.Fatalf("unbound activity delta accepted: published=%d error=%v", published, err)
+	items := map[string]string{}
+	delta := `{"method":"item/reasoning/summaryTextDelta","params":{"threadId":"thread","turnId":"turn","itemId":"item","summaryIndex":0,"delta":"Observed."}}`
+	if _, err := consumeAgentFrame(decodeAgentTestFrame(t, delta), json.RawMessage(delta), &result, codingagent.Execute, items, nil); err != nil {
+		t.Fatal(err)
+	}
+	start := `{"method":"item/started","params":{"threadId":"thread","turnId":"turn","item":{"id":"item","type":"agentMessage","phase":"commentary"}}}`
+	if _, err := consumeAgentFrame(decodeAgentTestFrame(t, start), json.RawMessage(start), &result, codingagent.Execute, items, nil); err == nil {
+		t.Fatal("provisional item accepted a contradictory start kind")
 	}
 }

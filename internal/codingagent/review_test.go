@@ -38,7 +38,7 @@ func TestNormalizeReviewFindingFiles(t *testing.T) {
 	}
 }
 
-func TestNormalizedReviewFindingRetainsExactScopeValidation(t *testing.T) {
+func TestNormalizedReviewFindingCannotEscapeTaskPacket(t *testing.T) {
 	tasks := map[string]Task{
 		"cli": {
 			ID:         "cli",
@@ -61,6 +61,11 @@ func TestNormalizedReviewFindingRetainsExactScopeValidation(t *testing.T) {
 	result.Findings[0].File = "other.go:172-175"
 	normalizeReviewFindingFiles(tasks, &result)
 	if err := ValidateReview(tasks, result); err == nil {
-		t.Fatal("ungranted line reference accepted")
+		t.Fatal("workspace evidence outside the task packet was accepted")
+	}
+
+	result.Findings[0].File = "../other.go"
+	if err := ValidateReview(tasks, result); err == nil {
+		t.Fatal("workspace-escaping review evidence accepted")
 	}
 }

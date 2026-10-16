@@ -79,6 +79,10 @@ func (session *chatSession) replayPendingControl(pending *pendingControl) (model
 					pending.exactText,
 				)
 			case "redirect":
+				if pending.observedLedgerRevision > 0 {
+					return session.client.ReplanPlanning(requestContext, session.channel, session.workspaceIdentity,
+						pending.jobID, pending.operationID, pending.exactText, pending.observedLedgerRevision)
+				}
 				return session.client.Replan(
 					requestContext,
 					session.channel,

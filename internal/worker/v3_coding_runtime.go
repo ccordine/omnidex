@@ -11,8 +11,10 @@ import (
 )
 
 type directCodingRequest struct {
-	Instruction string
-	Feedback    []string
+	Instruction            string
+	Feedback               []string
+	PlanningOperationID    string
+	ObservedLedgerRevision int64
 }
 
 type directCodingSession struct {
@@ -122,6 +124,8 @@ func (r *nativeRuntimeV3) directCodingRequest() (directCodingRequest, error) {
 	if err != nil {
 		return directCodingRequest{}, err
 	}
+	request.PlanningOperationID = string(continuity.ReplanOperationID)
+	request.ObservedLedgerRevision = continuity.ObservedLedgerRevision
 	return request, nil
 }
 

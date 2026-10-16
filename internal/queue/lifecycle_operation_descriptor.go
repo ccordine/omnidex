@@ -216,6 +216,9 @@ func normalizeReplanJobCommand(command ReplanJobCommand) (ReplanJobCommand, erro
 	if command.JobID <= 0 {
 		return ReplanJobCommand{}, fmt.Errorf("replan command requires a positive job ID")
 	}
+	if command.ObservedLedgerRevision < 0 {
+		return ReplanJobCommand{}, fmt.Errorf("observed ledger revision cannot be negative")
+	}
 	feedback, err := validateReplanFeedback(command.Feedback)
 	if err != nil {
 		return ReplanJobCommand{}, err

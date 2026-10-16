@@ -60,8 +60,6 @@ func agentRoleLabel(role string) string {
 		return "Executing task"
 	case "review":
 		return "Reviewing"
-	case "overall_review":
-		return "Overall review"
 	default:
 		return ""
 	}

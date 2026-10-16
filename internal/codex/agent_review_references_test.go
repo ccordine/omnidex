@@ -2,6 +2,7 @@ package codex
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -9,6 +10,19 @@ import (
 	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/llm"
 )
+
+func TestAgentReviewReceiptFailureIsRetryableAtProviderBoundary(t *testing.T) {
+	task := codingagent.Task{ID: "task-a", Acceptance: []string{"Behavior remains exact."}}
+	_, err := mapAgentReviewRunResult(
+		codingagent.Assignment{Role: codingagent.Review, Task: &task},
+		json.RawMessage(`{"findings":[],"overall_explanation":"","overall_correctness":"patch is incorrect"}`),
+	)
+	var retryable interface{ Retryable() bool }
+	if err == nil || !errors.As(err, &retryable) || !retryable.Retryable() ||
+		!strings.Contains(err.Error(), "decode task-local agent review") {
+		t.Fatal("an incomplete task-local review session became a terminal task failure")
+	}
+}
 
 func TestAgentReviewReferencesRestoreExactQuotedPortableFindings(t *testing.T) {
 	task := codingagent.Task{ID: "task\"quoted\\identity", Acceptance: []string{"Preserve \"exact\" values, slash \\, and newline\nbytes."}}
@@ -31,30 +45,6 @@ func TestAgentReviewReferencesRestoreExactQuotedPortableFindings(t *testing.T) {
 	}
 }
 
-func TestAgentReviewReferencesAcceptNativeEnvelopeAndPreserveDetails(t *testing.T) {
-	task := codingagent.Task{ID: "task-a", Acceptance: []string{"Behavior remains exact."}}
-	call := codingagent.Assignment{Role: codingagent.Review, Task: &task}
-	receipt := `{"findings":[{"task_id":"task_1","requirement":"criterion_1","file":"","observation":"Observed mismatch."}],"questions":[]}`
-	envelope, err := json.Marshal(map[string]any{
-		"findings":            []map[string]any{{"title": "Exact behavior differs", "body": "The returned bytes do not match."}},
-		"overall_correctness": "patch is incorrect", "overall_explanation": receipt,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	mapped, err := mapAgentReviewResult(call, envelope)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var review codingagent.ReviewResult
-	if err := json.Unmarshal(mapped, &review); err != nil {
-		t.Fatal(err)
-	}
-	if len(review.Findings) != 1 || review.Findings[0].TaskID != "task-a" || review.Findings[0].Requirement != "Behavior remains exact." || !strings.Contains(review.Findings[0].Observation, "returned bytes") {
-		t.Fatalf("native review detail or references lost: %+v", review)
-	}
-}
-
 func TestAgentReviewReferencesPreserveTypedVerification(t *testing.T) {
 	task := codingagent.Task{ID: "task-a", Acceptance: []string{"Behavior remains exact."}}
 	call := codingagent.Assignment{Role: codingagent.Review, Task: &task}
@@ -67,75 +57,7 @@ func TestAgentReviewReferencesPreserveTypedVerification(t *testing.T) {
 		t.Fatal(err)
 	}
 	if review.Verification != "Ran the declared check and an independent edge case." {
-		t.Fatalf("native review verification lost: %+v", review)
-	}
-}
-
-func TestAgentReviewReferencesAcceptNativeReviewCommentHeading(t *testing.T) {
-	task := codingagent.Task{ID: "schedule", Acceptance: []string{"Total duration is exact."}}
-	call := codingagent.Assignment{Role: codingagent.Review, Task: &task}
-	raw := json.RawMessage(`{"findings":[{"task_id":"task_1","requirement":"criterion_1","file":"schedule.go:61","observation":"The total wraps."}],"questions":[]}
-
-Review comment:
-
-- [P2] Prevent overflow in total_duration — schedule.go:61`)
-	mapped, err := mapAgentReviewResult(call, raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var review codingagent.ReviewResult
-	if err := json.Unmarshal(mapped, &review); err != nil {
-		t.Fatal(err)
-	}
-	if len(review.Findings) != 1 || !strings.Contains(review.Findings[0].Observation, "Prevent overflow") {
-		t.Fatalf("native review comment was lost: %+v", review)
-	}
-}
-
-func TestAgentReviewReferencesRejectUnreferencedNativeFinding(t *testing.T) {
-	task := codingagent.Task{ID: "task-a", Acceptance: []string{"Behavior remains exact."}}
-	call := codingagent.Assignment{Role: codingagent.Review, Task: &task}
-	envelope, err := json.Marshal(map[string]any{
-		"findings":            []map[string]any{{"title": "Unbound defect", "body": "Missing from the receipt."}},
-		"overall_correctness": "patch is incorrect",
-		"overall_explanation": `{"findings":[],"questions":[]}`,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := mapAgentReviewResult(call, envelope); err == nil || !strings.Contains(err.Error(), "omitted referenced findings") {
-		t.Fatalf("unreferenced native finding accepted: %v", err)
-	}
-}
-
-func TestAgentOverallReviewReferencesRestoreOnlyBoundParentOutcome(t *testing.T) {
-	first := codingagent.Task{ID: `task "first"`, Acceptance: []string{`First "exact" criterion.`}, RequirementIDs: []string{"parent-a"}}
-	second := codingagent.Task{ID: `task "second"`, Acceptance: []string{`Second "exact" criterion.`}, RequirementIDs: []string{"parent-b"}}
-	parents := []codingagent.Requirement{{ID: "parent-a", Outcome: `First "exact" outcome.`}, {ID: "parent-b", Outcome: `Second "exact" outcome.`}}
-	call := codingagent.Assignment{Role: codingagent.OverallReview, Workload: &codingagent.Workload{Tasks: []codingagent.Task{first, second}}, Requirements: parents}
-	raw := json.RawMessage(`{"findings":[{"task_id":"task_2","requirement":"parent_2","file":"","observation":"Observed bound outcome failure."}],"questions":["Which supplied option is approved?"]}`)
-	mapped, err := mapAgentReviewResult(call, raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var result codingagent.ReviewResult
-	if err := json.Unmarshal(mapped, &result); err != nil {
-		t.Fatal(err)
-	}
-	if result.Findings[0].TaskID != second.ID || result.Findings[0].Requirement != parents[1].Outcome ||
-		!reflect.DeepEqual(result.Questions, []string{"Which supplied option is approved?"}) {
-		t.Fatalf("overall mapping changed task/outcome/question bytes: %+v", result)
-	}
-	if err := codingagent.ValidateReview(map[string]codingagent.Task{first.ID: first, second.ID: second}, result, parents...); err != nil {
-		t.Fatal(err)
-	}
-	for _, raw := range []string{
-		`{"findings":[{"task_id":"task_2","requirement":"parent_1","file":"","observation":"Unbound parent."}],"questions":[]}`,
-		`{"findings":[{"task_id":"task_1","requirement":"parent_2","file":"","observation":"Sibling parent."}],"questions":[]}`,
-	} {
-		if _, err := mapAgentReviewResult(call, json.RawMessage(raw)); err == nil {
-			t.Fatal("overall review accepted a parent outside the referenced task's bindings")
-		}
+		t.Fatalf("task-local review verification lost: %+v", review)
 	}
 }
 
@@ -156,7 +78,7 @@ func TestAgentReviewReferenceDecoderRejectsUnknownOrMalformedNativeFindings(t *t
 		`{"findings":[],"questions":[]} {}`,
 	} {
 		if _, err := mapAgentReviewResult(call, json.RawMessage(raw)); err == nil {
-			t.Errorf("invalid native review references accepted: %s", raw)
+			t.Errorf("invalid task-local review references accepted: %s", raw)
 		}
 	}
 }

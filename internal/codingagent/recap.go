@@ -5,39 +5,21 @@ import (
 	"strings"
 )
 
-// CompletionRecap projects recorded results; it never grants completion authority.
-func CompletionRecap(entries []Entry, maxBytes int) (string, error) {
-	if len(entries) == 0 || entries[len(entries)-1].Phase != "overall_accepted" {
-		return "", fmt.Errorf("completion recap requires accepted overall verification")
+// TaskLedgerCompletionRecap reports the database-driven task loop. Completion
+// authority comes from NextIncompleteCodingLedgerTask returning no remaining
+// task; this function only renders the task acceptance evidence.
+func TaskLedgerCompletionRecap(entries []Entry, taskCount, checkCount, maxBytes int) (string, error) {
+	if taskCount < 1 || checkCount < 0 {
+		return "", fmt.Errorf("task ledger completion recap requires authoritative accepted task counts")
 	}
-	var workload *Workload
 	files := []string{}
-	checks := len(entries[len(entries)-1].Checks)
-	accepted := map[string]int{}
 	for _, entry := range entries {
-		switch entry.Phase {
-		case "plan_frozen":
-			workload = entry.Workload
-		case "files_written":
+		if entry.Phase == "files_written" {
 			files = append(files, entry.WrittenFiles...)
-		case "task_accepted":
-			accepted[entry.TaskID] = len(entry.Checks)
-		case "task_reopened", "task_reviewed":
-			delete(accepted, entry.TaskID)
 		}
-	}
-	if workload == nil || len(workload.Tasks) == 0 {
-		return "", fmt.Errorf("completion recap requires the frozen tasks")
-	}
-	for _, task := range workload.Tasks {
-		count, exists := accepted[task.ID]
-		if !exists {
-			return "", fmt.Errorf("completion recap task %s is not accepted", task.ID)
-		}
-		checks += count
 	}
 	files = uniqueFiles(files)
-	header := fmt.Sprintf("Tasks completed: %d. Checks passed: %d. Independent task and overall reviews passed.\n", len(workload.Tasks), checks)
+	header := fmt.Sprintf("Tasks completed: %d. Checks passed: %d. Independent task reviews passed.\n", taskCount, checkCount)
 	if maxBytes < len(header)+96 {
 		return "", fmt.Errorf("completion recap output boundary is too small")
 	}

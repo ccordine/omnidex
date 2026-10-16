@@ -9,7 +9,7 @@ import (
 )
 
 func renderAgentAssignment(call codingagent.Assignment) (string, error) {
-	encoded, err := json.Marshal(call)
+	encoded, err := json.Marshal(agentPromptContext(call))
 	if err != nil {
 		return "", err
 	}
@@ -18,19 +18,24 @@ func renderAgentAssignment(call codingagent.Assignment) (string, error) {
 	}
 	var instruction string
 	switch call.Role {
-	case codingagent.Plan:
-		instruction = "Decompose only the supplied objective into ordered narrow execution tasks, identified by requirement_ids. Resolve artifact references using the supplied code-owned bindings; spell the actual relevant values in each task rather than leaving unresolved tokens. Honor the supplied construction facts in the relevant tasks. Each task names exact read, create/edit, and delete files, narrow acceptance criteria, preceding dependencies, and one or more executable checks that actually test the behavior. The workload-level checks array must also contain one or more executable integration checks for the completed task set; it cannot be empty. Derive acceptance criteria only from the objective, its clarifications, and explicit construction facts: observable behavior, required artifacts, and meaningful verification. Choosing a development method or implementation order does not authorize an additional acceptance obligation. Existing read and delete dependencies must come from the file catalog. When new_files_allowed is true you are authorized to declare new source/test/documentation paths inside the selected workspace, even when the catalog is empty; execution grants are created only after code validates your plan and the user explicitly approves it. Planning itself remains read-only. Choose exact file names unless an explicit binding fixes them. Use available executables for offline checks. Each execution task receives only its frozen task context. Return concrete questions only for information or authority absent from this context. Preserve the objective; do not execute the plan or add product scope. Verification has read-only source and writable disposable caches; network access is disabled."
+	case codingagent.PlanningInitial:
+		instruction = "Answer only the named initial-ledger-proposal engineering question from the broad planning context. Return one normalized typed engineering ledger and a durable disposition for every actionable statement in the owner turn. Carve the complete approved objective into finite task records whose exact requirement, constraint, acceptance, file, affected-system, dependency, and check bindings are sufficient for an executor that will never see the full plan or sibling tasks. Include only work required by the owner's explicit objective and supplied facts; do not add optional hardening, redesign, refactoring, best practices, adjacent fixes, or extra test obligations. This is the only planning station allowed to return a complete ledger."
+	case codingagent.PlanningTarget:
+		instruction = "Answer only the named owner-turn-target-resolution engineering question over this bounded ledger partition. Return only the stable IDs of records in this partition that the exact owner turn semantically references. Do not propose mutations or regenerate the ledger."
+	case codingagent.PlanningMutation:
+		instruction = "Answer only the named owner-turn-ledger-mutation engineering question. Translate only the human's exact turn into typed add, amend, remove, restore, review, or reorder operations against the exact supplied base revision, plus durable per-statement dispositions. Keep every affected task's requirement, constraint, acceptance, file, affected-system, dependency, and check bindings sufficient for a task-local executor that receives no full-plan or sibling context. Do not add optional hardening, redesign, refactoring, best practices, adjacent fixes, or extra test obligations the human did not request. Never regenerate or return the complete ledger."
+	case codingagent.PlanningCoverage:
+		instruction = "Answer only the named owner-turn-coverage question over the bounded exact revision. Covered means every actionable statement in the exact owner turn has a durable disposition in that revision. Return a read-only judgment and concise non-authoritative suggestions for any explicit owner statement that is missing. Never return or apply ledger mutations, invent work, add acceptance obligations, or treat optional hardening, refactoring, best practices, or extra tests as missing scope. This station cannot approve owner items; only a human-origin planning action may alter the ledger."
+	case codingagent.PlanningAudit:
+		instruction = "Answer only the named mandatory-pre-sign-off audit question over the supplied persisted planning-record partition. Covered means the current ledger faithfully and coherently represents the owner's explicit recorded instructions. Return a read-only judgment and concise non-authoritative suggestions for any explicit owner instruction that is missing or contradicted. Never return or apply ledger mutations, invent work, add acceptance obligations, or treat optional hardening, refactoring, best practices, or extra tests as missing scope. This audit is evidence and cannot approve, freeze, or alter the proposal; only a human-origin planning action may alter the ledger."
 	case codingagent.Execute:
-		instruction = "Fulfill this task completely in its granted files. Edit or create source using omnidex_write_file and delete only explicitly granted files using omnidex_delete_file. Both tools enforce the frozen task through Omnidex. Native shell commands can read source and write disposable tool caches; they cannot edit source. Run the task's checks. Address only the supplied findings. Report concrete questions if required information or authority is missing. Your report is not completion authority."
+		instruction = "Fulfill this frozen task packet completely and only this task. The packet is intentionally the entire context for this call; do not infer, reconstruct, request, or act on the full plan or sibling tasks. Use only the supplied task file tools and only the packet's exact read, write, and delete files. Omnidex runs the frozen checks and owns every workflow transition. Follow every packet requirement, constraint, decision, affected-system note, acceptance criterion, and supplied review finding. Do not add hardening, refactoring, redesign, adjacent work, generic tests, new obligations, or owner questions. If the packet cannot be fulfilled exactly, return no side claim of completion. Your report is evidence, never completion authority."
 	case codingagent.Review:
-		instruction = "Independently inspect this narrow task's actual files and checks against its task acceptance criteria. Assess observable behavior, required artifacts, required deletions, and meaningful verification. Execute independent checks for the task's declared input classes and ranges, including relevant representation boundaries, overflow and underflow. Assess formula operation order against the declared behavior and use observed independent results beyond the supplied passing examples. These checks verify existing criteria and add no requirements. A development method, preferred order, or historical process is not an acceptance obligation unless the task explicitly requires it. Existing tests do not by themselves require historical evidence of when they were written or run. Do not require sibling tasks to be complete before accepting this task. Validate that checks meaningfully exercise the task; a no-op or superficial check is not proof. Do not assume version control is present; run Git commands only when a .git directory exists. Recheck earlier findings. Return only concrete defects bound to an exact task acceptance criterion, or questions. For each finding, use the review reference table: put the task reference in task_id and one criterion reference listed for that task in requirement. Put the defect's explanation in observation. Do not invent requirements or change files."
-	case codingagent.OverallReview:
-		instruction = "Inspect all completed tasks together against the authoritative original objective, every frozen parent requirement and workload check. Check completeness, integration, testing, actual operation, and omitted requested behavior. Execute independent integration checks and assess whether verification covers the declared input classes and ranges across the completed tasks. Do not assume version control is present; run Git commands only when a .git directory exists. Assess the requested outcome and verification; do not add a development method, preferred order, or historical process obligation that the authoritative objective does not require. Bind observed defects to the responsible task and an exact task criterion or bound parent outcome. For each finding, use the review reference table: put the task reference in task_id and one criterion reference listed for that task in requirement. Put the defect's explanation in observation. Return concrete questions if the frozen requirements omit the objective or correction needs files outside the task grant. Do not add product scope or change files."
+		instruction = "Independently judge only whether this frozen task packet was fulfilled. The packet and supplied check results are intentionally the entire context for this call; do not infer, reconstruct, request, or inspect the full plan or sibling tasks. Read only files explicitly included in this packet, through the supplied read tool. Apply exactly the packet's requirements, constraints, decisions, affected-system notes, and acceptance criteria. Recheck supplied findings. Return only concrete defects proving one exact criterion is unmet. For each finding, use the review reference table: put the task reference in task_id and one listed criterion reference in requirement, and the concrete defect in observation. Do not add obligations, suggestions, adjacent defects, hardening, refactoring, compatibility work, extra tests, preferences, or owner questions. Review cannot mutate files or ledger state."
 	default:
 		return "", fmt.Errorf("unknown agent role")
 	}
-	if call.Role == codingagent.Review || call.Role == codingagent.OverallReview {
-		instruction += " Omnidex mechanically limits execution source writes to each task's write_files through its validated writer; native source mounts are read-only. Files outside those grants cannot be changed by this job's execution. Assess unchanged-file obligations against that enforced boundary; do not require before/after history for files this execution cannot write. This call runs through Codex native Review mode. Return the exact review object described below directly when permitted. If native Review requires its standard review envelope, put that complete JSON object in overall_explanation and mirror every native finding in its referenced findings array. Do not leave defects only in free-form native findings or comments."
+	if call.Role == codingagent.Review {
 		references, err := json.Marshal(agentReviewReferences(call))
 		if err != nil {
 			return "", err
@@ -48,17 +53,76 @@ func renderAgentAssignment(call codingagent.Assignment) (string, error) {
 	return prompt, nil
 }
 
+func agentPromptContext(call codingagent.Assignment) any {
+	if call.Role == codingagent.Execute || call.Role == codingagent.Review {
+		var task *struct {
+			ID                   string                     `json:"id"`
+			Goal                 string                     `json:"goal"`
+			Guidance             []codingagent.TaskGuidance `json:"guidance"`
+			KnownAffectedSystems []string                   `json:"known_affected_systems"`
+			Acceptance           []string                   `json:"acceptance"`
+			ReadFiles            []string                   `json:"read_files"`
+			WriteFiles           []string                   `json:"write_files"`
+			DeleteFiles          []string                   `json:"delete_files"`
+			Checks               []codingagent.Check        `json:"checks"`
+		}
+		if call.Task != nil {
+			task = &struct {
+				ID                   string                     `json:"id"`
+				Goal                 string                     `json:"goal"`
+				Guidance             []codingagent.TaskGuidance `json:"guidance"`
+				KnownAffectedSystems []string                   `json:"known_affected_systems"`
+				Acceptance           []string                   `json:"acceptance"`
+				ReadFiles            []string                   `json:"read_files"`
+				WriteFiles           []string                   `json:"write_files"`
+				DeleteFiles          []string                   `json:"delete_files"`
+				Checks               []codingagent.Check        `json:"checks"`
+			}{call.Task.ID, call.Task.Goal, call.Task.Guidance, call.Task.KnownAffectedSystems,
+				call.Task.Acceptance, call.Task.ReadFiles, call.Task.WriteFiles, call.Task.DeleteFiles, call.Task.Checks}
+		}
+		return struct {
+			Task            any                       `json:"task"`
+			Findings        []codingagent.Finding     `json:"findings,omitempty"`
+			Checks          []codingagent.CheckResult `json:"checks,omitempty"`
+			ValidationNotes []string                  `json:"validation_notes,omitempty"`
+		}{task, call.Findings, call.Checks, call.ValidationNotes}
+	}
+	return struct {
+		Requirements        []codingagent.Requirement        `json:"requirements,omitempty"`
+		Objective           *codingagent.Objective           `json:"objective,omitempty"`
+		ArtifactBindings    []codingagent.ArtifactBinding    `json:"artifact_bindings,omitempty"`
+		PlanningEnvironment *codingagent.PlanningEnvironment `json:"planning_environment,omitempty"`
+		WorkspaceFiles      []string                         `json:"workspace_files,omitempty"`
+		ConstructionFacts   []codingagent.ConstructionFact   `json:"construction_facts,omitempty"`
+		QuestionContext     []codingagent.QuestionContext    `json:"question_context,omitempty"`
+		ValidationNotes     []string                         `json:"validation_notes,omitempty"`
+	}{call.Requirements, call.Objective, call.ArtifactBindings, call.PlanningEnvironment,
+		call.ReadFiles, call.ConstructionFacts, call.QuestionContext, call.ValidationNotes}
+}
+
 func agentOutputSchema(call codingagent.Assignment) map[string]any {
 	text := map[string]any{"type": "string"}
 	strings := map[string]any{"type": "array", "items": text}
 	object := func(properties map[string]any, required ...string) map[string]any {
 		return map[string]any{"type": "object", "properties": properties, "required": required, "additionalProperties": false}
 	}
-	check := object(map[string]any{"id": text, "argv": strings}, "id", "argv")
-	checks := map[string]any{"type": "array", "items": check}
-	if call.Role == codingagent.Plan {
-		task := object(map[string]any{"id": text, "goal": text, "acceptance": strings, "read_files": strings, "write_files": strings, "delete_files": strings, "dependencies": strings, "requirement_ids": strings, "checks": checks}, "id", "goal", "acceptance", "read_files", "write_files", "delete_files", "dependencies", "requirement_ids", "checks")
-		return object(map[string]any{"tasks": map[string]any{"type": "array", "items": task}, "checks": checks, "questions": strings}, "tasks", "checks", "questions")
+	if call.Role == codingagent.PlanningInitial {
+		return planningInitialOutputSchema(object, text, strings)
+	}
+	if call.Role == codingagent.PlanningTarget {
+		return object(map[string]any{
+			"question": text, "base_revision": map[string]any{"type": "integer"}, "item_ids": strings,
+		}, "question", "base_revision", "item_ids")
+	}
+	if call.Role == codingagent.PlanningMutation {
+		return planningMutationOutputSchema(object, text, strings)
+	}
+	if call.Role == codingagent.PlanningCoverage || call.Role == codingagent.PlanningAudit {
+		return object(map[string]any{
+			"question": text, "base_revision": map[string]any{"type": "integer"},
+			"covered": map[string]any{"type": "boolean"}, "suggestions": strings,
+			"explanation": text,
+		}, "question", "base_revision", "covered", "suggestions", "explanation")
 	}
 	if call.Role == codingagent.Execute {
 		return object(map[string]any{"questions": strings}, "questions")

@@ -62,6 +62,27 @@ func replanJobTx(
 		}
 		return LifecycleJobResult{Job: existing.ResultJob}, nil
 	}
+	var currentLedgerRevision int64
+	ledgerErr := tx.QueryRow(ctx, `
+			SELECT current_revision FROM coding_ledgers WHERE job_id=$1 FOR UPDATE
+		`, command.JobID).Scan(&currentLedgerRevision)
+	if ledgerErr == nil {
+		if command.ObservedLedgerRevision < 1 {
+			return LifecycleJobResult{}, fmt.Errorf("%w: planning replan requires the exact observed ledger revision", ErrCodingLedgerRevision)
+		}
+		if command.ObservedLedgerRevision != currentLedgerRevision {
+			return LifecycleJobResult{}, fmt.Errorf(
+				"%w: observed ledger revision %d is stale; current revision is %d",
+				ErrCodingLedgerRevision, command.ObservedLedgerRevision, currentLedgerRevision,
+			)
+		}
+	} else if errors.Is(ledgerErr, pgx.ErrNoRows) {
+		if command.ObservedLedgerRevision > 0 {
+			return LifecycleJobResult{}, fmt.Errorf("%w: job %d has no planning ledger", ErrCodingLedgerRevision, command.JobID)
+		}
+	} else {
+		return LifecycleJobResult{}, fmt.Errorf("lock coding ledger for job %d: %w", command.JobID, ledgerErr)
+	}
 	job, currentGeneration, err := applyReplanJobTx(ctx, tx, command, job)
 	if err != nil {
 		return LifecycleJobResult{}, err
@@ -127,6 +148,7 @@ func applyReplanJobTx(
 	}
 	if err := transitionCodingPlanAuthorityTx(
 		ctx, tx, job, model.CodingPlanStateSuperseded,
+		string(command.OperationID), command.Feedback,
 	); err != nil {
 		return model.Job{}, 0, err
 	}

@@ -2,13 +2,14 @@ package codingagent
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 )
 
 // Invalid proposals are corrected within their role, without expanding grants.
 func (controller *Controller) review(ctx context.Context, scope Assignment, tasks map[string]Task, round int64) (ReviewResult, Result, error) {
-	for ctx.Err() == nil {
+	for attempt := 0; attempt < 3 && ctx.Err() == nil; attempt++ {
 		result, err := controller.invoke(ctx, scope, round)
 		if err != nil {
 			return ReviewResult{}, result, err
@@ -31,7 +32,10 @@ func (controller *Controller) review(ctx context.Context, scope Assignment, task
 			return ReviewResult{}, result, err
 		}
 	}
-	return ReviewResult{}, Result{}, ctx.Err()
+	if err := ctx.Err(); err != nil {
+		return ReviewResult{}, Result{}, err
+	}
+	return ReviewResult{}, Result{}, fmt.Errorf("review did not return a valid task-local judgment after three attempts")
 }
 
 // Reviewers commonly attach source locations to a file name. Preserve the

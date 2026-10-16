@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"reflect"
 	"slices"
 
 	"github.com/gryph/omnidex/internal/model"
@@ -48,6 +49,7 @@ func newPlanReviewState(snapshot model.CodingPlan) (planReviewState, error) {
 		return planReviewState{}, err
 	}
 	snapshot.Leaves = slices.Clone(snapshot.Leaves)
+	snapshot.OwnerTurnDispositions = cloneOwnerTurnDispositions(snapshot.OwnerTurnDispositions)
 	return planReviewState{snapshot: snapshot, selected: 0}, nil
 }
 
@@ -234,7 +236,17 @@ func equalPlanReviewSnapshots(left, right model.CodingPlan) bool {
 	return left.JobID == right.JobID && left.Generation == right.Generation &&
 		left.Revision == right.Revision && left.State == right.State &&
 		left.CreatedAt.Equal(right.CreatedAt) && left.UpdatedAt.Equal(right.UpdatedAt) &&
-		left.FrozenAt == nil && right.FrozenAt == nil && slices.Equal(left.Leaves, right.Leaves)
+		left.FrozenAt == nil && right.FrozenAt == nil && slices.Equal(left.Leaves, right.Leaves) &&
+		reflect.DeepEqual(left.OwnerTurnDispositions, right.OwnerTurnDispositions)
+}
+
+func cloneOwnerTurnDispositions(values []model.OwnerStatementDisposition) []model.OwnerStatementDisposition {
+	result := slices.Clone(values)
+	for index := range result {
+		result[index].ItemIDs = slices.Clone(result[index].ItemIDs)
+		result[index].QuestionIDs = slices.Clone(result[index].QuestionIDs)
+	}
+	return result
 }
 
 func validatePlanReviewRevisionTransition(previous, next model.CodingPlan) error {

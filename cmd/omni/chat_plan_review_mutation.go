@@ -23,6 +23,7 @@ type pendingPlanMutation struct {
 	operationID model.LifecycleOperationID
 	leafID      model.CodingPlanLeafID
 	decision    model.CodingPlanDecision
+	targetID    model.LedgerItemID
 }
 
 func (session *chatSession) persistPlanReviewDecision(
@@ -37,7 +38,7 @@ func (session *chatSession) persistPlanReviewDecision(
 		pendingPlanMutation{
 			kind: planMutationDecision, jobID: plan.JobID,
 			generation: plan.Generation, revision: plan.Revision,
-			leafID: leafID, decision: decision,
+			leafID: leafID, targetID: model.LedgerItemID(leafID), decision: decision,
 		},
 	)
 	if err != nil {
@@ -125,44 +126,50 @@ func (session *chatSession) replayPendingPlanMutation(
 	}
 	switch pending.kind {
 	case planMutationDecision:
-		request := func(requestContext context.Context) (model.CodingPlan, error) {
-			return session.client.DecideCodingPlan(
-				requestContext,
-				session.channel,
-				session.workspaceIdentity,
-				pending.jobID,
-				pending.operationID,
-				pending.generation,
-				pending.revision,
-				[]client.CodingPlanDecisionChange{{
-					LeafID: pending.leafID, Decision: pending.decision,
-				}},
-			)
+		reviewState := model.LedgerReviewNeedsDiscussion
+		if pending.decision == model.CodingPlanDecisionApproved {
+			reviewState = model.LedgerReviewAgreed
 		}
-		var plan model.CodingPlan
+		turn := client.PlanningTurn{
+			OperationID: string(pending.operationID), OwnerTurnID: "terminal-" + string(pending.operationID),
+			Text: "Set the displayed item review state.", ObservedRevision: pending.revision,
+		}
+		request := func(requestContext context.Context) (client.CodingLedgerRevision, error) {
+			return session.client.MutateCodingLedgerDirect(requestContext, session.channel, session.workspaceIdentity,
+				pending.jobID, turn, client.DirectPlanningAction{Kind: model.LedgerMutationReview,
+					TargetID: pending.targetID, ReviewState: reviewState, Rationale: "explicit terminal item control"})
+		}
+		var revision client.CodingLedgerRevision
 		var err error
 		if authoritative {
-			plan, err = awaitAuthoritativeChatRequest(session.ctx, session.signals, request)
+			revision, err = awaitAuthoritativeChatRequest(session.ctx, session.signals, request)
 		} else {
-			plan, err = awaitChatRequest(session.ctx, session.signals, request)
+			revision, err = awaitChatRequest(session.ctx, session.signals, request)
 		}
 		if err != nil {
 			return err
 		}
+		if revision.JobID != pending.jobID || revision.BaseRevision != pending.revision || revision.Revision <= pending.revision {
+			return fmt.Errorf("coding ledger decision response changed or failed to advance exact authority")
+		}
+		plan := session.planReview.snapshot
+		plan.Revision = revision.Revision
+		for index := range plan.Leaves {
+			if plan.Leaves[index].ID == pending.leafID {
+				plan.Leaves[index].Decision = pending.decision
+			}
+		}
 		return session.acceptPersistedPlanDecision(pending, plan)
 	case planMutationFreeze:
-		request := func(requestContext context.Context) (client.CodingPlanFreezeReceipt, error) {
-			return session.client.FreezeCodingPlan(
-				requestContext,
-				session.channel,
-				session.workspaceIdentity,
-				pending.jobID,
-				pending.operationID,
-				pending.generation,
-				pending.revision,
-			)
+		turn := client.PlanningTurn{
+			OperationID: string(pending.operationID), OwnerTurnID: "terminal-" + string(pending.operationID),
+			Text: "Sign off the exact displayed planning revision.", ObservedRevision: pending.revision,
 		}
-		var receipt client.CodingPlanFreezeReceipt
+		request := func(requestContext context.Context) (client.CodingLedgerRevision, error) {
+			return session.client.FreezeCodingLedger(requestContext, session.channel, session.workspaceIdentity,
+				pending.jobID, turn)
+		}
+		var receipt client.CodingLedgerRevision
 		var err error
 		if authoritative {
 			receipt, err = awaitAuthoritativeChatRequest(session.ctx, session.signals, request)
@@ -172,8 +179,8 @@ func (session *chatSession) replayPendingPlanMutation(
 		if err != nil {
 			return err
 		}
-		if receipt.Plan.Generation != pending.generation ||
-			receipt.Plan.Revision <= pending.revision {
+		if receipt.JobID != pending.jobID || receipt.BaseRevision != pending.revision ||
+			receipt.Revision != pending.revision+1 || receipt.State != "frozen" {
 			return fmt.Errorf("coding plan freeze response changed or failed to advance exact authority")
 		}
 		return session.clearPlanReview()

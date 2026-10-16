@@ -2,6 +2,7 @@ package workspacetransport
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -63,9 +64,32 @@ func TestWorkspaceConnectionAttestsInvokingDirectoryAndRejectsReplacement(t *tes
 }
 
 func TestWorkspaceHubNeverUsesMatchingServerDirectoryWithoutConnection(t *testing.T) {
-	if err := NewHub().Require(context.Background(), t.TempDir(),
-		"client_"+strings.Repeat("1", 32)+"_directory_1_2"); err == nil {
+	err := NewHub().Require(context.Background(), t.TempDir(),
+		"client_"+strings.Repeat("1", 32)+"_directory_1_2")
+	if err == nil {
 		t.Fatal("server directory substituted for missing client connection")
+	}
+	if !errors.Is(err, ErrConnectionUnavailable) {
+		t.Fatalf("missing client connection lost its recoverable identity: %v", err)
+	}
+	var retryable interface{ Retryable() bool }
+	if !errors.As(err, &retryable) || !retryable.Retryable() {
+		t.Fatalf("missing client connection would terminalize durable work: %v", err)
+	}
+}
+
+func TestClosedWorkspaceConnectionRemainsRecoverable(t *testing.T) {
+	r := &remote{err: errors.New("websocket: close 1006 (abnormal closure): unexpected EOF")}
+	err := r.failure()
+	if !errors.Is(err, ErrConnectionUnavailable) {
+		t.Fatalf("closed connection lost its recoverable identity: %v", err)
+	}
+	var retryable interface{ Retryable() bool }
+	if !errors.As(err, &retryable) || !retryable.Retryable() {
+		t.Fatalf("closed connection would terminalize durable work: %v", err)
+	}
+	if !strings.Contains(err.Error(), "unexpected EOF") {
+		t.Fatalf("closed connection lost its diagnostic cause: %v", err)
 	}
 }
 

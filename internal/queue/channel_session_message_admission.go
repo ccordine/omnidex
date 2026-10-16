@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
 )
@@ -46,6 +47,16 @@ func (r *Repository) submitChannelSessionMessage(ctx context.Context, command Ch
 	if job.CurrentGeneration != *command.ExpectedGeneration ||
 		(job.Status != model.JobStatusRunning && job.Status != model.JobStatusPending) {
 		return ChannelSessionTurnResult{}, fmt.Errorf("%w: observed message job is no longer active at generation %d", ErrStaleJobGeneration, *command.ExpectedGeneration)
+	}
+	configuration, err := codingagent.ConfigurationFromMetadata(job.Metadata)
+	if err != nil {
+		return ChannelSessionTurnResult{}, err
+	}
+	if configuration.Mode == codingagent.Agents {
+		return ChannelSessionTurnResult{}, fmt.Errorf(
+			"%w: Agents mode accepts changes only through its revision-bound planning ledger",
+			ErrChannelSessionTurnInvalid,
+		)
 	}
 	authority, err := lockChannelTurnAuthorityTx(ctx, tx, command.ChannelID)
 	if err != nil {

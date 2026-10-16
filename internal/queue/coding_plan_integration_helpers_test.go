@@ -4,8 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
+	"fmt"
 	"os"
+	"sort"
 	"testing"
 	"time"
 
@@ -47,45 +48,49 @@ func freshCodingPlanRepository(t *testing.T) (*pgxpool.Pool, *Repository) {
 	return pool, New(pool, authority)
 }
 
-func codingAgentPlanReviewFixture(t *testing.T, repository *Repository, planner *model.ClaimedStep, goal string) (StoreCodingPlanReviewCommand, CodingPlanLeafWrite) {
+type codingAgentLedgerFixture struct {
+	authority model.StepAttemptAuthority
+	created   CodingLedgerRevision
+	itemIDs   []model.LedgerItemID
+	goal      string
+}
+
+func codingAgentPlanReviewFixture(t *testing.T, repository *Repository, planner *model.ClaimedStep, goal string) (codingAgentLedgerFixture, CodingPlanLeafWrite) {
 	t.Helper()
-	workload := &codingagent.Workload{Tasks: []codingagent.Task{{ID: "task", Goal: goal, Acceptance: []string{goal}, WriteFiles: []string{"agent-fixture.txt"}, RequirementIDs: []string{"objective"}, Checks: []codingagent.Check{{ID: "task-check", Argv: []string{"true"}}}}}, Checks: []codingagent.Check{{ID: "overall-check", Argv: []string{"true"}}}}
-	statement, err := codingagent.PlanTaskStatement(workload.Tasks[0])
-	if err != nil {
-		t.Fatal(err)
+	ledger := repositoryLedgerFixture()
+	ledger.Objectives[0].Outcome = goal
+	ledger.Requirements[0].Outcome = goal
+	ledger.Tasks[0].Goal = goal
+	ledger.Tasks[0].WriteFiles = []string{"agent-fixture.txt"}
+	ledger.AcceptanceCriteria[0].Outcome = goal
+	ledger.Checks[0].Argv = []string{"true"}
+	itemIDs := make([]model.LedgerItemID, 0, len(ledgerRepositoryRecords(ledger)))
+	for _, record := range ledgerRepositoryRecords(ledger) {
+		setCodingLedgerItem(&ledger, record.item.ID, func(item *model.LedgerItem) {
+			item.ReviewState = model.LedgerReviewProposed
+		})
+		itemIDs = append(itemIDs, record.item.ID)
 	}
-	leaf := codingAgentPlanLeaf(t, statement, model.CodingPlanDecisionPending, planner.Authority.Generation)
-	store := repository.CodingAgentEvidence(planner.Authority)
 	configuration, err := codingagent.ConfigurationFromMetadata(planner.Job.Metadata)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assignment := &codingagent.Assignment{
-		JobID: planner.Job.ID, Generation: planner.Authority.Generation, Role: codingagent.Plan,
-		Route:        configuration.Planner,
-		Requirements: []codingagent.Requirement{{ID: "objective", Outcome: planner.Job.Instruction}},
-		Objective:    &codingagent.Objective{Instruction: planner.Job.Instruction},
+	routes := []CodingLedgerRoute{
+		{Role: "planner", ConfigurationRevision: 1, Provider: configuration.Planner.Provider, Model: configuration.Planner.Model, ReasoningEffort: "medium", ServiceTier: "priority"},
+		{Role: "executor", ConfigurationRevision: 1, Provider: configuration.Executor.Provider, Model: configuration.Executor.Model, ReasoningEffort: "medium", ServiceTier: "priority"},
+		{Role: "reviewer", ConfigurationRevision: 1, Provider: configuration.Reviewer.Provider, Model: configuration.Reviewer.Model, ReasoningEffort: "medium", ServiceTier: "priority"},
 	}
-	callID, err := store.Append(context.Background(), codingagent.Entry{Generation: planner.Authority.Generation, Phase: "call_opened", Role: codingagent.Plan, Assignment: assignment})
+	seed := fmt.Sprintf("agent-%d-%d", planner.Job.ID, planner.Authority.Generation)
+	created, err := repository.CreateCodingLedger(context.Background(), CreateCodingLedgerCommand{
+		JobID: planner.Job.ID, OperationID: seed + "-create", OwnerTurnID: seed + "-create-turn",
+		OwnerTurnText: goal, Ledger: ledger, CoveragePassed: true, Routes: routes,
+		OwnerTurnDisposition: model.OwnerTurnDisposition{Kind: model.OwnerTurnRepresented, ItemIDs: itemIDs},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Append(context.Background(), codingagent.Entry{Generation: planner.Authority.Generation, Phase: "native_event", Role: codingagent.Plan, CallID: callID, Frame: []byte(`{"fixture":"native-plan"}`)}); err != nil {
-		t.Fatal(err)
-	}
-	content, err := json.Marshal(workload)
-	if err != nil {
-		t.Fatal(err)
-	}
-	result := &codingagent.Result{CallID: callID, Provider: configuration.Planner.Provider, Model: configuration.Planner.Model, ThreadID: "fixture-plan-thread", TurnID: "fixture-plan-turn", Completed: true, Content: content}
-	if _, err := store.Append(context.Background(), codingagent.Entry{Generation: planner.Authority.Generation, Phase: "call_completed", Role: codingagent.Plan, CallID: callID, Result: result}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.Append(context.Background(), codingagent.Entry{Generation: planner.Authority.Generation, Phase: "plan_proposed", CallID: callID, Workload: workload}); err != nil {
-		t.Fatal(err)
-	}
-	intake := &codingagent.IntakeContext{RedactedRequest: goal, ArtifactBindings: []codingagent.ArtifactBinding{}}
-	return StoreCodingPlanReviewCommand{Authority: planner.Authority, Leaves: []CodingPlanLeafWrite{leaf}, IntakeContext: intake, AgentWorkload: workload}, leaf
+	leaf := codingAgentPlanLeaf(t, goal, model.CodingPlanDecisionPending, planner.Authority.Generation)
+	return codingAgentLedgerFixture{authority: planner.Authority, created: created, itemIDs: itemIDs, goal: goal}, leaf
 }
 
 func codingAgentPlanLeaf(t *testing.T, statement string, decision model.CodingPlanDecision, originGeneration int64) CodingPlanLeafWrite {
@@ -98,23 +103,44 @@ func codingAgentPlanLeaf(t *testing.T, statement string, decision model.CodingPl
 	return CodingPlanLeafWrite{Leaf: model.CodingPlanLeaf{ID: id, Statement: statement, Decision: decision}, DecisionOriginGeneration: originGeneration, ResultRelation: &receipt}
 }
 
-func freezeCodingAgentPlanFixture(t *testing.T, repository *Repository, job model.Job, command StoreCodingPlanReviewCommand) model.CodingPlan {
+func freezeCodingAgentPlanFixture(t *testing.T, repository *Repository, job model.Job, fixture codingAgentLedgerFixture) CodingLedgerRevision {
 	t.Helper()
 	ctx := context.Background()
-	plan, err := repository.StoreCodingPlanReview(ctx, command)
+	seed := fmt.Sprintf("agent-%d-%d", job.ID, fixture.authority.Generation)
+	operations := make([]model.LedgerMutationOperation, 0, len(fixture.itemIDs))
+	for _, itemID := range fixture.itemIDs {
+		operations = append(operations, model.LedgerMutationOperation{
+			Kind: model.LedgerMutationReview, TargetID: itemID,
+			ReviewState: model.LedgerReviewAgreed, Rationale: "fixture owner agreed",
+		})
+	}
+	agreed, err := repository.ApplyCodingLedgerMutation(ctx, ApplyCodingLedgerMutationCommand{
+		LedgerID: fixture.created.LedgerID, OwnerTurnText: fixture.goal, CoveragePassed: true,
+		Mutation: model.LedgerMutation{
+			OperationID: seed + "-agree", BaseRevision: fixture.created.Revision,
+			OwnerTurnID:          seed + "-agree-turn",
+			OwnerTurnDisposition: model.OwnerTurnDisposition{Kind: model.OwnerTurnRepresented, ItemIDs: fixture.itemIDs},
+			Operations:           operations,
+		},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	root, identity := codingPlanWorkspaceAuthority(t, job)
-	decided, err := repository.ApplyCodingPlanDecisions(ctx, ApplyCodingPlanDecisionsCommand{OperationID: codingPlanOperationID(t, "approve-agent-plan", job.ID), JobID: job.ID, Generation: plan.Generation, Revision: plan.Revision, WorkspaceRoot: root, WorkspaceIdentity: identity, Decisions: []CodingPlanDecisionChange{{LeafID: plan.Leaves[0].ID, Decision: model.CodingPlanDecisionApproved}}})
+	if err := repository.MarkCodingLedgerReviewReady(ctx, fixture.authority, agreed.LedgerID, agreed.Revision); err != nil {
+		t.Fatal(err)
+	}
+	auditID := repositoryReadyPlanningAudit(t, repository, agreed.LedgerID, agreed.Revision, seed)
+	frozen, err := repository.FreezeCodingLedger(ctx, FreezeCodingLedgerCommand{
+		LedgerID: agreed.LedgerID, Revision: agreed.Revision, OperationID: seed + "-freeze",
+		OwnerTurnID: seed + "-freeze-turn", OwnerTurnText: fixture.goal, AuditID: auditID,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	frozen, err := repository.FreezeCodingPlan(ctx, FreezeCodingPlanCommand{OperationID: codingPlanOperationID(t, "freeze-agent-plan", job.ID), JobID: job.ID, Generation: plan.Generation, Revision: decided.Plan.Revision, WorkspaceRoot: root, WorkspaceIdentity: identity})
-	if err != nil {
+	if err := repository.CompleteCodingLedgerReview(ctx, job.ID, frozen.LedgerID, frozen.Revision); err != nil {
 		t.Fatal(err)
 	}
-	return frozen.Plan
+	return frozen
 }
 
 func storeCodingPlanFixture(
@@ -205,6 +231,107 @@ func codingPlanTestNonce(t *testing.T) string {
 		t.Fatalf("generate coding-plan test identity: %v", err)
 	}
 	return hex.EncodeToString(value[:])
+}
+
+func acceptCodingLedgerTaskFixture(
+	t *testing.T,
+	repository *Repository,
+	authority model.StepAttemptAuthority,
+	task codingagent.Task,
+) {
+	t.Helper()
+	ctx := context.Background()
+	configuration, err := repository.FrozenCodingLedgerConfiguration(ctx, authority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := repository.CodingAgentEvidence(authority)
+	executionReads := codingAgentFixtureFiles(task.ReadFiles, task.WriteFiles, task.DeleteFiles)
+	execution := &codingagent.Assignment{
+		JobID: authority.JobID, Generation: authority.Generation, Role: codingagent.Execute,
+		Task: &task, Root: "/workspace", ReadFiles: executionReads,
+		WriteFiles: append([]string(nil), task.WriteFiles...), DeleteFiles: append([]string(nil), task.DeleteFiles...),
+		Route: configuration.Executor,
+	}
+	executeCall, err := store.Append(ctx, codingagent.Entry{
+		Generation: authority.Generation, Phase: "call_opened", Role: codingagent.Execute,
+		TaskID: task.ID, Assignment: execution,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Append(ctx, codingagent.Entry{
+		Generation: authority.Generation, Phase: "native_event", Role: codingagent.Execute,
+		TaskID: task.ID, CallID: executeCall, Frame: []byte(`{"fixture":"execution"}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Append(ctx, codingagent.Entry{
+		Generation: authority.Generation, Phase: "call_completed", Role: codingagent.Execute,
+		TaskID: task.ID, CallID: executeCall, Result: &codingagent.Result{
+			CallID: executeCall, Provider: configuration.Executor.Provider, Model: configuration.Executor.Model,
+			ThreadID: "execution-" + task.ID, TurnID: "execution-turn-" + task.ID,
+			Completed: true, Content: []byte(`{"questions":[]}`),
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	review := &codingagent.Assignment{
+		JobID: authority.JobID, Generation: authority.Generation, Role: codingagent.Review,
+		Task: &task, Root: "/workspace", ReadFiles: codingAgentFixtureFiles(task.ReadFiles, task.WriteFiles),
+		Route: configuration.Reviewer,
+	}
+	reviewCall, err := store.Append(ctx, codingagent.Entry{
+		Generation: authority.Generation, Phase: "call_opened", Role: codingagent.Review,
+		TaskID: task.ID, Assignment: review,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Append(ctx, codingagent.Entry{
+		Generation: authority.Generation, Phase: "native_event", Role: codingagent.Review,
+		TaskID: task.ID, CallID: reviewCall, Frame: []byte(`{"fixture":"review"}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Append(ctx, codingagent.Entry{
+		Generation: authority.Generation, Phase: "call_completed", Role: codingagent.Review,
+		TaskID: task.ID, CallID: reviewCall, Result: &codingagent.Result{
+			CallID: reviewCall, Provider: configuration.Reviewer.Provider, Model: configuration.Reviewer.Model,
+			ThreadID: "review-" + task.ID, TurnID: "review-turn-" + task.ID,
+			Completed: true, Content: []byte(`{"findings":[],"questions":[]}`),
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	checks := make([]codingagent.CheckResult, len(task.Checks))
+	for index, check := range task.Checks {
+		checks[index] = codingagent.CheckResult{ID: check.ID}
+	}
+	if _, err := store.Append(ctx, codingagent.Entry{
+		Generation: authority.Generation, Phase: "task_accepted", TaskID: task.ID,
+		CallID: reviewCall, Checks: checks,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.AcceptCodingLedgerTask(ctx, authority, task.ID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func codingAgentFixtureFiles(groups ...[]string) []string {
+	seen := make(map[string]bool)
+	var files []string
+	for _, group := range groups {
+		for _, file := range group {
+			if !seen[file] {
+				seen[file] = true
+				files = append(files, file)
+			}
+		}
+	}
+	sort.Strings(files)
+	return files
 }
 
 func sameCodingPlanProjection(left, right model.CodingPlan) bool {

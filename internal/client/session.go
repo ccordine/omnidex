@@ -361,6 +361,13 @@ func validateClientActiveJob(
 		case model.StepStatusPending, model.StepStatusRunning, model.StepStatusWaiting:
 			openSteps++
 		case model.StepStatusCompleted:
+		case model.StepStatusFailed:
+			if !hasLaterActiveRecoveryStep(details.Steps, step) {
+				return 0, fmt.Errorf(
+					"chat session active job %d has incompatible step %d status %q",
+					job.ID, step.ID, step.Status,
+				)
+			}
 		default:
 			return 0, fmt.Errorf(
 				"chat session active job %d has incompatible step %d status %q",
@@ -375,6 +382,21 @@ func validateClientActiveJob(
 		return 0, err
 	}
 	return binding.ChannelUserMessageID, nil
+}
+
+func hasLaterActiveRecoveryStep(steps []model.Step, failed model.Step) bool {
+	for _, candidate := range steps {
+		if candidate.ID <= failed.ID || candidate.JobID != failed.JobID ||
+			candidate.Generation != failed.Generation || candidate.Action != failed.Action ||
+			candidate.SortIndex != failed.SortIndex || candidate.SupersededAtGeneration != nil {
+			continue
+		}
+		switch candidate.Status {
+		case model.StepStatusPending, model.StepStatusRunning, model.StepStatusWaiting, model.StepStatusCompleted:
+			return true
+		}
+	}
+	return false
 }
 
 func validateChatSessionActiveTurn(
@@ -396,9 +418,16 @@ func validateChatSessionActiveTurn(
 				return fmt.Errorf("chat session transcript active turn differs from current job")
 			}
 			for _, following := range messages[index+1:] {
-				if following.Role != model.ChannelMessageRoleAssistant || following.Turn != nil {
-					return fmt.Errorf("active task may be followed only by assistant conversation replies")
+				if following.Role == model.ChannelMessageRoleAssistant && following.Turn == nil {
+					continue
 				}
+				if following.Turn != nil && following.Turn.JobID != activeJob.ID {
+					switch following.Turn.Status {
+					case model.JobStatusCompleted, model.JobStatusFailed, model.JobStatusCanceled:
+						continue
+					}
+				}
+				return fmt.Errorf("active task may be followed only by assistant replies or terminal task history")
 			}
 		}
 	}

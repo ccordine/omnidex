@@ -110,6 +110,40 @@ func TestChannelSessionTurnNormalReplayAndAgentsControlPreserveNormal(t *testing
 	}
 }
 
+func TestAgentsInterruptedSessionCannotBypassRevisionBoundLedgerReplan(t *testing.T) {
+	_, repository := freshCodingPlanRepository(t)
+	repository.WithCodingAgents(codingAgentTestConfiguration())
+	ctx := context.Background()
+	command := channelSessionCodingCommand(t, repository)
+	command.CodingMode = codingagent.Agents
+	initial, err := repository.SubmitChannelSessionTurn(ctx, command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	interrupted, err := repository.InterruptJob(ctx, ReplanJobCommand{
+		OperationID:   codingPlanOperationID(t, "interrupt-agents-session", initial.Job.ID),
+		JobID:         initial.Job.ID,
+		Feedback:      "Pause this exact Agents job.",
+		WorkspaceRoot: command.WorkspaceRoot, WorkspaceIdentity: command.WorkspaceIdentity,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	redirect := command
+	redirect.OperationID = codingPlanOperationID(t, "unbound-agents-redirect", initial.Job.ID)
+	redirect.Text = "Replace the approved work without an observed ledger revision."
+	if _, err := repository.SubmitChannelSessionTurn(ctx, redirect); !errors.Is(err, ErrChannelSessionTurnInvalid) {
+		t.Fatalf("Agents session bypassed its revision-bound planning ledger: %v", err)
+	}
+	current, err := repository.CurrentJobDetails(ctx, initial.Job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Job.Status != model.JobStatusWaiting || current.Job.CurrentGeneration != interrupted.Job.CurrentGeneration {
+		t.Fatalf("rejected redirect changed interrupted authority: %#v", current.Job)
+	}
+}
+
 func channelSessionCodingCommand(t *testing.T, repository *Repository) ChannelSessionTurnCommand {
 	t.Helper()
 	root := t.TempDir()
