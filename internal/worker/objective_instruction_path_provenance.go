@@ -29,10 +29,7 @@ func objectiveInstructionPathProvenance(
 		if err := ctx.Err(); err != nil {
 			return assemblyline.ArtifactIdentityProvenance{}, err
 		}
-		_, _, recognized, err := recognizeDirectCodingArtifactAdapterForPath(token.Value)
-		if err != nil {
-			return assemblyline.ArtifactIdentityProvenance{}, err
-		}
+		recognized := recognizedObjectiveArtifactName(token.Value)
 		qualified := false
 		for _, identity := range modelcontext.PathIdentities(
 			token.Value, assemblyline.ArtifactIdentityProvenance{},
@@ -62,6 +59,21 @@ func objectiveInstructionPathProvenance(
 		paths = append(paths, path)
 	}
 	return modelcontext.NewArtifactIdentityProvenance(paths)
+}
+
+func recognizedObjectiveArtifactName(value string) bool {
+	base := path.Base(strings.ReplaceAll(value, `\`, "/"))
+	switch base {
+	case "go.mod", "go.sum", "Cargo.toml", "Cargo.lock", "Dockerfile", "Makefile", ".gitignore":
+		return true
+	}
+	extension := strings.ToLower(path.Ext(base))
+	switch extension {
+	case ".go", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".css", ".html", ".java", ".rs", ".json", ".yaml", ".yml", ".toml", ".sql", ".sh", ".py", ".md", ".txt":
+		return true
+	default:
+		return false
+	}
 }
 
 func plausibleQuotedObjectiveArtifact(value string, recognized bool) bool {

@@ -65,9 +65,9 @@ func (r *nativeRuntimeV3) run() error {
 	case "objective_resolve":
 		return r.runObjectiveResolve()
 	case "v3_coding_plan":
-		return r.runDirectCodingPlanAction()
+		return r.runCodingLedgerPlanningAction()
 	case "v3_coding":
-		return r.runDirectCodingAction()
+		return r.runCodingLedgerExecutionAction()
 	default:
 		return fmt.Errorf("worker action %q is not registered", r.action)
 	}

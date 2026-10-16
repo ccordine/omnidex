@@ -9,7 +9,7 @@ import (
 )
 
 func TestAgentCallLifecycleShowsTypedActualRoleAndStatus(t *testing.T) {
-	for _, role := range []string{"plan", "execute", "review"} {
+	for _, role := range []string{"plan", "planning_initial", "planning_target", "planning_mutation", "planning_coverage", "planning_audit", "execute", "review"} {
 		for _, status := range []model.AgentCallActivityStatus{model.AgentCallActivityStarted, model.AgentCallActivityCompleted, model.AgentCallActivityFailed} {
 			t.Run(role+"/"+string(status), func(t *testing.T) {
 				console, output := planReviewTestConsole(t)
@@ -22,8 +22,7 @@ func TestAgentCallLifecycleShowsTypedActualRoleAndStatus(t *testing.T) {
 					RuntimeEvent: "agent_call_activity", AgentCallActivity: &activity}); err != nil {
 					t.Fatal(err)
 				}
-				labels := map[string]string{"plan": "Planning", "execute": "Executing task", "review": "Reviewing"}
-				if !strings.Contains(output.String(), labels[role]) || !strings.Contains(output.String(), string(status)) {
+				if !strings.Contains(output.String(), agentRoleLabel(role)) || !strings.Contains(output.String(), string(status)) {
 					t.Fatalf("actual native role handoff was hidden: %q", output.String())
 				}
 				if strings.Contains(output.String(), "agent_call_activity") || strings.Contains(output.String(), "role=") || strings.Contains(output.String(), "callID") {

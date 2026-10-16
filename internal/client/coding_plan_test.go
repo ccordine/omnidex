@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gryph/omnidex/internal/ledgerapi"
 	"github.com/gryph/omnidex/internal/model"
 )
 
@@ -39,6 +40,7 @@ func TestCodingPlanTransportUsesExactPersistedReviewAuthority(t *testing.T) {
 	frozenAt := frozen.UpdatedAt
 	frozen.FrozenAt = &frozenAt
 	reviewLedger := codingLedgerFixture(review)
+	reviewLedger.LatestDelta = ledgerapi.CodingLedgerDelta{LedgerID: 1, FromRevision: 7, ToRevision: 8}
 	decidedLedger := codingLedgerFixture(decided)
 	decidedLedger.BaseRevision = revision
 	frozenLedger := codingLedgerFixture(frozen)
@@ -118,13 +120,17 @@ func TestCodingPlanClientRejectsContradictoryServerAuthority(t *testing.T) {
 	valid := codingLedgerFixture(codingPlanFixture(t, 91, 1, 1, model.CodingPlanStateReview))
 	tests := []struct {
 		name   string
-		mutate func(*CodingLedgerRevision)
+		mutate func(*ledgerapi.CodingLedgerRevision)
 		want   string
 	}{
-		{name: "wrong job", mutate: func(plan *CodingLedgerRevision) { plan.JobID++ }, want: "differs from requested authority"},
-		{name: "duplicate leaf", mutate: func(plan *CodingLedgerRevision) { plan.Ledger.Constraints[1].ID = plan.Ledger.Constraints[0].ID }, want: "is both constraint and constraint"},
-		{name: "duplicate statement", mutate: func(plan *CodingLedgerRevision) { plan.Ledger.Constraints[1].Rule = plan.Ledger.Constraints[0].Rule }, want: "repeats the statement"},
-		{name: "unknown decision", mutate: func(plan *CodingLedgerRevision) { plan.Ledger.Constraints[0].ReviewState = "maybe" }, want: "requires a review state"},
+		{name: "wrong job", mutate: func(plan *ledgerapi.CodingLedgerRevision) { plan.JobID++ }, want: "differs from requested authority"},
+		{name: "duplicate leaf", mutate: func(plan *ledgerapi.CodingLedgerRevision) {
+			plan.Ledger.Constraints[1].ID = plan.Ledger.Constraints[0].ID
+		}, want: "is both constraint and constraint"},
+		{name: "duplicate statement", mutate: func(plan *ledgerapi.CodingLedgerRevision) {
+			plan.Ledger.Constraints[1].Rule = plan.Ledger.Constraints[0].Rule
+		}, want: "repeats the statement"},
+		{name: "unknown decision", mutate: func(plan *ledgerapi.CodingLedgerRevision) { plan.Ledger.Constraints[0].ReviewState = "maybe" }, want: "requires a review state"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -146,7 +152,7 @@ func TestCodingPlanClientRejectsContradictoryServerAuthority(t *testing.T) {
 	}
 }
 
-func codingLedgerFixture(plan model.CodingPlan) CodingLedgerRevision {
+func codingLedgerFixture(plan model.CodingPlan) ledgerapi.CodingLedgerRevision {
 	ledger := model.EngineeringLedger{ID: "ledger-test", Revision: plan.Revision}
 	for index, leaf := range plan.Leaves {
 		reviewState := model.LedgerReviewProposed
@@ -170,7 +176,7 @@ func codingLedgerFixture(plan model.CodingPlan) CodingLedgerRevision {
 	if plan.State == model.CodingPlanStateFrozen {
 		state = "frozen"
 	}
-	return CodingLedgerRevision{LedgerID: 1, JobID: plan.JobID, Generation: plan.Generation,
+	return ledgerapi.CodingLedgerRevision{LedgerID: 1, JobID: plan.JobID, Generation: plan.Generation,
 		Revision: plan.Revision, State: state, CreatedAt: plan.CreatedAt, UpdatedAt: plan.UpdatedAt, Ledger: ledger}
 }
 

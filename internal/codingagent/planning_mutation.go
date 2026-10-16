@@ -87,7 +87,11 @@ func DirectPlanningMutation(turn PlanningTurn, action DirectPlanningAction) (Led
 	return mutation, nil
 }
 
-// ProposePlanningLedger performs the one permitted full-ledger planning pass.
+const maxInitialPlanningContractAttempts = 3
+
+// ProposePlanningLedger is the one station permitted to return a full ledger.
+// A proposal that fails the deterministic contract is never persisted; a
+// bounded fresh replacement receives only the exact code validation error.
 func (controller *Controller) ProposePlanningLedger(ctx context.Context, turn PlanningTurn) (InitialPlanningProposal, error) {
 	if err := controller.validatePlanning(); err != nil {
 		return InitialPlanningProposal{}, err
@@ -106,17 +110,33 @@ func (controller *Controller) ProposePlanningLedger(ctx context.Context, turn Pl
 	call.ArtifactBindings, call.PlanningEnvironment = controller.ArtifactBindings, controller.PlanningEnvironment
 	call.ConstructionFacts = append(call.ConstructionFacts, controller.ConstructionFacts...)
 
-	result, err := controller.invoke(ctx, call, 1)
-	if err != nil {
-		return InitialPlanningProposal{}, err
+	var contractErr error
+	for attempt := 1; attempt <= maxInitialPlanningContractAttempts; attempt++ {
+		if contractErr != nil {
+			call.ValidationNotes = []string{"Code rejected the prior complete proposal: " + contractErr.Error() + ". Return a complete replacement that satisfies this exact contract."}
+		}
+		result, err := controller.invoke(ctx, call, int64(attempt))
+		if err != nil {
+			return InitialPlanningProposal{}, err
+		}
+		var proposal InitialPlanningProposal
+		if err := decodeContract(result.Content, &proposal); err != nil {
+			contractErr = err
+			continue
+		}
+		proposal.Ledger.Revision = 1
+		if err := validateInitialPlanningProposal(proposal); err != nil {
+			contractErr = err
+			continue
+		}
+		return proposal, nil
 	}
-	var proposal InitialPlanningProposal
-	if err := decodeContract(result.Content, &proposal); err != nil {
-		return InitialPlanningProposal{}, err
-	}
-	proposal.Ledger.Revision = 1
+	return InitialPlanningProposal{}, fmt.Errorf("initial planning proposal remained invalid after %d attempts: %w", maxInitialPlanningContractAttempts, contractErr)
+}
+
+func validateInitialPlanningProposal(proposal InitialPlanningProposal) error {
 	if err := proposal.Ledger.Validate(); err != nil {
-		return InitialPlanningProposal{}, fmt.Errorf("initial planning ledger: %w", err)
+		return fmt.Errorf("initial planning ledger: %w", err)
 	}
 	activeObjectives := 0
 	for _, objective := range proposal.Ledger.Objectives {
@@ -125,12 +145,12 @@ func (controller *Controller) ProposePlanningLedger(ctx context.Context, turn Pl
 		}
 	}
 	if activeObjectives != 1 {
-		return InitialPlanningProposal{}, fmt.Errorf("initial planning ledger requires exactly one active objective")
+		return fmt.Errorf("initial planning ledger requires exactly one active objective")
 	}
 	if err := validateInitialTurnDisposition(proposal.Ledger, proposal.OwnerTurnDisposition); err != nil {
-		return InitialPlanningProposal{}, err
+		return err
 	}
-	return proposal, nil
+	return nil
 }
 
 // PlanPlanningMutation asks one narrow semantic question over a bounded slice
@@ -290,10 +310,15 @@ func planningItemReferences(ledger *EngineeringLedger) []planningItemReference {
 
 func (controller *Controller) planningAssignment(role Role, name, question string, turn PlanningTurn, ledger *EngineeringLedger) Assignment {
 	call := controller.assignment(role, nil, controller.Configuration.Planner)
+	call.PlanningQuestionID = name
+	call.PlanningBaseRevision = turn.ObservedRevision
 	payload := struct {
-		OwnerTurn PlanningTurn       `json:"owner_turn"`
+		OwnerTurn *PlanningTurn      `json:"owner_turn,omitempty"`
 		Ledger    *EngineeringLedger `json:"ledger,omitempty"`
-	}{OwnerTurn: turn, Ledger: ledger}
+	}{Ledger: ledger}
+	if role != PlanningAudit {
+		payload.OwnerTurn = &turn
+	}
 	encoded, _ := json.Marshal(payload)
 	call.ConstructionFacts = []ConstructionFact{
 		{Kind: "engineering_question", Quote: name + ": " + question},

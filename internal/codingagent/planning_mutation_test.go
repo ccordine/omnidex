@@ -58,6 +58,37 @@ func TestPlanningMutationDirectActionUsesExactObservedRevision(t *testing.T) {
 	}
 }
 
+func TestInitialPlanningContractCorrectionIsBoundedAndCodeDirected(t *testing.T) {
+	valid := planningLedgerFixture(model.LedgerReviewProposed)
+	valid.Revision = 1
+	validDisposition := model.OwnerTurnDisposition{Kind: model.OwnerTurnRepresented,
+		ItemIDs: []model.LedgerItemID{"objective", "requirement", "task", "acceptance", "check"}}
+	invalid := valid
+	invalid.Checks = nil
+	attempts := 0
+	controller, _ := fixtureController(t, fixtureWorkload(), func(assignment Assignment) (any, error) {
+		attempts++
+		if attempts == 1 {
+			if len(assignment.ValidationNotes) != 0 {
+				t.Fatalf("first proposal received correction notes: %#v", assignment.ValidationNotes)
+			}
+			return InitialPlanningProposal{Ledger: invalid, OwnerTurnDisposition: validDisposition}, nil
+		}
+		if attempts != 2 || !strings.Contains(strings.Join(assignment.ValidationNotes, " "), "requires an active check") {
+			t.Fatalf("replacement did not receive the exact validator error: %#v", assignment.ValidationNotes)
+		}
+		return InitialPlanningProposal{Ledger: valid, OwnerTurnDisposition: validDisposition}, nil
+	}, passingChecks)
+	turn := PlanningTurn{OperationID: "initial-operation", OwnerTurnID: "initial-turn", Text: "Ship it.", ObservedRevision: 0}
+	proposal, err := controller.ProposePlanningLedger(context.Background(), turn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 2 || len(proposal.Ledger.Checks) != 1 {
+		t.Fatalf("initial contract correction attempts=%d proposal=%#v", attempts, proposal)
+	}
+}
+
 func TestPlanningMutationAppliesTypedOperationWithoutRegeneratingLedger(t *testing.T) {
 	ledger := planningLedgerFixture(model.LedgerReviewAgreed)
 	constraint := model.LedgerConstraint{

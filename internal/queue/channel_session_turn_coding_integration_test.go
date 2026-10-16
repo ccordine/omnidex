@@ -40,7 +40,7 @@ func TestChannelSessionTurnFreezesSavedAgentsOnlyForNewJobs(t *testing.T) {
 	}
 	assertSessionCodingConfiguration(t, replay.Job, saved)
 	conflicting := command
-	conflicting.CodingMode = codingagent.Normal
+	conflicting.CodingMode = ""
 	if _, err := repository.SubmitChannelSessionTurn(ctx, conflicting); !errors.Is(err, ErrLifecycleOperationConflict) {
 		t.Fatalf("changed-mode replay did not conflict: %v", err)
 	}
@@ -51,13 +51,18 @@ func TestChannelSessionTurnFreezesSavedAgentsOnlyForNewJobs(t *testing.T) {
 	}
 	control := command
 	control.OperationID = codingPlanOperationID(t, "session-replan", result.Job.ID)
-	control.CodingMode, control.Text = codingagent.Normal, "Refine the approved behavior."
+	control.CodingMode, control.Text = codingagent.Agents, "Refine the approved behavior."
 	replanned, err := repository.ReplanJob(ctx, ReplanJobCommand{OperationID: control.OperationID, JobID: result.Job.ID, Feedback: control.Text, WorkspaceRoot: control.WorkspaceRoot, WorkspaceIdentity: control.WorkspaceIdentity})
 	if err != nil || !replanned.Applied ||
 		replanned.Job.ID != result.Job.ID || replanned.Job.CurrentGeneration != 2 {
 		t.Fatalf("frozen-mode replan: %#v %v", replanned, err)
 	}
 	assertSessionCodingConfiguration(t, replanned.Job, saved)
+	continuity, err := repository.ObjectiveContinuityAuthorities(ctx, replanned.Job, replanCodingBoundary)
+	if err != nil || continuity.Replan == nil || continuity.Replan.Feedback != control.Text ||
+		continuity.ReplanOperationID != control.OperationID {
+		t.Fatalf("Agents replan lost its direct ledger boundary: %#v %v", continuity, err)
+	}
 	if err := repository.StoreCodingAgentConfiguration(ctx, changed); err != nil {
 		t.Fatal(err)
 	}
@@ -77,32 +82,32 @@ func TestChannelSessionTurnFreezesSavedAgentsOnlyForNewJobs(t *testing.T) {
 	assertSessionCodingConfiguration(t, next.Job, changed)
 }
 
-func TestChannelSessionTurnNormalReplayAndAgentsControlPreserveNormal(t *testing.T) {
+func TestChannelSessionTurnConversationReplayAndAgentsConflictPreserveConversation(t *testing.T) {
 	_, repository := freshCodingPlanRepository(t)
 	repository.WithCodingAgents(codingAgentTestConfiguration())
 	ctx := context.Background()
 	command := channelSessionCodingCommand(t, repository)
 	result, err := repository.SubmitChannelSessionTurn(ctx, command)
 	if err != nil || result.Disposition != model.ChannelSessionTurnEnqueued {
-		t.Fatalf("omitted Normal admission: %#v %v", result, err)
+		t.Fatalf("conversation admission: %#v %v", result, err)
 	}
-	assertSessionCodingConfiguration(t, result.Job, codingagent.Configuration{Mode: codingagent.Normal})
-	command.CodingMode = codingagent.Normal
+	assertSessionCodingConfiguration(t, result.Job, codingagent.Configuration{})
 	replay, err := repository.SubmitChannelSessionTurn(ctx, command)
 	if err != nil || replay.Applied || replay.Job.ID != result.Job.ID {
-		t.Fatalf("explicit Normal did not replay omitted Normal: %#v %v", replay, err)
+		t.Fatalf("conversation replay changed operation identity: %#v %v", replay, err)
 	}
 	command.CodingMode = codingagent.Agents
 	if _, err := repository.SubmitChannelSessionTurn(ctx, command); !errors.Is(err, ErrLifecycleOperationConflict) {
-		t.Fatalf("Agents reused historical Normal operation: %v", err)
+		t.Fatalf("Agents reused a conversation operation: %v", err)
 	}
+	command.CodingMode = ""
 	command.OperationID = codingPlanOperationID(t, "normal-session-replan", result.Job.ID)
 	command.Text = "Refine the accepted objective."
 	replanned, err := repository.ReplanJob(ctx, ReplanJobCommand{OperationID: command.OperationID, JobID: result.Job.ID, Feedback: command.Text, WorkspaceRoot: command.WorkspaceRoot, WorkspaceIdentity: command.WorkspaceIdentity})
 	if err != nil || !replanned.Applied || replanned.Job.ID != result.Job.ID {
-		t.Fatalf("Agents request changed Normal control: %#v %v", replanned, err)
+		t.Fatalf("conversation replan changed authority: %#v %v", replanned, err)
 	}
-	assertSessionCodingConfiguration(t, replanned.Job, codingagent.Configuration{Mode: codingagent.Normal})
+	assertSessionCodingConfiguration(t, replanned.Job, codingagent.Configuration{})
 	command.OperationID = codingPlanOperationID(t, "invalid-session-mode", result.Job.ID)
 	command.CodingMode = "unknown"
 	if _, err := repository.SubmitChannelSessionTurn(ctx, command); !errors.Is(err, ErrChannelSessionTurnInvalid) {

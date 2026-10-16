@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/scrum"
 	"github.com/jackc/pgx/v5"
@@ -50,6 +51,13 @@ func canonicalReplanStepsTx(
 	}
 	if !valid {
 		return nil, fmt.Errorf("replan chat job %d has stale or mismatched channel authority", job.ID)
+	}
+	configuration, err := codingagent.ConfigurationFromMetadata(job.Metadata)
+	if err != nil {
+		return nil, fmt.Errorf("replan chat job %d coding authority: %w", job.ID, err)
+	}
+	if configuration.Mode == codingagent.Agents {
+		return codingSteps(), nil
 	}
 	return conversationObjectiveSteps(), nil
 }

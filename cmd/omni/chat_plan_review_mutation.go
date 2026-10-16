@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/client"
+	"github.com/gryph/omnidex/internal/ledgerapi"
 	"github.com/gryph/omnidex/internal/model"
 )
 
@@ -134,12 +135,12 @@ func (session *chatSession) replayPendingPlanMutation(
 			OperationID: string(pending.operationID), OwnerTurnID: "terminal-" + string(pending.operationID),
 			Text: "Set the displayed item review state.", ObservedRevision: pending.revision,
 		}
-		request := func(requestContext context.Context) (client.CodingLedgerRevision, error) {
+		request := func(requestContext context.Context) (ledgerapi.CodingLedgerRevision, error) {
 			return session.client.MutateCodingLedgerDirect(requestContext, session.channel, session.workspaceIdentity,
 				pending.jobID, turn, client.DirectPlanningAction{Kind: model.LedgerMutationReview,
 					TargetID: pending.targetID, ReviewState: reviewState, Rationale: "explicit terminal item control"})
 		}
-		var revision client.CodingLedgerRevision
+		var revision ledgerapi.CodingLedgerRevision
 		var err error
 		if authoritative {
 			revision, err = awaitAuthoritativeChatRequest(session.ctx, session.signals, request)
@@ -165,11 +166,11 @@ func (session *chatSession) replayPendingPlanMutation(
 			OperationID: string(pending.operationID), OwnerTurnID: "terminal-" + string(pending.operationID),
 			Text: "Sign off the exact displayed planning revision.", ObservedRevision: pending.revision,
 		}
-		request := func(requestContext context.Context) (client.CodingLedgerRevision, error) {
+		request := func(requestContext context.Context) (ledgerapi.CodingLedgerRevision, error) {
 			return session.client.FreezeCodingLedger(requestContext, session.channel, session.workspaceIdentity,
 				pending.jobID, turn)
 		}
-		var receipt client.CodingLedgerRevision
+		var receipt ledgerapi.CodingLedgerRevision
 		var err error
 		if authoritative {
 			receipt, err = awaitAuthoritativeChatRequest(session.ctx, session.signals, request)

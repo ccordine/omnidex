@@ -33,7 +33,7 @@ func (client *Client) SubmitSessionTurn(
 	if len(codingModes) > 1 {
 		return SessionTurnReceipt{}, fmt.Errorf("session turn requires at most one coding mode")
 	}
-	codingMode := codingagent.Normal
+	var codingMode codingagent.Mode
 	if len(codingModes) == 1 {
 		codingMode = codingModes[0]
 	}
@@ -55,7 +55,7 @@ func (client *Client) SubmitObservedSessionTurn(ctx context.Context, channel mod
 func (client *Client) submitSessionTurn(ctx context.Context, channel model.Channel, workspaceIdentity string,
 	operationID model.LifecycleOperationID, exactText string, codingMode codingagent.Mode, jobID, generation *int64) (SessionTurnReceipt, error) {
 	switch codingMode {
-	case codingagent.Normal, codingagent.Agents:
+	case "", codingagent.Agents:
 	default:
 		return SessionTurnReceipt{}, fmt.Errorf("session turn has unsupported coding mode %q", codingMode)
 	}
@@ -80,7 +80,7 @@ func (client *Client) submitSessionTurn(ctx context.Context, channel model.Chann
 		WorkspaceIdentity  string                     `json:"workspace_identity"`
 		Text               string                     `json:"text"`
 		OperationID        model.LifecycleOperationID `json:"operation_id"`
-		CodingMode         codingagent.Mode           `json:"coding_mode"`
+		CodingMode         codingagent.Mode           `json:"coding_mode,omitempty"`
 		ExpectedJobID      *int64                     `json:"expected_job_id,omitempty"`
 		ExpectedGeneration *int64                     `json:"expected_generation,omitempty"`
 	}{

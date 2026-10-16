@@ -90,8 +90,8 @@ func (mode *channelCodingMode) UnmarshalJSON(raw []byte) error {
 	if err := json.Unmarshal(raw, &value); err != nil {
 		return fmt.Errorf("decode coding_mode: %w", err)
 	}
-	if value != string(codingagent.Normal) && value != string(codingagent.Agents) {
-		return errors.New("coding_mode must be exactly normal or agents")
+	if value != string(codingagent.Agents) {
+		return errors.New("coding_mode must be exactly agents when present")
 	}
 	mode.Value = codingagent.Mode(value)
 	return nil

@@ -55,7 +55,7 @@ func newResearchWorkflowFixture(t *testing.T, fixture researchWorkflowCase) rese
 	if err != nil {
 		t.Fatal(err)
 	}
-	repository := queue.New(pool, config)
+	repository := newWorkerTestRepository(pool, config)
 	ctx := context.Background()
 	channel, err := repository.CreateRoleplayChannel(ctx, model.Channel{
 		ID: "research-fixture", Scope: model.ChannelScopeUser, Name: "Research fixture",

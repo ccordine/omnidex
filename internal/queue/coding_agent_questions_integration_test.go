@@ -13,7 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func freshAgentCodingClaim(t *testing.T) (*pgxpool.Pool, *Repository, model.Job, *model.ClaimedStep, model.CodingPlanLeafID) {
+func freshAgentCodingClaim(t *testing.T) (*pgxpool.Pool, *Repository, model.Job, *model.ClaimedStep) {
 	t.Helper()
 	pool, repository := freshCodingPlanRepository(t)
 	repository.WithCodingAgents(codingAgentTestConfiguration())
@@ -26,7 +26,7 @@ func freshAgentCodingClaim(t *testing.T) (*pgxpool.Pool, *Repository, model.Job,
 	if err != nil || planner == nil {
 		t.Fatalf("claim planning: %v, %v", planner, err)
 	}
-	command, leaf := codingAgentPlanReviewFixture(t, repository, planner, "Approved behavior works")
+	command := codingAgentPlanReviewFixture(t, repository, planner, "Approved behavior works")
 	plan := freezeCodingAgentPlanFixture(t, repository, job, command)
 	if plan.State != "frozen" {
 		t.Fatalf("Agents planning was not explicitly frozen: %#v", plan)
@@ -35,11 +35,11 @@ func freshAgentCodingClaim(t *testing.T) (*pgxpool.Pool, *Repository, model.Job,
 	if err != nil || claim == nil || claim.Step.Action != "v3_coding" {
 		t.Fatalf("claim execution: %v, %v", claim, err)
 	}
-	return pool, repository, job, claim, leaf.Leaf.ID
+	return pool, repository, job, claim
 }
 
 func TestCodingAgentQuestionsResumeSameGenerationAndReplayHistorically(t *testing.T) {
-	pool, repository, job, claim, _ := freshAgentCodingClaim(t)
+	pool, repository, job, claim := freshAgentCodingClaim(t)
 	ctx := context.Background()
 	store := repository.CodingAgentEvidence(claim.Authority)
 	wire := []byte(`{  "z": "\u0061", "a": [ 1, 2 ] }` + "\n")
@@ -121,7 +121,7 @@ func TestCodingAgentQuestionsResumeSameGenerationAndReplayHistorically(t *testin
 }
 
 func TestCodingAgentCompletionTransactionRequiresCurrentAcceptance(t *testing.T) {
-	_, repository, job, claim, _ := freshAgentCodingClaim(t)
+	_, repository, job, claim := freshAgentCodingClaim(t)
 	ctx := context.Background()
 	operation, err := NewStepLifecycleOperationID(claim.Authority, LifecycleCompleteStep)
 	if err != nil {
@@ -214,7 +214,7 @@ func TestCodingAgentCompletionTransactionRequiresCurrentAcceptance(t *testing.T)
 }
 
 func TestCodingAgentWaitingCancellationRevokesResumeAuthority(t *testing.T) {
-	_, repository, job, claim, _ := freshAgentCodingClaim(t)
+	_, repository, job, claim := freshAgentCodingClaim(t)
 	ctx := context.Background()
 	questions := []string{"Choose an approved option."}
 	store := repository.CodingAgentEvidence(claim.Authority)

@@ -97,35 +97,35 @@ func (r *nativeRuntimeV3) runObjectiveWorkspaceMutation(
 	if r.claim.Job.ID != authority.JobID || r.claim.Job.Instruction != authority.Instruction {
 		return "", fmt.Errorf("workspace mutation authority does not match the claimed conversation job")
 	}
-	if _, err := directCodingRequestFromObjectiveAuthority(authority); err != nil {
+	if _, err := codingLedgerRequestFromObjectiveAuthority(authority); err != nil {
 		return "", err
 	}
 	return string(assemblyline.ObjectiveKindWorkspaceMutation), nil
 }
 
-func directCodingRequestFromObjectiveAuthority(
+func codingLedgerRequestFromObjectiveAuthority(
 	authority turnAuthority,
-) (directCodingRequest, error) {
+) (codingLedgerRequest, error) {
 	if err := authority.Context.Validate(); err != nil {
-		return directCodingRequest{}, fmt.Errorf("workspace mutation objective context: %w", err)
+		return codingLedgerRequest{}, fmt.Errorf("workspace mutation objective context: %w", err)
 	}
 	replan := authority.Context.ReplanAuthority
 	for _, contextCapsule := range authority.Context.Capsules {
 		for _, source := range contextCapsule.Sources {
 			if source.Namespace != "objective_replan" {
-				return directCodingRequest{}, fmt.Errorf(
+				return codingLedgerRequest{}, fmt.Errorf(
 					"workspace mutation requires exact current-turn authority; contextual source %q has no registered referent resolution",
 					source.Namespace,
 				)
 			}
 			if replan == nil || replan.JobID != authority.JobID || replan.Generation != authority.Generation {
-				return directCodingRequest{}, fmt.Errorf(
+				return codingLedgerRequest{}, fmt.Errorf(
 					"workspace mutation replan context is not bound to exact same-job feedback authority",
 				)
 			}
 		}
 	}
-	request := directCodingRequest{Instruction: authority.Instruction}
+	request := codingLedgerRequest{Instruction: authority.Instruction}
 	continuity := queue.ObjectiveContinuityAuthority{
 		Replan:  replan,
 		Session: authority.SessionContext,
@@ -133,13 +133,13 @@ func directCodingRequestFromObjectiveAuthority(
 	if continuity.Session != nil &&
 		(continuity.Session.JobID != authority.JobID ||
 			continuity.Session.InitialInstruction != authority.Instruction) {
-		return directCodingRequest{}, fmt.Errorf(
+		return codingLedgerRequest{}, fmt.Errorf(
 			"workspace mutation session context differs from exact job authority",
 		)
 	}
 	feedback, err := continuity.CodingFeedback()
 	if err != nil {
-		return directCodingRequest{}, fmt.Errorf("workspace mutation session context: %w", err)
+		return codingLedgerRequest{}, fmt.Errorf("workspace mutation session context: %w", err)
 	}
 	request.Feedback = feedback
 	return request, nil

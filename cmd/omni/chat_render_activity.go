@@ -54,7 +54,7 @@ func agentActivityRoleLabel(activity model.AgentActivity) string {
 
 func agentRoleLabel(role string) string {
 	switch role {
-	case "plan":
+	case "plan", "planning_initial", "planning_target", "planning_mutation", "planning_coverage", "planning_audit":
 		return "Planning"
 	case "execute":
 		return "Executing task"

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/client"
+	"github.com/gryph/omnidex/internal/ledgerapi"
 	"github.com/gryph/omnidex/internal/model"
 )
 
@@ -59,7 +60,7 @@ func TestChatPlanReviewPersistsDecisionThenDeliberatelyFreezes(t *testing.T) {
 			plan.Revision++
 			plan.UpdatedAt = plan.UpdatedAt.Add(time.Second)
 			plan.Leaves[0].Decision = model.CodingPlanDecisionApproved
-			writeChatPlanReviewJSON(t, writer, http.StatusOK, client.CodingLedgerRevision{
+			writeChatPlanReviewJSON(t, writer, http.StatusOK, ledgerapi.CodingLedgerRevision{
 				LedgerID: 1, JobID: jobID, BaseRevision: base, Revision: plan.Revision, State: "proposed",
 			})
 		case "/v1/jobs/73/plan/freeze":
@@ -80,7 +81,7 @@ func TestChatPlanReviewPersistsDecisionThenDeliberatelyFreezes(t *testing.T) {
 				body.WorkspaceRoot != workspaceRoot || body.WorkspaceIdentity != workspaceIdentity {
 				t.Errorf("freeze body = %#v; plan = %#v", body, plan)
 			}
-			writeChatPlanReviewJSON(t, writer, http.StatusOK, client.CodingLedgerRevision{
+			writeChatPlanReviewJSON(t, writer, http.StatusOK, ledgerapi.CodingLedgerRevision{
 				LedgerID: 1, JobID: jobID, BaseRevision: plan.Revision, Revision: plan.Revision + 1, State: "frozen",
 			})
 		default:

@@ -19,13 +19,13 @@ func renderAgentAssignment(call codingagent.Assignment) (string, error) {
 	var instruction string
 	switch call.Role {
 	case codingagent.PlanningInitial:
-		instruction = "Answer only the named initial-ledger-proposal engineering question from the broad planning context. Return one normalized typed engineering ledger and a durable disposition for every actionable statement in the owner turn. Carve the complete approved objective into finite task records whose exact requirement, constraint, acceptance, file, affected-system, dependency, and check bindings are sufficient for an executor that will never see the full plan or sibling tasks. Include only work required by the owner's explicit objective and supplied facts; do not add optional hardening, redesign, refactoring, best practices, adjacent fixes, or extra test obligations. This is the only planning station allowed to return a complete ledger."
+		instruction = "Answer only the named initial-ledger-proposal engineering question from the broad planning context. Return one normalized typed engineering ledger and a durable disposition for every actionable statement in the owner turn. Start every active item as proposed and include exactly one active objective. Carve the complete approved objective into the fewest finite task records that can each be fulfilled and reviewed atomically; never create a task merely to run a check. Each task's exact requirement, constraint, acceptance, file, affected-system, dependency, and check bindings must be sufficient for an executor that will never see the full plan or sibling tasks. File lists are code-owned capabilities, so do not restate their access boundaries as owner requirements or acceptance criteria. Add a dependency only when one task's work intrinsically requires another task's output, never for ordinary presentation or execution order. Do not encode code-owned execution, isolation, verification, or review rules as owner obligations. Every active requirement must be bound to at least one active task and one active acceptance criterion. Every active required acceptance criterion must be bound to at least one active check. Keep the active task dependency graph acyclic. Include only work required by the owner's explicit objective and supplied facts; do not add optional hardening, redesign, refactoring, best practices, adjacent fixes, or extra test obligations. Never elevate an inferred implementation, documentation, or test choice into an owner requirement, and never broaden a qualifier beyond the exact artifact or behavior the owner attached it to. This is the only planning station allowed to return a complete ledger."
 	case codingagent.PlanningTarget:
 		instruction = "Answer only the named owner-turn-target-resolution engineering question over this bounded ledger partition. Return only the stable IDs of records in this partition that the exact owner turn semantically references. Do not propose mutations or regenerate the ledger."
 	case codingagent.PlanningMutation:
 		instruction = "Answer only the named owner-turn-ledger-mutation engineering question. Translate only the human's exact turn into typed add, amend, remove, restore, review, or reorder operations against the exact supplied base revision, plus durable per-statement dispositions. Keep every affected task's requirement, constraint, acceptance, file, affected-system, dependency, and check bindings sufficient for a task-local executor that receives no full-plan or sibling context. Do not add optional hardening, redesign, refactoring, best practices, adjacent fixes, or extra test obligations the human did not request. Never regenerate or return the complete ledger."
 	case codingagent.PlanningCoverage:
-		instruction = "Answer only the named owner-turn-coverage question over the bounded exact revision. Covered means every actionable statement in the exact owner turn has a durable disposition in that revision. Return a read-only judgment and concise non-authoritative suggestions for any explicit owner statement that is missing. Never return or apply ledger mutations, invent work, add acceptance obligations, or treat optional hardening, refactoring, best practices, or extra tests as missing scope. This station cannot approve owner items; only a human-origin planning action may alter the ledger."
+		instruction = "Answer only the named owner-turn-coverage question over the bounded exact revision. Covered means every actionable statement in the exact owner turn has a durable disposition in that revision and the revision contains no obligation beyond that exact owner scope. Return a read-only judgment and concise non-authoritative suggestions for any explicit owner statement that is missing or any extra obligation that must be removed. Never return or apply ledger mutations, invent work, add acceptance obligations, or treat optional hardening, refactoring, best practices, or extra tests as missing scope. This station cannot approve owner items; only a human-origin planning action may alter the ledger."
 	case codingagent.PlanningAudit:
 		instruction = "Answer only the named mandatory-pre-sign-off audit question over the supplied persisted planning-record partition. Covered means the current ledger faithfully and coherently represents the owner's explicit recorded instructions. Return a read-only judgment and concise non-authoritative suggestions for any explicit owner instruction that is missing or contradicted. Never return or apply ledger mutations, invent work, add acceptance obligations, or treat optional hardening, refactoring, best practices, or extra tests as missing scope. This audit is evidence and cannot approve, freeze, or alter the proposal; only a human-origin planning action may alter the ledger."
 	case codingagent.Execute:
@@ -102,6 +102,12 @@ func agentPromptContext(call codingagent.Assignment) any {
 
 func agentOutputSchema(call codingagent.Assignment) map[string]any {
 	text := map[string]any{"type": "string"}
+	planningQuestion := text
+	planningRevision := map[string]any{"type": "integer"}
+	if call.PlanningQuestionID != "" {
+		planningQuestion = map[string]any{"type": "string", "enum": []string{call.PlanningQuestionID}}
+		planningRevision = map[string]any{"type": "integer", "enum": []int64{call.PlanningBaseRevision}}
+	}
 	strings := map[string]any{"type": "array", "items": text}
 	object := func(properties map[string]any, required ...string) map[string]any {
 		return map[string]any{"type": "object", "properties": properties, "required": required, "additionalProperties": false}
@@ -111,7 +117,7 @@ func agentOutputSchema(call codingagent.Assignment) map[string]any {
 	}
 	if call.Role == codingagent.PlanningTarget {
 		return object(map[string]any{
-			"question": text, "base_revision": map[string]any{"type": "integer"}, "item_ids": strings,
+			"question": planningQuestion, "base_revision": planningRevision, "item_ids": strings,
 		}, "question", "base_revision", "item_ids")
 	}
 	if call.Role == codingagent.PlanningMutation {
@@ -119,7 +125,7 @@ func agentOutputSchema(call codingagent.Assignment) map[string]any {
 	}
 	if call.Role == codingagent.PlanningCoverage || call.Role == codingagent.PlanningAudit {
 		return object(map[string]any{
-			"question": text, "base_revision": map[string]any{"type": "integer"},
+			"question": planningQuestion, "base_revision": planningRevision,
 			"covered": map[string]any{"type": "boolean"}, "suggestions": strings,
 			"explanation": text,
 		}, "question", "base_revision", "covered", "suggestions", "explanation")
@@ -142,5 +148,5 @@ func agentOutputSchema(call codingagent.Assignment) map[string]any {
 	if call.Role == codingagent.Review && len(variants) == 1 {
 		finding = variants[0]
 	}
-	return object(map[string]any{"findings": map[string]any{"type": "array", "items": finding}, "questions": strings, "verification": text}, "findings", "questions")
+	return object(map[string]any{"findings": map[string]any{"type": "array", "items": finding}, "questions": strings, "verification": text}, "findings", "questions", "verification")
 }

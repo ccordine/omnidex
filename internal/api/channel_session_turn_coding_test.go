@@ -17,8 +17,8 @@ func TestChannelSessionTurnCodingModeBoundary(t *testing.T) {
 		mode  codingagent.Mode
 		valid bool
 	}{
-		{"omitted preserves normal", `{"text":"exact"}`, "", true},
-		{"explicit normal", `{"text":"exact","coding_mode":"normal"}`, codingagent.Normal, true},
+		{"omitted is conversation", `{"text":"exact"}`, "", true},
+		{"removed normal mode", `{"text":"exact","coding_mode":"normal"}`, "", false},
 		{"explicit agents", `{"text":"exact","coding_mode":"agents"}`, codingagent.Agents, true},
 		{"null is not omission", `{"text":"exact","coding_mode":null}`, "", false},
 		{"empty is not omission", `{"text":"exact","coding_mode":""}`, "", false},

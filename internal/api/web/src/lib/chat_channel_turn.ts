@@ -45,7 +45,7 @@ export class ChatChannelTurnCoordinator {
     channelID: string,
     prompt: string,
     roleplayTurn?: RoleplayTurnInput,
-    codingMode: CodingMode = "normal",
+    codingMode: CodingMode = "conversation",
   ): Promise<ChatChannelTurnReceipt> {
     const active = this.agents.state(channelID);
     if (active?.status === "waiting_input") {

@@ -20,7 +20,7 @@ func TestSessionTurnRejectsInvalidCodingModeBeforeRequest(t *testing.T) {
 	}))
 	defer server.Close()
 	apiClient := testClient(t, server.URL)
-	for _, modes := range [][]codingagent.Mode{{""}, {"unknown"}, {codingagent.Normal, codingagent.Agents}} {
+	for _, modes := range [][]codingagent.Mode{{"unknown"}, {codingagent.Agents, codingagent.Agents}} {
 		if _, err := apiClient.SubmitSessionTurn(
 			context.Background(), testCLIChannel("/workspace/mode-validation"), testWorkspaceIdentity,
 			testOperationID(t, "mode-validation"), "Exact user request.", modes...,

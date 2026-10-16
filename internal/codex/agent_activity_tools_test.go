@@ -14,15 +14,14 @@ func TestAgentNativeFileEditProjectsOnlyAConfirmedScopedWrite(t *testing.T) {
 	for _, rejected := range []bool{false, true} {
 		scope := agentTestScope(t)
 		result := codingagent.Result{ThreadID: "thread", TurnID: "turn"}
-		var activity *model.AgentActivity
+		var activities []model.AgentActivity
 		receipts := 0
 		stream := newAgentActivityStream(scope, &result, func(event codingagent.NativeEvent) error {
 			if len(event.Frame) != 0 {
 				receipts++
 			}
 			if event.Activity != nil {
-				copied := *event.Activity
-				activity = &copied
+				activities = append(activities, *event.Activity)
 			}
 			return nil
 		})
@@ -41,13 +40,19 @@ func TestAgentNativeFileEditProjectsOnlyAConfirmedScopedWrite(t *testing.T) {
 			t.Fatal("write request and result lost original durable receipts")
 		}
 		if rejected {
-			if activity != nil {
-				t.Fatal("rejected write became a published edit")
+			if len(activities) != 2 || activities[0].Kind != model.AgentActivityCommand ||
+				activities[0].Status != model.AgentActivityStarted || activities[1].Kind != model.AgentActivityCommand ||
+				activities[1].Status != model.AgentActivityFailed {
+				t.Fatalf("rejected write lost its exact tool lifecycle: %+v", activities)
 			}
 			continue
 		}
-		if activity == nil || activity.Kind != model.AgentActivityFileEdit || activity.Status != model.AgentActivityCompleted || len(activity.Paths) != 1 || activity.Paths[0] != "source.go" || activity.Text != "" {
-			t.Fatalf("confirmed write lost its public path-only projection: %+v", activity)
+		if len(activities) != 3 || activities[0].Kind != model.AgentActivityCommand ||
+			activities[0].Status != model.AgentActivityStarted || activities[0].Command != "omnidex_write_file" ||
+			activities[1].Kind != model.AgentActivityCommand || activities[1].Status != model.AgentActivityCompleted ||
+			activities[2].Kind != model.AgentActivityFileEdit || activities[2].Status != model.AgentActivityCompleted ||
+			len(activities[2].Paths) != 1 || activities[2].Paths[0] != "source.go" || activities[2].Text != "" {
+			t.Fatalf("confirmed write lost its tool and path-only lifecycle: %+v", activities)
 		}
 	}
 }

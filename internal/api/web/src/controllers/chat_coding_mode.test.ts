@@ -3,7 +3,7 @@ import ChatController from "./chat_controller";
 
 function harness(mode: string, channelMode: "assistant" | "roleplay" = "assistant") {
   const select = document.createElement("select");
-  select.innerHTML = '<option value="normal">Normal</option><option value="agents">Agents</option>';
+  select.innerHTML = '<option value="conversation">Conversation</option><option value="agents">Agents</option>';
   select.value = mode;
   const submit = vi.fn(async () => ({ jobID: 42 }));
   const channel = {
@@ -33,7 +33,7 @@ describe("chat coding mode selection", () => {
     const prompt = "  precise task\n";
     await controller.submitChannel(prompt);
     expect(submit).toHaveBeenCalledWith(prompt, undefined, "agents");
-    controller.codingModeTarget.value = "normal";
+    controller.codingModeTarget.value = "conversation";
     await controller.submitChannel(prompt);
     expect(submit).toHaveBeenLastCalledWith(prompt, undefined);
   });
@@ -45,7 +45,7 @@ describe("chat coding mode selection", () => {
   });
 
   it("shows the persisted mode and concrete question after selection, then restores the next-job preference", async () => {
-    const { controller, channel } = harness("normal");
+    const { controller, channel } = harness("conversation");
     const panel = document.createElement("div");
     panel.classList.add("hidden");
     const text = document.createElement("p");
@@ -61,7 +61,7 @@ describe("chat coding mode selection", () => {
     expect(text.querySelector("target")).toBeNull();
     channel.agentTurnState.mockReturnValue(undefined);
     await controller.selectChannel(new Event("change"));
-    expect(controller.codingModeTarget.value).toBe("normal");
+    expect(controller.codingModeTarget.value).toBe("conversation");
     expect(controller.codingModeTarget.disabled).toBe(false);
     expect(panel.classList.contains("hidden")).toBe(true);
   });

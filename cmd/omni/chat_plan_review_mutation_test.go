@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/client"
+	"github.com/gryph/omnidex/internal/ledgerapi"
 	"github.com/gryph/omnidex/internal/model"
 )
 
@@ -43,7 +44,7 @@ func TestChatPlanReviewDecisionReusesOperationAfterAmbiguousTransport(t *testing
 		plan.Revision++
 		plan.UpdatedAt = plan.UpdatedAt.Add(time.Second)
 		plan.Leaves[0].Decision = model.CodingPlanDecisionApproved
-		writeChatPlanReviewJSON(t, writer, http.StatusOK, client.CodingLedgerRevision{
+		writeChatPlanReviewJSON(t, writer, http.StatusOK, ledgerapi.CodingLedgerRevision{
 			LedgerID: 1, JobID: jobID, BaseRevision: base, Revision: plan.Revision, State: "proposed",
 		})
 	}))

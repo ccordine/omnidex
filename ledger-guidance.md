@@ -801,16 +801,16 @@ unresolved questions
 
 At planning
 
-Keep PlanArtifact immutable as the initial plan.
+Persist the proposed plan as a revisioned PostgreSQL planning ledger.
 
-Materialize its subtasks into mutable task_nodes.
-
-The current direct coding plan may produce one coordinate_implementation subtask; the ledger can then hold its evolving internal change groups and checkpoints without mutating the original plan artifact. 
+Validate and present that exact revision for owner decisions, then materialize its
+approved tasks only when the owner freezes it. Execution mutates task state under the
+frozen revision; it does not rewrite planning authority.
 
 That creates a useful distinction:
 
-PlanArtifact:
-    what was initially authorized
+Planning ledger revision:
+    what was proposed, reviewed, and frozen
 
 Task Ledger:
     current execution state under that authority

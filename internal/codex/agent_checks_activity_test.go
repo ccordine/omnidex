@@ -23,12 +23,15 @@ func TestAgentCheckActivityReportsEachActualDispatchOutputAndExit(t *testing.T) 
 	}
 	scope := agentTestScope(t)
 	command := filepath.Join(scope.Root, "check-protocol")
-	script := "#!" + python + "\n" + `import base64,json,sys
+	script := "#!" + python + "\n" + `import base64,json,os,sys
 for line in sys.stdin:
     request=json.loads(line)
     if request.get("method")=="initialize":
         print(json.dumps({"id":request["id"],"result":{}}),flush=True)
     if request.get("method")=="command/exec":
+        assert request["params"]["sandboxPolicy"]=={"type":"readOnly","networkAccess":False}
+        assert "permissionProfile" not in request["params"]
+        assert os.path.basename(request["params"]["cwd"])=="workspace"
         process=request["params"].get("processId","missing")
         print(json.dumps({"method":"command/exec/outputDelta","params":{"processId":process,"stream":"stdout","deltaBase64":base64.b64encode("streamed ".encode()).decode()}}),flush=True)
         print(json.dumps({"id":request["id"],"result":{"exitCode":0,"stdout":"streamed complete\n","stderr":""}}),flush=True)
@@ -57,7 +60,7 @@ for line in sys.stdin:
 	}
 	for index, check := range checks {
 		part := events[index*4 : index*4+4]
-		if part[0].Source != model.AgentActivityVerification || part[0].CheckID != check.ID || part[0].Status != model.AgentActivityStarted || !slices.Equal(part[0].Argv, check.Argv) || part[0].ThreadID != "" {
+		if part[0].Source != model.AgentActivityVerification || part[0].CheckID != check.ID || part[0].Status != model.AgentActivityStarted || !slices.Equal(part[0].Argv, check.Argv) || part[0].CWD != scope.Root || part[0].ThreadID != "" {
 			t.Fatalf("check start invented native identity or changed frozen command: %+v", part[0])
 		}
 		if part[1].Text+part[2].Text != "streamed complete\n" || part[3].Status != model.AgentActivityCompleted || part[3].ExitCode == nil || *part[3].ExitCode != 0 {

@@ -5,8 +5,6 @@ import (
 	"path/filepath"
 )
 
-const agentPermissionProfileName = ":danger-full-access"
-
 // Authentication belongs to the host Codex process. Runtime service secrets
 // are not inherited by the agent or its commands.
 func agentProcessEnvironment() []string {
@@ -21,7 +19,6 @@ func agentProcessEnvironment() []string {
 
 func agentPermissionFlags() []string {
 	return []string{
-		"-c", "default_permissions=\"" + agentPermissionProfileName + "\"",
 		"-c", "shell_environment_policy.inherit=\"all\"",
 	}
 }

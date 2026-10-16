@@ -11,7 +11,6 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/contextcompiler"
 	"github.com/gryph/omnidex/internal/modelconfig"
-	"github.com/gryph/omnidex/internal/queue"
 )
 
 // Fixed provider responses prove production call boundaries and consumption,
@@ -31,7 +30,7 @@ func TestContextReductionRecordsOnlyNeededInferenceAndReusesItsResult(t *testing
 			if err != nil {
 				t.Fatal(err)
 			}
-			repository := queue.New(pool, config)
+			repository := newWorkerTestRepository(pool, config)
 			ctx := context.Background()
 			job, err := repository.EnqueueCodingJob(ctx, fixture.instruction, t.TempDir())
 			if err != nil {

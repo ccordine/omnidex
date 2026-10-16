@@ -74,5 +74,6 @@ func observedSessionQuestion(t *testing.T, command ChannelSessionTurnCommand, jo
 	if err := json.Unmarshal(raw, &question); err != nil {
 		t.Fatal(err)
 	}
+	question.CodingMode = command.CodingMode
 	return question
 }

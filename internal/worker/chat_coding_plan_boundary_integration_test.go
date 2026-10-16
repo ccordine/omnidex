@@ -35,162 +35,10 @@ func (client *chatCodingBoundaryClient) GeneratePreparedExact(
 		response = client.objectiveChoice
 	case strings.Contains(prompt, "What response directly satisfies this user instruction"):
 		response = "The item is already confirmed."
-	case strings.Contains(prompt, "What atomic finished-software runtime outcomes"):
-		response = codingPlanLifecycleRequest
-	case strings.Contains(prompt, "Is every semantic detail in the candidate required"):
-		response = "A"
-	case strings.Contains(prompt, "Does the candidate directly specify anything the finished software must do"):
-		response = "A"
-	case strings.Contains(prompt, "Does the candidate explicitly say how or where the software must be constructed"):
-		response = "B"
-	case strings.Contains(prompt, "How many independently testable runtime outcomes"):
-		response = "A"
-	case strings.Contains(prompt, "Does the candidate assert a derived runtime value"):
-		response = "B"
 	default:
 		return llm.PreparedGeneration{}, fmt.Errorf("unexpected chat coding-boundary prompt: %q", prompt)
 	}
 	return exactEvidenceSuccessfulGeneration(prepared, response)
-}
-
-func TestChatWorkspaceMutationWaitsAtPersistedPlanAndKeepsObjectiveReplanContinuity(t *testing.T) {
-	databaseURL := strings.TrimSpace(os.Getenv("OMNI_TEST_DATABASE_URL"))
-	if databaseURL == "" {
-		t.Skip("OMNI_TEST_DATABASE_URL is required for chat coding-plan boundary coverage")
-	}
-	pool, _ := freshWorkerEvidenceRepository(t, databaseURL)
-	repository := newChatCodingBoundaryRepository(t, pool)
-	workspaceRoot := t.TempDir()
-	job := enqueueChatCodingBoundaryJob(t, repository, workspaceRoot, codingPlanLifecycleRequest)
-	workspaceIdentity, err := projectroot.DirectoryIdentity(workspaceRoot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	workspaceIdentity, err = projectroot.ClientWorkspaceIdentity(strings.Repeat("1", 32), workspaceIdentity)
-	if err != nil {
-		t.Fatal(err)
-	}
-	client := &chatCodingBoundaryClient{objectiveChoice: "B"}
-	service := newChatCodingBoundaryService(t, repository, client)
-	ctx := context.Background()
-
-	claim, err := repository.ClaimNextStep(ctx, "chat-objective-generation-one")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if claim == nil || claim.Job.ID != job.ID || claim.Step.Action != "objective_resolve" {
-		t.Fatalf("initial chat objective claim = %#v", claim)
-	}
-	if err := service.runClaim(ctx, "chat-objective-generation-one", claim); err != nil {
-		t.Fatal(err)
-	}
-	if len(client.prepared) != 1 ||
-		!strings.Contains(client.prepared[0].Prompt, "Which description exactly characterizes") {
-		t.Fatalf("workspace handoff provider calls = %#v", client.prepared)
-	}
-	planClaim, err := repository.ClaimNextStep(ctx, "chat-plan-generation-one")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if planClaim == nil || planClaim.Job.ID != job.ID || planClaim.Step.Action != "v3_coding_plan" {
-		t.Fatalf("chat plan claim after objective = %#v", planClaim)
-	}
-	if err := service.runClaim(ctx, "chat-plan-generation-one", planClaim); err != nil {
-		t.Fatal(err)
-	}
-	plan, err := repository.CurrentCodingPlan(ctx, job.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if plan.State != model.CodingPlanStateReview || len(plan.Leaves) != 1 ||
-		plan.Leaves[0].Decision != model.CodingPlanDecisionPending {
-		t.Fatalf("chat plan review = %#v", plan)
-	}
-	if entries, err := os.ReadDir(workspaceRoot); err != nil || len(entries) != 0 {
-		t.Fatalf("workspace changed before user approval: entries=%v err=%v", entries, err)
-	}
-
-	const feedback = "Keep the confirmation interaction local."
-	replanned, err := repository.ReplanJob(ctx, queue.ReplanJobCommand{
-		OperationID:   codingPlanLifecycleOperationID(t, "chat-replan", job.ID, 1),
-		JobID:         job.ID,
-		Feedback:      feedback,
-		WorkspaceRoot: workspaceRoot, WorkspaceIdentity: workspaceIdentity,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !replanned.Applied || replanned.Job.ID != job.ID || replanned.Job.CurrentGeneration != 2 {
-		t.Fatalf("same-job chat replan = %#v", replanned)
-	}
-	claim, err = repository.ClaimNextStep(ctx, "chat-objective-generation-two")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if claim == nil || claim.Job.ID != job.ID || claim.Step.Action != "objective_resolve" ||
-		claim.Job.CurrentGeneration != 2 {
-		t.Fatalf("replanned chat objective claim = %#v", claim)
-	}
-	if err := service.runClaim(ctx, "chat-objective-generation-two", claim); err != nil {
-		t.Fatal(err)
-	}
-	planClaim, err = repository.ClaimNextStep(ctx, "chat-plan-generation-two")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if planClaim == nil || planClaim.Step.Action != "v3_coding_plan" {
-		t.Fatalf("replanned chat plan claim = %#v", planClaim)
-	}
-	request, err := (&nativeRuntimeV3{
-		svc: service, ctx: ctx, claim: planClaim, action: planClaim.Step.Action,
-	}).directCodingRequest()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(request.Feedback) != 1 || request.Feedback[0] != "user redirect:\n"+feedback {
-		t.Fatalf("chat plan continuity = %#v", request.Feedback)
-	}
-	if err := service.runClaim(ctx, "chat-plan-generation-two", planClaim); err != nil {
-		t.Fatal(err)
-	}
-	plan, err = repository.CurrentCodingPlan(ctx, job.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	decision, err := repository.ApplyCodingPlanDecisions(ctx, queue.ApplyCodingPlanDecisionsCommand{
-		OperationID: codingPlanLifecycleOperationID(t, "chat-approve", job.ID, 2),
-		JobID:       job.ID, Generation: 2, Revision: plan.Revision,
-		WorkspaceRoot: workspaceRoot, WorkspaceIdentity: workspaceIdentity,
-		Decisions: []queue.CodingPlanDecisionChange{{
-			LeafID: plan.Leaves[0].ID, Decision: model.CodingPlanDecisionApproved,
-		}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := repository.FreezeCodingPlan(ctx, queue.FreezeCodingPlanCommand{
-		OperationID: codingPlanLifecycleOperationID(t, "chat-freeze", job.ID, 2),
-		JobID:       job.ID, Generation: 2, Revision: decision.Plan.Revision,
-		WorkspaceRoot: workspaceRoot, WorkspaceIdentity: workspaceIdentity,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	codingClaim, err := repository.ClaimNextStep(ctx, "chat-coding-generation-two")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if codingClaim == nil || codingClaim.Step.Action != "v3_coding" {
-		t.Fatalf("approved chat coding claim = %#v", codingClaim)
-	}
-	codingRequest, err := (&nativeRuntimeV3{
-		svc: service, ctx: ctx, claim: codingClaim, action: codingClaim.Step.Action,
-	}).directCodingRequest()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(codingRequest.Feedback) != 1 || codingRequest.Feedback[0] != "user redirect:\n"+feedback {
-		t.Fatalf("chat coding continuity = %#v", codingRequest.Feedback)
-	}
 }
 
 func TestChatAnswerCompletesWithoutCallingPlanningOrCodingModels(t *testing.T) {
@@ -259,7 +107,7 @@ func newChatCodingBoundaryRepository(t *testing.T, pool *pgxpool.Pool) *queue.Re
 	if err != nil {
 		t.Fatal(err)
 	}
-	return queue.New(pool, authority)
+	return newWorkerTestRepository(pool, authority)
 }
 
 func enqueueChatCodingBoundaryJob(

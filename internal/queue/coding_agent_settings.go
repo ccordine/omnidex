@@ -55,8 +55,8 @@ func (repository *Repository) loadCodingAgentConfiguration(ctx context.Context, 
 }
 
 func (repository *Repository) codingConfigurationForMode(ctx context.Context, querier codingAgentSettingsQuerier, mode codingagent.Mode) (codingagent.Configuration, error) {
-	if mode == "" || mode == codingagent.Normal {
-		return repository.codingAgents.ForMode(mode)
+	if mode == "" {
+		return codingagent.Configuration{}, nil
 	}
 	if mode != codingagent.Agents {
 		return repository.codingAgents.ForMode(mode)
@@ -80,8 +80,8 @@ func (repository *Repository) StoreCodingAgentConfiguration(ctx context.Context,
 	return err
 }
 
-func (repository *Repository) CodingAgentsBusy(ctx context.Context, includeNormal bool) (bool, error) {
+func (repository *Repository) CodingAgentsBusy(ctx context.Context) (bool, error) {
 	var busy bool
-	err := repository.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM jobs WHERE status IN ('pending','running','waiting_input') AND ($1 OR metadata->'coding_execution'->>'mode'='agents'))`, includeNormal).Scan(&busy)
+	err := repository.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM jobs WHERE status IN ('pending','running','waiting_input') AND metadata->'coding_execution'->>'mode'='agents')`).Scan(&busy)
 	return busy, err
 }

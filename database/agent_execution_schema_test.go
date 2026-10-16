@@ -17,6 +17,7 @@ func TestCodingLedgerOwnsFiniteTaskQueue(t *testing.T) {
 		"CREATE TABLE coding_ledger_routes (",
 		"CREATE TABLE coding_ledger_checks (",
 		"CREATE TABLE coding_agent_tasks (",
+		"action text NOT NULL DEFAULT 'planning' CHECK (action IN ('planning','planning_control','execution_configuration','sign_off','cancel'))",
 		"state text NOT NULL CHECK (state IN ('blocked','ready','accepted','cancelled'))",
 		"CREATE FUNCTION validate_coding_agent_task_transition() RETURNS trigger",
 		"ledger completion requires every queued task accepted",

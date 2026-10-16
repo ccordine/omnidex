@@ -93,7 +93,7 @@ func (s *Service) runClaim(ctx context.Context, workerID string, claim *model.Cl
 			s.emitStepEvent(claim.Authority, "step_waiting_input", questions.Error())
 			return nil
 		}
-		if errors.Is(err, errCodingPlanReviewPending) {
+		if errors.Is(err, errCodingLedgerReviewPending) {
 			s.emitStepEvent(
 				claim.Authority,
 				"step_waiting_input",

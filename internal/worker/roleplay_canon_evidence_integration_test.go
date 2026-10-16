@@ -34,7 +34,7 @@ func TestRoleplayCanonInventoryRecordsOnlyNeededCallsAndReplays(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				repository := queue.New(pool, config)
+				repository := newWorkerTestRepository(pool, config)
 				ctx := context.Background()
 				job, err := repository.EnqueueCodingJob(ctx, "exercise exact-source canon intake", t.TempDir())
 				if err != nil {
@@ -131,7 +131,7 @@ func TestRoleplayCanonMalformedInventoryRecordsRejectionWithoutRetry(t *testing.
 			if err != nil {
 				t.Fatal(err)
 			}
-			repository := queue.New(pool, config)
+			repository := newWorkerTestRepository(pool, config)
 			ctx := context.Background()
 			job, err := repository.EnqueueCodingJob(ctx, "exercise malformed canon intake", t.TempDir())
 			if err != nil {

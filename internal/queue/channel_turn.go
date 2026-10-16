@@ -54,7 +54,7 @@ func (r *Repository) EnqueueChannelTurn(
 	channelID model.ChannelID,
 	instruction string,
 ) (model.ChannelMessage, model.Job, error) {
-	return r.enqueueChannelTurn(ctx, channelID, instruction, "", nil, codingagent.Normal)
+	return r.enqueueChannelTurn(ctx, channelID, instruction, "", nil, "")
 }
 
 // EnqueueChannelTurnWithDataAuthority binds one host-issued opaque authority
@@ -65,7 +65,7 @@ func (r *Repository) EnqueueChannelTurnWithDataAuthority(
 	instruction string,
 	delegatedAuthorityID string,
 ) (model.ChannelMessage, model.Job, error) {
-	return r.enqueueChannelTurn(ctx, channelID, instruction, delegatedAuthorityID, nil, codingagent.Normal)
+	return r.enqueueChannelTurn(ctx, channelID, instruction, delegatedAuthorityID, nil, "")
 }
 
 // EnqueueRoleplayChannelTurn requires the exact user-controlled persona and
@@ -76,7 +76,7 @@ func (r *Repository) EnqueueRoleplayChannelTurn(
 	instruction string,
 	userTurn roleplay.UserTurnRequest,
 ) (model.ChannelMessage, model.Job, error) {
-	return r.enqueueChannelTurn(ctx, channelID, instruction, "", &userTurn, codingagent.Normal)
+	return r.enqueueChannelTurn(ctx, channelID, instruction, "", &userTurn, "")
 }
 
 func (r *Repository) enqueueChannelTurn(
@@ -279,7 +279,11 @@ func (r *Repository) persistChannelTurnTx(
 	if err != nil {
 		return model.ChannelMessage{}, model.Job{}, err
 	}
-	job, err := r.enqueueChannelJobTx(ctx, tx, instruction, metadata)
+	steps := conversationObjectiveSteps()
+	if authority.CodingExecution != nil {
+		steps = codingSteps()
+	}
+	job, err := r.enqueueChannelJobTx(ctx, tx, instruction, metadata, steps)
 	if err != nil {
 		return model.ChannelMessage{}, model.Job{}, err
 	}
@@ -305,12 +309,13 @@ func (r *Repository) enqueueChannelJobTx(
 	tx pgx.Tx,
 	instruction string,
 	metadata []byte,
+	steps []stepSeed,
 ) (model.Job, error) {
 	if len(metadata) == 0 {
 		return model.Job{}, fmt.Errorf("channel job metadata is required")
 	}
 	return r.enqueueJobWithStepsTx(
-		ctx, tx, instruction, model.PipelineChat, metadata, conversationObjectiveSteps(), nil,
+		ctx, tx, instruction, model.PipelineChat, metadata, steps, nil,
 	)
 }
 

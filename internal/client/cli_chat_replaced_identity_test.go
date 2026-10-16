@@ -32,7 +32,6 @@ func TestCLIChatClientCarriesReplacedIdentityAcrossEverySessionBoundary(t *testi
 				"workspace_identity": identityB,
 				"text":               "This turn belongs only to the replacement directory.",
 				"operation_id":       string(operationID),
-				"coding_mode":        "normal",
 			})
 		}
 		writeJSON(t, writer, http.StatusConflict, map[string]any{

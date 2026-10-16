@@ -10,7 +10,7 @@ import type { RoleplayTurnInput } from "./roleplay_turn_input";
 
 const JOB_STATUSES = ["pending", "running", "waiting_input", "completed", "failed", "canceled"] as const;
 
-export type CodingMode = "normal" | "agents";
+export type CodingMode = "conversation" | "agents";
 
 export type ChannelCreationContext =
   | { mode: "assistant"; roleplay_world_name?: never; roleplay_viewpoint_name?: never }
@@ -73,11 +73,11 @@ export async function sendChannelMessage(
   channelID: string,
   prompt: string,
   roleplayTurn?: RoleplayTurnInput,
-  codingMode: CodingMode = "normal",
+  codingMode: CodingMode = "conversation",
 ): Promise<ChannelTurnAccepted> {
   requireChannelID(channelID, "Channel turn request");
   requireBoundedText(prompt, "Channel turn prompt", 4096, false);
-  if (codingMode !== "normal" && codingMode !== "agents") throw new Error("Unknown coding mode.");
+  if (codingMode !== "conversation" && codingMode !== "agents") throw new Error("Unknown coding mode.");
   if (codingMode === "agents" && roleplayTurn !== undefined) {
     throw new Error("Agents coding mode requires an assistant conversation.");
   }
@@ -87,7 +87,7 @@ export async function sendChannelMessage(
     body: JSON.stringify({
       prompt,
       ...(roleplayTurn === undefined ? {} : { roleplay_turn: roleplayTurn }),
-      ...(codingMode === "normal" ? {} : { coding_mode: codingMode }),
+      ...(codingMode === "conversation" ? {} : { coding_mode: codingMode }),
     }),
   });
   const payload = await readJSON<Record<string, unknown>>(response);

@@ -76,7 +76,7 @@ export default class ChatController extends ChatRoleplayTurnController {
 
   async submitChannel(prompt: string, turn?: RoleplayTurnInput): Promise<ChatChannelTurnReceipt> {
     const mode = this.selectedCodingMode();
-    return mode === "normal" ? this.channel.submit(prompt, turn) : this.channel.submit(prompt, turn, mode);
+    return mode === "conversation" ? this.channel.submit(prompt, turn) : this.channel.submit(prompt, turn, mode);
   }
 
   async showPanel(event: Event): Promise<void> { await this.panels.show(event); }
@@ -162,7 +162,7 @@ export default class ChatController extends ChatRoleplayTurnController {
         : this.submitChannel(prompt, roleplayTurn);
     }
     const mode = this.selectedCodingMode();
-    const result = mode === "normal"
+    const result = mode === "conversation"
       ? await this.channel.createAndSubmit(prompt)
       : await this.channel.createAndSubmit(prompt, mode);
     if (result.kind === "roleplay_setup_required") {
@@ -175,9 +175,9 @@ export default class ChatController extends ChatRoleplayTurnController {
   }
 
   private selectedCodingMode(): CodingMode {
-    if (!this.hasCodingModeTarget) return "normal";
+    if (!this.hasCodingModeTarget) return "conversation";
     const mode = this.codingModeTarget.value;
-    if (mode !== "normal" && mode !== "agents") throw new Error("Choose a coding mode.");
+    if (mode !== "conversation" && mode !== "agents") throw new Error("Choose a coding mode.");
     if (mode === "agents" && this.channel.hasSelection() && this.channel.selectedMode() === "roleplay") {
       throw new Error("Agents coding mode requires an assistant conversation.");
     }

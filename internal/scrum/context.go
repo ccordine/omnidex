@@ -7,20 +7,22 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/exactjson"
 	"github.com/gryph/omnidex/internal/modelconfig"
 )
 
 type JobMetadata struct {
-	CardID             string             `json:"scrum_card_id"`
-	CardTitle          string             `json:"scrum_card_title"`
-	CardDescription    string             `json:"scrum_card_description"`
-	Checklist          string             `json:"scrum_checklist"`
-	TestCriteria       string             `json:"scrum_test_criteria"`
-	ReturnColumn       string             `json:"scrum_return_column"`
-	ChannelOrigin      bool               `json:"scrum_channel_origin"`
-	ChannelOperationID string             `json:"scrum_channel_operation_id"`
-	ModelConfig        modelconfig.Config `json:"model_config"`
+	CardID             string                    `json:"scrum_card_id"`
+	CardTitle          string                    `json:"scrum_card_title"`
+	CardDescription    string                    `json:"scrum_card_description"`
+	Checklist          string                    `json:"scrum_checklist"`
+	TestCriteria       string                    `json:"scrum_test_criteria"`
+	ReturnColumn       string                    `json:"scrum_return_column"`
+	ChannelOrigin      bool                      `json:"scrum_channel_origin"`
+	ChannelOperationID string                    `json:"scrum_channel_operation_id"`
+	ModelConfig        modelconfig.Config        `json:"model_config"`
+	CodingExecution    codingagent.Configuration `json:"coding_execution,omitempty"`
 }
 
 func (metadata JobMetadata) Validate() error {
@@ -64,6 +66,11 @@ func (metadata JobMetadata) Validate() error {
 	if len(validatedConfig) != len(metadata.ModelConfig) {
 		return fmt.Errorf("Scrum job model routing snapshot is not canonical")
 	}
+	if metadata.CodingExecution.Mode != "" {
+		if err := metadata.CodingExecution.Validate(); err != nil {
+			return fmt.Errorf("Scrum coding execution: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -86,6 +93,7 @@ func DecodeJobMetadata(raw json.RawMessage) (JobMetadata, error) {
 		"scrum_card_description", "scrum_checklist", "scrum_test_criteria",
 		"scrum_return_column", "scrum_channel_origin", "model_config",
 		"scrum_channel_operation_id",
+		"coding_execution",
 	} {
 		if _, present := fields[key]; !present {
 			return JobMetadata{}, fmt.Errorf("Scrum job metadata requires exact field %s", key)
@@ -93,6 +101,9 @@ func DecodeJobMetadata(raw json.RawMessage) (JobMetadata, error) {
 	}
 	if err := metadata.Validate(); err != nil {
 		return JobMetadata{}, err
+	}
+	if metadata.CodingExecution.Mode != codingagent.Agents {
+		return JobMetadata{}, fmt.Errorf("stored Scrum job requires task-ledger coding execution")
 	}
 	return metadata, nil
 }

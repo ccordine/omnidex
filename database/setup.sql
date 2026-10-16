@@ -4380,13 +4380,13 @@ CREATE TABLE job_lifecycle_operations (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT job_lifecycle_operations_check CHECK (((jsonb_typeof(command_payload) = 'object'::text) AND (command_payload ? 'operation_id'::text) AND ((command_payload ->> 'operation_id'::text) = operation_id))),
     CONSTRAINT job_lifecycle_operations_check2 CHECK (((jsonb_typeof(result_job) = 'object'::text) AND (result_job ? 'id'::text) AND (result_job ? 'current_generation'::text) AND (result_job ? 'status'::text) AND (((result_job ->> 'id'::text))::bigint = job_id) AND (((result_job ->> 'current_generation'::text))::bigint = result_generation) AND ((result_job ->> 'status'::text) = result_job_status))),
-    CONSTRAINT job_lifecycle_operations_check3 CHECK ((((kind = 'complete_step'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'completed'::text)) OR ((kind = 'fail_step'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'failed'::text) AND (result_job_status = 'failed'::text)) OR ((kind = 'submit_feedback'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND ((result_step_status = 'completed'::text) OR ((result_step_status = 'running'::text) AND (result_job_status = 'running'::text) AND COALESCE(result_job->'metadata'->'coding_execution'->>'mode' = 'agents', false)))) OR ((kind = 'interrupt_job'::text) AND (step_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = (observed_generation + 1)) AND (result_job_status = 'waiting_input'::text)) OR ((kind = 'replan_job'::text) AND (step_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = (observed_generation + 1)) AND (result_job_status = 'running'::text)) OR ((kind = 'cancel_job'::text) AND (step_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = observed_generation) AND (result_job_status = 'canceled'::text)) OR ((kind = 'coding_plan_decisions'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'waiting_input'::text) AND (result_job_status = 'waiting_input'::text)) OR ((kind = 'coding_plan_freeze'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'completed'::text) AND (result_job_status = 'running'::text)))),
+    CONSTRAINT job_lifecycle_operations_check3 CHECK ((((kind = 'complete_step'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'completed'::text)) OR ((kind = 'fail_step'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'failed'::text) AND (result_job_status = 'failed'::text)) OR ((kind = 'submit_feedback'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND ((result_step_status = 'completed'::text) OR ((result_step_status = 'running'::text) AND (result_job_status = 'running'::text) AND COALESCE(result_job->'metadata'->'coding_execution'->>'mode' = 'agents', false)))) OR ((kind = 'interrupt_job'::text) AND (step_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = (observed_generation + 1)) AND (result_job_status = 'waiting_input'::text)) OR ((kind = 'replan_job'::text) AND (step_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = (observed_generation + 1)) AND (result_job_status = 'running'::text)) OR ((kind = 'cancel_job'::text) AND (step_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = observed_generation) AND (result_job_status = 'canceled'::text)))),
     CONSTRAINT job_lifecycle_operations_check4 CHECK (
 CASE
     WHEN (kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text])) THEN ((command_payload ? 'step_id'::text) AND (((command_payload ->> 'step_id'::text))::bigint = step_id))
     ELSE ((command_payload ? 'job_id'::text) AND (((command_payload ->> 'job_id'::text))::bigint = job_id))
 END),
-    CONSTRAINT job_lifecycle_operations_kind_check CHECK ((kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text, 'submit_feedback'::text, 'interrupt_job'::text, 'replan_job'::text, 'cancel_job'::text, 'coding_plan_decisions'::text, 'coding_plan_freeze'::text]))),
+    CONSTRAINT job_lifecycle_operations_kind_check CHECK ((kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text, 'submit_feedback'::text, 'interrupt_job'::text, 'replan_job'::text, 'cancel_job'::text]))),
     CONSTRAINT job_lifecycle_operations_observed_generation_check CHECK ((observed_generation > 0)),
     CONSTRAINT job_lifecycle_operations_operation_id_check CHECK ((operation_id ~ '^lifecycle_operation_[a-z0-9_]{1,128}$'::text)),
     CONSTRAINT job_lifecycle_operations_result_generation_check CHECK ((result_generation > 0)),
@@ -4519,7 +4519,7 @@ CREATE TABLE lifecycle_operation_registry (
     command_payload jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT lifecycle_operation_registry_check CHECK (((jsonb_typeof(command_payload) = 'object'::text) AND (command_payload ? 'operation_id'::text) AND ((command_payload ->> 'operation_id'::text) = operation_id))),
-    CONSTRAINT lifecycle_operation_registry_kind_check CHECK ((kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text, 'submit_feedback'::text, 'interrupt_job'::text, 'replan_job'::text, 'channel_session_turn'::text, 'channel_session_message'::text, 'scrum_channel_message'::text, 'cancel_job'::text, 'coding_plan_decisions'::text, 'coding_plan_freeze'::text]))),
+    CONSTRAINT lifecycle_operation_registry_kind_check CHECK ((kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text, 'submit_feedback'::text, 'interrupt_job'::text, 'replan_job'::text, 'channel_session_turn'::text, 'channel_session_message'::text, 'scrum_channel_message'::text, 'cancel_job'::text]))),
     CONSTRAINT lifecycle_operation_registry_operation_id_check CHECK ((operation_id ~ '^lifecycle_operation_[a-z0-9_]{1,128}$'::text))
 );
 
@@ -6011,16 +6011,6 @@ ALTER TABLE job_lifecycle_operations
       ((kind = 'cancel_job'::text) AND
        (command_payload ?& ARRAY['operation_id'::text, 'job_id'::text, 'reason'::text]) AND
        ((command_payload - ARRAY['operation_id'::text, 'job_id'::text, 'reason'::text, 'workspace_root'::text, 'workspace_identity'::text]) = '{}'::jsonb) AND
-       lifecycle_workspace_payload_is_valid(command_payload)) OR
-      ((kind = 'coding_plan_decisions'::text) AND
-       (command_payload ?& ARRAY['operation_id'::text, 'job_id'::text, 'generation'::text, 'revision'::text, 'decisions'::text]) AND
-       ((command_payload - ARRAY['operation_id'::text, 'job_id'::text, 'generation'::text, 'revision'::text, 'decisions'::text, 'workspace_root'::text, 'workspace_identity'::text]) = '{}'::jsonb) AND
-       jsonb_typeof(command_payload->'decisions')='array' AND
-       jsonb_array_length(command_payload->'decisions') BETWEEN 1 AND 30 AND
-       lifecycle_workspace_payload_is_valid(command_payload)) OR
-      ((kind = 'coding_plan_freeze'::text) AND
-       (command_payload ?& ARRAY['operation_id'::text, 'job_id'::text, 'generation'::text, 'revision'::text]) AND
-       ((command_payload - ARRAY['operation_id'::text, 'job_id'::text, 'generation'::text, 'revision'::text, 'workspace_root'::text, 'workspace_identity'::text]) = '{}'::jsonb) AND
        lifecycle_workspace_payload_is_valid(command_payload))) NOT VALID;
 
 
@@ -9680,7 +9670,7 @@ CREATE TABLE coding_ledger_owner_turns (
     ledger_id bigint NOT NULL REFERENCES coding_ledgers(id) ON DELETE RESTRICT,
     owner_turn_id text NOT NULL,
     base_revision bigint NOT NULL CHECK (base_revision>=0),
-    action text NOT NULL DEFAULT 'planning' CHECK (action IN ('planning','execution_configuration','sign_off','cancel')),
+    action text NOT NULL DEFAULT 'planning' CHECK (action IN ('planning','planning_control','execution_configuration','sign_off','cancel')),
     exact_text text NOT NULL CHECK (octet_length(btrim(exact_text))>0),
     created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     PRIMARY KEY (ledger_id,owner_turn_id)
@@ -10771,7 +10761,7 @@ BEGIN
        )) OR
        (NEW.edge_kind='affects' AND (
            from_kind NOT IN ('constraint','decision','question','finding') OR
-           to_kind NOT IN ('requirement','task','acceptance_criterion','check')
+           to_kind NOT IN ('objective','requirement','constraint','group','task','acceptance_criterion','check','decision','question','finding')
        )) OR
        (NEW.edge_kind='resolves' AND (
            from_kind<>'finding' OR to_kind NOT IN ('finding','question','decision')
@@ -12005,13 +11995,13 @@ ALTER TABLE job_lifecycle_operations
         (command_payload->>'expected_generation') ~ '^[1-9][0-9]{0,18}$' AND
         (command_payload->>'expected_generation')::numeric BETWEEN 1 AND 9223372036854775807 AND
         (command_payload->>'expected_generation')::numeric=observed_generation
-      ELSE COALESCE(result_job->'metadata'->'coding_execution'->>'mode','normal')<>'agents'
+      ELSE COALESCE(result_job->'metadata'->'coding_execution'->>'mode','')<>'agents'
       END AND
       CASE WHEN command_payload ? 'expected_waiting_attempt' THEN
         jsonb_typeof(command_payload->'expected_waiting_attempt')='number' AND
         (command_payload->>'expected_waiting_attempt') ~ '^[1-9][0-9]{0,18}$' AND
         (command_payload->>'expected_waiting_attempt')::numeric BETWEEN 1 AND 9223372036854775807
-      ELSE COALESCE(result_job->'metadata'->'coding_execution'->>'mode','normal')<>'agents'
+      ELSE COALESCE(result_job->'metadata'->'coding_execution'->>'mode','')<>'agents'
       END)
     ) NOT VALID;
 

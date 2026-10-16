@@ -37,7 +37,7 @@ func (runtime *nativeRuntimeV3) runAgentPlanningAction(configuration codingagent
 		return err
 	}
 	defer cancelAgent()
-	request, err := runtime.directCodingRequest()
+	request, err := runtime.codingLedgerRequest()
 	if err != nil {
 		return err
 	}
@@ -49,7 +49,7 @@ func (runtime *nativeRuntimeV3) runAgentPlanningAction(configuration codingagent
 	if err != nil {
 		return err
 	}
-	authority := (&directCodingSession{request: request}).directCodingAuthority()
+	authority := request.authority()
 	controller := codingagent.Controller{
 		JobID: runtime.claim.Job.ID, Generation: runtime.claim.Authority.Generation,
 		Root: scope.Root, Configuration: configuration,
@@ -126,7 +126,7 @@ func (runtime *nativeRuntimeV3) runAgentPlanningAction(configuration codingagent
 		return err
 	}
 	runtime.svc.emitStepEvent(runtime.claim.Authority, "coding_plan_review_ready", fmt.Sprintf("ledger=%d revision=%d tasks=%d", ledger.LedgerID, ledger.Revision, len(ledger.Ledger.Tasks)))
-	return errCodingPlanReviewPending
+	return errCodingLedgerReviewPending
 }
 
 // A question answer is a new owner turn, not permission to rerun coverage for
@@ -216,8 +216,8 @@ func resumeCodingLedgerPlanningCoverage(
 	return current, planningCoverageUnready(coverage)
 }
 
-func (runtime *nativeRuntimeV3) agentIntakeContext(request directCodingRequest, root string) (*codingagent.IntakeContext, error) {
-	authority := (&directCodingSession{request: request}).directCodingAuthority()
+func (runtime *nativeRuntimeV3) agentIntakeContext(request codingLedgerRequest, root string) (*codingagent.IntakeContext, error) {
+	authority := request.authority()
 	provenance, err := objectiveInstructionPathProvenance(runtime.ctx, root, authority)
 	if err != nil {
 		return nil, err

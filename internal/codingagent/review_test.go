@@ -47,8 +47,9 @@ func TestNormalizedReviewFindingCannotEscapeTaskPacket(t *testing.T) {
 		},
 	}
 	result := ReviewResult{
-		Findings:  []Finding{{TaskID: "cli", File: "cli.go:172-175", Requirement: "output is atomic", Observation: "store changed after output failed"}},
-		Questions: []string{},
+		Findings:     []Finding{{TaskID: "cli", File: "cli.go:172-175", Requirement: "output is atomic", Observation: "store changed after output failed"}},
+		Questions:    []string{},
+		Verification: "Inspected the authorized file and reproduced the atomicity defect.",
 	}
 	normalizeReviewFindingFiles(tasks, &result)
 	if err := ValidateReview(tasks, result); err != nil {
@@ -67,5 +68,15 @@ func TestNormalizedReviewFindingCannotEscapeTaskPacket(t *testing.T) {
 	result.Findings[0].File = "../other.go"
 	if err := ValidateReview(tasks, result); err == nil {
 		t.Fatal("workspace-escaping review evidence accepted")
+	}
+}
+
+func TestReviewRequiresConcreteVerification(t *testing.T) {
+	task := Task{ID: "task", Acceptance: []string{"behavior is fulfilled"}}
+	for _, verification := range []string{"", " \t\n"} {
+		result := ReviewResult{Findings: []Finding{}, Questions: []string{}, Verification: verification}
+		if err := ValidateReview(map[string]Task{task.ID: task}, result); err == nil {
+			t.Fatal("review without concrete verification was accepted")
+		}
 	}
 }

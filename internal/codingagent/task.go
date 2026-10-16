@@ -78,6 +78,13 @@ func (controller *Controller) runTask(ctx context.Context, task Task, state *tas
 		if err := validateCheckResults(task.Checks, checks); err != nil {
 			return err
 		}
+		if len(checks) > 0 && !checksPass(checks) {
+			state.findings[task.ID] = nil
+			if err := controller.executeTask(ctx, task, state, checks); err != nil {
+				return err
+			}
+			continue
+		}
 		scope.Checks = checks
 		review, reviewResult, err := controller.review(ctx, scope, map[string]Task{task.ID: task}, state.round+1)
 		if err != nil {
@@ -86,7 +93,7 @@ func (controller *Controller) runTask(ctx context.Context, task Task, state *tas
 		if len(review.Questions) > 0 {
 			return fmt.Errorf("frozen task review cannot request new owner decisions")
 		}
-		if (len(checks) == 0 || checksPass(checks)) && len(review.Findings) == 0 {
+		if len(review.Findings) == 0 {
 			state.accepted[task.ID] = true
 			_, err := controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "task_accepted", TaskID: task.ID, CallID: reviewResult.CallID, Round: state.round + 1, Checks: checks})
 			return err

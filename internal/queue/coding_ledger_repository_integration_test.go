@@ -218,26 +218,45 @@ func TestCodingLedgerRepositoryTransactionallyFreezesExactRevision(t *testing.T)
 			{Kind: model.LedgerMutationReorder, TargetID: "task", Rank: &rank, Rationale: "owner reordered"},
 		},
 	}
-	changed, err := repository.ApplyCodingLedgerMutation(ctx, ApplyCodingLedgerMutationCommand{
+	controlCommand := ApplyCodingLedgerMutationCommand{
 		LedgerID: created.LedgerID, OwnerTurnText: "Move the task.", Mutation: mutation, CoveragePassed: true,
-	})
+	}
+	changed, err := repository.ApplyCodingLedgerControl(ctx, controlCommand)
 	if err != nil {
 		t.Fatal(err)
 	}
-	replayed, err := repository.ApplyCodingLedgerMutation(ctx, ApplyCodingLedgerMutationCommand{
-		LedgerID: created.LedgerID, OwnerTurnText: "Move the task.", Mutation: mutation, CoveragePassed: true,
-	})
+	replayed, err := repository.ApplyCodingLedgerControl(ctx, controlCommand)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if replayed.Applied || replayed.Revision != changed.Revision {
 		t.Fatalf("idempotent replay = %#v", replayed)
 	}
+	if _, err := repository.ApplyCodingLedgerMutation(ctx, controlCommand); err == nil {
+		t.Fatal("control operation identity replayed as a semantic planning turn")
+	}
+	var ownerAction string
+	if err := repository.pool.QueryRow(ctx, `
+		SELECT action FROM coding_ledger_owner_turns
+		WHERE ledger_id=$1 AND owner_turn_id=$2
+	`, created.LedgerID, mutation.OwnerTurnID).Scan(&ownerAction); err != nil {
+		t.Fatal(err)
+	}
+	if ownerAction != "planning_control" {
+		t.Fatalf("direct owner action = %q, want planning_control", ownerAction)
+	}
+	planningTurns, err := repository.CodingLedgerPlanningTurns(ctx, created.LedgerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(planningTurns) != 1 || planningTurns[0].OwnerTurnID != "owner-create" {
+		t.Fatalf("semantic planning turns include deterministic controls: %#v", planningTurns)
+	}
 	conflictingMutation := mutation
 	conflictingMutation.Operations = append([]model.LedgerMutationOperation(nil), mutation.Operations...)
 	conflictingRank := int64(9)
 	conflictingMutation.Operations[len(conflictingMutation.Operations)-1].Rank = &conflictingRank
-	if _, err := repository.ApplyCodingLedgerMutation(ctx, ApplyCodingLedgerMutationCommand{
+	if _, err := repository.ApplyCodingLedgerControl(ctx, ApplyCodingLedgerMutationCommand{
 		LedgerID: created.LedgerID, OwnerTurnText: "Move the task.",
 		Mutation: conflictingMutation, CoveragePassed: true,
 	}); err == nil {
@@ -246,7 +265,7 @@ func TestCodingLedgerRepositoryTransactionallyFreezesExactRevision(t *testing.T)
 	sameResultConflict := mutation
 	sameResultConflict.Operations = append([]model.LedgerMutationOperation(nil), mutation.Operations...)
 	sameResultConflict.Operations[0].Rationale = "different rationale with the same materialized result"
-	if _, err := repository.ApplyCodingLedgerMutation(ctx, ApplyCodingLedgerMutationCommand{
+	if _, err := repository.ApplyCodingLedgerControl(ctx, ApplyCodingLedgerMutationCommand{
 		LedgerID: created.LedgerID, OwnerTurnText: "Move the task.",
 		Mutation: sameResultConflict, CoveragePassed: true,
 	}); err == nil {
@@ -1627,6 +1646,61 @@ func TestCodingLedgerTaskDetailIncludesLinkedGroup(t *testing.T) {
 	}
 }
 
+func TestCodingLedgerPersistsDecisionBindingsToTaskContextItems(t *testing.T) {
+	_, repository := freshCodingPlanRepository(t)
+	ctx := context.Background()
+	job, err := repository.EnqueueCodingJob(ctx, "Persist decision bindings to task context.", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ledger := repositoryLedgerFixture()
+	ledger.Constraints = []model.LedgerConstraint{{
+		LedgerItem: repositoryLedgerItem("constraint", 5), Rule: "preserve the public contract",
+	}}
+	ledger.Groups = []model.LedgerGroup{{
+		LedgerItem: repositoryLedgerItem("group", 6), Title: "task-local subsystem",
+	}}
+	ledger.Tasks[0].ConstraintIDs = []model.LedgerItemID{"constraint"}
+	ledger.Tasks[0].GroupID = "group"
+	ledger.DecisionsAndQuestions = []model.LedgerDecisionQuestion{
+		{
+			LedgerItem: repositoryLedgerItem("constraint-decision", 7), Kind: model.LedgerDecision,
+			Prompt: "Which contract?", Answer: "The existing public contract.",
+			Affects: []model.LedgerItemID{"constraint"},
+		},
+		{
+			LedgerItem: repositoryLedgerItem("group-decision", 8), Kind: model.LedgerDecision,
+			Prompt: "Which subsystem?", Answer: "Only the task-local subsystem.",
+			Affects: []model.LedgerItemID{"group"},
+		},
+	}
+	for _, record := range ledgerRepositoryRecords(ledger) {
+		setCodingLedgerItem(&ledger, record.item.ID, func(item *model.LedgerItem) {
+			item.ReviewState = model.LedgerReviewProposed
+		})
+	}
+	itemIDs := make([]model.LedgerItemID, 0, len(ledgerRepositoryRecords(ledger)))
+	for _, record := range ledgerRepositoryRecords(ledger) {
+		itemIDs = append(itemIDs, record.item.ID)
+	}
+	created, err := repository.CreateCodingLedger(ctx, CreateCodingLedgerCommand{
+		JobID: job.ID, OperationID: "decision-binding-create", OwnerTurnID: "decision-binding-turn",
+		OwnerTurnText: "Persist decision bindings to task context.", Ledger: ledger,
+		OwnerTurnDisposition: model.OwnerTurnDisposition{Kind: model.OwnerTurnRepresented, ItemIDs: itemIDs},
+		CoveragePassed:       true, Routes: repositoryLedgerRoutes(1),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	detail, err := repository.CodingLedgerTaskDetail(ctx, created.LedgerID, created.Revision, "task")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.Ledger.DecisionsAndQuestions) != 2 {
+		t.Fatalf("task decision bindings = %#v", detail.Ledger.DecisionsAndQuestions)
+	}
+}
+
 func TestCodingAgentTaskFromLedgerDetailKeepsOnlySelectedTaskContext(t *testing.T) {
 	ledger := repositoryLedgerFixture()
 	ledger.Tasks[0].DeliveryObligation = "deliver the verified implementation"
@@ -2068,7 +2142,7 @@ func TestAgentsReplanCarriesOnlyTheExactAcceptedTaskContract(t *testing.T) {
 	if err != nil || planner == nil || planner.Step.Action != "v3_coding_plan" {
 		t.Fatalf("claim planning step: %#v, %v", planner, err)
 	}
-	fixture, _ := codingAgentPlanReviewFixture(t, repository, planner, "Preserve the exact accepted task.")
+	fixture := codingAgentPlanReviewFixture(t, repository, planner, "Preserve the exact accepted task.")
 	firstFrozen := freezeCodingAgentPlanFixture(t, repository, job, fixture)
 	executor, err := repository.ClaimNextStep(ctx, "accepted-carry-executor")
 	if err != nil || executor == nil || executor.Step.Action != "v3_coding" {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/client"
+	"github.com/gryph/omnidex/internal/ledgerapi"
 	"github.com/gryph/omnidex/internal/model"
 )
 
@@ -114,7 +115,7 @@ func singleLeafPlanReviewFixture(
 	}
 }
 
-func codingLedgerPlanReviewFixture(plan model.CodingPlan) client.CodingLedgerRevision {
+func codingLedgerPlanReviewFixture(plan model.CodingPlan) ledgerapi.CodingLedgerRevision {
 	ledger := model.EngineeringLedger{ID: "ledger-test", Revision: plan.Revision}
 	for index, leaf := range plan.Leaves {
 		state := model.LedgerReviewProposed
@@ -134,7 +135,7 @@ func codingLedgerPlanReviewFixture(plan model.CodingPlan) client.CodingLedgerRev
 	if plan.State == model.CodingPlanStateFrozen {
 		state = "frozen"
 	}
-	return client.CodingLedgerRevision{LedgerID: 1, JobID: plan.JobID, Generation: plan.Generation, Revision: plan.Revision,
+	return ledgerapi.CodingLedgerRevision{LedgerID: 1, JobID: plan.JobID, Generation: plan.Generation, Revision: plan.Revision,
 		State: state, Ledger: ledger, CreatedAt: plan.CreatedAt, UpdatedAt: plan.UpdatedAt}
 }
 

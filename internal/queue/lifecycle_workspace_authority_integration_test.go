@@ -134,6 +134,7 @@ func TestWorkspaceBoundLifecycleMutationsRequireExactRepositoryAuthority(t *test
 		requireUnchangedLifecycleJob(t, repository, job)
 
 		command.WorkspaceRoot, command.WorkspaceIdentity = root, identity
+		command.ExpectedGeneration = &job.CurrentGeneration
 		if _, err := repository.SubmitJobFeedback(ctx, command); !errors.Is(err, ErrStepNotWritable) {
 			t.Fatalf("exact feedback authority reached error %v, want ordinary state guard %v", err, ErrStepNotWritable)
 		}

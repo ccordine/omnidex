@@ -11,7 +11,7 @@ import (
 	"github.com/gryph/omnidex/internal/model"
 )
 
-func TestChannelSessionTurnModePreservesNormalOperationIdentity(t *testing.T) {
+func TestChannelSessionTurnModePreservesConversationOperationIdentity(t *testing.T) {
 	id, err := model.NewLifecycleOperationID()
 	if err != nil {
 		t.Fatal(err)
@@ -30,7 +30,7 @@ func TestChannelSessionTurnModePreservesNormalOperationIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, mode := range []codingagent.Mode{"", codingagent.Normal, codingagent.Agents} {
+	for _, mode := range []codingagent.Mode{"", codingagent.Agents} {
 		command.CodingMode = mode
 		normalized, err := normalizeChannelSessionTurnCommand(command)
 		if err != nil {
@@ -45,10 +45,10 @@ func TestChannelSessionTurnModePreservesNormalOperationIdentity(t *testing.T) {
 				t.Fatalf("Agents mode is not exact operation authority: %s", descriptor.Payload)
 			}
 		} else if normalized.CodingMode != "" || !bytes.Equal(descriptor.Payload, historical) {
-			t.Fatalf("Normal mode changed historical operation identity: %s", descriptor.Payload)
+			t.Fatalf("conversation changed historical operation identity: %s", descriptor.Payload)
 		}
 	}
-	for _, mode := range []codingagent.Mode{"agent", "Agents", " agents ", "null"} {
+	for _, mode := range []codingagent.Mode{"normal", "agent", "Agents", " agents ", "null"} {
 		command.CodingMode = mode
 		_, err := normalizeChannelSessionTurnCommand(command)
 		if !errors.Is(err, ErrChannelSessionTurnInvalid) || !strings.Contains(err.Error(), "unknown coding mode") {

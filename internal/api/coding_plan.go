@@ -28,7 +28,7 @@ type codingPlanFreezeRequest struct {
 	WorkspaceIdentity lifecycleWorkspaceValue `json:"workspace_identity,omitempty"`
 }
 
-func (s *Server) writeCurrentCodingPlan(w http.ResponseWriter, r *http.Request, jobID int64) {
+func (s *Server) writeCurrentCodingLedger(w http.ResponseWriter, r *http.Request, jobID int64) {
 	workspaceRoot, workspaceIdentity, err := requiredLifecycleWorkspaceQuery(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -41,7 +41,7 @@ func (s *Server) writeCurrentCodingPlan(w http.ResponseWriter, r *http.Request, 
 	plan, found, err := s.repo.CurrentCodingLedgerForJob(r.Context(), jobID)
 	if err != nil || !found {
 		if errors.Is(err, pgx.ErrNoRows) || !found {
-			writeError(w, http.StatusNotFound, "coding plan not found")
+			writeError(w, http.StatusNotFound, "coding ledger not found")
 			return
 		}
 		if errors.Is(err, queue.ErrChannelSessionWorkspace) {
@@ -52,7 +52,7 @@ func (s *Server) writeCurrentCodingPlan(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, plan)
+	writeJSON(w, http.StatusOK, codingLedgerRevisionResponse(plan))
 }
 
 func (s *Server) applyCodingPlanDecisions(w http.ResponseWriter, r *http.Request, jobID int64) {
@@ -90,7 +90,7 @@ func (s *Server) applyCodingPlanDecisions(w http.ResponseWriter, r *http.Request
 	mutation, err := codingagent.DirectPlanningMutation(turn, request.Action)
 	if err == nil {
 		var result queue.CodingLedgerRevision
-		result, err = s.repo.ApplyCodingLedgerMutation(r.Context(), queue.ApplyCodingLedgerMutationCommand{
+		result, err = s.repo.ApplyCodingLedgerControl(r.Context(), queue.ApplyCodingLedgerMutationCommand{
 			LedgerID: current.LedgerID, OwnerTurnText: request.OwnerTurnText, Mutation: mutation,
 			CoveragePassed: !codingagent.RequiresPlanningCoverage(mutation),
 		})
@@ -107,7 +107,7 @@ func (s *Server) applyCodingPlanDecisions(w http.ResponseWriter, r *http.Request
 			result, err = s.analyzeDirectPlanningCoverage(r.Context(), jobID, request.WorkspaceRoot.Value, turn, result)
 		}
 		if err == nil {
-			writeJSON(w, http.StatusOK, result)
+			writeJSON(w, http.StatusOK, codingLedgerRevisionResponse(result))
 			return
 		}
 	}
@@ -144,19 +144,17 @@ func (s *Server) freezeCodingPlan(w http.ResponseWriter, r *http.Request, jobID 
 		writeError(w, codingPlanMutationStatus(err), err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, result)
+	writeJSON(w, http.StatusOK, codingLedgerRevisionResponse(result))
 }
 
 func codingPlanMutationStatus(err error) int {
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return http.StatusNotFound
-	case errors.Is(err, queue.ErrCodingPlanRevision),
-		errors.Is(err, queue.ErrCodingPlanState),
+	case errors.Is(err, queue.ErrCodingLedgerRevision),
+		errors.Is(err, queue.ErrCodingLedgerState),
 		errors.Is(err, queue.ErrLifecycleOperationConflict),
 		errors.Is(err, queue.ErrChannelSessionWorkspace):
-		return http.StatusConflict
-	case errors.Is(err, queue.ErrCodingLedgerRevision), errors.Is(err, queue.ErrCodingLedgerState):
 		return http.StatusConflict
 	default:
 		return http.StatusBadRequest

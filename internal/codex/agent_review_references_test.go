@@ -27,7 +27,7 @@ func TestAgentReviewReceiptFailureIsRetryableAtProviderBoundary(t *testing.T) {
 func TestAgentReviewReferencesRestoreExactQuotedPortableFindings(t *testing.T) {
 	task := codingagent.Task{ID: "task\"quoted\\identity", Acceptance: []string{"Preserve \"exact\" values, slash \\, and newline\nbytes."}}
 	call := codingagent.Assignment{Role: codingagent.Review, Task: &task}
-	raw := json.RawMessage(`{"findings":[{"task_id":"task_1","requirement":"criterion_1","file":"","observation":"Observed independent failure."}],"questions":[]}`)
+	raw := json.RawMessage(`{"findings":[{"task_id":"task_1","requirement":"criterion_1","file":"","observation":"Observed independent failure."}],"questions":[],"verification":"Inspected the task-local result against the criterion."}`)
 	mapped, err := mapAgentReviewResult(call, raw)
 	if err != nil {
 		t.Fatal(err)

@@ -98,7 +98,7 @@ func TestObjectiveInstructionPathProvenanceDoesNotTreatInlineJSONAsAPath(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := validateDirectCodingSemanticPrompt(prompt, identities, gauntletProvenance); err != nil {
+	if err := validatePortableSemanticPrompt(prompt, identities, gauntletProvenance); err != nil {
 		t.Fatalf("gauntlet semantic prompt boundary: %v", err)
 	}
 }

@@ -146,8 +146,8 @@ func applyReplanJobTx(
 	); err != nil {
 		return model.Job{}, 0, err
 	}
-	if err := transitionCodingPlanAuthorityTx(
-		ctx, tx, job, model.CodingPlanStateSuperseded,
+	if err := transitionCodingAuthorityTx(
+		ctx, tx, job.ID, model.CodingPlanStateSuperseded,
 		string(command.OperationID), command.Feedback,
 	); err != nil {
 		return model.Job{}, 0, err

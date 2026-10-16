@@ -78,12 +78,12 @@ func TestCLIChatSnapshotRejectsAgentPauseOutsideExactQuestionAuthority(t *testin
 		}},
 		{name: "wrong step action", change: func(snapshot *ChatSessionSnapshot) { snapshot.ActiveJob.Steps[0].Action = "objective_resolve" }},
 		{name: "running step", change: func(snapshot *ChatSessionSnapshot) { snapshot.ActiveJob.Steps[0].Status = model.StepStatusRunning }},
-		{name: "normal mode", change: func(snapshot *ChatSessionSnapshot) {
+		{name: "missing coding authority", change: func(snapshot *ChatSessionSnapshot) {
 			var metadata map[string]any
 			if err := json.Unmarshal(snapshot.ActiveJob.Job.Metadata, &metadata); err != nil {
 				t.Fatal(err)
 			}
-			metadata["coding_execution"] = codingagent.Configuration{Mode: codingagent.Normal}
+			delete(metadata, "coding_execution")
 			encoded, err := json.Marshal(metadata)
 			if err != nil {
 				t.Fatal(err)

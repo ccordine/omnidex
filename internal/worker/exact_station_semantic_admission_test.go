@@ -76,7 +76,7 @@ func TestPortableWorkerFinalizesSoleChoiceWithoutProviderAuthority(t *testing.T)
 		}},
 	}
 	runtime := portableWorkerRuntime(native, "deterministic-choice")
-	decision, err := runDirectCodingSemanticLeafCall(
+	decision, err := runPortableSemanticLeafCall(
 		runtime, "", "sole_join_path", job, nil,
 		func(raw string) (assemblyline.DatabaseJoinPathSelectionDecision, error) {
 			return assemblyline.DecodeDatabaseJoinPathSelectionDecision(input, raw)

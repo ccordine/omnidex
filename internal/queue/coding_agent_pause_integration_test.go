@@ -19,16 +19,6 @@ func TestCodingAgentPlanningQuestionRemainsVisibleAndResumesSamePlan(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	objective, err := repository.ClaimNextStep(ctx, "plan-question-objective-fixture")
-	if err != nil || objective == nil {
-		t.Fatalf("objective claim: %v", err)
-	}
-	if err := repository.CompleteStep(ctx, CompleteStepCommand{
-		OperationID: codingPlanOperationID(t, "plan-question-workspace", result.Job.ID),
-		Authority:   objective.Authority, StepID: objective.Step.ID, Output: "workspace_mutation",
-	}); err != nil {
-		t.Fatal(err)
-	}
 	planner, err := repository.ClaimNextStep(ctx, "plan-question-fixture")
 	if err != nil || planner == nil || planner.Step.Action != "v3_coding_plan" {
 		t.Fatalf("planning claim: %#v %v", planner, err)

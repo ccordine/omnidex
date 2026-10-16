@@ -32,18 +32,11 @@ func TestCodingAgentChannelSessionFeedbackResumesAndReplays(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	objective, err := repository.ClaimNextStep(ctx, "agent-session-objective-fixture")
-	if err != nil || objective == nil {
-		t.Fatalf("objective: %v %v", objective, err)
-	}
-	if err := repository.CompleteStep(ctx, CompleteStepCommand{OperationID: codingPlanOperationID(t, "session-workspace", job.ID), Authority: objective.Authority, StepID: objective.Step.ID, Output: "workspace_mutation"}); err != nil {
-		t.Fatal(err)
-	}
 	planner, err := repository.ClaimNextStep(ctx, "agent-session-planner-fixture")
 	if err != nil || planner == nil {
 		t.Fatalf("planner: %v %v", planner, err)
 	}
-	planCommand, _ := codingAgentPlanReviewFixture(t, repository, planner, "The approved interaction works.")
+	planCommand := codingAgentPlanReviewFixture(t, repository, planner, "The approved interaction works.")
 	freezeCodingAgentPlanFixture(t, repository, job, planCommand)
 	executor, err := repository.ClaimNextStep(ctx, "agent-session-executor-fixture")
 	if err != nil || executor == nil {
@@ -73,7 +66,7 @@ func TestCodingAgentChannelSessionFeedbackResumesAndReplays(t *testing.T) {
 	if err := repository.StoreCodingAgentConfiguration(ctx, changed); err != nil {
 		t.Fatal(err)
 	}
-	command := ChannelSessionTurnCommand{OperationID: codingPlanOperationID(t, "session-answer", job.ID), ChannelID: channel.ID, WorkspaceRoot: root, WorkspaceIdentity: identity, Text: "Use the approved detail.", CodingMode: codingagent.Normal}
+	command := ChannelSessionTurnCommand{OperationID: codingPlanOperationID(t, "session-answer", job.ID), ChannelID: channel.ID, WorkspaceRoot: root, WorkspaceIdentity: identity, Text: "Use the approved detail.", CodingMode: codingagent.Agents}
 	result, err := repository.SubmitChannelSessionTurn(ctx, command)
 	if err != nil {
 		t.Fatal(err)

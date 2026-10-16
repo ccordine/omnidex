@@ -103,7 +103,9 @@ func passingChecks(_ context.Context, _ Assignment, checks []Check) ([]CheckResu
 	return results, nil
 }
 
-func cleanReview() ReviewResult { return ReviewResult{Findings: []Finding{}, Questions: []string{}} }
+func cleanReview() ReviewResult {
+	return ReviewResult{Findings: []Finding{}, Questions: []string{}, Verification: "Inspected the task-local result against its acceptance criteria."}
+}
 
 func TestRunTaskUsesOnlyOneFreshExecutionAndReviewChannel(t *testing.T) {
 	task := fixtureWorkload().Tasks[0]
@@ -165,7 +167,7 @@ func TestRunTaskCorrectionNeverLeavesItsPacket(t *testing.T) {
 		}
 		reviews++
 		if reviews == 1 {
-			return ReviewResult{Findings: []Finding{{TaskID: task.ID, Requirement: "A works", Observation: "A is incomplete"}}, Questions: []string{}}, nil
+			return ReviewResult{Findings: []Finding{{TaskID: task.ID, Requirement: "A works", Observation: "A is incomplete"}}, Questions: []string{}, Verification: "Inspected the task-local result and observed the stated defect."}, nil
 		}
 		return cleanReview(), nil
 	}, passingChecks)
@@ -174,6 +176,37 @@ func TestRunTaskCorrectionNeverLeavesItsPacket(t *testing.T) {
 	}
 	if executions != 2 || reviews != 2 {
 		t.Fatalf("correction calls executions=%d reviews=%d", executions, reviews)
+	}
+}
+
+func TestRunTaskDoesNotSpendReviewOnKnownFailedChecks(t *testing.T) {
+	task := fixtureWorkload().Tasks[0]
+	var roles []Role
+	checkRuns := 0
+	controller, _ := fixtureController(t, fixtureWorkload(), func(call Assignment) (any, error) {
+		roles = append(roles, call.Role)
+		if call.Role == Execute {
+			return ExecutionResult{Questions: []string{}}, nil
+		}
+		return cleanReview(), nil
+	}, func(_ context.Context, _ Assignment, checks []Check) ([]CheckResult, error) {
+		checkRuns++
+		results := make([]CheckResult, len(checks))
+		for index, check := range checks {
+			results[index] = CheckResult{ID: check.ID}
+			if checkRuns == 1 {
+				results[index].ExitCode = 1
+				results[index].Output = "deterministic failure"
+			}
+		}
+		return results, nil
+	})
+	if err := controller.RunTask(context.Background(), task); err != nil {
+		t.Fatal(err)
+	}
+	want := []Role{Execute, Execute, Review}
+	if !reflect.DeepEqual(roles, want) {
+		t.Fatalf("agent roles = %v, want %v", roles, want)
 	}
 }
 

@@ -166,7 +166,7 @@ func TestNativeCLIAgentWorkspaceRejectsIdentityDifferentFromJobBinding(t *testin
 	}
 }
 
-func TestNativeCLIAgentWorkspaceRejectsNormalMode(t *testing.T) {
+func TestNativeCLIAgentWorkspaceRejectsConversationWithoutCodingAuthority(t *testing.T) {
 	fixture := newLocalAgentWorkspaceFixture(t, strings.Repeat("1", 32))
 	metadata, err := json.Marshal(map[string]string{"client_cwd": fixture.scope.Root, "client_workspace_identity": fixture.scope.Identity})
 	if err != nil {
@@ -174,7 +174,7 @@ func TestNativeCLIAgentWorkspaceRejectsNormalMode(t *testing.T) {
 	}
 	fixture.job.Metadata = metadata
 	if err := fixture.service.requireNativeAgentWorkspace(fixture.ctx, fixture.job, fixture.scope, fixture.directory); err == nil {
-		t.Fatal("Normal mode acquired native Agents authority")
+		t.Fatal("conversation acquired native Agents authority")
 	}
 	if scope, err := fixture.service.workspaceScopeForV3Job(fixture.ctx, fixture.job); err != nil || scope != fixture.scope {
 		t.Fatalf("ordinary client workspace access changed: %#v: %v", scope, err)

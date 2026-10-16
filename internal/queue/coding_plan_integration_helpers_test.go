@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/database"
-	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/db"
 	"github.com/gryph/omnidex/internal/model"
@@ -45,7 +44,7 @@ func freshCodingPlanRepository(t *testing.T) (*pgxpool.Pool, *Repository) {
 	if err != nil {
 		t.Fatalf("freeze coding-plan model authority: %v", err)
 	}
-	return pool, New(pool, authority)
+	return pool, New(pool, authority).WithCodingAgents(codingAgentTestConfiguration())
 }
 
 type codingAgentLedgerFixture struct {
@@ -55,7 +54,7 @@ type codingAgentLedgerFixture struct {
 	goal      string
 }
 
-func codingAgentPlanReviewFixture(t *testing.T, repository *Repository, planner *model.ClaimedStep, goal string) (codingAgentLedgerFixture, CodingPlanLeafWrite) {
+func codingAgentPlanReviewFixture(t *testing.T, repository *Repository, planner *model.ClaimedStep, goal string) codingAgentLedgerFixture {
 	t.Helper()
 	ledger := repositoryLedgerFixture()
 	ledger.Objectives[0].Outcome = goal
@@ -89,18 +88,7 @@ func codingAgentPlanReviewFixture(t *testing.T, repository *Repository, planner 
 	if err != nil {
 		t.Fatal(err)
 	}
-	leaf := codingAgentPlanLeaf(t, goal, model.CodingPlanDecisionPending, planner.Authority.Generation)
-	return codingAgentLedgerFixture{authority: planner.Authority, created: created, itemIDs: itemIDs, goal: goal}, leaf
-}
-
-func codingAgentPlanLeaf(t *testing.T, statement string, decision model.CodingPlanDecision, originGeneration int64) CodingPlanLeafWrite {
-	t.Helper()
-	id, err := model.NewCodingPlanLeafID()
-	if err != nil {
-		t.Fatalf("construct agent plan leaf identity: %v", err)
-	}
-	receipt := assemblyline.ApplicationRequirementCandidateResultRelationResult{Schema: assemblyline.ApplicationRequirementCandidateResultRelationSchemaV1, Relation: assemblyline.ApplicationRequirementNoDerivedResult}
-	return CodingPlanLeafWrite{Leaf: model.CodingPlanLeaf{ID: id, Statement: statement, Decision: decision}, DecisionOriginGeneration: originGeneration, ResultRelation: &receipt}
+	return codingAgentLedgerFixture{authority: planner.Authority, created: created, itemIDs: itemIDs, goal: goal}
 }
 
 func freezeCodingAgentPlanFixture(t *testing.T, repository *Repository, job model.Job, fixture codingAgentLedgerFixture) CodingLedgerRevision {
@@ -141,69 +129,6 @@ func freezeCodingAgentPlanFixture(t *testing.T, repository *Repository, job mode
 		t.Fatal(err)
 	}
 	return frozen
-}
-
-func storeCodingPlanFixture(
-	t *testing.T,
-	repository *Repository,
-	leaves []CodingPlanLeafWrite,
-) (model.Job, *model.ClaimedStep, model.CodingPlan) {
-	t.Helper()
-	ctx := context.Background()
-	job, err := repository.EnqueueCodingJob(ctx, "Build the exact coding-plan fixture.", t.TempDir())
-	if err != nil {
-		t.Fatalf("enqueue coding-plan fixture: %v", err)
-	}
-	claim, err := repository.ClaimNextStep(ctx, "coding-plan-review-fixture")
-	if err != nil {
-		t.Fatalf("claim coding-plan fixture: %v", err)
-	}
-	if claim == nil || claim.Job.ID != job.ID || claim.Step.Action != "v3_coding_plan" {
-		t.Fatalf("coding-plan fixture claim = %#v", claim)
-	}
-	plan, err := repository.StoreCodingPlanReview(ctx, StoreCodingPlanReviewCommand{
-		Authority: claim.Authority,
-
-		Leaves: leaves,
-	})
-	if err != nil {
-		t.Fatalf("store coding-plan fixture: %v", err)
-	}
-	return job, claim, plan
-}
-
-func codingPlanExecutableLeaf(
-	t *testing.T,
-	statement string,
-	decision model.CodingPlanDecision,
-	originGeneration int64,
-) CodingPlanLeafWrite {
-	t.Helper()
-	id, err := model.NewCodingPlanLeafID()
-	if err != nil {
-		t.Fatalf("construct coding-plan leaf identity: %v", err)
-	}
-	receipt := codingPlanAcceptedReceipt(t, statement)
-	return CodingPlanLeafWrite{
-		Leaf: model.CodingPlanLeaf{
-			ID: id, Statement: statement,
-			Decision: decision,
-		},
-		DecisionOriginGeneration: originGeneration,
-		ResultRelation:           &receipt,
-	}
-}
-
-func codingPlanAcceptedReceipt(t *testing.T, statement string) assemblyline.ApplicationRequirementCandidateResultRelationResult {
-	t.Helper()
-	result := assemblyline.ApplicationRequirementCandidateResultRelationResult{
-		Schema:   assemblyline.ApplicationRequirementCandidateResultRelationSchemaV1,
-		Relation: assemblyline.ApplicationRequirementNoDerivedResult,
-	}
-	if err := result.ValidateAcceptedFor(statement); err != nil {
-		t.Fatal(err)
-	}
-	return result
 }
 
 func codingPlanOperationID(t *testing.T, label string, jobID int64) model.LifecycleOperationID {
@@ -332,23 +257,4 @@ func codingAgentFixtureFiles(groups ...[]string) []string {
 	}
 	sort.Strings(files)
 	return files
-}
-
-func sameCodingPlanProjection(left, right model.CodingPlan) bool {
-	if left.JobID != right.JobID || left.Generation != right.Generation ||
-		left.Revision != right.Revision || left.State != right.State ||
-		len(left.Leaves) != len(right.Leaves) || !left.CreatedAt.Equal(right.CreatedAt) ||
-		!left.UpdatedAt.Equal(right.UpdatedAt) {
-		return false
-	}
-	if (left.FrozenAt == nil) != (right.FrozenAt == nil) ||
-		(left.FrozenAt != nil && !left.FrozenAt.Equal(*right.FrozenAt)) {
-		return false
-	}
-	for index := range left.Leaves {
-		if left.Leaves[index] != right.Leaves[index] {
-			return false
-		}
-	}
-	return true
 }

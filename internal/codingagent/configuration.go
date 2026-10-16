@@ -13,7 +13,7 @@ func ConfigurationFromMetadata(raw json.RawMessage) (Configuration, error) {
 		return Configuration{}, err
 	}
 	if len(root.Coding) == 0 {
-		return Configuration{Mode: Normal}, nil
+		return Configuration{}, nil
 	}
 	var configuration Configuration
 	if err := decodeContract(root.Coding, &configuration); err != nil {
@@ -26,8 +26,8 @@ func ConfigurationFromMetadata(raw json.RawMessage) (Configuration, error) {
 }
 
 func (config Configuration) ForMode(mode Mode) (Configuration, error) {
-	if mode == "" || mode == Normal {
-		return Configuration{Mode: Normal}, nil
+	if mode == "" {
+		return Configuration{}, nil
 	}
 	if mode != Agents {
 		return Configuration{}, fmt.Errorf("unknown coding mode %q", mode)

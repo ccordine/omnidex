@@ -20,7 +20,7 @@ func TestAgentsCompletionAcceptsUntouchedCarriedTask(t *testing.T) {
 	if err != nil || planner == nil {
 		t.Fatalf("claim first planning step: %#v, %v", planner, err)
 	}
-	fixture, _ := codingAgentPlanReviewFixture(t, repository, planner, "Complete the exact approved task.")
+	fixture := codingAgentPlanReviewFixture(t, repository, planner, "Complete the exact approved task.")
 	firstFrozen := freezeCodingAgentPlanFixture(t, repository, job, fixture)
 	executor, err := repository.ClaimNextStep(ctx, "carried-completion-executor-one")
 	if err != nil || executor == nil {

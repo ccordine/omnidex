@@ -55,6 +55,33 @@ func TestPlanningAuditGatesButCannotApprove(t *testing.T) {
 	}
 }
 
+func TestPlanningAuditExcludesSignoffControlFromSemanticScope(t *testing.T) {
+	ledger := planningLedgerFixture(model.LedgerReviewAgreed)
+	persistedTurnSeen := false
+	controller, _ := fixtureController(t, fixtureWorkload(), func(assignment Assignment) (any, error) {
+		for _, fact := range assignment.ConstructionFacts {
+			if strings.Contains(fact.Quote, "Sign off the exact displayed planning revision") {
+				t.Fatalf("planning audit treated sign-off control as engineering scope: %#v", assignment.ConstructionFacts)
+			}
+			persistedTurnSeen = persistedTurnSeen || strings.Contains(fact.Quote, "Build the requested module")
+		}
+		return PlanningCoverageJudgment{
+			Question: AuditPlanningQuestion, BaseRevision: ledger.Revision, Covered: true,
+			Explanation: "the persisted engineering turn is represented",
+		}, nil
+	}, passingChecks)
+	turn := PlanningTurn{OperationID: "freeze-operation", OwnerTurnID: "freeze-turn",
+		Text: "Sign off the exact displayed planning revision.", ObservedRevision: ledger.Revision}
+	persisted := []PersistedPlanningTurn{{OwnerTurnID: "original-turn", ExactText: "Build the requested module",
+		Dispositions: []model.OwnerStatementDisposition{{Kind: model.OwnerTurnRepresented, ItemIDs: []model.LedgerItemID{"objective"}}}}}
+	if _, err := controller.AuditPlanningLedger(context.Background(), "audit-signoff-scope", turn, ledger, persisted); err != nil {
+		t.Fatal(err)
+	}
+	if !persistedTurnSeen {
+		t.Fatal("planning audit omitted persisted engineering turns")
+	}
+}
+
 func TestPlanningAuditUncoveredJudgmentIsReadOnly(t *testing.T) {
 	ledger := planningLedgerFixture(model.LedgerReviewAgreed)
 	judgment := PlanningCoverageJudgment{
@@ -84,6 +111,9 @@ func TestPlanningCoverageReturnsSuggestionsWithoutMutationAuthority(t *testing.T
 	controller, _ := fixtureController(t, fixtureWorkload(), func(assignment Assignment) (any, error) {
 		if assignment.Role != PlanningCoverage {
 			t.Fatalf("role = %s", assignment.Role)
+		}
+		if assignment.PlanningQuestionID != coveragePlanningQuestion || assignment.PlanningBaseRevision != ledger.Revision {
+			t.Fatalf("coverage output authority was lost before the provider: %#v", assignment)
 		}
 		return PlanningCoverageJudgment{
 			Question: coveragePlanningQuestion, BaseRevision: ledger.Revision, Covered: false, Explanation: "missing constraint",

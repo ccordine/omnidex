@@ -121,7 +121,7 @@ func TestInstalledCodexAgentExecutionAndIndependentReview(t *testing.T) {
 	}
 	var execution codingagent.ExecutionResult
 	if err := json.Unmarshal(result.Content, &execution); err != nil || execution.Questions == nil || len(execution.Questions) != 0 {
-		t.Fatalf("native execution did not fulfill its complete supplied contract: decode=%v", err)
+		t.Fatalf("native execution did not fulfill its complete supplied contract: decode=%v content=%s", err, result.Content)
 	}
 	checks, err := client.ExecuteChecks(ctx, scope, scope.Task.Checks, activityProof.verification)
 	if err != nil || len(checks) != 1 || checks[0].ExitCode != 0 {

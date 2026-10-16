@@ -10,7 +10,11 @@ import (
 
 func TestAgentReviewSchemaUsesOnlyExactTaskCriteria(t *testing.T) {
 	task := codingagent.Task{ID: "task-\"a\"", Acceptance: []string{"The value equals \"approved\".", "Accepted inputs return the specified type."}}
-	item := reviewSchemaItem(t, agentOutputSchema(codingagent.Assignment{Role: codingagent.Review, Task: &task}))
+	schema := agentOutputSchema(codingagent.Assignment{Role: codingagent.Review, Task: &task})
+	if !reflect.DeepEqual(schema["required"], []string{"findings", "questions", "verification"}) {
+		t.Fatalf("review schema leaves declared output fields optional: %#v", schema["required"])
+	}
+	item := reviewSchemaItem(t, schema)
 	properties := item["properties"].(map[string]any)
 	if !reflect.DeepEqual(properties["task_id"].(map[string]any)["enum"], []string{"task_1"}) ||
 		!reflect.DeepEqual(properties["requirement"].(map[string]any)["enum"], []string{"criterion_1", "criterion_2"}) {

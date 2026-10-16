@@ -27,7 +27,7 @@ func (activity *terminalWorkflowActivity) observe(t *testing.T, text string) {
 	}
 	activity.transcript.WriteString(text)
 	text = activity.tail + text
-	for _, marker := range []string{"Candidate:", "Why:", "Options:", "Result:", "Code rule:", "Call:", "thinking>", "command>", "exit 0", "file read", "read ·", "list ·", "output>", "Written files:", "Planning · started", "Planning · completed", "Executing task · started", "Executing task · completed", "Reviewing · started", "Reviewing · completed", "Overall review · started", "Overall review · completed"} {
+	for _, marker := range []string{"thinking>", "command>", "exit 0", "file read", "read ·", "list ·", "output>", "Written files:", "Planning · started", "Planning · completed", "Executing task · started", "Executing task · completed", "Reviewing · started", "Reviewing · completed"} {
 		activity.seen[marker] = activity.seen[marker] || strings.Contains(text, marker)
 	}
 	if len(text) > 128 {
@@ -38,7 +38,7 @@ func (activity *terminalWorkflowActivity) observe(t *testing.T, text string) {
 
 func (activity *terminalWorkflowActivity) assert(t *testing.T) {
 	t.Helper()
-	for _, marker := range []string{"command>", "exit 0", "list ·", "Written files:", "Planning · started", "Planning · completed", "Executing task · started", "Executing task · completed", "Reviewing · started", "Reviewing · completed", "Overall review · started", "Overall review · completed"} {
+	for _, marker := range []string{"command>", "exit 0", "list ·", "Written files:", "Planning · started", "Planning · completed", "Executing task · started", "Executing task · completed", "Reviewing · started", "Reviewing · completed"} {
 		if !activity.seen[marker] {
 			t.Errorf("actual terminal workflow omitted evidence %q", marker)
 		}

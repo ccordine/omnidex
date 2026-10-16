@@ -7,11 +7,14 @@ decodes into typed state.
 
 ## Production entry points
 
-The native runtime registers exactly two actions:
+The native runtime registers exactly three actions:
 
 - `objective_resolve` runs the code-owned free-form objective workflow.
-- `v3_coding` runs the deterministic source assembly line directly for an explicit
-  coding transport.
+- `v3_coding_plan` creates or revises one PostgreSQL planning ledger, then waits
+  for the owner to approve and freeze it.
+- `v3_coding` repeatedly queries the first incomplete approved ledger task, runs
+  one fresh isolated execution, performs deterministic checks, runs one fresh
+  isolated review, records acceptance, and queries again.
 
 Every former conversation-stage action is rejected as unregistered. There is no
 persona team, general planner, model verifier, model-selected operation, tool
@@ -41,32 +44,23 @@ that single-choice operation. It persists and removes each accepted candidate, t
 renders the reduced set plus a semantic no-additional-choice alternative. Choice
 letters are local to each reduced round; no model response carries the selected set.
 
-## Coding assembly line
+## Coding task ledger
 
-Code owns application structure, paths, declarations, dependencies, scheduling,
-workspace mutation, command selection, retries, diagnostics, verification, and
-completion. A coding station receives one exact local body job and returns ordinary
-plain text containing only the implementation body. Code supplies and validates the
-declaration. When code proves a specific defect and its exact mutable byte span, that
-same persisted job and immutable model route may continue for at most three total
-attempts. The continuation exposes one necessary semantic question and only that span;
-the returned ordinary text replaces only the span in the code-retained body. It does
-not create another station or response format, expose the complete previous body, ask
-the model to preserve surrounding source, or reopen accepted sibling work.
+PostgreSQL owns the planning ledger, frozen task ledger, task order, dependencies,
+review state, checks, and completion. Planning receives the broad request and the
+bounded repository facts needed to construct the ledger. No planning response is
+executable until deterministic validation and owner approval freeze a revision.
 
-Lease reclamation does not restart that semantic work. The new active attempt
-rehydrates accepted portable leaves by their deterministic work IDs and replays a
-source lineage from its persisted initial response through each unique child in
-order. Deterministic validation recreates each exact span and any private opaque
-choice mapping before the stored child response is consumed. Only an absent child
-may cause the next provider call, and that call retains the same job, work ID, model,
-and parent evidence; the predecessor attempt must be expired. Rehydration itself
-does not invoke a provider or expose persisted source to one.
+Execution receives only the selected task's goal, guidance, relevant files,
+constraints, acceptance criteria, and checks. It never receives or controls the
+remaining queue. Code owns workspace authority and every state transition. After
+execution, code runs the declared checks from a sealed source tree and dispatches a
+fresh reviewer with only that task and its observed result. A task advances only
+after its checks and review are recorded. The executor and reviewer cannot select,
+reorder, expand, reopen, or complete ledger work.
 
-Greenfield writes and verification commands are selected and invoked directly by
-the coding workflow. They do not pass through a model-visible registry. Existing
-repository changes retain their exact snapshot, evidence, change-contract,
-staging, sandbox, mutation-authority, and post-mutation verification gates.
+There is no alternate direct-coding pipeline. Missing ledger authority, invalid
+routes, stale revisions, failed checks, and rejected review all fail explicitly.
 
 ## Authority and failure
 

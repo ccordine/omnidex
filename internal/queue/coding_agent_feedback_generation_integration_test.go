@@ -62,7 +62,7 @@ func TestPlanningReplanRejectsStaleLedgerRevisionBeforeGenerationAdvance(t *test
 }
 
 func TestCodingAgentFeedbackBindsObservedGenerationAndReplaysAfterReplan(t *testing.T) {
-	pool, repository, job, claim, _ := freshAgentCodingClaim(t)
+	pool, repository, job, claim := freshAgentCodingClaim(t)
 	ctx := context.Background()
 	questions := []string{"Choose the approved first-generation detail."}
 	if _, err := repository.CodingAgentEvidence(claim.Authority).Append(ctx, codingagent.Entry{Generation: 1, Phase: "questions", Questions: questions}); err != nil {

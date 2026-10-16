@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gryph/omnidex/internal/ledgerapi"
 	"github.com/gryph/omnidex/internal/model"
 )
 
@@ -37,7 +38,7 @@ func (client *Client) CodingPlan(
 	return plan, nil
 }
 
-func projectCodingLedgerForTerminal(revision CodingLedgerRevision) (model.CodingPlan, error) {
+func projectCodingLedgerForTerminal(revision ledgerapi.CodingLedgerRevision) (model.CodingPlan, error) {
 	state := model.CodingPlanStateReview
 	var frozenAt *time.Time
 	if revision.State == "frozen" {

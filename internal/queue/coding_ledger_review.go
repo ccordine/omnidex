@@ -9,9 +9,7 @@ import (
 )
 
 // MarkCodingLedgerReviewReady moves the existing planning step to waiting only
-// after the normalized proposal is durable. Agents mode never creates the
-// separate Normal-mode coding-plan projection, so it cannot compete with the
-// ledger.
+// after the normalized proposal is durable.
 func (r *Repository) MarkCodingLedgerReviewReady(ctx context.Context, authority model.StepAttemptAuthority, ledgerID, revision int64) error {
 	if r == nil || r.pool == nil || ledgerID <= 0 || revision <= 0 {
 		return fmt.Errorf("coding ledger review requires exact authority")
@@ -21,7 +19,7 @@ func (r *Repository) MarkCodingLedgerReviewReady(ctx context.Context, authority 
 		return err
 	}
 	defer tx.Rollback(ctx)
-	locked, err := lockCodingPlanStoreAuthorityTx(ctx, tx, authority)
+	locked, err := lockStepAttemptAuthorityTx(ctx, tx, authority)
 	if err != nil {
 		return err
 	}

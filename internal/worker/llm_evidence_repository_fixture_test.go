@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/database"
+	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/db"
 	"github.com/gryph/omnidex/internal/modelconfig"
 	"github.com/gryph/omnidex/internal/queue"
@@ -67,5 +68,12 @@ func freshWorkerEvidenceRepository(
 	if err != nil {
 		t.Fatal(err)
 	}
-	return pool, queue.New(pool, authority)
+	return pool, newWorkerTestRepository(pool, authority)
+}
+
+func newWorkerTestRepository(pool *pgxpool.Pool, authority modelconfig.Authority) *queue.Repository {
+	route := codingagent.Route{Provider: "codex", Model: "fixture-model"}
+	return queue.New(pool, authority).WithCodingAgents(codingagent.Configuration{
+		Mode: codingagent.Agents, Planner: route, Executor: route, Reviewer: route,
+	})
 }

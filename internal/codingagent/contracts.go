@@ -15,7 +15,6 @@ import (
 type Mode string
 
 const (
-	Normal Mode = "normal"
 	Agents Mode = "agents"
 )
 
@@ -55,9 +54,6 @@ type Configuration struct {
 }
 
 func (config Configuration) Validate() error {
-	if config.Mode == Normal {
-		return nil
-	}
 	if config.Mode != Agents {
 		return fmt.Errorf("unknown coding mode %q", config.Mode)
 	}
@@ -142,24 +138,26 @@ type QuestionContext struct {
 }
 
 type Assignment struct {
-	JobID               int64                `json:"job_id"`
-	Generation          int64                `json:"generation"`
-	Role                Role                 `json:"role"`
-	Task                *Task                `json:"task,omitempty"`
-	Requirements        []Requirement        `json:"requirements,omitempty"`
-	Objective           *Objective           `json:"objective,omitempty"`
-	ArtifactBindings    []ArtifactBinding    `json:"artifact_bindings,omitempty"`
-	PlanningEnvironment *PlanningEnvironment `json:"planning_environment,omitempty"`
-	ConstructionFacts   []ConstructionFact   `json:"construction_facts,omitempty"`
-	Findings            []Finding            `json:"findings,omitempty"`
-	Checks              []CheckResult        `json:"checks,omitempty"`
-	QuestionContext     []QuestionContext    `json:"question_context,omitempty"`
-	ValidationNotes     []string             `json:"validation_notes,omitempty"`
-	Root                string               `json:"root"`
-	ReadFiles           []string             `json:"read_files"`
-	WriteFiles          []string             `json:"write_files"`
-	DeleteFiles         []string             `json:"delete_files"`
-	Route               Route                `json:"route"`
+	JobID                int64                `json:"job_id"`
+	Generation           int64                `json:"generation"`
+	Role                 Role                 `json:"role"`
+	Task                 *Task                `json:"task,omitempty"`
+	Requirements         []Requirement        `json:"requirements,omitempty"`
+	Objective            *Objective           `json:"objective,omitempty"`
+	ArtifactBindings     []ArtifactBinding    `json:"artifact_bindings,omitempty"`
+	PlanningEnvironment  *PlanningEnvironment `json:"planning_environment,omitempty"`
+	ConstructionFacts    []ConstructionFact   `json:"construction_facts,omitempty"`
+	Findings             []Finding            `json:"findings,omitempty"`
+	Checks               []CheckResult        `json:"checks,omitempty"`
+	QuestionContext      []QuestionContext    `json:"question_context,omitempty"`
+	ValidationNotes      []string             `json:"validation_notes,omitempty"`
+	Root                 string               `json:"root"`
+	ReadFiles            []string             `json:"read_files"`
+	WriteFiles           []string             `json:"write_files"`
+	DeleteFiles          []string             `json:"delete_files"`
+	Route                Route                `json:"route"`
+	PlanningQuestionID   string               `json:"planning_question_id,omitempty"`
+	PlanningBaseRevision int64                `json:"planning_base_revision,omitempty"`
 }
 type Result struct {
 	CallID    int64             `json:"call_id,omitempty"`

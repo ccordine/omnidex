@@ -24,7 +24,7 @@ func TestChannelSessionTurnAdmissionFreezesModeAndHonorsUpdateFence(t *testing.T
 	if databaseURL == "" {
 		t.Skip("isolated PostgreSQL not selected")
 	}
-	for _, mode := range []codingagent.Mode{"", codingagent.Normal, codingagent.Agents} {
+	for _, mode := range []codingagent.Mode{"", codingagent.Agents} {
 		t.Run("mode_"+string(mode), func(t *testing.T) {
 			repository := freshCLIChatAPIRepository(t, databaseURL)
 			route := codingagent.Route{Provider: "codex", Model: "startup-model"}
@@ -124,9 +124,16 @@ func TestChannelSessionTurnAdmissionFreezesModeAndHonorsUpdateFence(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
+			if mode == codingagent.Agents {
+				if len(details.Steps) != 2 || details.Steps[0].Action != "v3_coding_plan" || details.Steps[1].Action != "v3_coding" {
+					t.Fatalf("explicit coding transport did not enter the ledger directly: %#v", details.Steps)
+				}
+			} else if len(details.Steps) != 3 || details.Steps[0].Action != "objective_resolve" {
+				t.Fatalf("conversation lost its objective boundary: %#v", details.Steps)
+			}
 			frozen, err := codingagent.ConfigurationFromMetadata(details.Job.Metadata)
 			if mode != codingagent.Agents {
-				configuration = codingagent.Configuration{Mode: codingagent.Normal}
+				configuration = codingagent.Configuration{}
 			}
 			if err != nil || frozen != configuration {
 				t.Fatalf("session HTTP mode did not freeze exact routes: %#v want %#v error=%v", frozen, configuration, err)

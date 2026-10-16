@@ -87,7 +87,7 @@ describe("Agents conversation pause and resume", () => {
     const { turn } = create();
     await turn.recover("chat-42", { message_id: 11, job_id: 17, status: "waiting_input" });
 
-    await expect(turn.answer("chat-42", "exact draft", "normal")).rejects.toThrow("mode cannot change");
+    await expect(turn.answer("chat-42", "exact draft", "conversation")).rejects.toThrow("mode cannot change");
     expect(fetchMock).toHaveBeenCalledTimes(1);
     generation = 4;
     await expect(turn.answer("chat-42", "exact draft", "agents")).rejects.toThrow("generation or workspace changed");

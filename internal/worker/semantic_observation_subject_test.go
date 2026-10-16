@@ -91,7 +91,7 @@ func assertSemanticSubjectProjection[T any](t *testing.T, job assemblyline.Porta
 	}}
 	var err error
 	if job.Kind == assemblyline.WorkCapabilityRelation {
-		_, err = runDirectCodingSemanticLeafCall(runtime, "fixture-model", string(job.Kind), job, nil,
+		_, err = runPortableSemanticLeafCall(runtime, "fixture-model", string(job.Kind), job, nil,
 			func(raw string) (T, error) { return decode(raw) })
 	} else {
 		_, err = runObjectiveRawLeafWorkerCall(runtime, "fixture-model", string(job.Kind), job, decode)

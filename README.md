@@ -127,13 +127,12 @@ Reply while work runs to give feedback, `/interrupt` to pause, `/redirect <text>
 to change the plan, or `/stop` or `/cancel` to stop. Cancellation reasons are
 optional. `/status` shows authoritative current work and `/help` lists controls.
 
-Alternatively, select **Agents** in a local CLI-bound assistant conversation, or submit
-`coding_mode: "agents"` to `POST /v1/jobs` with the selected workspace in
-`metadata.client_cwd`. The native service must own that workspace under
+Select **Code** in a local CLI-bound assistant conversation. Every request sent
+to `POST /v1/jobs` is a task-ledger coding run and supplies the selected workspace
+in `metadata.client_cwd`. The native service must own that workspace under
 `HOST_DIRECTORY_ACCESS_ROOT`; a remote directory with the same name grants no
-access. Unbound API jobs retain that configured boundary. Normal remains the
-default for ordinary web/API turns; terminal turns explicitly choose Agents.
-The API also accepts `coding_mode: "normal"`.
+access. Unbound API jobs retain that configured boundary. **Conversation** is
+the non-coding chat choice; it does not invoke an alternate coding pipeline.
 
 `CODING_PLANNER_PROVIDER/MODEL`, `CODING_EXECUTOR_PROVIDER/MODEL` and
 `CODING_REVIEWER_PROVIDER/MODEL` configure the independent roles at startup.

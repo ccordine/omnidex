@@ -36,8 +36,6 @@ const (
 	LifecycleChannelSessionMessage LifecycleOperationKind = "channel_session_message"
 	LifecycleScrumChannel          LifecycleOperationKind = "scrum_channel_message"
 	LifecycleCancelJob             LifecycleOperationKind = "cancel_job"
-	LifecycleCodingPlanDecisions   LifecycleOperationKind = "coding_plan_decisions"
-	LifecycleCodingPlanFreeze      LifecycleOperationKind = "coding_plan_freeze"
 )
 
 type CompleteStepCommand struct {

@@ -49,7 +49,7 @@ func (s *Server) handleJobByID(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		s.writeCurrentCodingPlan(w, r, id)
+		s.writeCurrentCodingLedger(w, r, id)
 		return
 	}
 	if action == jobItemPlanDecisions || action == jobItemPlanFreeze {

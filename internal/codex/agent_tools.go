@@ -49,6 +49,13 @@ func (connection *connection) handleAgentTool(ctx context.Context, frame rpcFram
 	if err := recordAgentFrame(result, connection.lastFrame, event); err != nil {
 		return err
 	}
+	if event != nil {
+		activity := agentActivityBase(call, result, params.CallID, model.AgentActivityCommand, model.AgentActivityStarted)
+		activity.Command, activity.CWD = params.Tool, call.Root
+		if err := event(codingagent.NativeEvent{Activity: &activity}); err != nil {
+			return err
+		}
+	}
 	path := ""
 	content := ""
 	var writeErr error
@@ -103,6 +110,17 @@ func (connection *connection) handleAgentTool(ctx context.Context, frame rpcFram
 	}
 	if err := recordAgentFrame(result, receipt, event); err != nil {
 		return err
+	}
+	if event != nil {
+		status := model.AgentActivityCompleted
+		if writeErr != nil {
+			status = model.AgentActivityFailed
+		}
+		activity := agentActivityBase(call, result, params.CallID, model.AgentActivityCommand, status)
+		activity.Command, activity.CWD = params.Tool, call.Root
+		if err := event(codingagent.NativeEvent{Activity: &activity}); err != nil {
+			return err
+		}
 	}
 	if writeErr == nil && event != nil {
 		kind := model.AgentActivityFileEdit

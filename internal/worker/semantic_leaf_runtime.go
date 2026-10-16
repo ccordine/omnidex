@@ -8,7 +8,7 @@ import (
 	"github.com/gryph/omnidex/internal/modelcontext"
 )
 
-func validateDirectCodingSemanticPrompt(
+func validatePortableSemanticPrompt(
 	prompt string,
 	identities []assemblyline.ArtifactIdentity,
 	provenance assemblyline.ArtifactIdentityProvenance,
@@ -17,21 +17,21 @@ func validateDirectCodingSemanticPrompt(
 		value := strings.TrimSpace(identity.Value)
 		if value != "" && strings.Contains(prompt, value) {
 			return fmt.Errorf(
-				"coding semantic prompt exposes source identity behind %s",
+				"portable semantic prompt exposes source identity behind %s",
 				identity.Token,
 			)
 		}
 	}
 	if matches := modelcontext.ProvenArtifactIdentities(prompt, provenance); len(matches) > 0 {
 		return fmt.Errorf(
-			"coding semantic prompt exposes known artifact identity %q",
+			"portable semantic prompt exposes known artifact identity %q",
 			prompt[matches[0].Start:matches[0].End],
 		)
 	}
 	return nil
 }
 
-func validateDirectCodingSemanticCandidatePathBoundary(
+func validatePortableSemanticCandidatePathBoundary(
 	kind assemblyline.WorkKind,
 	candidate string,
 	provenance assemblyline.ArtifactIdentityProvenance,
@@ -44,12 +44,12 @@ func validateDirectCodingSemanticCandidatePathBoundary(
 		)
 	default:
 		return assemblyline.ValidatePathFreeModelContextWithProvenance(
-			"coding semantic result", provenance, candidate,
+			"portable semantic result", provenance, candidate,
 		)
 	}
 }
 
-func emitDirectCodingSemanticRejection(
+func emitPortableSemanticRejection(
 	runtime typedWorkerRuntime,
 	modelName string,
 	subject string,
@@ -66,7 +66,7 @@ func emitDirectCodingSemanticRejection(
 	})
 }
 
-func failDirectCodingSemanticCall(
+func failPortableSemanticCall(
 	runtime typedWorkerRuntime,
 	modelName string,
 	subject string,
@@ -77,5 +77,5 @@ func failDirectCodingSemanticCall(
 		Kind: typedWorkerSemantic, Subject: subject,
 		Model: modelName, Attempt: attempt, MaxAttempts: runtime.MaxAttempts,
 	}, err)
-	return fmt.Errorf("coding semantic %s failed: %w", subject, err)
+	return fmt.Errorf("portable semantic %s failed: %w", subject, err)
 }

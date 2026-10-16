@@ -10,7 +10,6 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/datasource"
 	"github.com/gryph/omnidex/internal/modelconfig"
-	"github.com/gryph/omnidex/internal/queue"
 )
 
 // This runs the production query-intent pipeline and PostgreSQL call records
@@ -34,7 +33,7 @@ func TestDatabasePurposeInventoriesRecordReducedCallsAndReplay(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			repository := queue.New(pool, config)
+			repository := newWorkerTestRepository(pool, config)
 			ctx := context.Background()
 			job, err := repository.EnqueueCodingJob(ctx, "exercise database-purpose intake", t.TempDir())
 			if err != nil {

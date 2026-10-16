@@ -28,6 +28,57 @@ func TestPlanningOwnsBroadPictureAndCompilesTaskLocalPackets(t *testing.T) {
 		if role == codingagent.PlanningInitial && (!strings.Contains(assignment, `"workspace_files"`) || !strings.Contains(assignment, `"internal/runtime.go"`)) {
 			t.Fatalf("initial planning did not receive the code-enumerated workspace picture: %s", assignment)
 		}
+		if role == codingagent.PlanningInitial && (!strings.Contains(instruction, "Every active requirement") ||
+			!strings.Contains(instruction, "Every active required acceptance criterion") ||
+			!strings.Contains(instruction, "exactly one active objective") ||
+			!strings.Contains(instruction, "Never elevate an inferred") ||
+			!strings.Contains(instruction, "File lists are code-owned capabilities") ||
+			!strings.Contains(instruction, "fewest finite task records")) {
+			t.Fatalf("initial planning omitted normalized ledger invariants: %s", instruction)
+		}
+	}
+}
+
+func TestPlanningSchemaConstrainsCodeOwnedLedgerEnums(t *testing.T) {
+	text := map[string]any{"type": "string"}
+	strings := map[string]any{"type": "array", "items": text}
+	object := func(properties map[string]any, required ...string) map[string]any {
+		return map[string]any{"type": "object", "properties": properties, "required": required, "additionalProperties": false}
+	}
+	ledger := planningLedgerSchema(object, text, strings)
+	properties := ledger["properties"].(map[string]any)
+	objective := properties["objectives"].(map[string]any)["items"].(map[string]any)
+	item := objective["properties"].(map[string]any)
+	for name, expected := range map[string][]string{
+		"priority":     {"critical", "high", "normal", "low"},
+		"disposition":  {"active", "tombstoned"},
+		"review_state": {"", "proposed", "agreed", "needs_discussion"},
+	} {
+		actual, ok := item[name].(map[string]any)["enum"].([]string)
+		if !ok || !reflect.DeepEqual(actual, expected) {
+			t.Fatalf("planning %s enum = %#v, want %#v", name, actual, expected)
+		}
+	}
+	check := properties["checks"].(map[string]any)["items"].(map[string]any)
+	if variants, ok := check["anyOf"].([]map[string]any); !ok || len(variants) != 2 {
+		t.Fatalf("planning check schema does not require exactly one command or observation: %#v", check)
+	}
+	disposition := planningDispositionSchema(object, text, strings)
+	if variants, ok := disposition["anyOf"].([]map[string]any); !ok || len(variants) != 3 {
+		t.Fatalf("planning owner-turn schema does not bind fields to disposition: %#v", disposition)
+	}
+}
+
+func TestInitialPlanningSchemaRequiresEveryGeneratedAcceptanceAndCheck(t *testing.T) {
+	schema := agentOutputSchema(codingagent.Assignment{Role: codingagent.PlanningInitial})
+	ledger := schema["properties"].(map[string]any)["ledger"].(map[string]any)
+	properties := ledger["properties"].(map[string]any)
+	for _, collection := range []string{"acceptance_criteria", "checks"} {
+		item := properties[collection].(map[string]any)["items"].(map[string]any)
+		actual := item["properties"].(map[string]any)["required"].(map[string]any)["enum"]
+		if !reflect.DeepEqual(actual, []bool{true}) {
+			t.Fatalf("initial %s required schema = %#v", collection, actual)
+		}
 	}
 }
 
@@ -41,6 +92,22 @@ func TestPlanningJudgmentsCannotMutateOrExpandLedger(t *testing.T) {
 		if !strings.Contains(instruction, "read-only judgment") || !strings.Contains(instruction, "only a human-origin planning action may alter the ledger") {
 			t.Fatalf("%s has autonomous ledger authority", role)
 		}
+		if role == codingagent.PlanningCoverage && !strings.Contains(instruction, "no obligation beyond that exact owner scope") {
+			t.Fatal("planning coverage permits scope inflation")
+		}
+	}
+}
+
+func TestPlanningJudgmentSchemaBindsCodeOwnedQuestionAndRevision(t *testing.T) {
+	call := codingagent.Assignment{
+		Role: codingagent.PlanningCoverage, PlanningQuestionID: "owner-turn-coverage", PlanningBaseRevision: 7,
+	}
+	properties := agentOutputSchema(call)["properties"].(map[string]any)
+	if actual := properties["question"].(map[string]any)["enum"]; !reflect.DeepEqual(actual, []string{"owner-turn-coverage"}) {
+		t.Fatalf("planning question schema = %#v", actual)
+	}
+	if actual := properties["base_revision"].(map[string]any)["enum"]; !reflect.DeepEqual(actual, []int64{7}) {
+		t.Fatalf("planning revision schema = %#v", actual)
 	}
 }
 
