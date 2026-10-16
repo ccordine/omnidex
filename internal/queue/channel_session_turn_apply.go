@@ -200,20 +200,32 @@ func applyChannelSessionReplanTx(
 	if configuration.Mode == codingagent.Agents {
 		if err := tx.QueryRow(ctx, `
 			SELECT ledger.current_revision FROM coding_ledgers ledger
-			WHERE ledger.job_id=$1 AND ledger.state='proposed'
+			WHERE ledger.job_id=$1 AND (ledger.state='proposed' OR
+			  (ledger.state='revising' AND EXISTS (SELECT 1 FROM job_generations generation
+			    WHERE generation.job_id=$1 AND generation.generation=$2 AND generation.purpose=$3)))
 			  AND EXISTS (SELECT 1 FROM job_steps step WHERE step.job_id=$1
 			      AND step.generation=$2 AND step.action='v3_coding_plan'
 			      AND step.status='waiting_input' AND step.superseded_at_generation IS NULL)
 			FOR UPDATE OF ledger
-		`, job.ID, job.CurrentGeneration).Scan(&replan.ObservedLedgerRevision); err != nil {
+		`, job.ID, job.CurrentGeneration, jobGenerationPurposeInterrupt).Scan(&replan.ObservedLedgerRevision); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				return model.Job{}, fmt.Errorf("%w: continuation requires the current proposed ledger and waiting planning step", ErrChannelSessionTurnInvalid)
+				return model.Job{}, fmt.Errorf("%w: continuation requires a proposed ledger or an interrupted ledger open for revision, with a waiting planning step", ErrChannelSessionTurnInvalid)
 			}
 			return model.Job{}, err
 		}
 	}
-	result, _, err := applyReplanJobTx(ctx, tx, replan, job)
-	return result, err
+	// The session turn owns replay of its result; the child replan retains the
+	// exact revision-bound authority consumed by the planning continuation.
+	replan.OperationID, err = model.NewLifecycleOperationID()
+	if err != nil {
+		return model.Job{}, err
+	}
+	descriptor, err := describeLifecycleOperation(replan.OperationID, LifecycleReplanJob, replan)
+	if err != nil {
+		return model.Job{}, err
+	}
+	result, err := replanJobTx(ctx, tx, replan, descriptor)
+	return result.Job, err
 }
 
 func applyChannelSessionFeedbackTx(
