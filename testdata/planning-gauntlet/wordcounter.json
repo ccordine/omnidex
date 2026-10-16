@@ -1,0 +1,784 @@
+{
+  "history_injection_parser_failure": {"source_fingerprint":"05d172e948589ac618c7f34072a399d1a06ea0fbb81ee6b8fd0e5778b64b88d7","observed_error":"planning mutation target ac1 does not exist","parser_response":{"operations":[{"kind":"restore","rationale":"Restore previously tombstoned item because the latest planning response explicitly reintroduced the same item.","target_id":"ac1"},{"kind":"restore","rationale":"Restore previously tombstoned item because the latest planning response explicitly reintroduced the same item.","target_id":"ac2"},{"kind":"restore","rationale":"Restore previously tombstoned item because the latest planning response explicitly reintroduced the same item.","target_id":"ac3"},{"kind":"restore","rationale":"Restore previously tombstoned item because the latest planning response explicitly reintroduced the same item.","target_id":"ck1"},{"kind":"restore","rationale":"Restore previously tombstoned item because the latest planning response explicitly reintroduced the same item.","target_id":"ck2"},{"kind":"restore","rationale":"Restore previously tombstoned item because the latest planning response explicitly reintroduced the same item.","target_id":"ck3"},{"kind":"restore","rationale":"Restore previously tombstoned item because the latest planning response explicitly reintroduced the same item.","target_id":"ck4"},{"kind":"restore","rationale":"Restore previously tombstoned item because the latest planning response explicitly reintroduced the same item.","target_id":"ck5"},{"kind":"restore","rationale":"Restore previously tombstoned item because the latest planning response explicitly reintroduced the same item.","target_id":"ck6"},{"kind":"restore","rationale":"Restore previously tombstoned item because the latest planning response explicitly reintroduced the same item.","target_id":"ck7"},{"kind":"restore","rationale":"Restore previously tombstoned item because the latest planning response explicitly reintroduced the same item.","target_id":"ck8"},{"kind":"restore","rationale":"Restore previously tombstoned item because the latest planning response explicitly reintroduced the same item.","target_id":"ck9"},{"kind":"restore","rationale":"Restore previously tombstoned item because the latest planning response explicitly reintroduced the same item.","target_id":"ck10"},{"kind":"restore","rationale":"Restore previously tombstoned item because the latest planning response explicitly reintroduced the same item.","target_id":"ck11"},{"kind":"restore","rationale":"Restore previously tombstoned item because the latest planning response explicitly reintroduced the same item.","target_id":"ck12"},{"kind":"restore","rationale":"Restore previously tombstoned item because the latest planning response explicitly reintroduced the same item.","target_id":"ck13"},{"kind":"restore","rationale":"Restore previously tombstoned item because the latest planning response explicitly reintroduced the same item.","target_id":"ck14"},{"kind":"restore","rationale":"Restore previously tombstoned item because the latest planning response explicitly reintroduced the same item.","target_id":"ck15"},{"kind":"restore","rationale":"Restore previously tombstoned item because the latest planning response explicitly reintroduced the same item.","target_id":"ck16"},{"kind":"restore","rationale":"Restore previously tombstoned item because the latest planning response explicitly reintroduced the same item.","target_id":"ck17"},{"kind":"restore","rationale":"Restore previously tombstoned item because the latest planning response explicitly reintroduced the same item.","target_id":"ck18"}]}},
+  "schema_version": 1,
+  "provenance": {
+    "kind": "observed_native_planning_failure",
+    "observed_at": "2026-10-16",
+    "repository_revision": "fa4c39bc82ff8e14bdc88f4452b737b3b37ac40d",
+    "branch": "fix/task-ledger-roundtrip",
+    "source_fingerprint": "eccac487f8ad6f6597ab2401f64afcdedc0bc7ed42a0e7d79c428b2aedcc134f",
+    "model": "gpt-6.1-sol",
+    "effort": "low",
+    "job_id": 2,
+    "note": "Synthetic interactive pilot, not an autonomy qualification. Exact natural responses and parser outputs; no application source supplied."
+  },
+  "instruction": "Build a tiny Python 3 standard-library command-line word counter in this directory. It should accept a UTF-8 text file and print line, word and character counts, handle unreadable or invalid UTF-8 files with a clean nonzero-exit error, and include automated tests and a short usage README. Words are whitespace-separated, characters are Unicode code points including whitespace and newlines, and a final nonempty unterminated line counts as a line; an empty file has zero counts. Plan it for my review before implementing. This is a disposable pilot app; do not modify Omnidex itself.",
+  "responses": [
+    {
+      "response": "The plan is limited to the disposable word-counter app in this directory; Omnidex stays untouched. No implementation yet.\n\nI’ll add three files:\n\n- `wordcounter.py`: a Python 3 standard-library CLI accepting one UTF-8 file path and printing labeled line, word, and character counts.\n- `test_wordcounter.py`: automated tests using `unittest`.\n- `README.md`: short usage and test instructions.\n\nCounting will use whitespace-separated words and Unicode code points, including whitespace and original newline characters. Empty files return zero counts; a final nonempty line counts even without a terminator. LF, CRLF, and CR will be treated as line endings, with CRLF contributing two characters.\n\nMissing, unreadable, or invalid UTF-8 files will produce a concise error on stderr and a nonzero exit status without a traceback.\n\nTests will cover empty input, whitespace, Unicode, newline variants, unterminated final lines, CLI output, and file errors. Implementation will wait for your review.",
+      "generation": 1,
+      "owner_turn": "Build a tiny Python 3 standard-library command-line word counter in this directory. It should accept a UTF-8 text file and print line, word and character counts, handle unreadable or invalid UTF-8 files with a clean nonzero-exit error, and include automated tests and a short usage README. Words are whitespace-separated, characters are Unicode code points including whitespace and newlines, and a final nonempty unterminated line counts as a line; an empty file has zero counts. Plan it for my review before implementing. This is a disposable pilot app; do not modify Omnidex itself."
+    },
+    {
+      "response": "Revision **11** should add the following acceptance criteria and runnable verification checks to existing tasks **t1–t3**. All existing IDs, requirement and constraint links, write-file boundaries, and `review_state: agreed` remain unchanged.\n\n**t1 — Implement CLI, counting semantics, and clean file errors.**\n\nAcceptance criteria:\n- `wordcounter.py` uses only the Python 3 standard library, accepts one UTF-8 file path, and prints labeled line, word, and character counts.\n- Words are whitespace-separated; characters are Unicode code points, including whitespace and original newline characters.\n- Empty files produce zero counts. LF, CRLF, and CR are line endings; CRLF contributes two characters. A final nonempty unterminated line is counted.\n- Missing, unreadable, and invalid UTF-8 files produce a concise stderr error, a nonzero exit status, and no traceback.\n\nRunnable verification: `python3 -m unittest -v test_wordcounter` after **t2** exists, checking counting semantics, CLI output, and all required file-error cases.\n\n**t2 — Add automated `unittest` coverage specified by r4.**\n\nAcceptance criteria:\n- `test_wordcounter.py` contains automated tests for empty input, whitespace-separated words, Unicode code-point counts, LF/CRLF/CR, and unterminated final lines.\n- Tests check labeled CLI output and missing, unreadable, and invalid UTF-8 file handling, including stderr, nonzero exit status, and absence of a traceback.\n- The complete suite passes.\n\nRunnable verification: `python3 -m unittest discover -v`.\n\n**t3 — Add short usage and test instructions.**\n\nAcceptance criteria:\n- `README.md` briefly explains how to run the CLI with one UTF-8 file path and how to run the automated tests.\n- Its usage and test commands match the implemented CLI and test suite.\n\nRunnable verification: run the documented usage command against `README.md`, such as `python3 wordcounter.py README.md`, and run the documented test command, `python3 -m unittest discover -v`. Review the README for brevity and accuracy.\n\nThe previous start-coding attempt failed with **`task t1 requires acceptance criteria`**. These additions address the missing task criteria and verification definitions; no implementation or successful verification results are supplied. Approved scope remains unchanged, and **owner review is still required before implementation** under **c2**.",
+      "generation": 2,
+      "owner_turn": "user redirect:\nThe user's planning note concerns this proposed outcome:\n\n[task] Add README.md with short usage and test instructions.\n\nThe normal start-coding action failed with: task t1 requires acceptance criteria. Keep the approved word-counter scope unchanged. Finish the planning ledger so these same tasks have the acceptance criteria and runnable verification checks needed for the normal freeze/start action. Do not implement yet or add application scope."
+    }
+  ],
+  "initial_parser_response": {
+    "ledger": {
+      "id": "planning:2:1",
+      "tasks": [
+        {
+          "id": "t1",
+          "goal": "Add wordcounter.py implementing the CLI, counting semantics, and clean file errors.",
+          "rank": 1,
+          "group_id": "",
+          "priority": "normal",
+          "rationale": "",
+          "provenance": {
+            "kind": "planning_response",
+            "revision": 0,
+            "reference": "planning:2:1"
+          },
+          "read_files": [],
+          "disposition": "active",
+          "write_files": [
+            "wordcounter.py"
+          ],
+          "delete_files": [],
+          "review_state": "proposed",
+          "constraint_ids": [
+            "c1",
+            "c2"
+          ],
+          "requirement_ids": [
+            "r1",
+            "r2",
+            "r3"
+          ],
+          "delivery_obligation": "",
+          "known_affected_systems": [],
+          "acceptance_criterion_ids": []
+        },
+        {
+          "id": "t2",
+          "goal": "Add test_wordcounter.py with automated unittest coverage for empty input, whitespace, Unicode, newline variants, unterminated final lines, CLI output, and file errors.",
+          "rank": 2,
+          "group_id": "",
+          "priority": "normal",
+          "rationale": "",
+          "provenance": {
+            "kind": "planning_response",
+            "revision": 0,
+            "reference": "planning:2:1"
+          },
+          "read_files": [],
+          "disposition": "active",
+          "write_files": [
+            "test_wordcounter.py"
+          ],
+          "delete_files": [],
+          "review_state": "proposed",
+          "constraint_ids": [
+            "c1",
+            "c2"
+          ],
+          "requirement_ids": [
+            "r4"
+          ],
+          "delivery_obligation": "",
+          "known_affected_systems": [],
+          "acceptance_criterion_ids": []
+        },
+        {
+          "id": "t3",
+          "goal": "Add README.md with short usage and test instructions.",
+          "rank": 3,
+          "group_id": "",
+          "priority": "normal",
+          "rationale": "",
+          "provenance": {
+            "kind": "planning_response",
+            "revision": 0,
+            "reference": "planning:2:1"
+          },
+          "read_files": [],
+          "disposition": "active",
+          "write_files": [
+            "README.md"
+          ],
+          "delete_files": [],
+          "review_state": "proposed",
+          "constraint_ids": [
+            "c1",
+            "c2"
+          ],
+          "requirement_ids": [
+            "r5"
+          ],
+          "delivery_obligation": "",
+          "known_affected_systems": [],
+          "acceptance_criterion_ids": []
+        }
+      ],
+      "checks": [],
+      "groups": [],
+      "revision": 0,
+      "objectives": [],
+      "constraints": [
+        {
+          "id": "c1",
+          "rank": 1,
+          "rule": "Limit work to the disposable word-counter app in this directory; leave Omnidex untouched.",
+          "priority": "normal",
+          "rationale": "",
+          "provenance": {
+            "kind": "planning_response",
+            "revision": 0,
+            "reference": "planning:2:1"
+          },
+          "disposition": "active",
+          "review_state": "proposed"
+        },
+        {
+          "id": "c2",
+          "rank": 2,
+          "rule": "Wait for owner review before implementing.",
+          "priority": "normal",
+          "rationale": "",
+          "provenance": {
+            "kind": "planning_response",
+            "revision": 0,
+            "reference": "planning:2:1"
+          },
+          "disposition": "active",
+          "review_state": "proposed"
+        }
+      ],
+      "dependencies": [],
+      "requirements": [
+        {
+          "id": "r1",
+          "rank": 1,
+          "outcome": "Provide a Python 3 standard-library CLI accepting one UTF-8 file path and printing labeled line, word, and character counts.",
+          "priority": "normal",
+          "rationale": "",
+          "provenance": {
+            "kind": "planning_response",
+            "revision": 0,
+            "reference": "planning:2:1"
+          },
+          "disposition": "active",
+          "review_state": "proposed"
+        },
+        {
+          "id": "r2",
+          "rank": 2,
+          "outcome": "Count whitespace-separated words and Unicode code points, including whitespace and original newline characters. Empty files return zero counts. Count a final nonempty unterminated line. Treat LF, CRLF, and CR as line endings, with CRLF contributing two characters.",
+          "priority": "normal",
+          "rationale": "",
+          "provenance": {
+            "kind": "planning_response",
+            "revision": 0,
+            "reference": "planning:2:1"
+          },
+          "disposition": "active",
+          "review_state": "proposed"
+        },
+        {
+          "id": "r3",
+          "rank": 3,
+          "outcome": "Missing, unreadable, or invalid UTF-8 files produce a concise stderr error and a nonzero exit status without a traceback.",
+          "priority": "normal",
+          "rationale": "",
+          "provenance": {
+            "kind": "planning_response",
+            "revision": 0,
+            "reference": "planning:2:1"
+          },
+          "disposition": "active",
+          "review_state": "proposed"
+        },
+        {
+          "id": "r4",
+          "rank": 4,
+          "outcome": "Automated unittest tests cover empty input, whitespace, Unicode, newline variants, unterminated final lines, CLI output, and file errors.",
+          "priority": "normal",
+          "rationale": "",
+          "provenance": {
+            "kind": "planning_response",
+            "revision": 0,
+            "reference": "planning:2:1"
+          },
+          "disposition": "active",
+          "review_state": "proposed"
+        },
+        {
+          "id": "r5",
+          "rank": 5,
+          "outcome": "Provide a short README with usage and test instructions.",
+          "priority": "normal",
+          "rationale": "",
+          "provenance": {
+            "kind": "planning_response",
+            "revision": 0,
+            "reference": "planning:2:1"
+          },
+          "disposition": "active",
+          "review_state": "proposed"
+        }
+      ],
+      "acceptance_criteria": []
+    }
+  },
+  "base_ledger": {
+    "id": "2",
+    "revision": 11,
+    "objectives": null,
+    "requirements": [
+      {
+        "id": "r1",
+        "provenance": {
+          "kind": "planning_response",
+          "reference": "planning:2:1",
+          "revision": 0
+        },
+        "rationale": "",
+        "priority": "normal",
+        "rank": 1,
+        "disposition": "active",
+        "review_state": "agreed",
+        "outcome": "Provide a Python 3 standard-library CLI accepting one UTF-8 file path and printing labeled line, word, and character counts."
+      },
+      {
+        "id": "r2",
+        "provenance": {
+          "kind": "planning_response",
+          "reference": "planning:2:1",
+          "revision": 0
+        },
+        "rationale": "",
+        "priority": "normal",
+        "rank": 2,
+        "disposition": "active",
+        "review_state": "agreed",
+        "outcome": "Count whitespace-separated words and Unicode code points, including whitespace and original newline characters. Empty files return zero counts. Count a final nonempty unterminated line. Treat LF, CRLF, and CR as line endings, with CRLF contributing two characters."
+      },
+      {
+        "id": "r3",
+        "provenance": {
+          "kind": "planning_response",
+          "reference": "planning:2:1",
+          "revision": 0
+        },
+        "rationale": "",
+        "priority": "normal",
+        "rank": 3,
+        "disposition": "active",
+        "review_state": "agreed",
+        "outcome": "Missing, unreadable, or invalid UTF-8 files produce a concise stderr error and a nonzero exit status without a traceback."
+      },
+      {
+        "id": "r4",
+        "provenance": {
+          "kind": "planning_response",
+          "reference": "planning:2:1",
+          "revision": 0
+        },
+        "rationale": "",
+        "priority": "normal",
+        "rank": 4,
+        "disposition": "active",
+        "review_state": "agreed",
+        "outcome": "Automated unittest tests cover empty input, whitespace, Unicode, newline variants, unterminated final lines, CLI output, and file errors."
+      },
+      {
+        "id": "r5",
+        "provenance": {
+          "kind": "planning_response",
+          "reference": "planning:2:1",
+          "revision": 0
+        },
+        "rationale": "",
+        "priority": "normal",
+        "rank": 5,
+        "disposition": "active",
+        "review_state": "agreed",
+        "outcome": "Provide a short README with usage and test instructions."
+      }
+    ],
+    "constraints": [
+      {
+        "id": "c1",
+        "provenance": {
+          "kind": "planning_response",
+          "reference": "planning:2:1",
+          "revision": 0
+        },
+        "rationale": "",
+        "priority": "normal",
+        "rank": 1,
+        "disposition": "active",
+        "review_state": "agreed",
+        "rule": "Limit work to the disposable word-counter app in this directory; leave Omnidex untouched."
+      },
+      {
+        "id": "c2",
+        "provenance": {
+          "kind": "planning_response",
+          "reference": "planning:2:1",
+          "revision": 0
+        },
+        "rationale": "",
+        "priority": "normal",
+        "rank": 2,
+        "disposition": "active",
+        "review_state": "agreed",
+        "rule": "Wait for owner review before implementing."
+      }
+    ],
+    "groups": null,
+    "tasks": [
+      {
+        "id": "t1",
+        "provenance": {
+          "kind": "planning_response",
+          "reference": "planning:2:1",
+          "revision": 0
+        },
+        "rationale": "",
+        "priority": "normal",
+        "rank": 1,
+        "disposition": "active",
+        "review_state": "agreed",
+        "goal": "Add wordcounter.py implementing the CLI, counting semantics, and clean file errors.",
+        "requirement_ids": [
+          "r1",
+          "r2",
+          "r3"
+        ],
+        "constraint_ids": [
+          "c1",
+          "c2"
+        ],
+        "acceptance_criterion_ids": [],
+        "read_files": [],
+        "write_files": [
+          "wordcounter.py"
+        ],
+        "delete_files": []
+      },
+      {
+        "id": "t2",
+        "provenance": {
+          "kind": "planning_response",
+          "reference": "planning:2:1",
+          "revision": 0
+        },
+        "rationale": "",
+        "priority": "normal",
+        "rank": 2,
+        "disposition": "active",
+        "review_state": "agreed",
+        "goal": "Add test_wordcounter.py with automated unittest coverage for empty input, whitespace, Unicode, newline variants, unterminated final lines, CLI output, and file errors.",
+        "requirement_ids": [
+          "r4"
+        ],
+        "constraint_ids": [
+          "c1",
+          "c2"
+        ],
+        "acceptance_criterion_ids": [],
+        "read_files": [],
+        "write_files": [
+          "test_wordcounter.py"
+        ],
+        "delete_files": []
+      },
+      {
+        "id": "t3",
+        "provenance": {
+          "kind": "planning_response",
+          "reference": "planning:2:1",
+          "revision": 0
+        },
+        "rationale": "",
+        "priority": "normal",
+        "rank": 3,
+        "disposition": "active",
+        "review_state": "agreed",
+        "goal": "Add README.md with short usage and test instructions.",
+        "requirement_ids": [
+          "r5"
+        ],
+        "constraint_ids": [
+          "c1",
+          "c2"
+        ],
+        "acceptance_criterion_ids": [],
+        "read_files": [],
+        "write_files": [
+          "README.md"
+        ],
+        "delete_files": []
+      }
+    ],
+    "acceptance_criteria": null,
+    "checks": null,
+    "dependencies": null
+  },
+  "mutation_parser_response": {
+    "operations": [
+      {
+        "item": {
+          "acceptance_criterion": {
+            "id": "ac-t1",
+            "rank": 1,
+            "outcome": "wordcounter.py uses only the Python 3 standard library, accepts one UTF-8 file path, and prints labeled line, word, and character counts. Words are whitespace-separated; characters are Unicode code points including whitespace and original newline characters. Empty files yield zero counts. LF, CRLF, and CR are line endings; CRLF contributes two characters. A final nonempty unterminated line is counted. Missing, unreadable, and invalid UTF-8 files produce concise stderr errors, nonzero exit status, and no traceback.",
+            "priority": "normal",
+            "required": false,
+            "task_ids": [
+              "t1"
+            ],
+            "rationale": "Proposed acceptance criteria for existing task t1.",
+            "provenance": {
+              "kind": "proposed_ledger_mutation",
+              "revision": 11,
+              "reference": "Revision 11"
+            },
+            "disposition": "active",
+            "review_state": "agreed",
+            "requirement_ids": []
+          }
+        },
+        "kind": "add",
+        "rank": null,
+        "rationale": "Add the proposed t1 acceptance criteria.",
+        "target_id": "ac-t1",
+        "review_state": "agreed"
+      },
+      {
+        "item": {
+          "task": {
+            "id": "t1",
+            "goal": "",
+            "rank": 1,
+            "group_id": "",
+            "priority": "normal",
+            "rationale": "",
+            "provenance": {
+              "kind": "proposed_ledger_mutation",
+              "revision": 11,
+              "reference": "Revision 11"
+            },
+            "read_files": [],
+            "disposition": "active",
+            "write_files": [
+              "wordcounter.py"
+            ],
+            "delete_files": [],
+            "review_state": "agreed",
+            "constraint_ids": [],
+            "requirement_ids": [],
+            "delivery_obligation": "",
+            "known_affected_systems": [],
+            "acceptance_criterion_ids": [
+              "ac-t1"
+            ]
+          }
+        },
+        "kind": "amend",
+        "rank": null,
+        "rationale": "Link the proposed acceptance criteria to t1; preserve all other existing task fields and links.",
+        "target_id": "t1",
+        "review_state": "agreed"
+      },
+      {
+        "item": {
+          "acceptance_criterion": {
+            "id": "ac-t2",
+            "rank": 2,
+            "outcome": "test_wordcounter.py provides unittest coverage for empty input, whitespace-separated words, Unicode code-point counts, LF/CRLF/CR newline variants, and unterminated final lines. Tests check labeled CLI output and missing, unreadable, and invalid UTF-8 file handling, including stderr, nonzero exit status, and no traceback. The complete suite passes.",
+            "priority": "normal",
+            "required": false,
+            "task_ids": [
+              "t2"
+            ],
+            "rationale": "Proposed acceptance criteria for existing task t2.",
+            "provenance": {
+              "kind": "proposed_ledger_mutation",
+              "revision": 11,
+              "reference": "Revision 11"
+            },
+            "disposition": "active",
+            "review_state": "agreed",
+            "requirement_ids": []
+          }
+        },
+        "kind": "add",
+        "rank": null,
+        "rationale": "Add the proposed t2 acceptance criteria.",
+        "target_id": "ac-t2",
+        "review_state": "agreed"
+      },
+      {
+        "item": {
+          "task": {
+            "id": "t2",
+            "goal": "",
+            "rank": 2,
+            "group_id": "",
+            "priority": "normal",
+            "rationale": "",
+            "provenance": {
+              "kind": "proposed_ledger_mutation",
+              "revision": 11,
+              "reference": "Revision 11"
+            },
+            "read_files": [],
+            "disposition": "active",
+            "write_files": [
+              "test_wordcounter.py"
+            ],
+            "delete_files": [],
+            "review_state": "agreed",
+            "constraint_ids": [],
+            "requirement_ids": [],
+            "delivery_obligation": "",
+            "known_affected_systems": [],
+            "acceptance_criterion_ids": [
+              "ac-t2"
+            ]
+          }
+        },
+        "kind": "amend",
+        "rank": null,
+        "rationale": "Link the proposed acceptance criteria to t2; preserve all other existing task fields and links.",
+        "target_id": "t2",
+        "review_state": "agreed"
+      },
+      {
+        "item": {
+          "acceptance_criterion": {
+            "id": "ac-t3",
+            "rank": 3,
+            "outcome": "README.md briefly explains running the CLI with one UTF-8 file path and running automated tests. Documented commands match the implemented CLI and test suite.",
+            "priority": "normal",
+            "required": false,
+            "task_ids": [
+              "t3"
+            ],
+            "rationale": "Proposed acceptance criteria for existing task t3.",
+            "provenance": {
+              "kind": "proposed_ledger_mutation",
+              "revision": 11,
+              "reference": "Revision 11"
+            },
+            "disposition": "active",
+            "review_state": "agreed",
+            "requirement_ids": []
+          }
+        },
+        "kind": "add",
+        "rank": null,
+        "rationale": "Add the proposed t3 acceptance criteria.",
+        "target_id": "ac-t3",
+        "review_state": "agreed"
+      },
+      {
+        "item": {
+          "task": {
+            "id": "t3",
+            "goal": "",
+            "rank": 3,
+            "group_id": "",
+            "priority": "normal",
+            "rationale": "",
+            "provenance": {
+              "kind": "proposed_ledger_mutation",
+              "revision": 11,
+              "reference": "Revision 11"
+            },
+            "read_files": [],
+            "disposition": "active",
+            "write_files": [
+              "README.md"
+            ],
+            "delete_files": [],
+            "review_state": "agreed",
+            "constraint_ids": [],
+            "requirement_ids": [],
+            "delivery_obligation": "",
+            "known_affected_systems": [],
+            "acceptance_criterion_ids": [
+              "ac-t3"
+            ]
+          }
+        },
+        "kind": "amend",
+        "rank": null,
+        "rationale": "Link the proposed acceptance criteria to t3; preserve all other existing task fields and links.",
+        "target_id": "t3",
+        "review_state": "agreed"
+      },
+      {
+        "item": {
+          "check": {
+            "id": "check-t1",
+            "argv": [
+              "python3",
+              "-m",
+              "unittest",
+              "-v",
+              "test_wordcounter"
+            ],
+            "rank": 1,
+            "priority": "normal",
+            "required": false,
+            "rationale": "Proposed verification after t2 exists: check counting semantics, CLI output, and all required file-error cases. Not yet run.",
+            "provenance": {
+              "kind": "proposed_ledger_mutation",
+              "revision": 11,
+              "reference": "Revision 11"
+            },
+            "disposition": "active",
+            "observation": "",
+            "review_state": "agreed",
+            "requirement_ids": [],
+            "acceptance_criterion_ids": [
+              "ac-t1"
+            ]
+          }
+        },
+        "kind": "add",
+        "rank": null,
+        "rationale": "Add proposed t1 verification.",
+        "target_id": "check-t1",
+        "review_state": "agreed"
+      },
+      {
+        "item": {
+          "check": {
+            "id": "check-tests",
+            "argv": [
+              "python3",
+              "-m",
+              "unittest",
+              "discover",
+              "-v"
+            ],
+            "rank": 2,
+            "priority": "normal",
+            "required": false,
+            "rationale": "Proposed verification of the complete t2 suite and t3 documented test command. Not yet run.",
+            "provenance": {
+              "kind": "proposed_ledger_mutation",
+              "revision": 11,
+              "reference": "Revision 11"
+            },
+            "disposition": "active",
+            "observation": "",
+            "review_state": "agreed",
+            "requirement_ids": [],
+            "acceptance_criterion_ids": [
+              "ac-t2",
+              "ac-t3"
+            ]
+          }
+        },
+        "kind": "add",
+        "rank": null,
+        "rationale": "Add proposed test-suite and documented-test-command verification.",
+        "target_id": "check-tests",
+        "review_state": "agreed"
+      },
+      {
+        "item": {
+          "check": {
+            "id": "check-t3-usage",
+            "argv": [
+              "python3",
+              "wordcounter.py",
+              "README.md"
+            ],
+            "rank": 3,
+            "priority": "normal",
+            "required": false,
+            "rationale": "Proposed example for running the documented usage command against README.md. Not yet run.",
+            "provenance": {
+              "kind": "proposed_ledger_mutation",
+              "revision": 11,
+              "reference": "Revision 11"
+            },
+            "disposition": "active",
+            "observation": "",
+            "review_state": "agreed",
+            "requirement_ids": [],
+            "acceptance_criterion_ids": [
+              "ac-t3"
+            ]
+          }
+        },
+        "kind": "add",
+        "rank": null,
+        "rationale": "Add proposed README usage verification.",
+        "target_id": "check-t3-usage",
+        "review_state": "agreed"
+      },
+      {
+        "item": {
+          "check": {
+            "id": "check-t3-review",
+            "argv": [],
+            "rank": 4,
+            "priority": "normal",
+            "required": false,
+            "rationale": "Proposed manual content check, not a successful verification result.",
+            "provenance": {
+              "kind": "proposed_ledger_mutation",
+              "revision": 11,
+              "reference": "Revision 11"
+            },
+            "disposition": "active",
+            "observation": "Review README.md for brevity and accuracy, including agreement between documented commands and the implemented CLI and test suite.",
+            "review_state": "agreed",
+            "requirement_ids": [],
+            "acceptance_criterion_ids": [
+              "ac-t3"
+            ]
+          }
+        },
+        "kind": "add",
+        "rank": null,
+        "rationale": "Add proposed README content review.",
+        "target_id": "check-t3-review",
+        "review_state": "agreed"
+      }
+    ]
+  },
+  "mutation_parser_context": {
+    "construction_facts": [
+      {
+        "kind": "engineering_question",
+        "quote": "owner-turn-ledger-mutation: Which planning ledger updates are expressed in this conversation response?"
+      },
+      {
+        "kind": "bounded_planning_context",
+        "quote": "{\"owner_turn\":{\"operation_id\":\"lifecycle_operation_e453d8dbe673211cb6ed4e292b50f35f49b13bf81b17511349f6abcf87d159c8\",\"owner_turn_id\":\"owner:2:2\",\"text\":\"user redirect:\\nThe user's planning note concerns this proposed outcome:\\n\\n[task] Add README.md with short usage and test instructions.\\n\\nThe normal start-coding action failed with: task t1 requires acceptance criteria. Keep the approved word-counter scope unchanged. Finish the planning ledger so these same tasks have the acceptance criteria and runnable verification checks needed for the normal freeze/start action. Do not implement yet or add application scope.\",\"observed_revision\":11},\"ledger\":{\"id\":\"2\",\"revision\":11,\"objectives\":null,\"requirements\":[{\"id\":\"r1\",\"provenance\":{\"kind\":\"planning_response\",\"reference\":\"planning:2:1\",\"revision\":0},\"rationale\":\"\",\"priority\":\"normal\",\"rank\":1,\"disposition\":\"active\",\"review_state\":\"agreed\",\"outcome\":\"Provide a Python 3 standard-library CLI accepting one UTF-8 file path and printing labeled line, word, and character counts.\"},{\"id\":\"r2\",\"provenance\":{\"kind\":\"planning_response\",\"reference\":\"planning:2:1\",\"revision\":0},\"rationale\":\"\",\"priority\":\"normal\",\"rank\":2,\"disposition\":\"active\",\"review_state\":\"agreed\",\"outcome\":\"Count whitespace-separated words and Unicode code points, including whitespace and original newline characters. Empty files return zero counts. Count a final nonempty unterminated line. Treat LF, CRLF, and CR as line endings, with CRLF contributing two characters.\"},{\"id\":\"r3\",\"provenance\":{\"kind\":\"planning_response\",\"reference\":\"planning:2:1\",\"revision\":0},\"rationale\":\"\",\"priority\":\"normal\",\"rank\":3,\"disposition\":\"active\",\"review_state\":\"agreed\",\"outcome\":\"Missing, unreadable, or invalid UTF-8 files produce a concise stderr error and a nonzero exit status without a traceback.\"},{\"id\":\"r4\",\"provenance\":{\"kind\":\"planning_response\",\"reference\":\"planning:2:1\",\"revision\":0},\"rationale\":\"\",\"priority\":\"normal\",\"rank\":4,\"disposition\":\"active\",\"review_state\":\"agreed\",\"outcome\":\"Automated unittest tests cover empty input, whitespace, Unicode, newline variants, unterminated final lines, CLI output, and file errors.\"},{\"id\":\"r5\",\"provenance\":{\"kind\":\"planning_response\",\"reference\":\"planning:2:1\",\"revision\":0},\"rationale\":\"\",\"priority\":\"normal\",\"rank\":5,\"disposition\":\"active\",\"review_state\":\"agreed\",\"outcome\":\"Provide a short README with usage and test instructions.\"}],\"constraints\":[{\"id\":\"c1\",\"provenance\":{\"kind\":\"planning_response\",\"reference\":\"planning:2:1\",\"revision\":0},\"rationale\":\"\",\"priority\":\"normal\",\"rank\":1,\"disposition\":\"active\",\"review_state\":\"agreed\",\"rule\":\"Limit work to the disposable word-counter app in this directory; leave Omnidex untouched.\"},{\"id\":\"c2\",\"provenance\":{\"kind\":\"planning_response\",\"reference\":\"planning:2:1\",\"revision\":0},\"rationale\":\"\",\"priority\":\"normal\",\"rank\":2,\"disposition\":\"active\",\"review_state\":\"agreed\",\"rule\":\"Wait for owner review before implementing.\"}],\"groups\":null,\"tasks\":[{\"id\":\"t1\",\"provenance\":{\"kind\":\"planning_response\",\"reference\":\"planning:2:1\",\"revision\":0},\"rationale\":\"\",\"priority\":\"normal\",\"rank\":1,\"disposition\":\"active\",\"review_state\":\"agreed\",\"goal\":\"Add wordcounter.py implementing the CLI, counting semantics, and clean file errors.\",\"requirement_ids\":[\"r1\",\"r2\",\"r3\"],\"constraint_ids\":[\"c1\",\"c2\"],\"acceptance_criterion_ids\":[],\"read_files\":[],\"write_files\":[\"wordcounter.py\"],\"delete_files\":[]},{\"id\":\"t2\",\"provenance\":{\"kind\":\"planning_response\",\"reference\":\"planning:2:1\",\"revision\":0},\"rationale\":\"\",\"priority\":\"normal\",\"rank\":2,\"disposition\":\"active\",\"review_state\":\"agreed\",\"goal\":\"Add test_wordcounter.py with automated unittest coverage for empty input, whitespace, Unicode, newline variants, unterminated final lines, CLI output, and file errors.\",\"requirement_ids\":[\"r4\"],\"constraint_ids\":[\"c1\",\"c2\"],\"acceptance_criterion_ids\":[],\"read_files\":[],\"write_files\":[\"test_wordcounter.py\"],\"delete_files\":[]},{\"id\":\"t3\",\"provenance\":{\"kind\":\"planning_response\",\"reference\":\"planning:2:1\",\"revision\":0},\"rationale\":\"\",\"priority\":\"normal\",\"rank\":3,\"disposition\":\"active\",\"review_state\":\"agreed\",\"goal\":\"Add README.md with short usage and test instructions.\",\"requirement_ids\":[\"r5\"],\"constraint_ids\":[\"c1\",\"c2\"],\"acceptance_criterion_ids\":[],\"read_files\":[],\"write_files\":[\"README.md\"],\"delete_files\":[]}],\"acceptance_criteria\":null,\"checks\":null,\"dependencies\":null}}"
+      }
+    ],
+    "planning_response": "Revision **11** should add the following acceptance criteria and runnable verification checks to existing tasks **t1–t3**. All existing IDs, requirement and constraint links, write-file boundaries, and `review_state: agreed` remain unchanged.\n\n**t1 — Implement CLI, counting semantics, and clean file errors.**\n\nAcceptance criteria:\n- `wordcounter.py` uses only the Python 3 standard library, accepts one UTF-8 file path, and prints labeled line, word, and character counts.\n- Words are whitespace-separated; characters are Unicode code points, including whitespace and original newline characters.\n- Empty files produce zero counts. LF, CRLF, and CR are line endings; CRLF contributes two characters. A final nonempty unterminated line is counted.\n- Missing, unreadable, and invalid UTF-8 files produce a concise stderr error, a nonzero exit status, and no traceback.\n\nRunnable verification: `python3 -m unittest -v test_wordcounter` after **t2** exists, checking counting semantics, CLI output, and all required file-error cases.\n\n**t2 — Add automated `unittest` coverage specified by r4.**\n\nAcceptance criteria:\n- `test_wordcounter.py` contains automated tests for empty input, whitespace-separated words, Unicode code-point counts, LF/CRLF/CR, and unterminated final lines.\n- Tests check labeled CLI output and missing, unreadable, and invalid UTF-8 file handling, including stderr, nonzero exit status, and absence of a traceback.\n- The complete suite passes.\n\nRunnable verification: `python3 -m unittest discover -v`.\n\n**t3 — Add short usage and test instructions.**\n\nAcceptance criteria:\n- `README.md` briefly explains how to run the CLI with one UTF-8 file path and how to run the automated tests.\n- Its usage and test commands match the implemented CLI and test suite.\n\nRunnable verification: run the documented usage command against `README.md`, such as `python3 wordcounter.py README.md`, and run the documented test command, `python3 -m unittest discover -v`. Review the README for brevity and accuracy.\n\nThe previous start-coding attempt failed with **`task t1 requires acceptance criteria`**. These additions address the missing task criteria and verification definitions; no implementation or successful verification results are supplied. Approved scope remains unchanged, and **owner review is still required before implementation** under **c2**."
+  },
+  "observed_minifications": [
+    {
+      "input": "What is the smallest context needed to understand or answer this current instruction? Keep necessary referents, actors, actions, negations, and temporal relationships.\n\nCurrent instruction:\nKeep the minimum context needed for this plan assignment. Preserve all requirements, constraints, acceptance criteria, task boundaries, owner answers, relevant systems and files, and observed verification failures. Preserve exact item IDs and every proposed ledger change, question, permission request, error, finding and verification result in a response being parsed; do not resolve or reinterpret them. Remove duplication and unrelated history, never obligations.\n\nRelevant context:\nSegment ARTIFACT_1\n{\"requirements\":[{\"id\":\"objective\",\"outcome\":\"Build a tiny Python 3 standard-library command-line word counter in this directory. It should accept a UTF-8 text file and print line, word and character counts, handle unreadable or invalid UTF-8 files with a clean nonzero-exit error, and include automated tests and a short usage README. Words are whitespace-separated, characters are Unicode code points including whitespace and newlines, and a final nonempty unterminated line counts as a line; an empty file has zero counts. Plan it for my review before implementing. This is a disposable pilot app; do not modify Omnidex itself.\"}],\"objective\":{\"instruction\":\"user ARTIFACT_1 user's planning note concerns this proposed ARTIFACT_2] Add README.md with short usage and test ARTIFACT_3 normal start-coding action failed with: task t1 requires acceptance criteria. Keep the approved word-counter scope unchanged. Finish the planning ledger so these same tasks have the acceptance criteria and runnable verification checks needed for the normal ARTIFACT_4 action. Do not implement yet or add application scope.\"},\"planning_ledger\":{\"revision\":11,\"items\":[{\"id\":\"r1\",\"kind\":\"requirement\",\"text\":\"Provide a Python 3 standard-library CLI accepting one UTF-8 file path and printing labeled line, word, and character counts.\",\"review_state\":\"agreed\"},{\"id\":\"r2\",\"kind\":\"requirement\",\"text\":\"Count whitespace-separated words and Unicode code points, including whitespace and original newline characters. Empty files return zero counts. Count a final nonempty unterminated line. Treat LF, CRLF, and CR as line endings, with CRLF contributing two characters.\",\"review_state\":\"agreed\"},{\"id\":\"r3\",\"kind\":\"requirement\",\"text\":\"Missing, unreadable, or invalid UTF-8 files produce a concise stderr error and a nonzero exit status without a traceback.\",\"review_state\":\"agreed\"},{\"id\":\"r4\",\"kind\":\"requirement\",\"text\":\"Automated unittest tests cover empty input, whitespace, Unicode, newline variants,\n\nRelevant context:\nSegment ARTIFACT_1\n unterminated final lines, CLI output, and file errors.\",\"review_state\":\"agreed\"},{\"id\":\"r5\",\"kind\":\"requirement\",\"text\":\"Provide a short README with usage and test instructions.\",\"review_state\":\"agreed\"},{\"id\":\"c1\",\"kind\":\"constraint\",\"text\":\"Limit work to the disposable word-counter app in this directory; leave Omnidex untouched.\",\"review_state\":\"agreed\"},{\"id\":\"c2\",\"kind\":\"constraint\",\"text\":\"Wait for owner review before implementing.\",\"review_state\":\"agreed\"},{\"id\":\"t1\",\"kind\":\"task\",\"text\":\"Add wordcounter.py implementing the CLI, counting semantics, and clean file errors.\",\"review_state\":\"agreed\",\"requirement_ids\":[\"r1\",\"r2\",\"r3\"],\"constraint_ids\":[\"c1\",\"c2\"],\"write_files\":[\"wordcounter.py\"]},{\"id\":\"t2\",\"kind\":\"task\",\"text\":\"Add test_wordcounter.py with automated unittest coverage for empty input, whitespace, Unicode, newline variants, unterminated final lines, CLI output, and file errors.\",\"review_state\":\"agreed\",\"requirement_ids\":[\"r4\"],\"constraint_ids\":[\"c1\",\"c2\"],\"write_files\":[\"test_wordcounter.py\"]},{\"id\":\"t3\",\"kind\":\"task\",\"text\":\"Add README.md with short usage and test instructions.\",\"review_state\":\"agreed\",\"requirement_ids\":[\"r5\"],\"constraint_ids\":[\"c1\",\"c2\"],\"write_files\":[\"README.md\"]}]},\"conversation\":[{\"role\":\"user\",\"text\":\"Build a tiny Python 3 standard-library command-line word counter in this directory. It should accept a UTF-8 text file and print line, word and character counts, handle unreadable or invalid UTF-8 files with a clean nonzero-exit error, and include automated tests and a short usage README. Words are whitespace-separated, characters are Unicode code points including whitespace and newlines, and a final nonempty unterminated line counts as a line; an empty file has zero counts. Plan it for my review before implementing. This is a disposable pilot app; do not modify Omnidex itself.\"},{\"role\":\"assistant\",\"text\":\"The plan is limited to the disposable word-counter app in this directory; Omnidex stays untouched. No impl\n\nRelevant context:\nSegment ARTIFACT_1\nementation ARTIFACT_5 add three ARTIFACT_6 `wordcounter.py`: a Python 3 standard-library CLI accepting one UTF-8 file path and printing labeled line, word, and character ARTIFACT_7 `test_wordcounter.py`: automated tests using `unittest`ARTIFACT_8 `README.md`: short usage and test ARTIFACT_9 will use whitespace-separated words and Unicode code points, including whitespace and original newline characters. Empty files return zero counts; a final nonempty line counts even without a terminator. LF, CRLF, and CR will be treated as line endings, with CRLF contributing two ARTIFACT_10, unreadable, or invalid UTF-8 files will produce a concise error on stderr and a nonzero exit status without a ARTIFACT_11 will cover empty input, whitespace, Unicode, newline variants, unterminated final lines, CLI output, and file errors. Implementation will wait for your review.\"}]}",
+      "output": "## Current assignment\nFinish planning ledger revision **11** so existing tasks **t1–t3** have acceptance criteria and runnable verification checks required by the normal start-coding action. The previous start-coding attempt failed with: **`task t1 requires acceptance criteria`**.\n\nKeep the approved scope unchanged. **Do not implement yet or add application scope.** Owner review is required before implementation.\n\n## Existing ledger\nAll items have `review_state: agreed`.\n\n### Requirements\n- **r1:** Python 3 standard-library CLI accepts one UTF-8 file path and prints labeled line, word, and character counts.\n- **r2:** Words are whitespace-separated. Characters are Unicode code points, including whitespace and original newline characters. Empty files return zero counts. Count a final nonempty unterminated line. LF, CRLF, and CR are line endings; CRLF contributes two characters.\n- **r3:** Missing, unreadable, or invalid UTF-8 files produce a concise stderr error and nonzero exit status without a traceback.\n- **r4:** Automated `unittest` tests cover empty input, whitespace, Unicode, newline variants, unterminated final lines, CLI output, and file errors.\n- **r5:** Short README provides usage and test instructions.\n\n### Constraints\n- **c1:** Work only on the disposable word-counter app in this directory; leave Omnidex untouched.\n- **c2:** Wait for owner review before implementing.\n\n### Tasks\n| ID | Task | Requirement IDs | Constraint IDs | Write files |\n|---|---|---|---|---|\n| **t1** | Implement CLI, counting semantics, and clean file errors. | `r1`, `r2`, `r3` | `c1`, `c2` | `wordcounter.py` |\n| **t2** | Add automated `unittest` coverage specified by r4. | `r4` | `c1`, `c2` | `test_wordcounter.py` |\n| **t3** | Add short usage and test instructions. | `r5` | `c1`, `c2` | `README.md` |\n\nNo acceptance criteria or runnable verification checks are recorded on these tasks in the supplied ledger. No implementation or successful verification results are supplied.\n\n## Preservation rule\nIn any response being parsed, preserve exact item IDs and every proposed ledger change, question, permission request, error, finding, and verification result; do not resolve or reinterpret them. Remove duplication and unrelated history, never obligations."
+    },
+    {
+      "input": "What is the smallest context needed to understand or answer this current instruction? Keep necessary referents, actors, actions, negations, and temporal relationships.\n\nCurrent instruction:\nKeep the minimum context needed for this planning_mutation assignment. Preserve all requirements, constraints, acceptance criteria, task boundaries, owner answers, relevant systems and files, and observed verification failures. Preserve exact item IDs and every proposed ledger change, question, permission request, error, finding and verification result in a response being parsed; do not resolve or reinterpret them. Remove duplication and unrelated history, never obligations.\n\nRelevant context:\nSegment ARTIFACT_1\n{\"construction_facts\":[{\"kind\":\"engineering_question\",\"quote\":\"owner-turn-ledger-mutation: Which planning ledger updates are expressed in this conversation response?\"},{\"kind\":\"bounded_planning_context\",\"quote\"ARTIFACT_1,ARTIFACT_2,ARTIFACT_3 ARTIFACT_4 user's planning note concerns this proposed ARTIFACT_5] Add README.md with short usage and test ARTIFACT_6 normal start-coding action failed with: task t1 requires acceptance criteria. Keep the approved word-counter scope unchanged. Finish the planning ledger so these same tasks have the acceptance criteria and runnable verification checks needed for the normal ARTIFACT_7 action. Do not implement yet or add application ARTIFACT_8,ARTIFACT_9},ARTIFACT_10,ARTIFACT_11,ARTIFACT_12,ARTIFACT_13,ARTIFACT_14,ARTIFACT_15,ARTIFACT_16},ARTIFACT_17,ARTIFACT_18,ARTIFACT_19,ARTIFACT_20,ARTIFACT_21,ARTIFACT_22 a Python 3 standard-library CLI accepting one UTF-8 file path and printing labeled line, word, and character ARTIFACT_23},{ARTIFACT_24,ARTIFACT_14,ARTIFACT_15,ARTIFACT_16},ARTIFACT_17,ARTIFACT_18,ARTIFACT_25,ARTIFACT_20,ARTIFACT_21,ARTIFACT_26 whitespace-separated words and Unicode code points, including whitespace and original newline characters. Empty files return zero counts. Count a final nonempty unterminated line. Treat LF, CRLF, and CR as line endings, with CRLF contributing two ARTIFACT_27},{ARTIFACT_28,ARTIFACT_14,ARTIFACT_15,ARTIFACT_16},ARTIFACT_17,ARTIFACT_18,ARTIFACT_29,ARTIFACT_20,ARTIFACT_21,ARTIFACT_30, unreadable, or invalid UTF-8 files produce a concise stderr error and a nonzero exit status without a ARTIFACT_31},{ARTIFACT_32,ARTIFACT_14,ARTIFACT_15,ARTIFACT_16},ARTIFACT_17,ARTIFACT_18,ARTIFACT_33,ARTIFACT_20,ARTIFACT_21,ARTIFACT_34 unittest tests cover empty input, whitespace, Unicode, newline variants, unterminated final lines, CLI output, and file ARTIFACT_35},{ARTIFACT_36,ARTIFACT_14,ARTIFACT_15,ARTIFACT_16},ARTIFACT_17,ARTIFACT_18,ARTIFACT_37,ARTIFACT_20,ARTIFACT_21,ARTIFACT_22 a short \n\nRelevant context:\nSegment ARTIFACT_1\nREADME with usage and test ARTIFACT_38}],ARTIFACT_39,ARTIFACT_14,ARTIFACT_15,ARTIFACT_16},ARTIFACT_17,ARTIFACT_18,ARTIFACT_19,ARTIFACT_20,ARTIFACT_21,ARTIFACT_40 work to the disposable word-counter app in this directory; leave Omnidex ARTIFACT_41},{ARTIFACT_42,ARTIFACT_14,ARTIFACT_15,ARTIFACT_16},ARTIFACT_17,ARTIFACT_18,ARTIFACT_25,ARTIFACT_20,ARTIFACT_21,ARTIFACT_43 for owner review before ARTIFACT_44}],ARTIFACT_45,ARTIFACT_46,ARTIFACT_14,ARTIFACT_15,ARTIFACT_16},ARTIFACT_17,ARTIFACT_18,ARTIFACT_19,ARTIFACT_20,ARTIFACT_21,ARTIFACT_47 wordcounter.py implementing the CLI, counting semantics, and clean file ARTIFACT_35,ARTIFACT_48,ARTIFACT_49,ARTIFACT_50],ARTIFACT_51,ARTIFACT_52],ARTIFACT_53],ARTIFACT_54],ARTIFACT_55],ARTIFACT_56]},{ARTIFACT_57,ARTIFACT_14,ARTIFACT_15,ARTIFACT_16},ARTIFACT_17,ARTIFACT_18,ARTIFACT_25,ARTIFACT_20,ARTIFACT_21,ARTIFACT_47 test_wordcounter.py with automated unittest coverage for empty input, whitespace, Unicode, newline variants, unterminated final lines, CLI output, and file ARTIFACT_35,ARTIFACT_58],ARTIFACT_51,ARTIFACT_52],ARTIFACT_53],ARTIFACT_54],ARTIFACT_59],ARTIFACT_56]},{ARTIFACT_60,ARTIFACT_14,ARTIFACT_15,ARTIFACT_16},ARTIFACT_17,ARTIFACT_18,ARTIFACT_29,ARTIFACT_20,ARTIFACT_21,ARTIFACT_47 README.md with short usage and test ARTIFACT_38,ARTIFACT_61],ARTIFACT_51,ARTIFACT_52],ARTIFACT_53],ARTIFACT_54],ARTIFACT_62],ARTIFACT_56]}],ARTIFACT_63,ARTIFACT_64,ARTIFACT_65}],\"planning_response\":\"Revision **11** should add the following acceptance criteria and runnable verification checks to existing tasks **t1–t3**. All existing IDs, requirement and constraint links, write-file boundaries, and `review_state: agreed` remain ARTIFACT_66 — Implement CLI, counting semantics, and clean file ARTIFACT_67 ARTIFACT_68 `wordcounter.py` uses only the Python 3 standard library, accepts one UTF-8 file path, and prints labeled line, word, and character ARTIFACT_69 Words are whitespace-separated; characters are Unicode code points, includ\n\nRelevant context:\nSegment ARTIFACT_1\ning whitespace and original newline ARTIFACT_70 Empty files produce zero counts. LF, CRLF, and CR are line endings; CRLF contributes two characters. A final nonempty unterminated line is ARTIFACT_71 Missing, unreadable, and invalid UTF-8 files produce a concise stderr error, a nonzero exit status, and no ARTIFACT_72 verification: `python3 -m unittest -v test_wordcounter` after **t2** exists, checking counting semantics, CLI output, and all required file-error ARTIFACT_73 — Add automated `unittest` coverage specified by ARTIFACT_74 ARTIFACT_68 `test_wordcounter.py` contains automated tests for empty input, whitespace-separated words, Unicode code-point counts, ARTIFACT_75, and unterminated final ARTIFACT_76 Tests check labeled CLI output and missing, unreadable, and invalid UTF-8 file handling, including stderr, nonzero exit status, and absence of a ARTIFACT_77 The complete suite ARTIFACT_78 verification: `python3 -m unittest discover -v`ARTIFACT_79 — Add short usage and test ARTIFACT_80 ARTIFACT_68 `README.md` briefly explains how to run the CLI with one UTF-8 file path and how to run the automated ARTIFACT_81 Its usage and test commands match the implemented CLI and test ARTIFACT_82 verification: run the documented usage command against `README.md`, such as `python3 wordcounter.py README.md`, and run the documented test command, `python3 -m unittest discover -v`. Review the README for brevity and ARTIFACT_83 previous start-coding attempt failed with **`task t1 requires acceptance criteria`**. These additions address the missing task criteria and verification definitions; no implementation or successful verification results are supplied. Approved scope remains unchanged, and **owner review is still required before implementation** under **c2**.\"}",
+      "output": "Task: `planning_mutation` / `owner-turn-ledger-mutation`: identify the planning-ledger updates expressed in the supplied response; preserve proposals without applying, resolving, or reinterpreting them.\n\nOwner direction:\n- Keep the approved word-counter scope unchanged.\n- Finish the existing tasks’ acceptance criteria and runnable verification checks so the normal start-coding action can proceed.\n- Do not implement yet or add application scope.\n- Limit work to the disposable word-counter app in this directory; leave Omnidex untouched.\n- Owner review is required before implementation under **c2**.\n\nObserved failure: the previous start-coding attempt failed with **`task t1 requires acceptance criteria`**.\n\nProposed ledger mutation: **Revision 11**, adding acceptance criteria and verification checks to existing tasks **t1–t3**. Preserve all existing IDs, requirement/constraint links, write-file boundaries, and `review_state: agreed`.\n\n**t1 — `wordcounter.py`: CLI, counting semantics, clean file errors**\nAcceptance:\n- Python 3 standard library only; accept one UTF-8 file path; print labeled line, word, and character counts.\n- Words are whitespace-separated. Characters are Unicode code points, including whitespace and original newline characters.\n- Empty files yield zero counts.\n- LF, CRLF, and CR are line endings; CRLF contributes two characters.\n- Count a final nonempty unterminated line.\n- Missing, unreadable, or invalid UTF-8 files produce concise stderr errors, nonzero exit status, and no traceback.\nVerification proposed: `python3 -m unittest -v test_wordcounter` after **t2** exists, checking counting semantics, CLI output, and all required file-error cases.\n\n**t2 — `test_wordcounter.py`: automated `unittest` coverage**\nAcceptance:\n- Cover empty input, whitespace-separated words, Unicode code-point counts, LF/CRLF/CR newline variants, and unterminated final lines.\n- Check labeled CLI output and missing, unreadable, and invalid UTF-8 file handling, including stderr, nonzero exit status, and no traceback.\n- The complete suite passes.\nVerification proposed: `python3 -m unittest discover -v`.\n\n**t3 — `README.md`: short usage and test instructions**\nAcceptance:\n- Briefly explain running the CLI with one UTF-8 file path and running automated tests.\n- Documented commands match the implemented CLI and test suite.\nVerification proposed:\n- Run the documented usage command against `README.md`, such as `python3 wordcounter.py README.md`.\n- Run the documented test command: `python3 -m unittest discover -v`.\n- Review the README for brevity and accuracy.\n\nThese are proposed planning additions only. No implementation or successful verification results are supplied. No new owner question or permission request is expressed; the existing **c2** owner-review requirement remains."
+    }
+  ],
+  "observed_error": "add operation contains fields from another operation"
+}

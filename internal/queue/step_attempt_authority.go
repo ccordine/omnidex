@@ -58,7 +58,14 @@ func (r *Repository) RequireActiveStepAttempt(
 	if err != nil {
 		return err
 	}
-	if stepStatus != model.StepStatusRunning || !jobAcceptsStepTerminal(jobStatus) {
+	valid := stepStatus == model.StepStatusRunning && jobAcceptsStepTerminal(jobStatus)
+	if jobStatus == model.JobStatusWaiting && stepStatus == model.StepStatusWaiting {
+		valid, err = codingNativeInputWaitingTx(ctx, tx, authority)
+		if err != nil {
+			return err
+		}
+	}
+	if !valid {
 		return staleStepAttemptError(
 			authority,
 			fmt.Sprintf("workspace mutation writer job status %q step status %q", jobStatus, stepStatus),
@@ -198,10 +205,19 @@ func (r *Repository) RenewStepAttempt(
 		return time.Time{}, err
 	}
 	defer tx.Rollback(ctx)
-	if _, stepStatus, _, err := requireActiveStepAttemptTx(ctx, tx, authority); err != nil {
+	if jobStatus, stepStatus, _, err := requireActiveStepAttemptTx(ctx, tx, authority); err != nil {
 		return time.Time{}, err
 	} else if stepStatus != model.StepStatusRunning {
-		return time.Time{}, staleStepAttemptError(authority, "step is not running", nil)
+		waiting := false
+		if jobStatus == model.JobStatusWaiting && stepStatus == model.StepStatusWaiting {
+			waiting, err = codingNativeInputWaitingTx(ctx, tx, authority)
+			if err != nil {
+				return time.Time{}, err
+			}
+		}
+		if !waiting {
+			return time.Time{}, staleStepAttemptError(authority, "step is not running or awaiting bound native input", nil)
+		}
 	}
 	leaseMeasurementStarted := time.Now()
 	var leaseValidForNanoseconds int64

@@ -19,7 +19,6 @@ func codingLedgerRevisionResponse(value queue.CodingLedgerRevision) ledgerapi.Co
 		LedgerID: value.LedgerID, JobID: value.JobID, Generation: value.Generation,
 		Revision: value.Revision, BaseRevision: value.BaseRevision,
 		OperationID: value.OperationID, State: value.State,
-		CoveragePassed: value.CoveragePassed, AuditID: value.AuditID,
 		OwnerTurnID:           value.OwnerTurnID,
 		OwnerTurnDispositions: append([]model.OwnerStatementDisposition(nil), value.OwnerTurnDispositions...),
 		LatestDelta: ledgerapi.CodingLedgerDelta{

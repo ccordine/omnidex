@@ -43,12 +43,24 @@ func (store *CodingAgentEvidenceStore) Append(ctx context.Context, entry codinga
 	if err := requireCodingAgentStepTx(ctx, tx, store.authority.JobID, store.authority.StepID, store.authority.Generation); err != nil {
 		return 0, err
 	}
-	if entry.Phase == "answers" || entry.OperationID != "" || entry.QuestionID != 0 || entry.WaitingAttempt != 0 {
-		return 0, fmt.Errorf("agent answers require the exact user-feedback lifecycle operation")
+	if entry.Phase == "questions" || entry.Phase == "answers" {
+		return 0, fmt.Errorf("coding agents cannot create owner-input state")
 	}
 	var id int64
 	if err := tx.QueryRow(ctx, `INSERT INTO evidence(job_id,step_id,kind,payload_json) VALUES($1,$2,'coding_agent',$3::jsonb) RETURNING id`, store.authority.JobID, store.authority.StepID, string(encoded)).Scan(&id); err != nil {
 		return 0, err
+	}
+	message := ""
+	if entry.Phase == "planning_response" && len(entry.Notes) == 3 {
+		message = entry.Notes[2]
+	}
+	if (entry.Phase == "execution_response" || entry.Phase == "review_response" || entry.Phase == "task_incomplete" || entry.Phase == "planning_incomplete") && len(entry.Notes) == 1 {
+		message = entry.Notes[0]
+	}
+	if message != "" {
+		if err := appendCodingAssistantMessagesTx(ctx, tx, store.authority.JobID, message); err != nil {
+			return 0, err
+		}
 	}
 	return id, tx.Commit(ctx)
 }
@@ -63,11 +75,16 @@ func (store *CodingAgentEvidenceStore) Read(ctx context.Context) ([]codingagent.
 		JOIN job_steps AS source_step ON source_step.id=evidence.step_id AND source_step.job_id=evidence.job_id
 		JOIN job_steps AS current_step ON current_step.id=$2 AND current_step.job_id=evidence.job_id
 		WHERE evidence.job_id=$1
-		  AND source_step.generation=$3
-		  AND source_step.action=current_step.action
+		  AND (source_step.action=current_step.action OR
+		       (current_step.action='v3_coding_plan' AND evidence.payload_json->>'phase'='task_incomplete'))
 		  AND evidence.kind='coding_agent'
-		  AND evidence.payload_json->>'generation'=$3::text
-		  AND evidence.payload_json->>'phase' NOT IN ('native_event','call_opened','call_completed')
+		  AND (
+		    (source_step.generation=$3 AND evidence.payload_json->>'generation'=$3::text
+		     AND (evidence.payload_json->>'phase' NOT IN ('native_event','call_opened','call_completed')
+		          OR (evidence.payload_json->>'phase'='call_completed' AND evidence.payload_json->>'role' IN ('execute','review'))))
+		    OR (current_step.action='v3_coding_plan' AND source_step.generation<=$3
+		        AND evidence.payload_json->>'phase' IN ('planning_response','task_incomplete','planning_incomplete'))
+		  )
 		ORDER BY evidence.id
 	`, store.authority.JobID, store.authority.StepID, store.authority.Generation)
 	if err != nil {
@@ -85,7 +102,8 @@ func (store *CodingAgentEvidenceStore) Read(ctx context.Context) ([]codingagent.
 		if err := json.Unmarshal(raw, &entry); err != nil {
 			return nil, err
 		}
-		if entry.Generation != store.authority.Generation {
+		if entry.Generation != store.authority.Generation &&
+			!((entry.Phase == "planning_response" || entry.Phase == "task_incomplete" || entry.Phase == "planning_incomplete") && entry.Generation > 0 && entry.Generation < store.authority.Generation) {
 			return nil, fmt.Errorf("agent evidence changed its generation")
 		}
 		entry.ID = id

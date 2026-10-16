@@ -3,9 +3,9 @@ package model
 import "testing"
 
 func TestAgentCallActivityRequiresExactJournalAndRoleBinding(t *testing.T) {
-	for _, role := range []string{"plan", "execute", "review"} {
+	for _, role := range []string{"plan", "execute", "review", "review_response"} {
 		valid := AgentCallActivity{Schema: 1, CallID: 17, Role: role, Status: AgentCallActivityStarted}
-		if role == "execute" || role == "review" {
+		if role == "execute" || role == "review" || role == "review_response" {
 			valid.TaskID = "task-a"
 		}
 		if err := valid.Validate(); err != nil {

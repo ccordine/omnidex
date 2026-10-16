@@ -2,40 +2,76 @@ package codingagent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
 )
 
-// Invalid proposals are corrected within their role, without expanding grants.
-func (controller *Controller) review(ctx context.Context, scope Assignment, tasks map[string]Task, round int64) (ReviewResult, Result, error) {
-	for attempt := 0; attempt < 3 && ctx.Err() == nil; attempt++ {
-		result, err := controller.invoke(ctx, scope, round)
+// Parsing failures never repeat the native review or its environment operations.
+func (controller *Controller) review(ctx context.Context, scope Assignment, tasks map[string]Task, round int64, pending *Result) (ReviewResult, Result, error) {
+	var result Result
+	if pending != nil {
+		result = *pending
+	} else {
+		var err error
+		result, err = controller.invoke(ctx, scope, round)
 		if err != nil {
 			return ReviewResult{}, result, err
 		}
-		var review ReviewResult
-		err = decodeContract(result.Content, &review)
-		if err == nil {
-			normalizeReviewFindingFiles(tasks, &review)
-			err = ValidateReview(tasks, review, scope.Requirements...)
-		}
-		if err == nil {
-			return review, result, nil
-		}
-		scope.ValidationNotes = []string{err.Error()}
-		taskID := ""
-		if scope.Task != nil {
-			taskID = scope.Task.ID
-		}
-		if _, err := controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "review_rejected", TaskID: taskID, CallID: result.CallID, Role: scope.Role, Notes: scope.ValidationNotes}); err != nil {
-			return ReviewResult{}, result, err
+	}
+	var response string
+	if err := json.Unmarshal(result.Content, &response); err != nil || strings.TrimSpace(response) == "" {
+		return ReviewResult{}, result, fmt.Errorf("review requires an ordinary nonblank Codex response")
+	}
+	parser := controller.assignment(ReviewResponse, nil, controller.Configuration.LedgerParser)
+	parser.Task, parser.Response = scope.Task, response
+	entries, err := controller.Evidence.Read(ctx)
+	if err != nil {
+		return ReviewResult{}, result, err
+	}
+	for _, entry := range entries {
+		if entry.Phase == "review_parse_rejected" && entry.CallID == result.CallID {
+			parser.ValidationNotes = entry.Notes
 		}
 	}
-	if err := ctx.Err(); err != nil {
-		return ReviewResult{}, Result{}, err
+	parsed, err := controller.invoke(ctx, parser, round)
+	if err != nil {
+		return ReviewResult{}, result, err
 	}
-	return ReviewResult{}, Result{}, fmt.Errorf("review did not return a valid task-local judgment after three attempts")
+	var review ReviewResponseResult
+	err = decodeContract(parsed.Content, &review)
+	if err == nil {
+		switch review.Kind {
+		case ExecutionDone:
+			normalizeReviewFindingFiles(tasks, &review.ReviewResult)
+			err = ValidateReview(tasks, review.ReviewResult, scope.Requirements...)
+		case ExecutionQuestion, ExecutionPermission, ExecutionError:
+		default:
+			err = fmt.Errorf("review response parser returned unknown kind %q", review.Kind)
+		}
+	}
+	if err != nil {
+		if _, saveErr := controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "review_parse_rejected", TaskID: scope.Task.ID,
+			CallID: result.CallID, ParserCallID: parsed.CallID, Round: round, Role: ReviewResponse, Notes: []string{err.Error()}}); saveErr != nil {
+			return ReviewResult{}, result, saveErr
+		}
+		return ReviewResult{}, result, &ParserFailure{Cause: err}
+	}
+	_, err = controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "review_response", TaskID: scope.Task.ID,
+		CallID: result.CallID, ParserCallID: parsed.CallID, Round: round, Role: Review, ResponseKind: review.Kind,
+		ReviewResponse: &review, Notes: []string{response}})
+	if err != nil {
+		return ReviewResult{}, result, err
+	}
+	switch review.Kind {
+	case ExecutionQuestion, ExecutionPermission:
+		return ReviewResult{}, result, &ExecutionInputRequired{TaskID: scope.Task.ID, Role: Review, Kind: review.Kind, Text: response}
+	case ExecutionError:
+		return ReviewResult{}, result, &IncompleteTaskError{Reason: "Review is incomplete: " + response, ThreadID: result.ThreadID, TurnID: result.TurnID}
+	default:
+		return review.ReviewResult, result, nil
+	}
 }
 
 // Reviewers commonly attach source locations to a file name. Preserve the

@@ -29,9 +29,10 @@ for line in sys.stdin:
     if request.get("method")=="initialize":
         print(json.dumps({"id":request["id"],"result":{}}),flush=True)
     if request.get("method")=="command/exec":
-        assert request["params"]["sandboxPolicy"]=={"type":"readOnly","networkAccess":False}
+        policy=request["params"]["sandboxPolicy"]
+        assert policy=={"type":"dangerFullAccess"}
+        assert "env" not in request["params"]
         assert "permissionProfile" not in request["params"]
-        assert os.path.basename(request["params"]["cwd"])=="workspace"
         process=request["params"].get("processId","missing")
         print(json.dumps({"method":"command/exec/outputDelta","params":{"processId":process,"stream":"stdout","deltaBase64":base64.b64encode("streamed ".encode()).decode()}}),flush=True)
         print(json.dumps({"id":request["id"],"result":{"exitCode":0,"stdout":"streamed complete\n","stderr":""}}),flush=True)

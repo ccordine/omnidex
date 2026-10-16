@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"strconv"
 	"time"
 
 	"github.com/gryph/omnidex/internal/llm"
@@ -15,7 +16,7 @@ import (
 const maximumFrameBytes = llm.MaxExactPreparedProviderResponseBytes
 
 type rpcFrame struct {
-	ID     *int            `json:"id,omitempty"`
+	ID     json.RawMessage `json:"id,omitempty"`
 	Method string          `json:"method,omitempty"`
 	Result json.RawMessage `json:"result,omitempty"`
 	Params json.RawMessage `json:"params,omitempty"`
@@ -26,11 +27,12 @@ type rpcFrame struct {
 }
 
 type connection struct {
-	process   *exec.Cmd
-	input     io.WriteCloser
-	output    *bufio.Scanner
-	sequence  int
-	lastFrame json.RawMessage
+	process       *exec.Cmd
+	input         io.WriteCloser
+	output        *bufio.Scanner
+	sequence      int
+	lastFrame     json.RawMessage
+	serverRequest func(rpcFrame) error
 }
 
 type rpcError struct {
@@ -48,9 +50,8 @@ func startConnection(ctx context.Context, command, directory string) (*connectio
 }
 
 func startConfiguredConnection(ctx context.Context, command, directory string, agent bool, overrides []string) (*connection, error) {
-	// Model-backed agent calls never receive native shell tools. The only caller
-	// that enables command execution is the deterministic frozen-check runner,
-	// which supplies its explicit permission overrides without a model turn.
+	// Semantic parsing uses this tool-free connection. Native planning,
+	// execution, review, and checks use startExecutionConnection instead.
 	enabled := fmt.Sprint(len(overrides) > 0)
 	arguments := []string{"app-server", "--listen", "stdio://",
 		"-c", "features.shell_tool=" + enabled, "-c", "features.unified_exec=" + enabled,
@@ -58,6 +59,16 @@ func startConfiguredConnection(ctx context.Context, command, directory string, a
 		"-c", "features.hooks=false", "-c", "features.multi_agent=false",
 		"-c", "project_doc_max_bytes=0", "-c", "web_search=\"disabled\""}
 	arguments = append(arguments, overrides...)
+	return launchConnection(ctx, command, directory, agent, arguments)
+}
+
+// Execution inherits the launching host environment, including SSH agents and
+// Docker configuration, just like starting Codex normally.
+func startExecutionConnection(ctx context.Context, command, directory string) (*connection, error) {
+	return launchConnection(ctx, command, directory, false, []string{"app-server", "--listen", "stdio://", "-c", "project_doc_max_bytes=0"})
+}
+
+func launchConnection(ctx context.Context, command, directory string, agent bool, arguments []string) (*connection, error) {
 	process := exec.CommandContext(ctx, command, arguments...)
 	process.Dir = directory
 	if agent {
@@ -138,7 +149,7 @@ func (connection *connection) readFrame(agent bool) (rpcFrame, error) {
 	if err := json.Unmarshal(connection.lastFrame, &frame); err != nil {
 		return frame, err
 	}
-	allowedAgentRequest := frame.Method == "item/tool/call"
+	allowedAgentRequest := frame.Method == "item/tool/call" || connection.serverRequest != nil
 	if frame.ID != nil && frame.Method != "" && !(agent && allowedAgentRequest) {
 		return frame, fmt.Errorf("Codex attempted a client tool or approval request")
 	}
@@ -161,7 +172,7 @@ func (connection *connection) callObserved(method string, params, result any, se
 		}
 	}
 	for {
-		frame, err := connection.next()
+		frame, err := connection.readFrame(connection.serverRequest != nil)
 		if err != nil {
 			return nil, err
 		}
@@ -173,7 +184,13 @@ func (connection *connection) callObserved(method string, params, result any, se
 			}
 			continue
 		}
-		if *frame.ID != id {
+		if frame.Method != "" && connection.serverRequest != nil {
+			if err := connection.serverRequest(frame); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		if string(frame.ID) != strconv.Itoa(id) {
 			return nil, fmt.Errorf("Codex returned a mismatched RPC response")
 		}
 		if frame.Error != nil {

@@ -117,11 +117,36 @@ func currentJobDetailsTx(ctx context.Context, tx pgx.Tx, jobID int64) (model.Job
 	}
 	stepsRows.Close()
 
-	pause, err := readCurrentCodingAgentPauseTx(ctx, tx, job, steps)
-	if err != nil {
-		return model.JobDetails{}, err
+	details := model.JobDetails{Job: job, Steps: steps}
+	if job.Status == model.JobStatusWaiting {
+		for _, step := range steps {
+			if step.Action != "v3_coding" && step.Action != "v3_coding_plan" || step.Status != model.StepStatusWaiting {
+				continue
+			}
+			if step.Action == "v3_coding_plan" {
+				details.CodingInputDisposition = model.CodingInputReplan
+				native, err := codingNativeInputWaitingTx(ctx, tx, model.StepAttemptAuthority{JobID: job.ID, StepID: step.ID, Generation: job.CurrentGeneration})
+				if err != nil {
+					return model.JobDetails{}, err
+				}
+				if !native {
+					continue
+				}
+			}
+			response, err := codingExecutionResponseTx(ctx, tx, job.ID, step.ID, job.CurrentGeneration)
+			if err != nil {
+				return model.JobDetails{}, err
+			}
+			if response.NativeInput != nil {
+				details.ExecutionInputID = &response.ID
+			}
+			details.CodingInputDisposition = model.CodingInputReply
+			if response.Phase == "task_incomplete" || response.Phase == "planning_incomplete" {
+				details.CodingInputDisposition = model.CodingInputReplan
+			}
+		}
 	}
-	return model.JobDetails{Job: job, Steps: steps, AgentPause: pause}, nil
+	return details, nil
 }
 
 func (r *Repository) GetStepRuntimeState(ctx context.Context, jobID, stepID int64) (string, string, error) {

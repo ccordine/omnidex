@@ -111,7 +111,7 @@ func transitionCodingAuthorityTx(
 func (r *Repository) FreezeCodingLedger(ctx context.Context, command FreezeCodingLedgerCommand) (CodingLedgerRevision, error) {
 	if r == nil || r.pool == nil || command.LedgerID <= 0 || command.Revision <= 0 ||
 		strings.TrimSpace(command.OperationID) == "" || strings.TrimSpace(command.OwnerTurnID) == "" ||
-		strings.TrimSpace(command.OwnerTurnText) == "" || strings.TrimSpace(command.AuditID) == "" {
+		strings.TrimSpace(command.OwnerTurnText) == "" {
 		return CodingLedgerRevision{}, fmt.Errorf("coding ledger freeze requires exact ledger, revision, operation, and owner-turn authority")
 	}
 	if err := validateCodingLedgerOperationID(command.OperationID); err != nil {
@@ -131,17 +131,16 @@ func (r *Repository) FreezeCodingLedger(ctx context.Context, command FreezeCodin
 		return CodingLedgerRevision{}, err
 	}
 	var replay, replayBase int64
-	var replayOwner, replayText, replayState, replayAuditID string
+	var replayOwner, replayText, replayState string
 	err = tx.QueryRow(ctx, `
-		SELECT revision.revision,revision.base_revision,revision.owner_turn_id,turn_record.exact_text,revision.state,
-		       COALESCE(revision.planning_audit_id,'')
+		SELECT revision.revision,revision.base_revision,revision.owner_turn_id,turn_record.exact_text,revision.state
 		FROM coding_ledger_revisions revision
 		JOIN coding_ledger_owner_turns turn_record
 		  ON turn_record.ledger_id=revision.ledger_id AND turn_record.owner_turn_id=revision.owner_turn_id
 		WHERE revision.ledger_id=$1 AND revision.operation_id=$2
-	`, command.LedgerID, command.OperationID).Scan(&replay, &replayBase, &replayOwner, &replayText, &replayState, &replayAuditID)
+	`, command.LedgerID, command.OperationID).Scan(&replay, &replayBase, &replayOwner, &replayText, &replayState)
 	if err == nil {
-		if replayState != "frozen" || replayBase != command.Revision || replayOwner != command.OwnerTurnID || replayText != command.OwnerTurnText || replayAuditID != command.AuditID {
+		if replayState != "frozen" || replayBase != command.Revision || replayOwner != command.OwnerTurnID || replayText != command.OwnerTurnText {
 			return CodingLedgerRevision{}, fmt.Errorf("coding ledger operation %q was already used by a different freeze", command.OperationID)
 		}
 		result, readErr := readCodingLedgerRevisionTx(ctx, tx, command.LedgerID, replay, CodingLedgerReadOptions{Limit: -1})
@@ -165,13 +164,6 @@ func (r *Repository) FreezeCodingLedger(ctx context.Context, command FreezeCodin
 	if err != nil {
 		return CodingLedgerRevision{}, err
 	}
-	var auditReady bool
-	if err := tx.QueryRow(ctx, `
-		SELECT ready FROM coding_ledger_planning_audits
-		WHERE ledger_id=$1 AND audit_id=$2 AND revision=$3
-	`, command.LedgerID, command.AuditID, current).Scan(&auditReady); err != nil || !auditReady {
-		return CodingLedgerRevision{}, fmt.Errorf("%w: coding ledger revision lacks its exact fresh planning audit", ErrCodingLedgerState)
-	}
 	for _, record := range ledgerRepositoryRecords(proposal.Ledger) {
 		if record.item.Disposition == model.LedgerDispositionActive && record.item.ReviewState != model.LedgerReviewAgreed {
 			return CodingLedgerRevision{}, fmt.Errorf("%w: active item %s is not agreed", ErrCodingLedgerState, record.item.ID)
@@ -180,18 +172,6 @@ func (r *Repository) FreezeCodingLedger(ctx context.Context, command FreezeCodin
 	for _, dependency := range proposal.Ledger.Dependencies {
 		if dependency.Disposition == model.LedgerDispositionActive && dependency.ReviewState != model.LedgerReviewAgreed {
 			return CodingLedgerRevision{}, fmt.Errorf("%w: active dependency %s is not agreed", ErrCodingLedgerState, dependency.ID)
-		}
-	}
-	for _, value := range proposal.Ledger.DecisionsAndQuestions {
-		if (value.Kind == model.LedgerQuestion || value.Kind == model.LedgerDecision) &&
-			value.Disposition == model.LedgerDispositionActive && strings.TrimSpace(value.Answer) == "" {
-			return CodingLedgerRevision{}, fmt.Errorf("%w: %s %s remains unresolved", ErrCodingLedgerState, value.Kind, value.ID)
-		}
-	}
-	for _, value := range proposal.Ledger.Findings {
-		if value.Kind == model.LedgerFindingPlanning && value.Disposition == model.LedgerDispositionActive &&
-			len(value.ResolvedBy) == 0 {
-			return CodingLedgerRevision{}, fmt.Errorf("%w: planning finding %s remains open", ErrCodingLedgerState, value.ID)
 		}
 	}
 	if err := validateLedgerForRepository(proposal.Ledger); err != nil {
@@ -251,9 +231,9 @@ func (r *Repository) FreezeCodingLedger(ctx context.Context, command FreezeCodin
 	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO coding_ledger_revisions(
-			ledger_id,revision,base_revision,operation_id,owner_turn_id,state,coverage_passed,planning_audit_id
-		) VALUES($1,$2,$3,$4,$5,'frozen',true,$6)
-	`, command.LedgerID, frozenRevision, current, command.OperationID, command.OwnerTurnID, command.AuditID); err != nil {
+			ledger_id,revision,base_revision,operation_id,owner_turn_id,state
+		) VALUES($1,$2,$3,$4,$5,'frozen')
+	`, command.LedgerID, frozenRevision, current, command.OperationID, command.OwnerTurnID); err != nil {
 		return CodingLedgerRevision{}, fmt.Errorf("create frozen coding ledger revision: %w", err)
 	}
 	frozenLedger := proposal.Ledger
@@ -270,10 +250,10 @@ func (r *Repository) FreezeCodingLedger(ctx context.Context, command FreezeCodin
 		return CodingLedgerRevision{}, err
 	}
 	if routesChangedSinceFreeze {
-		represented := model.OwnerTurnDisposition{Kind: model.OwnerTurnRepresented}
+		represented := model.OwnerTurnDisposition{Statements: []model.OwnerStatementDisposition{{Kind: model.OwnerTurnRepresented}}}
 		for _, record := range ledgerRepositoryRecords(frozenLedger) {
 			if record.item.Disposition == model.LedgerDispositionActive {
-				represented.ItemIDs = append(represented.ItemIDs, record.item.ID)
+				represented.Statements[0].ItemIDs = append(represented.Statements[0].ItemIDs, record.item.ID)
 			}
 		}
 		if err := insertCodingLedgerDispositionTx(ctx, tx, command.LedgerID, frozenRevision,
@@ -307,6 +287,10 @@ func (r *Repository) FreezeCodingLedger(ctx context.Context, command FreezeCodin
 }
 
 func createFrozenCodingAgentTasksTx(ctx context.Context, tx pgx.Tx, ledgerID, revision int64, ledger model.EngineeringLedger) error {
+	continuations, err := codingContinuationPrioritiesTx(ctx, tx, ledgerID, ledger)
+	if err != nil {
+		return err
+	}
 	prerequisites := map[model.LedgerItemID][]model.LedgerItemID{}
 	for _, dependency := range ledger.Dependencies {
 		if dependency.Disposition == model.LedgerDispositionActive {
@@ -419,9 +403,9 @@ func createFrozenCodingAgentTasksTx(ctx context.Context, tx pgx.Tx, ledgerID, re
 			}
 		}
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO coding_agent_tasks(ledger_id,frozen_revision,task_item_id,state,priority)
-			VALUES($1,$2,$3,$4,$5)
-		`, ledgerID, revision, task.ID, state, priority(task.Priority)); err != nil {
+			INSERT INTO coding_agent_tasks(ledger_id,frozen_revision,task_item_id,state,priority,continuation_priority)
+			VALUES($1,$2,$3,$4,$5,$6)
+		`, ledgerID, revision, task.ID, state, priority(task.Priority), continuations[task.ID]); err != nil {
 			return fmt.Errorf("project frozen coding task %s: %w", task.ID, err)
 		}
 	}

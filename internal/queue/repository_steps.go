@@ -221,7 +221,14 @@ func (r *Repository) FailStep(ctx context.Context, command FailStepCommand) erro
 	if err := requireLockedStepAttemptActiveTx(ctx, tx, command.Authority, lockedAttempt); err != nil {
 		return err
 	}
-	if lockedAttempt.StepStatus != model.StepStatusRunning || !jobAcceptsStepTerminal(lockedAttempt.JobStatus) {
+	validFailure := lockedAttempt.StepStatus == model.StepStatusRunning && jobAcceptsStepTerminal(lockedAttempt.JobStatus)
+	if lockedAttempt.StepStatus == model.StepStatusWaiting && lockedAttempt.JobStatus == model.JobStatusWaiting {
+		validFailure, err = codingNativeInputWaitingTx(ctx, tx, command.Authority)
+		if err != nil {
+			return err
+		}
+	}
+	if !validFailure {
 		return staleStepAttemptError(command.Authority, fmt.Sprintf(
 			"failure writer job status %q step status %q",
 			lockedAttempt.JobStatus, lockedAttempt.StepStatus,
@@ -238,7 +245,7 @@ func (r *Repository) FailStep(ctx context.Context, command FailStepCommand) erro
 		WHERE id = $1 AND job_id=$4 AND generation=$5 AND current_attempt=$6
 		  AND worker_id=$7 AND status=$8
 	`, command.StepID, model.StepStatusFailed, command.Error, jobID, generation,
-		command.Authority.Attempt, command.Authority.WorkerID, model.StepStatusRunning)
+		command.Authority.Attempt, command.Authority.WorkerID, lockedAttempt.StepStatus)
 	if err != nil {
 		return err
 	}

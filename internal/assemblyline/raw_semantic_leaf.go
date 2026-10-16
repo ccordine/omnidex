@@ -7,15 +7,16 @@ import (
 	"unicode/utf8"
 )
 
-// decodeOrdinarySemanticText accepts one bounded model-authored text value
+// decodeOrdinarySemanticText accepts one model-authored text value. A zero
+// maximum denotes ordinary text without a station-imposed byte ceiling.
 // without interpreting its presentation. Markdown, source snippets, quoted
 // prose, and JSON-shaped text can all be the semantic response itself; typed
 // framework structure is supplied by the calling code after this boundary.
 func decodeOrdinarySemanticText(label string, raw string, maximum int) (string, error) {
-	if maximum < 1 {
-		return "", fmt.Errorf("%s has no positive byte bound", label)
+	if maximum < 0 {
+		return "", fmt.Errorf("%s has a negative byte bound", label)
 	}
-	if len(raw) > maxPortableCandidateBytes {
+	if maximum > 0 && len(raw) > maxPortableCandidateBytes {
 		return "", fmt.Errorf("%s exceeds %d bytes", label, maxPortableCandidateBytes)
 	}
 	if !utf8.ValidString(raw) || strings.ContainsRune(raw, '\x00') {
@@ -24,7 +25,7 @@ func decodeOrdinarySemanticText(label string, raw string, maximum int) (string, 
 	if strings.TrimSpace(raw) == "" {
 		return "", fmt.Errorf("%s is empty", label)
 	}
-	if len(raw) > maximum {
+	if maximum > 0 && len(raw) > maximum {
 		return "", fmt.Errorf("%s exceeds %d bytes", label, maximum)
 	}
 	return raw, nil

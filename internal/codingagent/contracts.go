@@ -21,24 +21,25 @@ const (
 type Role string
 
 const (
-	Plan             Role = "plan"
-	PlanningInitial  Role = "planning_initial"
-	PlanningTarget   Role = "planning_target"
-	PlanningMutation Role = "planning_mutation"
-	PlanningCoverage Role = "planning_coverage"
-	PlanningAudit    Role = "planning_audit"
-	Execute          Role = "execute"
-	Review           Role = "review"
+	Plan              Role = "plan"
+	PlanningInitial   Role = "planning_initial"
+	PlanningMutation  Role = "planning_mutation"
+	Execute           Role = "execute"
+	ExecutionResponse Role = "execution_response"
+	Review            Role = "review"
+	ReviewResponse    Role = "review_response"
 )
 
 func (role Role) IsPlanning() bool {
 	switch role {
-	case Plan, PlanningInitial, PlanningTarget, PlanningMutation, PlanningCoverage, PlanningAudit:
+	case Plan, PlanningInitial, PlanningMutation:
 		return true
 	default:
 		return false
 	}
 }
+
+func (role Role) IsNative() bool { return role == Plan || role == Execute || role == Review }
 
 type Route struct {
 	Provider    string `json:"provider"`
@@ -47,15 +48,21 @@ type Route struct {
 	ServiceTier string `json:"service_tier,omitempty"`
 }
 type Configuration struct {
-	Mode     Mode  `json:"mode"`
-	Planner  Route `json:"planner"`
-	Executor Route `json:"executor"`
-	Reviewer Route `json:"reviewer"`
+	Mode         Mode  `json:"mode"`
+	Planner      Route `json:"planner"`
+	LedgerParser Route `json:"ledger_parser"`
+	Executor     Route `json:"executor"`
+	Reviewer     Route `json:"reviewer"`
 }
 
 func (config Configuration) Validate() error {
 	if config.Mode != Agents {
 		return fmt.Errorf("unknown coding mode %q", config.Mode)
+	}
+	if config.LedgerParser != (Route{}) {
+		if err := validateRoute(config.LedgerParser); err != nil {
+			return fmt.Errorf("response parser route: %w", err)
+		}
 	}
 	return (RouteSet{Planner: config.Planner, Executor: config.Executor, Reviewer: config.Reviewer}).Validate()
 }
@@ -96,21 +103,9 @@ type Objective struct {
 	Instruction    string   `json:"instruction"`
 	Clarifications []string `json:"clarifications,omitempty"`
 }
-type ArtifactBinding struct {
-	Token string `json:"token"`
-	Value string `json:"value"`
-}
-type IntakeContext struct {
-	RedactedRequest  string            `json:"redacted_request"`
-	ArtifactBindings []ArtifactBinding `json:"artifact_bindings"`
-}
 type ConstructionFact struct {
 	Kind  string `json:"kind"`
 	Quote string `json:"quote"`
-}
-type PlanningEnvironment struct {
-	NewFilesAllowed bool     `json:"new_files_allowed"`
-	Executables     []string `json:"executables"`
 }
 type Finding struct {
 	TaskID      string `json:"task_id"`
@@ -120,44 +115,55 @@ type Finding struct {
 }
 type ReviewResult struct {
 	Findings     []Finding `json:"findings"`
-	Questions    []string  `json:"questions"`
 	Verification string    `json:"verification,omitempty"`
 }
-type ExecutionResult struct {
-	Questions []string `json:"questions"`
+
+// ReviewResponseResult is extracted by the configured parser, never authored by the
+// native reviewer as a transport contract. Code owns the resulting transition.
+type ReviewResponseResult struct {
+	Kind ExecutionResponseKind `json:"kind"`
+	ReviewResult
 }
+
 type CheckResult struct {
 	ID       string `json:"id"`
 	ExitCode int    `json:"exit_code"`
 	Output   string `json:"output"`
 }
 
-type QuestionContext struct {
-	Questions []string `json:"questions"`
-	Answers   []string `json:"answers"`
+type Assignment struct {
+	JobID                int64               `json:"job_id"`
+	Generation           int64               `json:"generation"`
+	Role                 Role                `json:"role"`
+	Task                 *Task               `json:"task,omitempty"`
+	Requirements         []Requirement       `json:"requirements,omitempty"`
+	Objective            *Objective          `json:"objective,omitempty"`
+	ConstructionFacts    []ConstructionFact  `json:"construction_facts,omitempty"`
+	Findings             []Finding           `json:"findings,omitempty"`
+	Checks               []CheckResult       `json:"checks,omitempty"`
+	ValidationNotes      []string            `json:"validation_notes,omitempty"`
+	Root                 string              `json:"root"`
+	ReadFiles            []string            `json:"read_files"`
+	WriteFiles           []string            `json:"write_files"`
+	DeleteFiles          []string            `json:"delete_files"`
+	Route                Route               `json:"route"`
+	PlanningQuestionID   string              `json:"planning_question_id,omitempty"`
+	PlanningBaseRevision int64               `json:"planning_base_revision,omitempty"`
+	PlanningLedger       *EngineeringLedger  `json:"planning_ledger,omitempty"`
+	PlanningConversation []PlanningMessage   `json:"planning_conversation,omitempty"`
+	PlanningResponse     string              `json:"planning_response,omitempty"`
+	Response             string              `json:"response,omitempty"`
+	Session              *ExecutionSession   `json:"session,omitempty"`
+	Reply                string              `json:"reply,omitempty"`
+	Context              string              `json:"context,omitempty"`
+	Continuation         *TaskContinuation   `json:"continuation,omitempty"`
+	Clarifications       []TaskClarification `json:"clarifications,omitempty"`
+	CompletedTaskIDs     []string            `json:"completed_task_ids,omitempty"`
 }
 
-type Assignment struct {
-	JobID                int64                `json:"job_id"`
-	Generation           int64                `json:"generation"`
-	Role                 Role                 `json:"role"`
-	Task                 *Task                `json:"task,omitempty"`
-	Requirements         []Requirement        `json:"requirements,omitempty"`
-	Objective            *Objective           `json:"objective,omitempty"`
-	ArtifactBindings     []ArtifactBinding    `json:"artifact_bindings,omitempty"`
-	PlanningEnvironment  *PlanningEnvironment `json:"planning_environment,omitempty"`
-	ConstructionFacts    []ConstructionFact   `json:"construction_facts,omitempty"`
-	Findings             []Finding            `json:"findings,omitempty"`
-	Checks               []CheckResult        `json:"checks,omitempty"`
-	QuestionContext      []QuestionContext    `json:"question_context,omitempty"`
-	ValidationNotes      []string             `json:"validation_notes,omitempty"`
-	Root                 string               `json:"root"`
-	ReadFiles            []string             `json:"read_files"`
-	WriteFiles           []string             `json:"write_files"`
-	DeleteFiles          []string             `json:"delete_files"`
-	Route                Route                `json:"route"`
-	PlanningQuestionID   string               `json:"planning_question_id,omitempty"`
-	PlanningBaseRevision int64                `json:"planning_base_revision,omitempty"`
+type PlanningMessage struct {
+	Role string `json:"role"`
+	Text string `json:"text"`
 }
 type Result struct {
 	CallID    int64             `json:"call_id,omitempty"`
@@ -171,7 +177,7 @@ type Result struct {
 }
 
 type Provider interface {
-	Run(context.Context, Assignment, FileWriter, func(NativeEvent) error) (Result, error)
+	Run(context.Context, Assignment, func(NativeEvent) error) (Result, error)
 }
 
 // NativeEvent preserves the original journal receipt separately from its
@@ -179,21 +185,8 @@ type Provider interface {
 type NativeEvent struct {
 	Frame    json.RawMessage
 	Activity *model.AgentActivity
-}
-
-type FileWrite struct {
-	Path            string `json:"path"`
-	Content         string `json:"content"`
-	ExpectedContent string `json:"expected_content"`
-}
-type FileDelete struct {
-	Path            string `json:"path"`
-	ExpectedContent string `json:"expected_content"`
-}
-type FileWriter interface {
-	ReadFile(context.Context, string) (string, error)
-	WriteFile(context.Context, FileWrite) error
-	DeleteFile(context.Context, FileDelete) error
+	Session  *ExecutionSession
+	Input    *NativeInput
 }
 
 func ValidatePath(value string) error {

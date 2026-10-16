@@ -2,7 +2,6 @@ package worker
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -175,6 +174,10 @@ type planningBoundaryRepository struct {
 	applyCalls int
 }
 
+func (repository *planningBoundaryRepository) ProposeUnchangedCodingLedger(context.Context, queue.ProposeUnchangedCodingLedgerCommand) (queue.CodingLedgerRevision, error) {
+	return queue.CodingLedgerRevision{}, errors.New("unexpected unchanged proposal")
+}
+
 func (repository *planningBoundaryRepository) CreateCodingLedger(
 	context.Context,
 	queue.CreateCodingLedgerCommand,
@@ -202,7 +205,6 @@ func (repository *planningBoundaryRepository) ApplyCodingLedgerMutation(
 	}
 	repository.current.Revision = next.Revision
 	repository.current.Ledger = next
-	repository.current.CoveragePassed = command.CoveragePassed
 	return repository.current, nil
 }
 
@@ -241,58 +243,14 @@ type interruptedPlanningProvider struct{}
 func (interruptedPlanningProvider) Run(
 	context.Context,
 	codingagent.Assignment,
-	codingagent.FileWriter,
 	func(codingagent.NativeEvent) error,
 ) (codingagent.Result, error) {
 	return codingagent.Result{}, errors.New("planning session interrupted")
 }
 
-type uncoveredPlanningProvider struct{}
-
-func (uncoveredPlanningProvider) Run(
-	_ context.Context,
-	assignment codingagent.Assignment,
-	_ codingagent.FileWriter,
-	emit func(codingagent.NativeEvent) error,
-) (codingagent.Result, error) {
-	if assignment.Role != codingagent.PlanningCoverage {
-		return codingagent.Result{}, fmt.Errorf("unexpected role %s", assignment.Role)
-	}
-	if err := emit(codingagent.NativeEvent{Frame: json.RawMessage(`{"type":"fixture"}`)}); err != nil {
-		return codingagent.Result{}, err
-	}
-	content, err := json.Marshal(codingagent.PlanningCoverageJudgment{
-		Question: "owner-turn-coverage", BaseRevision: 3, Covered: false,
-		Explanation: "an explicit owner statement is not represented",
-		Suggestions: []string{"Ask the owner whether to add that statement."},
-	})
-	if err != nil {
-		return codingagent.Result{}, err
-	}
-	return codingagent.Result{
-		Provider: assignment.Route.Provider, Model: assignment.Route.Model,
-		ThreadID: "fixture-thread", TurnID: "fixture-turn", Completed: true, Content: content,
-	}, nil
-}
-
 type planningBoundaryEnvironment struct{}
 
-func (planningBoundaryEnvironment) ReadFiles(context.Context) ([]string, error) {
-	return nil, nil
-}
-func (planningBoundaryEnvironment) ReadTaskFile(context.Context, string) (string, error) {
-	return "", nil
-}
-func (planningBoundaryEnvironment) PrepareFiles(context.Context, codingagent.Task) error {
-	return nil
-}
 func (planningBoundaryEnvironment) Attest(context.Context) error {
-	return nil
-}
-func (planningBoundaryEnvironment) WriteFile(context.Context, codingagent.FileWrite) error {
-	return nil
-}
-func (planningBoundaryEnvironment) DeleteFile(context.Context, codingagent.FileDelete) error {
 	return nil
 }
 
@@ -305,63 +263,14 @@ func (planningBoundaryEvidence) Read(context.Context) ([]codingagent.Entry, erro
 	return nil, nil
 }
 
-type planningBoundaryJournal struct {
-	entries []codingagent.Entry
-}
-
-func (journal *planningBoundaryJournal) Append(_ context.Context, entry codingagent.Entry) (int64, error) {
-	entry.ID = int64(len(journal.entries) + 1)
-	journal.entries = append(journal.entries, entry)
-	return entry.ID, nil
-}
-
-func (journal *planningBoundaryJournal) Read(context.Context) ([]codingagent.Entry, error) {
-	return append([]codingagent.Entry(nil), journal.entries...), nil
-}
-
-func TestPlanningLedgerCoverageQuestionIsDurableBeforePause(t *testing.T) {
-	journal := &planningBoundaryJournal{}
-	questions := []string{"Should the missing requirement be added?"}
-	if err := persistPlanningQuestions(context.Background(), journal, 4, 7, questions); err != nil {
-		t.Fatal(err)
-	}
-	if err := persistPlanningQuestions(context.Background(), journal, 4, 7, questions); err != nil {
-		t.Fatal(err)
-	}
-	if len(journal.entries) != 1 {
-		t.Fatalf("durable question count = %d, want idempotent single entry", len(journal.entries))
-	}
-	entry := journal.entries[0]
-	if entry.Phase != "questions" || entry.Generation != 4 || entry.LedgerRevision != 7 ||
-		len(entry.Questions) != 1 || entry.Questions[0] != questions[0] {
-		t.Fatalf("durable planning question = %#v", entry)
-	}
-}
-
-func TestPlanningLedgerAnsweredQuestionBecomesTypedMutationTurn(t *testing.T) {
-	journal := &planningBoundaryJournal{entries: []codingagent.Entry{
-		{ID: 1, Generation: 2, Phase: "questions", LedgerRevision: 7, Questions: []string{"Add it?"}},
-		{ID: 2, Generation: 2, Phase: "answers", QuestionID: 1,
-			OperationID: "lifecycle_operation_answer_1", Answers: []string{"Add the missing requirement."}},
-	}}
-	fallback := codingagent.PlanningTurn{
-		OperationID: "planning:1:2", OwnerTurnID: "owner:1:2", Text: "old turn",
-	}
-	turn, err := planningTurnFromDurableAnswer(context.Background(), journal, fallback)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if turn.OperationID != "lifecycle_operation_answer_1" ||
-		turn.OwnerTurnID != "owner:lifecycle_operation_answer_1" ||
-		turn.Text != "Add the missing requirement." || turn.ObservedRevision != 7 {
-		t.Fatalf("answered planning turn = %#v", turn)
-	}
+func (planningBoundaryEvidence) ReadTaskClarifications(context.Context, string) ([]codingagent.TaskClarification, error) {
+	return nil, nil
 }
 
 func TestPlanningLedgerDirectActionReloadsDatabaseRevisionWithoutInference(t *testing.T) {
 	ledger := planningBoundaryLedger()
 	repository := &planningBoundaryRepository{current: queue.CodingLedgerRevision{
-		LedgerID: 7, Revision: ledger.Revision, Ledger: ledger, CoveragePassed: true,
+		LedgerID: 7, Revision: ledger.Revision, Ledger: ledger,
 	}}
 	turn := codingagent.PlanningTurn{
 		OperationID: "agree-task", OwnerTurnID: "turn-2",
@@ -386,7 +295,7 @@ func TestPlanningLedgerDirectActionReloadsDatabaseRevisionWithoutInference(t *te
 func TestPlanningLedgerProviderInterruptionPreservesDatabaseProposal(t *testing.T) {
 	ledger := planningBoundaryLedger()
 	repository := &planningBoundaryRepository{current: queue.CodingLedgerRevision{
-		LedgerID: 8, Revision: ledger.Revision, Ledger: ledger, CoveragePassed: true,
+		LedgerID: 8, Revision: ledger.Revision, Ledger: ledger,
 	}}
 	route := codingagent.Route{Provider: "planner", Model: "model"}
 	controller := &codingagent.Controller{
@@ -412,37 +321,5 @@ func TestPlanningLedgerProviderInterruptionPreservesDatabaseProposal(t *testing.
 	if repository.readCalls != 1 || repository.applyCalls != 0 ||
 		repository.current.Revision != ledger.Revision {
 		t.Fatalf("provider interruption changed the durable proposal: %#v", repository)
-	}
-}
-
-func TestPlanningLedgerUncoveredRevisionRemainsUnready(t *testing.T) {
-	ledger := planningBoundaryLedger()
-	repository := &planningBoundaryRepository{current: queue.CodingLedgerRevision{
-		LedgerID: 9, Revision: ledger.Revision, Ledger: ledger,
-	}}
-	route := codingagent.Route{Provider: "planner", Model: "model"}
-	controller := &codingagent.Controller{
-		JobID: 1, Generation: 1, Root: t.TempDir(),
-		Configuration: codingagent.Configuration{Mode: codingagent.Agents, Planner: route, Executor: route, Reviewer: route},
-		Requirements:  []codingagent.Requirement{{ID: "objective", Outcome: "ship"}},
-		Providers:     map[string]codingagent.Provider{"planner": uncoveredPlanningProvider{}},
-		Environment:   planningBoundaryEnvironment{}, Evidence: planningBoundaryEvidence{},
-	}
-	turn := codingagent.PlanningTurn{
-		OperationID: "owner-operation", OwnerTurnID: "owner-turn",
-		Text: "Keep the job narrow.", ObservedRevision: ledger.Revision,
-	}
-	result, err := resumeCodingLedgerPlanningCoverage(
-		context.Background(), repository, controller, repository.current.LedgerID, turn,
-	)
-	var pending *codingagent.QuestionsPending
-	if !errors.As(err, &pending) {
-		t.Fatalf("uncovered revision error = %v, want owner input", err)
-	}
-	if len(pending.Questions) != 2 || pending.Questions[0] != "an explicit owner statement is not represented" {
-		t.Fatalf("uncovered revision feedback = %#v", pending.Questions)
-	}
-	if repository.applyCalls != 0 || result.Revision != ledger.Revision || result.Ledger.Revision != ledger.Revision {
-		t.Fatalf("read-only coverage changed the ledger: repository=%#v result=%#v", repository, result)
 	}
 }

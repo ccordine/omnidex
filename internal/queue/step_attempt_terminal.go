@@ -52,7 +52,7 @@ func terminalizeStepAttemptsForAuthorityChangeTx(
 		return fmt.Errorf("%w: job %d generation %d step set changed", ErrStaleJobGeneration, jobID, generation)
 	}
 	for _, state := range states {
-		if state.status != model.StepStatusRunning {
+		if state.status != model.StepStatusRunning && !(state.status == model.StepStatusWaiting && state.worker != "") {
 			continue
 		}
 		if state.attempt <= 0 || state.worker == "" {
@@ -73,10 +73,10 @@ func terminalizeStepAttemptsForAuthorityChangeTx(
 			if err := tx.QueryRow(ctx, `SELECT status FROM job_step_attempts WHERE job_id=$1 AND generation=$2 AND step_id=$3 AND attempt=$4 AND worker_id=$5`, jobID, generation, state.id, state.attempt, state.worker).Scan(&status); err != nil {
 				return err
 			}
+			// A final-response wait already terminalized its attempt. A resumed
+			// step can retain that immutable worker identity until it is claimed.
 			if status == model.StepAttemptWaiting {
-				if err := requireCodingAgentResumeClaimTx(ctx, tx, jobID, state.id, generation, state.attempt); err == nil {
-					continue
-				}
+				continue
 			}
 			return fmt.Errorf("%w: running step %d active attempt changed", ErrStaleStepAttempt, state.id)
 		}

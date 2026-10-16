@@ -115,6 +115,13 @@ func TestChatPlanReviewPersistsDecisionThenDeliberatelyFreezes(t *testing.T) {
 	if err := session.reconcilePlanReview(); err != nil {
 		t.Fatalf("discover plan review: %v", err)
 	}
+	if session.planReview == nil || !session.planNoteEditing || console.reviewActive ||
+		session.planNoteAuthority.Mode != terminalInputPlanNote {
+		t.Fatal("authoritative waiting plan did not enter conversational planning")
+	}
+	if err := session.acceptPlanReviewNote(""); err != nil {
+		t.Fatalf("open ledger review from planning conversation: %v", err)
+	}
 	if session.planReview == nil || !console.reviewActive {
 		t.Fatal("authoritative waiting plan did not enter interactive review")
 	}
@@ -178,6 +185,12 @@ func TestChatPlanReviewZeroLeafPlanRequestsGuidanceWithoutMutation(t *testing.T)
 	session.renderer = chatRenderer{console: console}
 	if err := session.reconcilePlanReview(); err != nil {
 		t.Fatalf("discover zero-leaf plan review: %v", err)
+	}
+	if session.planReview == nil || !session.planNoteEditing || console.reviewActive {
+		t.Fatal("zero-leaf plan did not enter conversational planning")
+	}
+	if err := session.acceptPlanReviewNote(""); err != nil {
+		t.Fatalf("open zero-leaf ledger review: %v", err)
 	}
 	if session.planReview == nil || !console.reviewActive ||
 		!strings.Contains(output.String(), "Guidance is required before coding can start.") {
@@ -305,6 +318,12 @@ func TestChatPlanReviewReloadsOnceForConcurrentReplanGeneration(t *testing.T) {
 	if err := session.reconcilePlanReview(); err != nil {
 		t.Fatalf("reconcile concurrent plan generation: %v", err)
 	}
+	if !session.planNoteEditing || console.reviewActive {
+		t.Fatal("reloaded plan did not enter conversational planning")
+	}
+	if err := session.acceptPlanReviewNote(""); err != nil {
+		t.Fatalf("open reloaded ledger review: %v", err)
+	}
 	if planRequests != 2 || sessionRequests != 1 || session.planReview == nil ||
 		session.planReview.snapshot.Generation != 2 || !console.reviewActive ||
 		session.active == nil || session.active.Job.CurrentGeneration != 2 {
@@ -326,12 +345,10 @@ func TestActiveJobRequiresPlanReviewUsesExactWaitingStepAuthority(t *testing.T) 
 		job    string
 		action string
 		step   string
-		pause  bool
 		want   bool
 		bad    bool
 	}{
 		{name: "exact", job: model.JobStatusWaiting, action: codingPlanReviewStepAction, step: model.StepStatusWaiting, want: true},
-		{name: "agent question", job: model.JobStatusWaiting, action: codingPlanReviewStepAction, step: model.StepStatusWaiting, pause: true},
 		{name: "ordinary wait", job: model.JobStatusWaiting, action: "v3_coding", step: model.StepStatusWaiting},
 		{name: "running plan", job: model.JobStatusRunning, action: codingPlanReviewStepAction, step: model.StepStatusRunning},
 		{name: "contradictory", job: model.JobStatusRunning, action: codingPlanReviewStepAction, step: model.StepStatusWaiting, bad: true},
@@ -345,12 +362,6 @@ func TestActiveJobRequiresPlanReviewUsesExactWaitingStepAuthority(t *testing.T) 
 					ID: 1, JobID: 1, Generation: 1, Action: test.action, Status: test.step,
 				}},
 			}
-			if test.pause {
-				details.AgentPause = &model.CodingAgentPause{
-					Schema: "omnidex-coding-agent-pause-v1", Generation: 1,
-					StepID: 1, WaitingAttempt: 1, Questions: []string{"Which value?"},
-				}
-			}
 			actual, err := activeJobRequiresPlanReview(details)
 			if test.bad {
 				if err == nil {
@@ -362,46 +373,5 @@ func TestActiveJobRequiresPlanReviewUsesExactWaitingStepAuthority(t *testing.T) 
 				t.Fatalf("activeJobRequiresPlanReview() = %t, %v; want %t", actual, err, test.want)
 			}
 		})
-	}
-}
-
-func TestChatPlanReviewQuestionTransitionClearsReviewWithoutPlanFetch(t *testing.T) {
-	const jobID int64 = 77
-	requests := 0
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		requests++
-		t.Errorf("unexpected question-transition request %s %s", request.Method, request.URL.String())
-		http.Error(writer, "unexpected request", http.StatusInternalServerError)
-	}))
-	defer server.Close()
-
-	session := newChatOperationTestSession(t, server.URL)
-	session.active = waitingPlanReviewJob(t, session, jobID, 1)
-	session.active.AgentPause = &model.CodingAgentPause{
-		Schema: "omnidex-coding-agent-pause-v1", Generation: 1,
-		StepID: 11, WaitingAttempt: 2, Questions: []string{"Which behavior should be retained?"},
-	}
-	console, _ := planReviewTestConsole(t)
-	session.renderer = chatRenderer{console: console}
-	state := mustPlanReviewState(t, singleLeafPlanReviewFixture(t, jobID, 1))
-	session.planReview = &state
-	if err := session.showPlanReview(); err != nil {
-		t.Fatalf("show stale plan review: %v", err)
-	}
-	if !console.reviewActive {
-		t.Fatal("fixture did not enter plan review")
-	}
-
-	if err := session.reconcilePlanReview(); err != nil {
-		t.Fatalf("reconcile agent question: %v", err)
-	}
-	if requests != 0 || session.planReview != nil || session.planReviewInputs != nil || console.reviewActive {
-		t.Fatalf(
-			"question transition = requests %d review %#v inputs %#v visible %t",
-			requests,
-			session.planReview,
-			session.planReviewInputs,
-			console.reviewActive,
-		)
 	}
 }

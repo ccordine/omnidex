@@ -14,7 +14,7 @@ func TestCodingLedgerRevisionResponseMapsRepositoryStateIntoTheSharedContract(t 
 	now := time.Date(2026, time.October, 16, 12, 0, 0, 0, time.UTC)
 	value := queue.CodingLedgerRevision{
 		LedgerID: 7, JobID: 11, Generation: 2, Revision: 4, BaseRevision: 3,
-		OperationID: "operation", State: "proposed", CoveragePassed: true,
+		OperationID: "operation", State: "proposed",
 		OwnerTurnDispositions: []model.OwnerStatementDisposition{{Kind: model.OwnerTurnRepresented}},
 		LatestDelta: queue.CodingLedgerDiff{
 			LedgerID: 7, FromRevision: 3, ToRevision: 4,

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gryph/omnidex/internal/codingagent"
 )
@@ -90,12 +91,42 @@ func TestAgentEnvironmentExcludesServiceSecrets(t *testing.T) {
 	scratch := t.TempDir()
 	environment := agentToolEnvironment(scratch)
 	if environment["HOME"] != scratch || environment["TMPDIR"] != scratch || environment["GOMAXPROCS"] != "2" {
-		t.Fatal("verification commands inherited host storage or unbounded Go workers")
+		t.Fatal("semantic parser inherited host storage or unbounded Go workers")
 	}
 	for _, key := range []string{"OMNI_AGENT_SERVICE_SECRET", "DATABASE_URL", "REDIS_PASSWORD", "CODEX_HOME"} {
 		if _, found := environment[key]; found {
 			t.Fatalf("tool environment exposes %s", key)
 		}
+	}
+}
+
+func TestExecutionInheritsHostSSHAndDockerEnvironment(t *testing.T) {
+	t.Setenv("SSH_AUTH_SOCK", "/fixture/ssh-agent.sock")
+	t.Setenv("DOCKER_HOST", "unix:///fixture/docker.sock")
+	t.Setenv("DOCKER_CONTEXT", "fixture-context")
+	root := t.TempDir()
+	command := filepath.Join(root, "codex-fixture")
+	fixture := "#!/bin/sh\nprintf '%s\\n' \"$SSH_AUTH_SOCK\" \"$DOCKER_HOST\" \"$DOCKER_CONTEXT\"\nread -r fixture_input\n"
+	if err := os.WriteFile(command, []byte(fixture), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	connection, err := startExecutionConnection(ctx, command, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.close()
+	for _, expected := range []string{"/fixture/ssh-agent.sock", "unix:///fixture/docker.sock", "fixture-context"} {
+		if !connection.output.Scan() || connection.output.Text() != expected {
+			t.Fatalf("execution did not inherit host configuration %q", expected)
+		}
+	}
+	if connection.process.Dir != root || connection.process.Env != nil {
+		t.Fatal("execution substituted a filtered environment or working directory")
+	}
+	if strings.Join(connection.process.Args[1:], " ") != "app-server --listen stdio:// -c project_doc_max_bytes=0" {
+		t.Fatalf("native channels must suppress automatic document bloat without restricting tools: %v", connection.process.Args)
 	}
 }
 
@@ -132,7 +163,7 @@ func TestAgentTransportAllowsOnlyBoundFileTools(t *testing.T) {
 
 func TestAgentNativeReceiptsRejectForeignIncompleteAndUngrantableEvents(t *testing.T) {
 	for _, raw := range []string{
-		`{"method":"item/completed","params":{"threadId":"foreign","turnId":"turn","item":{"type":"agentMessage","phase":"final_answer","text":"{\"questions\":[]}"}}}`,
+		`{"method":"item/completed","params":{"threadId":"foreign","turnId":"turn","item":{"type":"agentMessage","phase":"final_answer","text":"{}"}}}`,
 		`{"method":"item/started","params":{"threadId":"thread","turnId":"foreign","item":{"type":"commandExecution"}}}`,
 		`{"method":"turn/completed","params":{"threadId":"thread","turn":{"id":"turn","status":"interrupted"}}}`,
 		`{"method":"turn/completed","params":{"threadId":"thread","turn":{"id":"foreign","status":"completed"}}}`,
@@ -149,7 +180,7 @@ func TestAgentNativeReceiptsRejectForeignIncompleteAndUngrantableEvents(t *testi
 		t.Fatalf("configured MCP activity changed assignment completion: finished=%v error=%v", finished, err)
 	}
 	result = codingagent.Result{ThreadID: "thread", TurnID: "turn"}
-	answer := `{"method":"item/completed","params":{"threadId":"thread","turnId":"turn","item":{"type":"agentMessage","phase":"final_answer","text":"{\"questions\":[]}"}}}`
+	answer := `{"method":"item/completed","params":{"threadId":"thread","turnId":"turn","item":{"type":"agentMessage","phase":"final_answer","text":"{}"}}}`
 	if finished, err := collectAgentFrame(decodeAgentTestFrame(t, answer), []byte(answer), &result, codingagent.Execute); err != nil || finished || result.Completed {
 		t.Fatalf("a final message alone became completion: finished=%v error=%v", finished, err)
 	}
@@ -183,16 +214,16 @@ func TestAgentItemLifecycleRejectsWriteAttemptsAndUnboundCompletion(t *testing.T
 		t.Fatalf("completed command not accounted for: %v", err)
 	}
 	write := decodeAgentTestFrame(t, `{"method":"item/started","params":{"item":{"id":"edit-1","type":"fileChange"}}}`)
-	err := validateAgentItems(write, codingagent.Review, open)
+	err := validateAgentItems(write, codingagent.PlanningInitial, open)
 	if err == nil {
-		t.Fatal("independent review acquired source write authority")
+		t.Fatal("planning parser acquired source write authority")
 	}
 	var retryable interface{ Retryable() bool }
 	if !errors.As(err, &retryable) || retryable.Retryable() {
 		t.Fatalf("blocked native side effect remained retryable: %v", err)
 	}
 	if len(open) != 0 {
-		t.Fatalf("blocked reviewer edit changed native item authority: %v", open)
+		t.Fatalf("blocked parser edit changed native item authority: %v", open)
 	}
 }
 
@@ -243,93 +274,3 @@ func TestAgentReceiptPersistenceMustSucceedBeforeEvidenceIsAccepted(t *testing.T
 type agentTestToolInput struct{ bytes.Buffer }
 
 func (input *agentTestToolInput) Close() error { return nil }
-
-type agentTestFileWriter func(context.Context, codingagent.FileWrite) error
-
-func (writer agentTestFileWriter) ReadFile(context.Context, string) (string, error) {
-	return "fixture", nil
-}
-
-func (writer agentTestFileWriter) WriteFile(ctx context.Context, edit codingagent.FileWrite) error {
-	return writer(ctx, edit)
-}
-
-func (writer agentTestFileWriter) DeleteFile(context.Context, codingagent.FileDelete) error {
-	return nil
-}
-
-func TestAgentFileWriteRejectsMalformedArgumentsBeforeSideEffects(t *testing.T) {
-	for _, arguments := range []string{
-		`null`, `[]`, `{}`,
-		`{"path":"source.go","expected_content":"original"}`,
-		`{"path":"source.go","content":"replacement"}`,
-		`{"content":"replacement","expected_content":"original"}`,
-		`{"path":"source.go","content":null,"expected_content":"original"}`,
-		`{"path":"source.go","content":"replacement","expected_content":null}`,
-		`{"path":null,"content":"replacement","expected_content":"original"}`,
-		`{"path":"source.go","content":1,"expected_content":"original"}`,
-		`{"path":"source.go","content":"replacement","expected_content":false}`,
-		`{"path":{},"content":"replacement","expected_content":"original"}`,
-		`{"path":"source.go","content":"replacement","content":"","expected_content":"original"}`,
-		`{"path":"source.go","content":"replacement","expected_content":"original","expected_content":""}`,
-		`{"Path":"source.go","content":"replacement","expected_content":"original"}`,
-		`{"path":"source.go","content":"replacement","expected_content":"original","extra":true}`,
-	} {
-		t.Run(arguments, func(t *testing.T) {
-			input := &agentTestToolInput{}
-			connection := &connection{input: input, lastFrame: json.RawMessage(`{"original":"request"}`)}
-			params, err := json.Marshal(map[string]any{"threadId": "thread", "turnId": "turn", "callId": "call", "tool": "omnidex_write_file", "arguments": json.RawMessage(arguments)})
-			if err != nil {
-				t.Fatal(err)
-			}
-			id, writes := 1, 0
-			writer := agentTestFileWriter(func(context.Context, codingagent.FileWrite) error { writes++; return nil })
-			result := codingagent.Result{ThreadID: "thread", TurnID: "turn"}
-			if err := connection.handleAgentTool(context.Background(), rpcFrame{ID: &id, Method: "item/tool/call", Params: params}, &result, codingagent.Assignment{Role: codingagent.Execute}, writer, nil); err != nil {
-				t.Fatal(err)
-			}
-			var reply struct {
-				Result struct {
-					Success bool `json:"success"`
-				} `json:"result"`
-			}
-			if err := json.Unmarshal(input.Bytes(), &reply); err != nil {
-				t.Fatal(err)
-			}
-			if writes != 0 || reply.Result.Success {
-				t.Fatal("malformed native arguments reached the writer or received success")
-			}
-		})
-	}
-	edit, err := decodeAgentFileWrite(json.RawMessage(`{"path":"source.go","content":"","expected_content":""}`))
-	if err != nil || edit.Path != "source.go" || edit.Content != "" || edit.ExpectedContent != "" {
-		t.Fatalf("intentional empty string contents were rejected: edit=%+v error=%v", edit, err)
-	}
-	if _, err := decodeAgentFileWrite(json.RawMessage(`{"path":"source.go","content":"","expected_content":""} {}`)); err == nil {
-		t.Fatal("trailing native arguments were accepted")
-	}
-}
-
-func TestAgentFileDeleteRequiresExactPathAndExpectedContent(t *testing.T) {
-	for _, arguments := range []string{
-		`null`, `[]`, `{}`,
-		`{"path":"source.go"}`,
-		`{"expected_content":"original"}`,
-		`{"path":null,"expected_content":"original"}`,
-		`{"path":"source.go","expected_content":null}`,
-		`{"path":"source.go","expected_content":1}`,
-		`{"path":"source.go","expected_content":"original","extra":true}`,
-		`{"path":"source.go","path":"other.go","expected_content":"original"}`,
-	} {
-		if _, err := decodeAgentFileDelete(json.RawMessage(arguments)); err == nil {
-			t.Fatalf("malformed deletion accepted: %s", arguments)
-		}
-	}
-	deletion, err := decodeAgentFileDelete(json.RawMessage(`{"path":"source.go","expected_content":""}`))
-	if err != nil || deletion.Path != "source.go" || deletion.ExpectedContent != "" {
-		t.Fatalf("valid deletion rejected: deletion=%+v error=%v", deletion, err)
-	}
-	if _, err := decodeAgentFileDelete(json.RawMessage(`{"path":"source.go","expected_content":""} {}`)); err == nil {
-		t.Fatal("trailing deletion arguments were accepted")
-	}
-}

@@ -53,10 +53,15 @@ func (r *Repository) submitChannelSessionMessage(ctx context.Context, command Ch
 		return ChannelSessionTurnResult{}, err
 	}
 	if configuration.Mode == codingagent.Agents {
-		return ChannelSessionTurnResult{}, fmt.Errorf(
-			"%w: Agents mode accepts changes only through its revision-bound planning ledger",
-			ErrChannelSessionTurnInvalid,
-		)
+		var planning bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM job_steps
+			WHERE job_id=$1 AND generation=$2 AND action='v3_coding_plan'
+			AND status IN ('pending','running'))`, job.ID, job.CurrentGeneration).Scan(&planning); err != nil {
+			return ChannelSessionTurnResult{}, err
+		}
+		if !planning {
+			return ChannelSessionTurnResult{}, fmt.Errorf("%w: execution replies require the active input request", ErrChannelSessionTurnInvalid)
+		}
 	}
 	authority, err := lockChannelTurnAuthorityTx(ctx, tx, command.ChannelID)
 	if err != nil {

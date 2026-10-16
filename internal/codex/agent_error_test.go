@@ -16,7 +16,7 @@ func TestAgentNativeRetryNotificationPreservesEvidenceAndWaitsForCompletion(t *t
 	frames := []string{
 		`{"method":"error","params":{"threadId":"thread","turnId":"turn","willRetry":true,"error":{"message":"Stream disconnected; retrying","codexErrorInfo":{"httpConnectionFailed":{"httpStatusCode":503}}}}}`,
 		`{"method":"item/started","params":{"threadId":"thread","turnId":"turn","item":{"id":"answer","type":"agentMessage"}}}`,
-		`{"method":"item/completed","params":{"threadId":"thread","turnId":"turn","item":{"id":"answer","type":"agentMessage","phase":"final_answer","text":"{\"questions\":[]}"}}}`,
+		`{"method":"item/completed","params":{"threadId":"thread","turnId":"turn","item":{"id":"answer","type":"agentMessage","phase":"final_answer","text":"{}"}}}`,
 		`{"method":"turn/completed","params":{"threadId":"thread","turn":{"id":"turn","status":"completed","error":null}}}`,
 	}
 	result := codingagent.Result{ThreadID: "thread", TurnID: "turn"}
@@ -33,7 +33,7 @@ func TestAgentNativeRetryNotificationPreservesEvidenceAndWaitsForCompletion(t *t
 		if finished != (index == len(frames)-1) || result.Completed != finished {
 			t.Fatalf("native retry or partial answer became terminal success at frame %d", index)
 		}
-		if !bytes.Equal(persisted[index], []byte(raw)) || !bytes.Equal(result.Evidence[index], []byte(raw)) {
+		if !bytes.Equal(persisted[index], []byte(raw)) {
 			t.Fatal("original native receipt changed before durable persistence")
 		}
 	}
@@ -75,7 +75,7 @@ func TestAgentNativeFinalFailurePersistsOriginalFrameAndReportsDetail(t *testing
 				t.Fatalf("native failure lost actionable diagnostic %q: %v", detail, err)
 			}
 		}
-		if !bytes.Equal(persisted, []byte(raw)) || len(result.Evidence) != 1 || !bytes.Equal(result.Evidence[0], []byte(raw)) {
+		if !bytes.Equal(persisted, []byte(raw)) {
 			t.Fatal("final native failure returned before its original receipt was persisted")
 		}
 	}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
 )
@@ -162,7 +163,7 @@ func activeChannelJobDetailsTx(
 	if err != nil {
 		return nil, err
 	}
-	if err := requireTranscriptActiveTurn(transcript.Messages, &details.Job, userMessageID); err != nil {
+	if err := requireTranscriptActiveTurn(transcript.Messages, &details.Job, userMessageID, transcript.ActivePlanningTurn); err != nil {
 		return nil, fmt.Errorf("channel %q active job %d: %w", channel.ID, details.Job.ID, err)
 	}
 	return &details, nil
@@ -250,7 +251,16 @@ func requireTranscriptActiveTurn(
 	messages []model.ChannelMessage,
 	activeJob *model.Job,
 	activeUserMessageID int64,
+	planningTurns ...*model.ChannelPlanningTurn,
 ) error {
+	planningConversation := false
+	if activeJob != nil {
+		configuration, err := codingagent.ConfigurationFromMetadata(activeJob.Metadata)
+		if err != nil {
+			return err
+		}
+		planningConversation = configuration.Mode == codingagent.Agents
+	}
 	activeTurns := 0
 	for index, message := range messages {
 		if message.Turn == nil {
@@ -265,6 +275,9 @@ func requireTranscriptActiveTurn(
 				return fmt.Errorf("transcript active turn differs from current job authority")
 			}
 			for _, following := range messages[index+1:] {
+				if planningConversation && following.Role == model.ChannelMessageRoleUser && following.Turn == nil {
+					continue
+				}
 				if following.Role == model.ChannelMessageRoleAssistant && following.Turn == nil {
 					continue
 				}
@@ -282,6 +295,13 @@ func requireTranscriptActiveTurn(
 		return fmt.Errorf("transcript exposes an active turn without an active job")
 	}
 	if activeJob != nil && activeTurns != 1 {
+		if planningConversation && activeTurns == 0 && len(planningTurns) == 1 && planningTurns[0] != nil {
+			binding := planningTurns[0]
+			if binding.JobID == activeJob.ID && binding.Status == activeJob.Status &&
+				binding.MessageID == activeUserMessageID && len(messages) > 0 && messages[0].ID > activeUserMessageID {
+				return nil
+			}
+		}
 		return fmt.Errorf("transcript contains %d active turns for current job %d", activeTurns, activeJob.ID)
 	}
 	return nil

@@ -8,6 +8,14 @@ Charmeleon is the **repository-intelligence and software-defined context release
 
 ### Context and repository control plane
 
+- Planning now has normal native Codex tools like execution and review. All coding
+  channels reuse context minification; native prompt and three-round correction
+  cutoffs are removed. Context exhaustion/interruption preserves incomplete work
+  for owner-approved replanning, prioritizes the approved remainder, retains owner
+  answers, and never silently accepts or replays interrupted execution.
+- Task reviewers now return ordinary Codex text. The configured response parser
+  extracts task-bound findings, verification, questions, permissions, and errors;
+  code retains acceptance authority and resumes review questions in review.
 - Added complete, content-addressed Git/worktree snapshots and normalized immutable repository facts.
 - Added compiler-backed Go symbol and dependency analysis plus bounded, path-free evidence packs.
 - Added a transactional job-scoped Task Ledger with append-only command events,

@@ -14,9 +14,10 @@ export type AgentChannelAuthority = Readonly<{
 export type AgentChannelState = Readonly<{
   authority: AgentChannelAuthority;
   status: JobStatus;
-  question?: string;
-  waitingAttempt?: number;
   error?: string;
+  waitingFor?: "planning" | "execution";
+  executionInputID?: number;
+  inputDisposition?: "reply" | "replan";
 }>;
 
 export function parseAgentChannelState(
@@ -54,28 +55,32 @@ export function parseAgentChannelState(
     authority, status: details.job.status,
     ...(typeof rawJob.error === "string" ? { error: rawJob.error } : {}),
   };
-  const waiting = (payload.steps as unknown[]).map((value) => record(value, "Agent step"))
-    .filter((step) => step.action === "v3_coding" && step.status === "waiting_input" && step.generation === authority.generation);
-  if (waiting.length !== 1) throw new Error("Agent input has no exact waiting coding task.");
-  const pause = record(payload.agent_pause, "Agent pause");
-  if (pause.schema !== "omnidex-coding-agent-pause-v1" || pause.generation !== authority.generation || pause.step_id !== waiting[0].id) {
-    throw new Error("Agent pause changed its exact generation or waiting task.");
+  const waitingPlan = details.steps.filter((step) =>
+    step.action === "v3_coding_plan" && step.status === "waiting_input" && step.generation === authority.generation
+  );
+  const waitingExecution = details.steps.filter((step) =>
+    step.action === "v3_coding" && step.status === "waiting_input" && step.generation === authority.generation
+  );
+  if (waitingPlan.length + waitingExecution.length !== 1) {
+    throw new Error("Agents job has no exact waiting conversation step.");
   }
-  const waitingAttempt = pause.waiting_attempt;
-  if (typeof waitingAttempt !== "number" || !Number.isSafeInteger(waitingAttempt) || waitingAttempt < 1) {
-    throw new Error("Agent question has no exact waiting attempt.");
+  const inputID = payload.execution_input_id;
+  const inputDisposition = payload.coding_input_disposition;
+  if (inputDisposition !== "reply" && inputDisposition !== "replan") {
+    throw new Error("Coding input lost its server-owned reply disposition.");
   }
-  if (!Array.isArray(pause.questions) || pause.questions.length === 0) throw new Error("Agent pause has no concrete questions.");
-  const questions = pause.questions.map((question) => exactString(question, "Agent question"));
-  return { authority, status: "waiting_input", waitingAttempt, question: questions.join("\n\n") };
+  if (inputID !== undefined && (inputDisposition !== "reply" || typeof inputID !== "number" || !Number.isSafeInteger(inputID) || inputID < 1)) {
+    throw new Error("Native input lost its exact request identity.");
+  }
+  if (waitingPlan.length === 1 && inputDisposition === "reply" && inputID === undefined) {
+    throw new Error("Native planning input lost its exact request identity.");
+  }
+  return { authority, status: "waiting_input", inputDisposition,
+    waitingFor: waitingPlan.length === 1 || inputDisposition === "replan" ? "planning" : "execution",
+    ...(typeof inputID === "number" ? { executionInputID: inputID } : {}) };
 }
 
 function record(value: unknown, source: string): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error(`${source} must be one typed object.`);
   return value as Record<string, unknown>;
-}
-
-function exactString(value: unknown, source: string): string {
-  if (typeof value !== "string" || value.trim() === "") throw new Error(`${source} is missing.`);
-  return value;
 }

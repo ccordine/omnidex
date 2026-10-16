@@ -91,15 +91,6 @@ func validateLedgerForRepository(ledger model.EngineeringLedger) error {
 	if err := ledger.Validate(); err != nil {
 		return err
 	}
-	activeObjectives := 0
-	for _, objective := range ledger.Objectives {
-		if objective.Disposition == model.LedgerDispositionActive {
-			activeObjectives++
-		}
-	}
-	if activeObjectives != 1 {
-		return fmt.Errorf("coding ledger requires exactly one active objective for frozen workload authority")
-	}
 	for _, record := range ledgerRepositoryRecords(ledger) {
 		if !codingLedgerItemIDPattern.MatchString(string(record.item.ID)) ||
 			strings.HasPrefix(string(record.item.ID), codingLedgerDependencyRecordPrefix) {
@@ -188,22 +179,8 @@ func validateCodingLedgerExactDuplicates(ledger model.EngineeringLedger) error {
 			return err
 		}
 	}
-	for _, value := range ledger.DecisionsAndQuestions {
-		kind := "decision"
-		if value.Kind == model.LedgerQuestion {
-			kind = "question"
-		}
-		if err := add(kind, value); err != nil {
-			return err
-		}
-	}
 	for _, value := range ledger.Dependencies {
 		if err := add("dependency", value); err != nil {
-			return err
-		}
-	}
-	for _, value := range ledger.Findings {
-		if err := add("finding", value); err != nil {
 			return err
 		}
 	}
@@ -211,34 +188,20 @@ func validateCodingLedgerExactDuplicates(ledger model.EngineeringLedger) error {
 }
 
 func validateDraftLedgerForRepository(ledger model.EngineeringLedger) error {
-	if err := ledger.ValidateDraft(); err != nil {
-		return err
-	}
-	activeObjectives := 0
-	for _, objective := range ledger.Objectives {
-		if objective.Disposition == model.LedgerDispositionActive {
-			activeObjectives++
-		}
-	}
-	if activeObjectives != 1 {
-		return fmt.Errorf("coding ledger draft requires exactly one active objective")
-	}
-	return nil
+	return ledger.ValidateDraft()
 }
 
 func validateOwnerTurnDisposition(ledger model.EngineeringLedger, disposition model.OwnerTurnDisposition) error {
+	if len(disposition.Statements) == 0 {
+		if len(ledgerRepositoryRecords(ledger)) == 0 && len(ledger.Dependencies) == 0 {
+			return nil
+		}
+		return fmt.Errorf("owner turn requires statement dispositions")
+	}
 	active := map[model.LedgerItemID]string{}
-	openQuestions := map[model.LedgerItemID]bool{}
 	for _, record := range ledgerRepositoryRecords(ledger) {
 		if record.item.Disposition == model.LedgerDispositionActive {
 			active[record.item.ID] = record.kind
-		}
-	}
-	for _, question := range ledger.DecisionsAndQuestions {
-		if question.Kind == model.LedgerQuestion &&
-			question.Disposition == model.LedgerDispositionActive &&
-			strings.TrimSpace(question.Answer) == "" {
-			openQuestions[question.ID] = true
 		}
 	}
 	for _, dependency := range ledger.Dependencies {
@@ -249,8 +212,8 @@ func validateOwnerTurnDisposition(ledger model.EngineeringLedger, disposition mo
 	for _, disposition := range disposition.StatementDispositions() {
 		switch disposition.Kind {
 		case model.OwnerTurnRepresented:
-			if strings.TrimSpace(disposition.Reason) != "" || len(disposition.QuestionIDs) != 0 {
-				return fmt.Errorf("represented owner turn cannot include a reason or question references")
+			if strings.TrimSpace(disposition.Reason) != "" {
+				return fmt.Errorf("represented owner turn cannot include a reason")
 			}
 			if len(disposition.ItemIDs) == 0 {
 				return fmt.Errorf("represented owner turn requires active item references")
@@ -260,21 +223,9 @@ func validateOwnerTurnDisposition(ledger model.EngineeringLedger, disposition mo
 					return fmt.Errorf("represented owner turn references unavailable item %s", id)
 				}
 			}
-		case model.OwnerTurnUnresolved:
-			if len(disposition.ItemIDs) != 0 || strings.TrimSpace(disposition.Reason) != "" {
-				return fmt.Errorf("unresolved owner turn cannot include item references or a reason")
-			}
-			if len(disposition.QuestionIDs) == 0 {
-				return fmt.Errorf("unresolved owner turn requires question references")
-			}
-			for _, id := range disposition.QuestionIDs {
-				if active[id] != "question" || !openQuestions[id] {
-					return fmt.Errorf("unresolved owner turn references question %s that is not active and open", id)
-				}
-			}
 		case model.OwnerTurnOutOfScope:
-			if len(disposition.ItemIDs) != 0 || len(disposition.QuestionIDs) != 0 {
-				return fmt.Errorf("out-of-scope owner turn cannot include item or question references")
+			if len(disposition.ItemIDs) != 0 {
+				return fmt.Errorf("out-of-scope owner turn cannot include item references")
 			}
 			if strings.TrimSpace(disposition.Reason) == "" {
 				return fmt.Errorf("out-of-scope owner turn requires a reason")
@@ -293,22 +244,13 @@ func validateMutationOwnerTurnDisposition(
 	disposition model.OwnerTurnDisposition,
 ) error {
 	known := make(map[model.LedgerItemID]string)
-	openQuestions := make(map[model.LedgerItemID]bool)
 	for _, record := range ledgerRepositoryRecords(next) {
 		known[record.item.ID] = record.kind
-	}
-	for _, question := range next.DecisionsAndQuestions {
-		if question.Kind == model.LedgerQuestion &&
-			question.Disposition == model.LedgerDispositionActive &&
-			strings.TrimSpace(question.Answer) == "" {
-			openQuestions[question.ID] = true
-		}
 	}
 	for _, dependency := range next.Dependencies {
 		known[dependency.ID] = "dependency"
 	}
 	represented := make(map[model.LedgerItemID]bool)
-	unresolved := make(map[model.LedgerItemID]bool)
 	hasOutOfScope := false
 	for _, statement := range disposition.StatementDispositions() {
 		switch statement.Kind {
@@ -319,13 +261,6 @@ func validateMutationOwnerTurnDisposition(
 				}
 				represented[id] = true
 			}
-		case model.OwnerTurnUnresolved:
-			for _, id := range statement.QuestionIDs {
-				if known[id] != "question" || !openQuestions[id] {
-					return fmt.Errorf("unresolved owner turn references question %s that is not active and open", id)
-				}
-				unresolved[id] = true
-			}
 		case model.OwnerTurnOutOfScope:
 			hasOutOfScope = true
 		}
@@ -335,10 +270,7 @@ func validateMutationOwnerTurnDisposition(
 		if operation.Kind == model.LedgerMutationAdd {
 			target = ledgerMutationItemID(operation.Item)
 		}
-		if !represented[target] && !(unresolved[target] && known[target] == "question") {
-			if len(represented) == 0 && len(unresolved) > 0 {
-				return fmt.Errorf("unresolved owner turn cannot contain material mutations unrelated to its referenced questions")
-			}
+		if !represented[target] {
 			return fmt.Errorf("owner turn disposition does not reference mutation target %s", target)
 		}
 	}

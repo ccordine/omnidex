@@ -83,7 +83,7 @@ func requireChannelSessionTurnEffectTx(
 			return err
 		}
 		if configuration.Mode == codingagent.Agents {
-			return requireCodingAgentAnswerReplayTx(ctx, tx, job.ID, *stepID, job.CurrentGeneration, command.OperationID, command.Text, nil)
+			return requireCodingExecutionReplyTx(ctx, tx, job.ID, *stepID, job.CurrentGeneration, command.OperationID, command.Text)
 		}
 		var valid bool
 		if err := tx.QueryRow(ctx, `

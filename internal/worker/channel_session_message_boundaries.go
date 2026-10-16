@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
-	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/queue"
 )
 
@@ -81,8 +80,7 @@ func (runtime *nativeRuntimeV3) runWithSessionMessages(ctx context.Context, run 
 		case <-ctx.Done():
 			return stopAndJoin(ctx.Err())
 		case err := <-done:
-			var questions *codingagent.QuestionsPending
-			if err != nil && !errors.As(err, &questions) {
+			if err != nil {
 				return err
 			}
 			if cancelErr := ctx.Err(); cancelErr != nil {

@@ -48,18 +48,15 @@ export class ChatChannelTurnCoordinator {
     codingMode: CodingMode = "conversation",
   ): Promise<ChatChannelTurnReceipt> {
     const active = this.agents.state(channelID);
-    if (active?.status === "waiting_input") {
-      const jobID = await this.agents.answer(channelID, prompt, codingMode);
-      return {
-        channelID, jobID,
-        acceptedTranscript: this.host.loadTranscript(channelID),
-        completion: this.agents.watch(channelID, jobID, active.authority),
-      };
-    }
-    if (active) throw new Error("Wait for the current Agents job before sending another message.");
+    if (active && active.status !== "waiting_input") throw new Error("Wait for the current response before sending another message.");
     this.host.setActivityLabel(t("channel.working"));
     this.host.setStatus(t("status.working"), "active");
     this.host.renderProgressActivity(t("channel.working"));
+    if (active) {
+      const jobID = await this.agents.continueConversation(channelID, prompt);
+      return { channelID, jobID, acceptedTranscript: this.host.loadTranscript(channelID),
+        completion: this.agents.watch(channelID, jobID) };
+    }
     const payload = codingMode === "agents"
       ? await sendChannelMessage(channelID, prompt, roleplayTurn, codingMode)
       : roleplayTurn === undefined

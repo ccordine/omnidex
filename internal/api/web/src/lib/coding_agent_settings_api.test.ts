@@ -4,7 +4,7 @@ import { fetchAgentSettings, parseAgentSettings, refreshAgentModels, saveAgentSe
 function payload() {
   const route = { provider: "codex", model: "future-model", effort: "ultra", service_tier: "fast" };
   return {
-    configuration: { mode: "agents", planner: route, executor: route, reviewer: route },
+    configuration: { mode: "agents", planner: route, ledger_parser: route, executor: route, reviewer: route },
     models: [{ id: "future-model", display_name: "Future model", default_effort: "ultra", efforts: [{ value: "ultra", description: "Most reasoning" }], service_tiers: [{ id: "fast", name: "Fast", description: "Priority processing" }, { id: "new-tier", name: "New tier", description: "Account supplied tier" }] }],
     installation: { version: "codex 0.999.0", can_update: true }, source: "saved",
   };

@@ -118,21 +118,21 @@ func TestLocalCLIAgentWorkspaceUsesExactLiveDirectoryOutsideHostBoundary(t *test
 	}
 }
 
-func TestNativeCLIAgentWorkspaceRejectsForeignClient(t *testing.T) {
+func TestNativeCLIAgentWorkspaceUsesPhysicalBindingNotInstallationConfig(t *testing.T) {
 	fixture := newLocalAgentWorkspaceFixture(t, strings.Repeat("2", 32))
-	if err := fixture.service.requireNativeAgentWorkspace(fixture.ctx, fixture.job, fixture.scope, fixture.directory); err == nil {
-		t.Fatal("foreign client obtained native authority over a same-named physical server directory")
+	if err := fixture.service.requireNativeAgentWorkspace(fixture.ctx, fixture.job, fixture.scope, fixture.directory); err != nil {
+		t.Fatalf("exact physical job binding was rejected by local installation configuration: %v", err)
 	}
 }
 
-func TestNativeCLIAgentWorkspaceRejectsDisconnectedClient(t *testing.T) {
+func TestNativeCLIAgentWorkspaceSurvivesDisconnectedClient(t *testing.T) {
 	fixture := newLocalAgentWorkspaceFixture(t, strings.Repeat("1", 32))
 	fixture.service.hostDirectoryAccess = workspace.NewHostDirectoryAccess(fixture.scope.Root)
 	if err := fixture.client.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if err := fixture.service.requireNativeAgentWorkspace(fixture.ctx, fixture.job, fixture.scope, fixture.directory); err == nil {
-		t.Fatal("disconnected client retained native directory authority")
+	if err := fixture.service.requireNativeAgentWorkspace(fixture.ctx, fixture.job, fixture.scope, fixture.directory); err != nil {
+		t.Fatalf("approved physical job binding incorrectly depends on a live CLI: %v", err)
 	}
 }
 
@@ -181,7 +181,7 @@ func TestNativeCLIAgentWorkspaceRejectsConversationWithoutCodingAuthority(t *tes
 	}
 }
 
-func TestNativeCLIAgentWorkspaceRequiresExistingLocalInstallation(t *testing.T) {
+func TestNativeCLIAgentWorkspaceDoesNotRequireLocalCLIInstallationFiles(t *testing.T) {
 	fixture := newLocalAgentWorkspaceFixture(t, strings.Repeat("1", 32))
 	configRoot, err := os.UserConfigDir()
 	if err != nil {
@@ -190,7 +190,7 @@ func TestNativeCLIAgentWorkspaceRequiresExistingLocalInstallation(t *testing.T) 
 	if err := os.Remove(filepath.Join(configRoot, "omnidex", "client-id")); err != nil {
 		t.Fatal(err)
 	}
-	if err := fixture.service.requireNativeAgentWorkspace(fixture.ctx, fixture.job, fixture.scope, fixture.directory); err == nil {
-		t.Fatal("native access created or substituted a missing local installation")
+	if err := fixture.service.requireNativeAgentWorkspace(fixture.ctx, fixture.job, fixture.scope, fixture.directory); err != nil {
+		t.Fatalf("job binding incorrectly depends on a local CLI installation file: %v", err)
 	}
 }

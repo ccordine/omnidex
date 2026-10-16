@@ -160,9 +160,10 @@ func (router *planReviewInputRouter) DisableReview() {
 	router.mu.Unlock()
 }
 
-// BeginNoteInput completes the transition started by the review Note key. The
-// source bytes typed after that key remain private to the router until the
-// session has accepted the key and entered note-editing state.
+// BeginNoteInput starts conversational planning from ordinary input, or completes
+// the transition started by the review Note key. Bytes typed after that key stay
+// private until the session accepts the transition. Previously buffered ordinary
+// input retains its old authority rather than becoming a planning reply.
 func (router *planReviewInputRouter) BeginNoteInput() (terminalInputAuthority, error) {
 	if router == nil || router.source == nil {
 		return terminalInputAuthority{}, fmt.Errorf("plan review input router is unavailable")
@@ -171,7 +172,7 @@ func (router *planReviewInputRouter) BeginNoteInput() (terminalInputAuthority, e
 	defer router.source.UnlockInput()
 	router.mu.Lock()
 	defer router.mu.Unlock()
-	if !router.review.Load() || !router.noteTransition {
+	if router.noteInput || router.review.Load() && !router.noteTransition {
 		return terminalInputAuthority{}, fmt.Errorf("plan review note-input transition is not pending")
 	}
 	noteBytes := append([]byte(nil), router.noteBytes...)

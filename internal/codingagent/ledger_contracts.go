@@ -18,9 +18,7 @@ type LedgerGroup = model.LedgerGroup
 type LedgerTask = model.LedgerTask
 type LedgerAcceptanceCriterion = model.LedgerAcceptanceCriterion
 type LedgerCheck = model.LedgerCheck
-type LedgerDecisionQuestion = model.LedgerDecisionQuestion
 type LedgerDependency = model.LedgerDependency
-type LedgerFinding = model.LedgerFinding
 type LedgerMutation = model.LedgerMutation
 
 type RouteSet struct {

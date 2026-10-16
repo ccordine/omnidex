@@ -11,7 +11,7 @@ function harness(mode: string, channelMode: "assistant" | "roleplay" = "assistan
     selectedMode: () => channelMode,
     submit,
     select: vi.fn(async () => undefined),
-    agentTurnState: vi.fn<() => { status: string; question?: string } | undefined>(() => undefined),
+    agentTurnState: vi.fn<() => { status: string; waitingFor?: "planning" | "execution" } | undefined>(() => undefined),
   };
   const controller = Object.assign(Object.create(ChatController.prototype), {
     hasCodingModeTarget: true,
@@ -44,25 +44,19 @@ describe("chat coding mode selection", () => {
     expect(submit).not.toHaveBeenCalled();
   });
 
-  it("shows the persisted mode and concrete question after selection, then restores the next-job preference", async () => {
+  it("keeps the coding mode fixed while allowing the planning conversation to continue", async () => {
     const { controller, channel } = harness("conversation");
-    const panel = document.createElement("div");
-    panel.classList.add("hidden");
-    const text = document.createElement("p");
-    Object.assign(controller, { hasAgentQuestionsTarget: true, agentQuestionsTarget: panel, agentQuestionTextTarget: text });
-    channel.agentTurnState.mockReturnValue({ status: "waiting_input", question: "Use <target> or keep the existing one?" });
+    channel.agentTurnState.mockReturnValue({ status: "waiting_input", waitingFor: "planning" });
 
     await controller.selectChannel(new Event("change"));
 
     expect(controller.codingModeTarget.value).toBe("agents");
     expect(controller.codingModeTarget.disabled).toBe(true);
-    expect(panel.classList.contains("hidden")).toBe(false);
-    expect(text.textContent).toBe("Use <target> or keep the existing one?");
-    expect(text.querySelector("target")).toBeNull();
+    expect(controller.setTurnActive).toHaveBeenLastCalledWith(false);
+    expect(controller.setStatus).toHaveBeenLastCalledWith("Continue planning", "ready");
     channel.agentTurnState.mockReturnValue(undefined);
     await controller.selectChannel(new Event("change"));
     expect(controller.codingModeTarget.value).toBe("conversation");
     expect(controller.codingModeTarget.disabled).toBe(false);
-    expect(panel.classList.contains("hidden")).toBe(true);
   });
 });

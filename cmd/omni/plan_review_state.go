@@ -244,7 +244,6 @@ func cloneOwnerTurnDispositions(values []model.OwnerStatementDisposition) []mode
 	result := slices.Clone(values)
 	for index := range result {
 		result[index].ItemIDs = slices.Clone(result[index].ItemIDs)
-		result[index].QuestionIDs = slices.Clone(result[index].QuestionIDs)
 	}
 	return result
 }

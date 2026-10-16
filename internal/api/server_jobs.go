@@ -22,7 +22,7 @@ func (s *Server) replanJob(w http.ResponseWriter, r *http.Request, jobID int64) 
 		writeError(w, lifecycleControlBodyStatus(err), err.Error())
 		return
 	}
-	if req.ExpectedGeneration != nil || req.ExpectedWaitingAttempt != nil {
+	if req.ExpectedGeneration != nil || req.ExpectedWaitingAttempt != nil || req.ExpectedInputID != nil {
 		writeError(w, http.StatusBadRequest, "expected_generation applies only to feedback")
 		return
 	}

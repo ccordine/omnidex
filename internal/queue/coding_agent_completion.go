@@ -1,11 +1,14 @@
 package queue
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"reflect"
+	"strings"
 
 	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/model"
@@ -245,7 +248,6 @@ func validateCodingTaskLedgerCompletionJournal(
 	completed := map[int64]codingagent.Entry{}
 	native := map[int64]bool{}
 	touched := map[string]bool{}
-	var pendingQuestion int64
 	for _, entry := range entries {
 		if entry.Generation != generation {
 			return fmt.Errorf("agent completion journal changed generation")
@@ -263,18 +265,17 @@ func validateCodingTaskLedgerCompletionJournal(
 			native[entry.CallID] = true
 		case "call_completed":
 			completed[entry.CallID] = entry
-		case "questions":
-			pendingQuestion = entry.ID
-		case "answers":
-			if entry.QuestionID == pendingQuestion {
-				pendingQuestion = 0
-			}
+		case "questions", "answers":
+			return fmt.Errorf("frozen execution journal cannot contain owner-question routing")
 		case "task_accepted":
 			task, known := tasks[entry.TaskID]
 			if !known {
 				return fmt.Errorf("agent acceptance refers to an unknown task")
 			}
 			if err := codingAgentAcceptedCall(entry, codingagent.Review, configuration.Reviewer, opened, completed, native); err != nil {
+				return err
+			}
+			if err := codingAgentAcceptedReviewResponse(entry, configuration.LedgerParser, opened, completed, native, entries); err != nil {
 				return err
 			}
 			reviewOpening := opened[entry.CallID]
@@ -284,7 +285,7 @@ func validateCodingTaskLedgerCompletionJournal(
 				return fmt.Errorf("agent task review changed its exact frozen ledger context")
 			}
 			executionThread, ok := codingAgentCompletedTaskExecutionBefore(
-				task, entry.CallID, configuration.Executor, opened, completed, native,
+				task, entry.CallID, configuration.Executor, opened, completed, native, entries,
 			)
 			if !ok {
 				return fmt.Errorf("agent task review lacks a completed isolated execution")
@@ -309,9 +310,6 @@ func validateCodingTaskLedgerCompletionJournal(
 			accepted[entry.TaskID] = false
 		}
 	}
-	if pendingQuestion != 0 {
-		return fmt.Errorf("agent completion contains an unanswered task question")
-	}
 	for taskID := range tasks {
 		if !accepted[taskID] && (!durablyAccepted[taskID] || touched[taskID]) {
 			return fmt.Errorf("agent completion contains unfinished task %s", taskID)
@@ -330,7 +328,6 @@ func validateCodingTaskAcceptanceJournal(
 	completed := map[int64]codingagent.Entry{}
 	native := map[int64]bool{}
 	var accepted *codingagent.Entry
-	var pendingQuestion int64
 	for index := range entries {
 		entry := entries[index]
 		if entry.Generation != generation {
@@ -343,12 +340,8 @@ func validateCodingTaskAcceptanceJournal(
 			native[entry.CallID] = true
 		case "call_completed":
 			completed[entry.CallID] = entry
-		case "questions":
-			pendingQuestion = entry.ID
-		case "answers":
-			if entry.QuestionID == pendingQuestion {
-				pendingQuestion = 0
-			}
+		case "questions", "answers":
+			return fmt.Errorf("frozen execution journal cannot contain owner-question routing")
 		case "task_accepted":
 			if entry.TaskID == task.ID {
 				copy := entry
@@ -360,13 +353,13 @@ func validateCodingTaskAcceptanceJournal(
 			}
 		}
 	}
-	if pendingQuestion != 0 {
-		return fmt.Errorf("agent task acceptance contains an unanswered planning question")
-	}
 	if accepted == nil {
 		return fmt.Errorf("coding ledger task %s lacks accepted review evidence", task.ID)
 	}
 	if err := codingAgentAcceptedCall(*accepted, codingagent.Review, configuration.Reviewer, opened, completed, native); err != nil {
+		return err
+	}
+	if err := codingAgentAcceptedReviewResponse(*accepted, configuration.LedgerParser, opened, completed, native, entries); err != nil {
 		return err
 	}
 	reviewOpening := opened[accepted.CallID]
@@ -375,7 +368,7 @@ func validateCodingTaskAcceptanceJournal(
 		return fmt.Errorf("agent task review changed its exact frozen ledger context")
 	}
 	executionThread, ok := codingAgentCompletedTaskExecutionBefore(
-		task, accepted.CallID, configuration.Executor, opened, completed, native,
+		task, accepted.CallID, configuration.Executor, opened, completed, native, entries,
 	)
 	if !ok {
 		return fmt.Errorf("agent task review lacks a completed isolated execution")
@@ -397,12 +390,19 @@ func codingAgentCompletedTaskExecutionBefore(
 	opened map[int64]codingagent.Entry,
 	completed map[int64]codingagent.Entry,
 	native map[int64]bool,
+	entries []codingagent.Entry,
 ) (string, bool) {
 	var selected int64
 	var thread string
+	parsedDone := map[int64]bool{}
+	for _, entry := range entries {
+		if entry.Phase == "execution_response" && entry.ID < beforeCallID {
+			parsedDone[entry.CallID] = entry.ResponseKind == codingagent.ExecutionDone
+		}
+	}
 	for callID, completion := range completed {
 		opening, known := opened[callID]
-		if !known || callID >= beforeCallID || callID <= selected || !native[callID] ||
+		if !known || callID >= beforeCallID || callID <= selected || !native[callID] || !parsedDone[callID] ||
 			opening.Role != codingagent.Execute || completion.Role != codingagent.Execute ||
 			opening.TaskID != task.ID || completion.TaskID != task.ID || opening.Assignment == nil ||
 			opening.Assignment.Task == nil || !reflect.DeepEqual(*opening.Assignment.Task, task) ||
@@ -414,8 +414,8 @@ func codingAgentCompletedTaskExecutionBefore(
 			result.ThreadID == "" || result.TurnID == "" || !json.Valid(result.Content) {
 			continue
 		}
-		var execution codingagent.ExecutionResult
-		if err := json.Unmarshal(result.Content, &execution); err != nil || execution.Questions == nil || len(execution.Questions) != 0 {
+		var execution string
+		if err := decodeCodingAgentJournalResult(result.Content, &execution); err != nil || strings.TrimSpace(execution) == "" {
 			continue
 		}
 		selected, thread = callID, result.ThreadID
@@ -450,12 +450,17 @@ func codingAgentAcceptedCall(entry codingagent.Entry, role codingagent.Role, rou
 	if result.CallID != entry.CallID || !result.Completed || result.Provider != route.Provider || result.Model != route.Model || result.ThreadID == "" || result.TurnID == "" || !json.Valid(result.Content) {
 		return fmt.Errorf("agent acceptance has incomplete or unbound native result")
 	}
-	var review codingagent.ReviewResult
-	if err := json.Unmarshal(result.Content, &review); err != nil {
+	return nil
+}
+
+func decodeCodingAgentJournalResult(raw json.RawMessage, target any) error {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
 		return err
 	}
-	if review.Findings == nil || review.Questions == nil || len(review.Findings) != 0 || len(review.Questions) != 0 {
-		return fmt.Errorf("agent acceptance contains unresolved independent findings or questions")
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return fmt.Errorf("coding agent journal result contains trailing data")
 	}
 	return nil
 }

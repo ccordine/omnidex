@@ -129,7 +129,7 @@ func (stream *checkActivityStream) completeOutput(stdout, stderr string) error {
 	return nil
 }
 
-func (client *Client) executeAgentCheck(connection *connection, scope codingagent.Assignment, executionRoot string, check codingagent.Check, scratch string, sink func(model.AgentActivity) error) (result codingagent.CheckResult, err error) {
+func (client *Client) executeAgentCheck(connection *connection, scope codingagent.Assignment, check codingagent.Check, sink func(model.AgentActivity) error) (result codingagent.CheckResult, err error) {
 	stream := checkActivityStream{call: scope, check: check, processID: check.ID, sink: sink}
 	defer func() {
 		if err != nil && stream.started {
@@ -143,10 +143,10 @@ func (client *Client) executeAgentCheck(connection *connection, scope codingagen
 		Stdout   string `json:"stdout"`
 		Stderr   string `json:"stderr"`
 	}
-	_, err = connection.callObserved("command/exec", map[string]any{"command": check.Argv, "cwd": executionRoot,
-		"sandboxPolicy": map[string]any{"type": "readOnly", "networkAccess": false},
+	_, err = connection.callObserved("command/exec", map[string]any{"command": check.Argv, "cwd": scope.Root,
+		"sandboxPolicy": map[string]any{"type": "dangerFullAccess"},
 		"timeoutMs":     int64(client.timeout / time.Millisecond), "outputBytesCap": maxAgentCheckOutputBytes,
-		"env": agentToolEnvironment(scratch), "processId": stream.processID, "streamStdoutStderr": true}, &response,
+		"processId": stream.processID, "streamStdoutStderr": true}, &response,
 		func() error { stream.started = true; return stream.command(model.AgentActivityStarted, nil) }, stream.notification)
 	if err != nil {
 		return result, err

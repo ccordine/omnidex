@@ -2,7 +2,22 @@ package main
 
 import (
 	"errors"
+
+	"github.com/gryph/omnidex/internal/model"
 )
+
+func (session *chatSession) currentJobInterrupted() bool {
+	if session.active == nil || session.active.Job.Status != model.JobStatusWaiting {
+		return false
+	}
+	for _, control := range session.controls {
+		if control.Kind == model.ChannelSessionControlInterrupt && control.JobID == session.active.Job.ID &&
+			control.Generation == session.active.Job.CurrentGeneration {
+			return true
+		}
+	}
+	return false
+}
 
 func (session *chatSession) resolveOperationError(err error) (quit bool, resultErr error) {
 	if err == nil {

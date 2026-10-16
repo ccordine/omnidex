@@ -31,14 +31,26 @@ func TestNativeAgentRolesUseOnlyIsolatedSchemaBoundTurns(t *testing.T) {
 				`{"id":1,"result":{"turn":{"id":"turn-1"}}}` + "\n",
 		},
 		{
+			name: "normal planning", role: codingagent.Plan,
+			response: `{"id":1,"result":{"turn":{"id":"turn-plan"}}}` + "\n",
+		},
+		{
+			name: "planning mutation parser", role: codingagent.PlanningMutation,
+			response: `{"id":1,"result":{"turn":{"id":"turn-mutation"}}}` + "\n",
+		},
+		{
 			name: "review", role: codingagent.Review,
 			response: `{"id":1,"result":{"turn":{"id":"turn-2"}}}` + "\n",
+		},
+		{
+			name: "normal execution", role: codingagent.Execute,
+			response: `{"id":1,"result":{"turn":{"id":"turn-3"}}}` + "\n",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			input := &agentStartInput{}
 			connection := &connection{input: input, output: bufio.NewScanner(strings.NewReader(test.response))}
-			call := codingagent.Assignment{Role: test.role, Route: codingagent.Route{Model: "fixture-model", Effort: "high"}}
+			call := codingagent.Assignment{Role: test.role, Root: "/workspace", Route: codingagent.Route{Model: "fixture-model", Effort: "high"}}
 			turnID, _, pending, err := connection.startAgentTurn(call, thread, "exact assignment")
 			if err != nil {
 				t.Fatal(err)
@@ -56,7 +68,22 @@ func TestNativeAgentRolesUseOnlyIsolatedSchemaBoundTurns(t *testing.T) {
 			if request.Method != "turn/start" || request.Params["threadId"] != "thread-1" {
 				t.Fatalf("wrong native request: %+v", request)
 			}
-			if request.Params["collaborationMode"] != nil || request.Params["outputSchema"] == nil || request.Params["target"] != nil || request.Params["delivery"] != nil {
+			if test.role.IsNative() {
+				policy := request.Params["sandboxPolicy"].(map[string]any)
+				wantType, wantApproval := "workspaceWrite", "on-request"
+				if test.role == codingagent.Plan {
+					wantType, wantApproval = "readOnly", "never"
+				}
+				if request.Params["outputSchema"] != nil || policy["type"] != wantType || request.Params["approvalPolicy"] != wantApproval || policy["networkAccess"] != false {
+					t.Fatalf("native role lost its permission boundary: %+v", request.Params)
+				}
+				if wantType == "workspaceWrite" {
+					roots := policy["writableRoots"].([]any)
+					if len(roots) != 1 || roots[0] != "/workspace" {
+						t.Fatalf("native writable scope changed: %+v", policy)
+					}
+				}
+			} else if request.Params["collaborationMode"] != nil || (request.Params["outputSchema"] != nil) != (test.role != codingagent.PlanningMutation) || request.Params["target"] != nil || request.Params["delivery"] != nil {
 				t.Fatalf("isolated schema-bound settings changed: %+v", request.Params)
 			}
 		})
@@ -64,7 +91,7 @@ func TestNativeAgentRolesUseOnlyIsolatedSchemaBoundTurns(t *testing.T) {
 }
 
 func TestNativePlanningStationsUseTypedSchemasWithoutLegacyPlanMode(t *testing.T) {
-	for _, role := range []codingagent.Role{codingagent.PlanningInitial, codingagent.PlanningMutation, codingagent.PlanningCoverage, codingagent.PlanningAudit} {
+	for _, role := range []codingagent.Role{codingagent.PlanningInitial, codingagent.PlanningMutation} {
 		t.Run(string(role), func(t *testing.T) {
 			schema := agentOutputSchema(codingagent.Assignment{Role: role})
 			properties := schema["properties"].(map[string]any)
@@ -80,13 +107,55 @@ func TestNativePlanningStationsUseTypedSchemasWithoutLegacyPlanMode(t *testing.T
 				if properties["operations"] == nil {
 					t.Fatal("mutation station omitted operations contract")
 				}
-			default:
-				if properties["covered"] == nil || properties["suggestions"] == nil || properties["mutation"] != nil {
-					t.Fatal("judgment station omitted coverage contract")
-				}
 			}
 		})
 	}
 }
 
 var _ io.WriteCloser = (*agentStartInput)(nil)
+
+func TestNativeThreadsKeepNormalCodexToolsAndInstructions(t *testing.T) {
+	for _, role := range []codingagent.Role{codingagent.Plan, codingagent.Execute, codingagent.Review} {
+		t.Run(string(role), func(t *testing.T) {
+			input := &agentStartInput{}
+			connection := &connection{input: input, output: bufio.NewScanner(strings.NewReader(
+				`{"id":1,"result":{}}` + "\n" +
+					`{"id":2,"result":{"model":"fixture-model","thread":{"id":"execution-thread"}}}` + "\n"))}
+			call := codingagent.Assignment{Role: role, Root: "/workspace", Route: codingagent.Route{Model: "fixture-model"}}
+			if _, _, err := connection.startAgentThread(call, ""); err != nil {
+				t.Fatal(err)
+			}
+			decoder := json.NewDecoder(bytes.NewReader(input.Bytes()))
+			var request struct {
+				Method string         `json:"method"`
+				Params map[string]any `json:"params"`
+			}
+			for decoder.Decode(&request) == nil {
+				if request.Method != "thread/start" {
+					continue
+				}
+				wantSandbox, wantApproval := "workspace-write", "on-request"
+				if role == codingagent.Plan {
+					wantSandbox, wantApproval = "read-only", "never"
+				}
+				if request.Params["sandbox"] != wantSandbox || request.Params["approvalPolicy"] != wantApproval || request.Params["cwd"] != "/workspace" {
+					t.Fatalf("native thread lost its role-owned permissions: %#v", request.Params)
+				}
+				if request.Params["ephemeral"] != (role != codingagent.Execute) {
+					t.Fatal("native role lost its owned thread lifecycle")
+				}
+				configuration := request.Params["config"].(map[string]any)
+				if len(configuration) != 1 || configuration["approvals_reviewer"] != "user" {
+					t.Fatalf("native approvals escaped the Omnidex owner: %#v", configuration)
+				}
+				for _, field := range []string{"dynamicTools", "baseInstructions", "outputSchema"} {
+					if _, present := request.Params[field]; present {
+						t.Fatalf("executor retained a special %s override", field)
+					}
+				}
+				return
+			}
+			t.Fatal("executor never opened a normal Codex thread")
+		})
+	}
+}

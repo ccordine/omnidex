@@ -15,10 +15,6 @@ const (
 	// whether it starts a job or deterministically replans the active job.
 	MaxObjectiveControlFeedbackBytes = 2 * 1024
 	MaxObjectiveReplanFeedbackBytes  = 4 * 1024
-	// MaxObjectiveContextAuthorityBytes is a coarse portable-payload safety
-	// limit, not a semantic projection target. Per-call context budgets drive
-	// paging and staged reduction before this resource boundary is reached.
-	MaxObjectiveContextAuthorityBytes = 128 * 1024
 )
 
 // ObjectiveReplanAuthority is the exact feedback attached to the current
@@ -74,7 +70,6 @@ func (context ObjectiveContext) Validate() error {
 		return fmt.Errorf("objective context exceeds the %d-capsule bound", MaxObjectiveContextCapsules)
 	}
 	seenSources := make(map[string]struct{})
-	total := 0
 	for capsuleIndex, capsule := range context.Capsules {
 		if len(capsule.Sources) < 1 {
 			return fmt.Errorf("objective context capsule %d requires exact sources", capsuleIndex)
@@ -90,12 +85,10 @@ func (context ObjectiveContext) Validate() error {
 				return fmt.Errorf("objective context source %q is duplicated", source.CandidateID)
 			}
 			seenSources[source.CandidateID] = struct{}{}
-			total += len(source.Namespace) + len(source.CandidateID)
 		}
-		if err := validateObjectiveContextText("context capsule", capsule.Content, MaxContextMinifiedBytes); err != nil {
+		if err := validateObjectiveContextText("context capsule", capsule.Content, 0); err != nil {
 			return fmt.Errorf("objective context capsule %d: %w", capsuleIndex, err)
 		}
-		total += len(capsule.Content)
 	}
 	if context.ReplanAuthority != nil {
 		replan := context.ReplanAuthority
@@ -107,13 +100,6 @@ func (context ObjectiveContext) Validate() error {
 		); err != nil {
 			return err
 		}
-		total += len(replan.Feedback)
-	}
-	if total > MaxObjectiveContextAuthorityBytes {
-		return fmt.Errorf(
-			"objective context authority exceeds the %d-byte portable resource limit",
-			MaxObjectiveContextAuthorityBytes,
-		)
 	}
 	return nil
 }
@@ -134,8 +120,11 @@ func CloneObjectiveContext(value ObjectiveContext) ObjectiveContext {
 
 func validateObjectiveContextText(label, value string, maximum int) error {
 	if strings.TrimSpace(value) == "" || !utf8.ValidString(value) ||
-		strings.ContainsRune(value, '\x00') || len(value) > maximum {
-		return fmt.Errorf("objective %s must be exact non-blank UTF-8 text of at most %d bytes", label, maximum)
+		strings.ContainsRune(value, '\x00') {
+		return fmt.Errorf("objective %s must be exact non-blank UTF-8 text without NUL", label)
+	}
+	if maximum > 0 && len(value) > maximum {
+		return fmt.Errorf("objective %s exceeds %d bytes", label, maximum)
 	}
 	return nil
 }

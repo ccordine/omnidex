@@ -216,7 +216,7 @@ func validateChatSessionTurns(snapshot ChatSessionSnapshot) error {
 				return fmt.Errorf("queued message has contradictory admitted status")
 			}
 			switch turn.MessageState {
-			case model.ChannelSessionMessagePending, model.ChannelSessionMessageAnswered, model.ChannelSessionMessageStory, model.ChannelSessionMessageRedirected, model.ChannelSessionMessageRetired, model.ChannelSessionMessageFailed:
+			case model.ChannelSessionMessagePending, model.ChannelSessionMessageAnswered, model.ChannelSessionMessageStory, model.ChannelSessionMessageRedirected, model.ChannelSessionMessageRetired, model.ChannelSessionMessageFailed, model.ChannelSessionMessagePlanning:
 			default:
 				return fmt.Errorf("queued message has unregistered resolution state %q", turn.MessageState)
 			}
@@ -378,9 +378,6 @@ func validateClientActiveJob(
 	if openSteps == 0 {
 		return 0, fmt.Errorf("chat session active job %d has no open current step", job.ID)
 	}
-	if err := validateChatSessionAgentPause(details, binding.CodingExecution); err != nil {
-		return 0, err
-	}
 	return binding.ChannelUserMessageID, nil
 }
 
@@ -404,6 +401,14 @@ func validateChatSessionActiveTurn(
 	activeJob *model.Job,
 	activeUserMessageID int64,
 ) error {
+	planningConversation := false
+	if activeJob != nil && len(activeJob.Metadata) > 0 {
+		configuration, err := codingagent.ConfigurationFromMetadata(activeJob.Metadata)
+		if err != nil {
+			return err
+		}
+		planningConversation = configuration.Mode == codingagent.Agents
+	}
 	activeTurns := 0
 	for index, message := range messages {
 		if message.Turn == nil {
@@ -418,6 +423,9 @@ func validateChatSessionActiveTurn(
 				return fmt.Errorf("chat session transcript active turn differs from current job")
 			}
 			for _, following := range messages[index+1:] {
+				if planningConversation && following.Role == model.ChannelMessageRoleUser && following.Turn == nil {
+					continue
+				}
 				if following.Role == model.ChannelMessageRoleAssistant && following.Turn == nil {
 					continue
 				}

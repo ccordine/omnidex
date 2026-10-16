@@ -37,7 +37,7 @@ func (client *Client) SubmitSessionTurn(
 	if len(codingModes) == 1 {
 		codingMode = codingModes[0]
 	}
-	return client.submitSessionTurn(ctx, channel, workspaceIdentity, operationID, exactText, codingMode, nil, nil)
+	return client.submitSessionTurn(ctx, channel, workspaceIdentity, operationID, exactText, codingMode, nil, nil, nil)
 }
 
 func (client *Client) SubmitObservedSessionTurn(ctx context.Context, channel model.Channel, workspaceIdentity string,
@@ -45,15 +45,23 @@ func (client *Client) SubmitObservedSessionTurn(ctx context.Context, channel mod
 	if jobID < 1 || generation < 1 {
 		return SessionTurnReceipt{}, fmt.Errorf("active message requires positive observed job and generation")
 	}
-	receipt, err := client.submitSessionTurn(ctx, channel, workspaceIdentity, operationID, exactText, codingMode, &jobID, &generation)
+	receipt, err := client.submitSessionTurn(ctx, channel, workspaceIdentity, operationID, exactText, codingMode, &jobID, &generation, nil)
 	if err == nil && (receipt.Disposition != model.ChannelSessionTurnQueued || receipt.JobID != jobID || receipt.Generation != generation) {
 		return SessionTurnReceipt{}, fmt.Errorf("active message receipt differs from the observed job generation")
 	}
 	return receipt, err
 }
 
+func (client *Client) SubmitExecutionInput(ctx context.Context, channel model.Channel, workspaceIdentity string,
+	operationID model.LifecycleOperationID, exactText string, inputID int64) (SessionTurnReceipt, error) {
+	if inputID < 1 {
+		return SessionTurnReceipt{}, fmt.Errorf("native reply requires a positive observed input identity")
+	}
+	return client.submitSessionTurn(ctx, channel, workspaceIdentity, operationID, exactText, codingagent.Agents, nil, nil, &inputID)
+}
+
 func (client *Client) submitSessionTurn(ctx context.Context, channel model.Channel, workspaceIdentity string,
-	operationID model.LifecycleOperationID, exactText string, codingMode codingagent.Mode, jobID, generation *int64) (SessionTurnReceipt, error) {
+	operationID model.LifecycleOperationID, exactText string, codingMode codingagent.Mode, jobID, generation, inputID *int64) (SessionTurnReceipt, error) {
 	switch codingMode {
 	case "", codingagent.Agents:
 	default:
@@ -83,6 +91,7 @@ func (client *Client) submitSessionTurn(ctx context.Context, channel model.Chann
 		CodingMode         codingagent.Mode           `json:"coding_mode,omitempty"`
 		ExpectedJobID      *int64                     `json:"expected_job_id,omitempty"`
 		ExpectedGeneration *int64                     `json:"expected_generation,omitempty"`
+		ExpectedInputID    *int64                     `json:"expected_input_id,omitempty"`
 	}{
 		WorkspaceRoot:     channel.WorkspaceRoot,
 		WorkspaceIdentity: workspaceIdentity,
@@ -90,6 +99,7 @@ func (client *Client) submitSessionTurn(ctx context.Context, channel model.Chann
 		OperationID:       operationID,
 		CodingMode:        codingMode,
 		ExpectedJobID:     jobID, ExpectedGeneration: generation,
+		ExpectedInputID: inputID,
 	}
 	var receipt SessionTurnReceipt
 	requestPath := "/v1/channels/" + string(channel.ID) + "/session/turn"

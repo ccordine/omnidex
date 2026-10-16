@@ -36,7 +36,7 @@ func TestAgentNativeActivityDeltasAreRetained(t *testing.T) {
 			receipt = append(json.RawMessage(nil), event.Frame...)
 			return nil
 		})
-		if err != nil || !bytes.Equal(receipt, raw) || len(result.Evidence) != 1 {
+		if err != nil || !bytes.Equal(receipt, raw) {
 			t.Fatalf("streamed activity lost its original receipt: method=%s evidence=%d error=%v", method, len(result.Evidence), err)
 		}
 	}
@@ -75,8 +75,8 @@ func TestAgentNativeProjectsPublicSummaryAndCommentaryWithoutPrivateOrFinalOutpu
 		`{"method":"item/agentMessage/delta","params":{"threadId":"thread","turnId":"turn","itemId":"message","delta":"The command is starting."}}`,
 		`{"method":"item/completed","params":{"threadId":"thread","turnId":"turn","item":{"id":"message","type":"agentMessage","phase":"commentary","text":"The command is starting."}}}`,
 		`{"method":"item/started","params":{"threadId":"thread","turnId":"turn","item":{"id":"final","type":"agentMessage","phase":"final_answer"}}}`,
-		`{"method":"item/agentMessage/delta","params":{"threadId":"thread","turnId":"turn","itemId":"final","delta":"{\"questions\":[]}"}}`,
-		`{"method":"item/completed","params":{"threadId":"thread","turnId":"turn","item":{"id":"final","type":"agentMessage","phase":"final_answer","text":"{\"questions\":[]}"}}}`,
+		`{"method":"item/agentMessage/delta","params":{"threadId":"thread","turnId":"turn","itemId":"final","delta":"{}"}}`,
+		`{"method":"item/completed","params":{"threadId":"thread","turnId":"turn","item":{"id":"final","type":"agentMessage","phase":"final_answer","text":"{}"}}}`,
 	}
 	activities, receipts := collectNativeActivities(t, codingagent.Assignment{Role: codingagent.Plan}, frames)
 	if len(activities) != 4 || len(receipts) != len(frames)-1 {

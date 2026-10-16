@@ -66,6 +66,7 @@ func submitJobFeedbackTx(
 		}
 		return LifecycleJobResult{Job: existing.ResultJob}, nil
 	}
+	observedGeneration := job.CurrentGeneration
 	job, stepID, err := applyJobFeedbackTx(ctx, tx, command, job)
 	if err != nil {
 		return LifecycleJobResult{}, err
@@ -75,7 +76,7 @@ func submitJobFeedbackTx(
 		return LifecycleJobResult{}, err
 	}
 	if err := insertLifecycleOperationTx(ctx, tx, descriptor, lifecycleOperationRecord{
-		ID: descriptor.ID, JobID: command.JobID, ObservedGeneration: job.CurrentGeneration,
+		ID: descriptor.ID, JobID: command.JobID, ObservedGeneration: observedGeneration,
 		ResultGeneration: job.CurrentGeneration, StepID: &stepID,
 		Kind:            descriptor.Kind,
 		ResultJobStatus: job.Status, ResultStepStatus: &stepStatus, ResultJob: job,
@@ -95,8 +96,11 @@ func applyJobFeedbackTx(
 	if err != nil {
 		return model.Job{}, 0, err
 	}
-	if configuration.Mode == codingagent.Agents && command.ExpectedGeneration == nil {
-		return model.Job{}, 0, fmt.Errorf("Agents feedback requires expected_generation")
+	if configuration.Mode == codingagent.Agents {
+		return resumeCodingExecutionTx(ctx, tx, command, job)
+	}
+	if command.ExpectedInputID != nil {
+		return model.Job{}, 0, fmt.Errorf("%w: native input identity requires an Agents execution request", ErrStepNotWritable)
 	}
 	if command.ExpectedGeneration != nil && *command.ExpectedGeneration != job.CurrentGeneration {
 		return model.Job{}, 0, fmt.Errorf("%w: observed %d, current %d", ErrJobFeedbackGeneration, *command.ExpectedGeneration, job.CurrentGeneration)
@@ -163,15 +167,8 @@ func applyJobFeedbackTx(
 	if err != nil {
 		return model.Job{}, 0, err
 	}
-	if configuration.Mode == codingagent.Agents && command.ExpectedWaitingAttempt == nil {
-		return model.Job{}, 0, fmt.Errorf("Agents feedback requires expected_waiting_attempt")
-	}
 	if command.ExpectedWaitingAttempt != nil && *command.ExpectedWaitingAttempt != waitingAttempt {
 		return model.Job{}, 0, fmt.Errorf("%w: observed %d, current %d", ErrJobFeedbackWaitingAttempt, *command.ExpectedWaitingAttempt, waitingAttempt)
-	}
-	if stepAction == "v3_coding_plan" && configuration.Mode == codingagent.Agents {
-		resumed, err := resumeCodingAgentQuestionTx(ctx, tx, job, stepID, command)
-		return resumed, stepID, err
 	}
 	if stepAction == "v3_coding_plan" {
 		return model.Job{}, 0, fmt.Errorf(
@@ -179,11 +176,6 @@ func applyJobFeedbackTx(
 			ErrStepNotWritable,
 		)
 	}
-	if stepAction == "v3_coding" && configuration.Mode == codingagent.Agents {
-		resumed, err := resumeCodingAgentQuestionTx(ctx, tx, job, stepID, command)
-		return resumed, stepID, err
-	}
-
 	stepUpdate, err := tx.Exec(ctx, `
 		UPDATE job_steps
 		SET status = $2, output = $3, finished_at = NOW(), updated_at = NOW()

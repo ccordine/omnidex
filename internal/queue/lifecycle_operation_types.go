@@ -86,6 +86,7 @@ type FailStepCommand struct {
 }
 
 type SubmitJobFeedbackCommand struct {
+	ExpectedInputID        *int64                     `json:"expected_input_id,omitempty"`
 	OperationID            model.LifecycleOperationID `json:"operation_id"`
 	JobID                  int64                      `json:"job_id"`
 	Feedback               string                     `json:"feedback"`

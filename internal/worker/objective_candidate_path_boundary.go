@@ -21,8 +21,9 @@ func validateObjectiveRawCandidatePathBoundary(
 	case assemblyline.WorkDatabaseQueryFilterValue,
 		assemblyline.WorkDatabaseQueryHavingValue:
 		return nil
+	case assemblyline.WorkContextMinification:
+		return assemblyline.ValidateMinifiedContextText(candidate, provenance)
 	case assemblyline.WorkContextRelevanceRelation,
-		assemblyline.WorkContextMinification,
 		assemblyline.WorkConversationObjectiveKind,
 		assemblyline.WorkConversationResponse,
 		assemblyline.WorkRoleplayGroundedResponseParagraphInventory,

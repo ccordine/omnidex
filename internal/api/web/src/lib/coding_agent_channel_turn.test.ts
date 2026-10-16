@@ -4,7 +4,7 @@ import { parseAgentChannelState } from "./coding_agent_channel_contract";
 
 const workspaceIdentity = "client_0123456789abcdef0123456789abcdef_directory_1_42";
 
-function jobDetails(status = "waiting_input", generation = 3, question = "Which target should this task use?") {
+function jobDetails(status = "running", generation = 3, waitingAction = "v3_coding_plan") {
   return {
     job: {
       id: 17, status, current_generation: generation,
@@ -14,8 +14,8 @@ function jobDetails(status = "waiting_input", generation = 3, question = "Which 
         coding_execution: { mode: "agents" },
       },
     },
-    steps: [{ id: 29, generation, action: "v3_coding", status }],
-    agent_pause: { schema: "omnidex-coding-agent-pause-v1", generation, step_id: 29, waiting_attempt: 2, questions: [question] },
+    steps: [{ id: 29, generation, action: status === "waiting_input" ? waitingAction : "v3_coding", status }],
+    ...(status === "waiting_input" ? { coding_input_disposition: waitingAction === "v3_coding_plan" ? "replan" : "reply" } : {}),
   };
 }
 
@@ -23,7 +23,7 @@ function response(payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), { status, headers: { "Content-Type": "application/json" } });
 }
 
-describe("Agents conversation pause and resume", () => {
+describe("Agents conversation observation", () => {
   const turns: CodingAgentChannelTurn[] = [];
   afterEach(() => { turns.forEach((turn) => turn.disconnect()); turns.length = 0; vi.restoreAllMocks(); });
 
@@ -33,68 +33,78 @@ describe("Agents conversation pause and resume", () => {
     const changed = vi.fn();
     turn.onChange(changed);
     turns.push(turn);
-    return { turn, changed, failed };
+    return { turn, changed };
   }
 
-  it("recovers a concrete waiting question from the transcript's job backlink", async () => {
+  it("recovers the exact active Agents job from the transcript backlink", async () => {
     const fetchMock = vi.fn(async () => response(jobDetails()));
     vi.stubGlobal("fetch", fetchMock);
     const { turn, changed } = create();
 
-    await turn.recover("chat-42", { message_id: 11, job_id: 17, status: "waiting_input" });
+    await turn.recover("chat-42", { message_id: 11, job_id: 17, status: "running" });
 
     expect(fetchMock).toHaveBeenCalledWith("/v1/jobs/17");
-    expect(turn.state("chat-42")).toMatchObject({ status: "waiting_input", question: "Which target should this task use?" });
+    expect(turn.state("chat-42")).toMatchObject({ status: "running", authority: { jobID: 17, generation: 3 } });
     expect(changed).toHaveBeenCalledOnce();
   });
 
-  it("sends exact answer bytes to the same job, generation and workspace with one replayable operation", async () => {
-    const bodies: Array<Record<string, unknown>> = [];
-    let resumed = false;
-    let loseFirstReceipt = true;
-    const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
-      if (!init) return response(jobDetails(resumed ? "running" : "waiting_input"));
-      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
-      bodies.push(body);
-      resumed = true;
-      if (loseFirstReceipt) { loseFirstReceipt = false; throw new Error("receipt connection lost"); }
-      return response({ job_id: 17, operation_id: body.operation_id, status: "running" });
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    const { turn } = create();
-    await turn.recover("chat-42", { message_id: 11, job_id: 17, status: "waiting_input" });
-    const feedback = "  selected target\nwith trailing space ";
-
-    await expect(turn.answer("chat-42", feedback, "agents")).rejects.toThrow("receipt connection lost");
-    await expect(turn.answer("chat-42", feedback, "agents")).resolves.toBe(17);
-
-    expect(bodies).toHaveLength(2);
-    expect(bodies[0]).toEqual({
-      operation_id: expect.stringMatching(/^lifecycle_operation_[0-9a-f]{64}$/), feedback,
-      expected_generation: 3, workspace_root: "/workspace/project", workspace_identity: workspaceIdentity,
-      expected_waiting_attempt: 2,
-    });
-    expect(bodies[1]).toEqual(bodies[0]);
-    expect(fetchMock.mock.calls.filter(([, init]) => init)).toHaveLength(2);
-    expect(String(fetchMock.mock.calls.at(-1)?.[0])).toBe("/v1/jobs/17/feedback");
-    expect(turn.state("chat-42")?.status).toBe("running");
+  it("distinguishes planning discussion from a parsed execution request", () => {
+    expect(parseAgentChannelState(jobDetails("waiting_input"), "chat-42", 17)).toMatchObject({ status: "waiting_input", waitingFor: "planning" });
+    expect(parseAgentChannelState(jobDetails("waiting_input", 3, "v3_coding"), "chat-42", 17))
+      .toMatchObject({ status: "waiting_input", waitingFor: "execution" });
   });
 
-  it("rejects conflicting mode and stale generation before posting an answer", async () => {
-    let generation = 3;
-    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => response(jobDetails("waiting_input", generation)));
-    vi.stubGlobal("fetch", fetchMock);
-    const { turn } = create();
-    await turn.recover("chat-42", { message_id: 11, job_id: 17, status: "waiting_input" });
-
-    await expect(turn.answer("chat-42", "exact draft", "conversation")).rejects.toThrow("mode cannot change");
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    generation = 4;
-    await expect(turn.answer("chat-42", "exact draft", "agents")).rejects.toThrow("generation or workspace changed");
-    expect(fetchMock.mock.calls.every((args) => args.length === 1)).toBe(true);
+  it("retains the exact native input identity and rejects invalid projections", () => {
+    const waiting = { ...jobDetails("waiting_input", 3, "v3_coding"), execution_input_id: 91 };
+    expect(parseAgentChannelState(waiting, "chat-42", 17)).toMatchObject({ executionInputID: 91 });
+    expect(() => parseAgentChannelState({ ...waiting, execution_input_id: 0 }, "chat-42", 17)).toThrow("exact request identity");
+    expect(() => parseAgentChannelState({ ...jobDetails("waiting_input"), execution_input_id: 91 }, "chat-42", 17)).toThrow("exact request identity");
+    expect(parseAgentChannelState({ ...jobDetails("waiting_input"), coding_input_disposition: "reply", execution_input_id: 91 }, "chat-42", 17))
+      .toMatchObject({ waitingFor: "planning", inputDisposition: "reply", executionInputID: 91 });
+    expect(parseAgentChannelState({ ...waiting, coding_input_disposition: "replan", execution_input_id: undefined }, "chat-42", 17))
+      .toMatchObject({ waitingFor: "planning", inputDisposition: "replan" });
+    expect(() => parseAgentChannelState({ ...waiting, coding_input_disposition: undefined }, "chat-42", 17)).toThrow("server-owned reply disposition");
   });
 
-  it("stops the Agents observation on a question and preserves the job for resume", async () => {
+  it.each(["native planning reply", "incomplete execution handoff"])("consumes the server disposition for %s", async (kind) => {
+    const replan = kind === "incomplete execution handoff";
+    const waiting = { ...jobDetails("waiting_input", 3, replan ? "v3_coding" : "v3_coding_plan"),
+      coding_input_disposition: replan ? "replan" : "reply", ...(replan ? {} : { execution_input_id: 91 }) };
+    vi.stubGlobal("fetch", vi.fn(async () => response(waiting)));
+    const { turn } = create();
+    await turn.recover("chat-42", { message_id: 11, job_id: 17, status: "waiting_input" });
+    const fetchMock = vi.fn(async (_url: string, options?: RequestInit) => {
+      if (options?.method === "POST") {
+        const body = JSON.parse(String(options.body)) as { operation_id: string; expected_input_id?: number };
+        expect(body.expected_input_id).toBe(replan ? undefined : 91);
+        return response({ operation_id: body.operation_id, channel_id: "chat-42", job_id: 17,
+          disposition: replan ? "replanned" : "feedback_submitted", generation: replan ? 4 : 3 }, 202);
+      }
+      return response(jobDetails("completed", replan ? 4 : 3));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(turn.continueConversation("chat-42", "Continue within the approved scope.")).resolves.toBe(17);
+  });
+
+  it("sends the observed native prompt identity with its owner reply", async () => {
+    const fetchMock = vi.fn(async (_url: string, options?: RequestInit) => {
+      if (options?.method === "POST") {
+        const body = JSON.parse(String(options.body)) as { operation_id: string; expected_input_id: number };
+        expect(body.expected_input_id).toBe(91);
+        return response({ operation_id: body.operation_id, channel_id: "chat-42", job_id: 17,
+          disposition: "feedback_submitted", generation: 3 }, 202);
+      }
+      return response(jobDetails("completed"));
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => response({ ...jobDetails("waiting_input", 3, "v3_coding"), execution_input_id: 91 })));
+    const { turn } = create();
+    await turn.recover("chat-42", { message_id: 11, job_id: 17, status: "waiting_input" });
+    vi.stubGlobal("fetch", fetchMock);
+    await turn.continueConversation("chat-42", "approve");
+    expect(fetchMock.mock.calls.some((call) => call[1]?.method === "POST")).toBe(true);
+  });
+
+  it("stops observation at owner plan review without creating an answer route", async () => {
     let status = "running";
     vi.stubGlobal("fetch", vi.fn(async () => response(jobDetails(status))));
     const { turn } = create();
@@ -106,33 +116,12 @@ describe("Agents conversation pause and resume", () => {
     await watching;
 
     expect(turn.state("chat-42")?.status).toBe("waiting_input");
-    expect(turn.state("chat-42")?.authority).toMatchObject({ jobID: 17, generation: 3 });
+    expect(turn.state("chat-42")).not.toHaveProperty("question");
+    expect(turn.state("chat-42")).not.toHaveProperty("waitingAttempt");
   });
 
-  it("rejects a stale pause even when generation and question text are unchanged", async () => {
-    const initial = jobDetails();
-    let payload = initial;
-    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => response(payload));
-    vi.stubGlobal("fetch", fetchMock);
-    const { turn } = create();
-    await turn.recover("chat-42", { message_id: 11, job_id: 17, status: "waiting_input" });
-    payload = { ...initial, agent_pause: { ...initial.agent_pause, waiting_attempt: 3 } };
-    await expect(turn.answer("chat-42", "exact draft", "agents")).rejects.toThrow("question changed");
-    expect(fetchMock.mock.calls.every((args) => args.length === 1)).toBe(true);
-  });
-
-  it("does not enter agent execution for a Normal job recovered from the same transcript", async () => {
-    const details = jobDetails();
-    const payload = { ...details, job: { ...details.job, metadata: { channel_id: "chat-42" } } };
-    vi.stubGlobal("fetch", vi.fn(async () => response(payload)));
-    const { turn, changed } = create();
-    await turn.recover("chat-42", { message_id: 11, job_id: 17, status: "waiting_input" });
-    expect(turn.state("chat-42")).toBeUndefined();
-    expect(changed).not.toHaveBeenCalled();
-  });
-
-  it.each(["completed", "canceled", "failed"])("retires a retained question when the authoritative job becomes %s", async (status) => {
-    let payload = jobDetails();
+  it.each(["completed", "canceled", "failed"])("retires an observed job when it becomes %s", async (status) => {
+    let payload = jobDetails("waiting_input");
     const fetchMock = vi.fn(async () => response(payload));
     vi.stubGlobal("fetch", fetchMock);
     const { turn, changed } = create();
@@ -141,71 +130,21 @@ describe("Agents conversation pause and resume", () => {
     payload = jobDetails(status);
     await turn.recover("chat-42", { message_id: 11, job_id: 17, status: status as "completed" | "canceled" | "failed" });
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(turn.state("chat-42")).toBeUndefined();
     expect(changed).toHaveBeenCalledTimes(2);
-    await expect(turn.answer("chat-42", "old draft", "agents")).rejects.toThrow("no pending Agent question");
   });
 
-  it("clears a retained question when the newest transcript user turn is Normal", async () => {
-    const normal = { job: { id: 18, status: "running", current_generation: 1, metadata: { channel_id: "chat-42" } }, steps: [] };
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => response(input === "/v1/jobs/17" ? jobDetails() : normal));
-    vi.stubGlobal("fetch", fetchMock);
+  it("does not enter Agents observation for a Normal job and rejects foreign authority", async () => {
+    const normal = jobDetails();
+    normal.job.metadata = { channel_id: "chat-42" } as typeof normal.job.metadata;
+    vi.stubGlobal("fetch", vi.fn(async () => response(normal)));
     const { turn, changed } = create();
-    await turn.recover("chat-42", { message_id: 11, job_id: 17, status: "waiting_input" });
-
-    await turn.recover("chat-42", { message_id: 12, job_id: 18, status: "running" });
-
+    await turn.recover("chat-42", { message_id: 11, job_id: 17, status: "running" });
     expect(turn.state("chat-42")).toBeUndefined();
-    expect(changed).toHaveBeenCalledTimes(2);
-    expect(fetchMock).toHaveBeenLastCalledWith("/v1/jobs/18");
-  });
+    expect(changed).not.toHaveBeenCalled();
 
-  it("clears the question when the newest user message has no job backlink", async () => {
-    const fetchMock = vi.fn(async () => response(jobDetails()));
-    vi.stubGlobal("fetch", fetchMock);
-    const { turn, changed } = create();
-    await turn.recover("chat-42", { message_id: 11, job_id: 17, status: "waiting_input" });
-
-    await turn.recover("chat-42", undefined);
-
-    expect(turn.state("chat-42")).toBeUndefined();
-    expect(fetchMock).toHaveBeenCalledOnce();
-    expect(changed).toHaveBeenCalledTimes(2);
-  });
-
-  it("keeps a paused projection when a claimed terminal refresh returns foreign authority", async () => {
-    let payload = jobDetails();
-    vi.stubGlobal("fetch", vi.fn(async () => response(payload)));
-    const { turn } = create();
-    await turn.recover("chat-42", { message_id: 11, job_id: 17, status: "waiting_input" });
-    payload = jobDetails("completed"); payload.job.metadata.channel_id = "other-chat";
-    await expect(turn.recover("chat-42", { message_id: 11, job_id: 17, status: "completed" })).rejects.toThrow("different conversation");
-    expect(turn.state("chat-42")?.status).toBe("waiting_input");
-  });
-
-  it("disposes an old observation when an authoritative newer Normal turn replaces it", async () => {
-    const normal = { job: { id: 18, status: "running", current_generation: 1, metadata: { channel_id: "chat-42" } }, steps: [] };
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => response(input === "/v1/jobs/17" ? jobDetails("running") : normal)));
-    const { turn, failed } = create();
-    const watching = turn.watch("chat-42", 17);
-    await vi.waitFor(() => expect(turn.state("chat-42")?.status).toBe("running"));
-
-    await turn.recover("chat-42", { message_id: 12, job_id: 18, status: "running" });
-    await watching;
-
-    expect(turn.state("chat-42")).toBeUndefined();
-    expect(failed).not.toHaveBeenCalled();
-  });
-
-  it("rejects a foreign conversation and a waiting state without an exact concrete task question", () => {
     const foreign = jobDetails();
     foreign.job.metadata.channel_id = "other-chat";
     expect(() => parseAgentChannelState(foreign, "chat-42", 17)).toThrow("different conversation");
-    const missing = jobDetails("waiting_input", 3, " ");
-    expect(() => parseAgentChannelState(missing, "chat-42", 17)).toThrow("question is missing");
-    const plan = jobDetails();
-    plan.steps[0].action = "v3_coding_plan";
-    expect(() => parseAgentChannelState(plan, "chat-42", 17)).toThrow("no exact waiting coding task");
   });
 });

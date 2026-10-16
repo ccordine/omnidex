@@ -30,11 +30,18 @@ type agentActivityParams struct {
 	Delta        string `json:"delta"`
 	SummaryIndex int    `json:"summaryIndex"`
 	Item         struct {
-		ID      string   `json:"id"`
-		Type    string   `json:"type"`
-		Phase   string   `json:"phase"`
-		Text    string   `json:"text"`
-		Summary []string `json:"summary"`
+		ID       string   `json:"id"`
+		Type     string   `json:"type"`
+		Phase    string   `json:"phase"`
+		Text     string   `json:"text"`
+		Summary  []string `json:"summary"`
+		Command  string   `json:"command"`
+		CWD      string   `json:"cwd"`
+		Status   string   `json:"status"`
+		ExitCode *int     `json:"exitCode"`
+		Changes  []struct {
+			Path string `json:"path"`
+		} `json:"changes"`
 	} `json:"item"`
 }
 
@@ -69,6 +76,9 @@ func (stream *agentActivityStream) observe(event codingagent.NativeEvent) error 
 			return err
 		}
 	}
+	if len(event.Frame) == 0 {
+		return nil
+	}
 	var frame rpcFrame
 	if err := json.Unmarshal(event.Frame, &frame); err != nil {
 		return err
@@ -85,6 +95,9 @@ func (stream *agentActivityStream) observe(event codingagent.NativeEvent) error 
 			existing.kind, existing.phase, existing.provisional = params.Item.Type, params.Item.Phase, false
 		} else {
 			stream.items[params.Item.ID] = &agentActivityItem{kind: params.Item.Type, phase: params.Item.Phase}
+		}
+		if params.Item.Type == "commandExecution" {
+			return stream.command(params, model.AgentActivityStarted)
 		}
 		return nil
 	}
@@ -105,6 +118,8 @@ func (stream *agentActivityStream) observe(event codingagent.NativeEvent) error 
 		stream.items[params.ItemID] = item
 	}
 	switch frame.Method {
+	case "item/commandExecution/outputDelta":
+		return stream.text(params.ItemID, model.AgentActivityCommandOutput, model.AgentActivityDelta, params.Delta)
 	case "item/agentMessage/delta":
 		if item.provisional {
 			item.sent += params.Delta
@@ -140,6 +155,24 @@ func (stream *agentActivityStream) observe(event codingagent.NativeEvent) error 
 
 func (stream *agentActivityStream) completed(params agentActivityParams, item *agentActivityItem) error {
 	switch params.Item.Type {
+	case "commandExecution":
+		status := model.AgentActivityCompleted
+		if params.Item.Status != "completed" {
+			status = model.AgentActivityFailed
+		}
+		return stream.command(params, status)
+	case "fileChange":
+		if params.Item.Status != "completed" {
+			return nil
+		}
+		for _, change := range params.Item.Changes {
+			activity := agentActivityBase(stream.call, stream.result, params.Item.ID, model.AgentActivityFileEdit, model.AgentActivityCompleted)
+			activity.Paths = []string{change.Path}
+			if err := stream.publish(activity); err != nil {
+				return err
+			}
+		}
+		return nil
 	case "agentMessage":
 		if params.Item.Phase != "commentary" {
 			return nil
@@ -151,6 +184,12 @@ func (stream *agentActivityStream) completed(params agentActivityParams, item *a
 		return stream.completeText(params.Item.ID, model.AgentActivityReasoningSummary, model.AgentActivityCompleted, item.sent, strings.Join(params.Item.Summary, "\n"))
 	}
 	return nil
+}
+
+func (stream *agentActivityStream) command(params agentActivityParams, status model.AgentActivityStatus) error {
+	activity := agentActivityBase(stream.call, stream.result, params.Item.ID, model.AgentActivityCommand, status)
+	activity.Command, activity.CWD, activity.ExitCode = params.Item.Command, params.Item.CWD, params.Item.ExitCode
+	return stream.publish(model.BoundAgentActivityCommand(activity))
 }
 
 func (stream *agentActivityStream) completeText(itemID string, kind model.AgentActivityKind, status model.AgentActivityStatus, sent, final string) error {

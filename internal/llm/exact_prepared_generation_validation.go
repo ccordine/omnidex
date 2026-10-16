@@ -69,12 +69,12 @@ func ValidateExactPreparedGenerationForRequest(
 			}
 		}
 	}
-	if err := ValidateExactPreparedNativeUsage(
-		prepared.ContextTokens,
-		prepared.MaxOutputTokens,
-		generation.Usage,
-	); err != nil {
-		return err
+	// Codex owns its native context window. ContextTokens configures Ollama;
+	// applying it to a completed Codex turn rejects valid native receipts.
+	if prepared.Protocol != ExactPreparedProtocolCodexV1 {
+		if err := ValidateExactPreparedNativeUsage(prepared.ContextTokens, prepared.MaxOutputTokens, generation.Usage); err != nil {
+			return err
+		}
 	}
 	if generation.ProviderDoneReason == "length" {
 		failure := &ExactPreparedOutputLimitReachedError{

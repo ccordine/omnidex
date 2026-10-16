@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/model"
@@ -24,23 +25,18 @@ func (journal *memoryJournal) Read(context.Context) ([]Entry, error) {
 	return append([]Entry(nil), journal.entries...), nil
 }
 
+func (journal *memoryJournal) ReadTaskClarifications(_ context.Context, taskID string) ([]TaskClarification, error) {
+	return ExtractTaskClarifications(journal.entries, taskID), nil
+}
+
 type fixtureEnvironment struct{}
 
-func (fixtureEnvironment) ReadFiles(context.Context) ([]string, error) {
-	return []string{"reference.txt"}, nil
-}
-func (fixtureEnvironment) ReadTaskFile(context.Context, string) (string, error) {
-	return "fixture", nil
-}
-func (fixtureEnvironment) PrepareFiles(context.Context, Task) error     { return nil }
-func (fixtureEnvironment) Attest(context.Context) error                 { return nil }
-func (fixtureEnvironment) WriteFile(context.Context, FileWrite) error   { return nil }
-func (fixtureEnvironment) DeleteFile(context.Context, FileDelete) error { return nil }
+func (fixtureEnvironment) Attest(context.Context) error { return nil }
 
-type providerFunc func(context.Context, Assignment, FileWriter, func(NativeEvent) error) (Result, error)
+type providerFunc func(context.Context, Assignment, func(NativeEvent) error) (Result, error)
 
-func (provider providerFunc) Run(ctx context.Context, call Assignment, files FileWriter, receipt func(NativeEvent) error) (Result, error) {
-	return provider(ctx, call, files, receipt)
+func (provider providerFunc) Run(ctx context.Context, call Assignment, receipt func(NativeEvent) error) (Result, error) {
+	return provider(ctx, call, receipt)
 }
 
 type verifierFunc func(context.Context, Assignment, []Check) ([]CheckResult, error)
@@ -65,16 +61,28 @@ func fixtureController(t *testing.T, workload testWorkload, behavior func(Assign
 	t.Helper()
 	journal := &memoryJournal{}
 	sequence := 0
-	provider := providerFunc(func(ctx context.Context, call Assignment, files FileWriter, event func(NativeEvent) error) (Result, error) {
-		requiresFiles := call.Role == Execute || call.Role == Review || call.Role.IsPlanning() && len(call.ReadFiles) > 0
-		if requiresFiles != (files != nil) {
-			t.Fatal("agent call did not receive its exact scoped file access")
-		}
+	reviewResponses := map[string]ReviewResult{}
+	provider := providerFunc(func(ctx context.Context, call Assignment, event func(NativeEvent) error) (Result, error) {
 		sequence++
 		if err := event(NativeEvent{Frame: json.RawMessage(`{"native":"receipt"}`)}); err != nil {
 			return Result{}, err
 		}
-		content, err := behavior(call)
+		var content any
+		var err error
+		if call.Role == ExecutionResponse {
+			content = struct {
+				Kind ExecutionResponseKind `json:"kind"`
+			}{ExecutionDone}
+		} else if call.Role == ReviewResponse {
+			content = ReviewResponseResult{Kind: ExecutionDone, ReviewResult: reviewResponses[call.Response]}
+		} else {
+			content, err = behavior(call)
+			if review, ok := content.(ReviewResult); ok && call.Role == Review {
+				text := fmt.Sprintf("Ordinary task review response %d.", sequence)
+				reviewResponses[text] = review
+				content = text
+			}
+		}
 		if err != nil {
 			return Result{}, err
 		}
@@ -84,14 +92,14 @@ func fixtureController(t *testing.T, workload testWorkload, behavior func(Assign
 			Completed: true, Content: encoded}, nil
 	})
 	configuration := Configuration{Mode: Agents,
-		Planner:  Route{Provider: "planner", Model: "plan-model"},
-		Executor: Route{Provider: "executor", Model: "execute-model"},
-		Reviewer: Route{Provider: "reviewer", Model: "review-model"},
+		Planner:      Route{Provider: "planner", Model: "plan-model"},
+		LedgerParser: Route{Provider: "parser", Model: "parser-model"},
+		Executor:     Route{Provider: "executor", Model: "execute-model"},
+		Reviewer:     Route{Provider: "reviewer", Model: "review-model"},
 	}
 	return &Controller{JobID: 1, Generation: 1, Root: t.TempDir(), Configuration: configuration,
 		Requirements: []Requirement{{ID: "objective", Outcome: "ship the requested change"}},
-		Objective:    &Objective{Instruction: "ship the requested change"},
-		Providers:    map[string]Provider{"planner": provider, "executor": provider, "reviewer": provider},
+		Providers:    map[string]Provider{"planner": provider, "parser": provider, "executor": provider, "reviewer": provider},
 		Verifier:     verify, Environment: fixtureEnvironment{}, Evidence: journal}, journal
 }
 
@@ -104,7 +112,7 @@ func passingChecks(_ context.Context, _ Assignment, checks []Check) ([]CheckResu
 }
 
 func cleanReview() ReviewResult {
-	return ReviewResult{Findings: []Finding{}, Questions: []string{}, Verification: "Inspected the task-local result against its acceptance criteria."}
+	return ReviewResult{Findings: []Finding{}, Verification: "Inspected the task-local result against its acceptance criteria."}
 }
 
 func TestRunTaskUsesOnlyOneFreshExecutionAndReviewChannel(t *testing.T) {
@@ -112,11 +120,11 @@ func TestRunTaskUsesOnlyOneFreshExecutionAndReviewChannel(t *testing.T) {
 	var calls []Assignment
 	controller, journal := fixtureController(t, fixtureWorkload(), func(call Assignment) (any, error) {
 		calls = append(calls, call)
-		if call.Task == nil || !reflect.DeepEqual(*call.Task, task) || call.Objective != nil || len(call.Requirements) != 0 || len(call.ArtifactBindings) != 0 {
+		if call.Task == nil || !reflect.DeepEqual(*call.Task, task) || call.Objective != nil || len(call.Requirements) != 0 {
 			t.Fatalf("task call received anything outside its compiled packet: %#v", call)
 		}
 		if call.Role == Execute {
-			return ExecutionResult{Questions: []string{}}, nil
+			return "Task completed.", nil
 		}
 		return cleanReview(), nil
 	}, passingChecks)
@@ -128,7 +136,7 @@ func TestRunTaskUsesOnlyOneFreshExecutionAndReviewChannel(t *testing.T) {
 	}
 	var threads []string
 	for _, entry := range journal.entries {
-		if entry.Phase == "call_completed" {
+		if entry.Phase == "call_completed" && (entry.Role == Execute || entry.Role == Review) {
 			threads = append(threads, entry.Result.ThreadID)
 		}
 	}
@@ -140,7 +148,7 @@ func TestRunTaskUsesOnlyOneFreshExecutionAndReviewChannel(t *testing.T) {
 func TestRunTaskRoundBudgetIsLocalToEachLedgerTask(t *testing.T) {
 	controller, _ := fixtureController(t, fixtureWorkload(), func(call Assignment) (any, error) {
 		if call.Role == Execute {
-			return ExecutionResult{Questions: []string{}}, nil
+			return "Task completed.", nil
 		}
 		return cleanReview(), nil
 	}, passingChecks)
@@ -163,11 +171,11 @@ func TestRunTaskCorrectionNeverLeavesItsPacket(t *testing.T) {
 		}
 		if call.Role == Execute {
 			executions++
-			return ExecutionResult{Questions: []string{}}, nil
+			return "Task completed.", nil
 		}
 		reviews++
 		if reviews == 1 {
-			return ReviewResult{Findings: []Finding{{TaskID: task.ID, Requirement: "A works", Observation: "A is incomplete"}}, Questions: []string{}, Verification: "Inspected the task-local result and observed the stated defect."}, nil
+			return ReviewResult{Findings: []Finding{{TaskID: task.ID, Requirement: "A works", Observation: "A is incomplete"}}, Verification: "Inspected the task-local result and observed the stated defect."}, nil
 		}
 		return cleanReview(), nil
 	}, passingChecks)
@@ -186,7 +194,7 @@ func TestRunTaskDoesNotSpendReviewOnKnownFailedChecks(t *testing.T) {
 	controller, _ := fixtureController(t, fixtureWorkload(), func(call Assignment) (any, error) {
 		roles = append(roles, call.Role)
 		if call.Role == Execute {
-			return ExecutionResult{Questions: []string{}}, nil
+			return "Task completed.", nil
 		}
 		return cleanReview(), nil
 	}, func(_ context.Context, _ Assignment, checks []Check) ([]CheckResult, error) {
@@ -210,11 +218,51 @@ func TestRunTaskDoesNotSpendReviewOnKnownFailedChecks(t *testing.T) {
 	}
 }
 
+func TestRunTaskContinuesPastThreeFailedCheckRounds(t *testing.T) {
+	task := fixtureWorkload().Tasks[0]
+	executions, checkRuns, reviews := 0, 0, 0
+	controller, _ := fixtureController(t, fixtureWorkload(), func(call Assignment) (any, error) {
+		if call.Role == Execute {
+			executions++
+			return "Task completed.", nil
+		}
+		reviews++
+		return cleanReview(), nil
+	}, func(_ context.Context, _ Assignment, checks []Check) ([]CheckResult, error) {
+		checkRuns++
+		if checkRuns == 5 {
+			return []CheckResult{{ID: checks[0].ID}}, nil
+		}
+		return []CheckResult{{ID: checks[0].ID, ExitCode: 7, Output: fmt.Sprintf("failure from run %d", checkRuns)}}, nil
+	})
+	err := controller.RunTask(context.Background(), task)
+	if err != nil {
+		t.Fatalf("an arbitrary attempt count abandoned approved work: %v", err)
+	}
+	if executions != 5 || checkRuns != 5 || reviews != 1 {
+		t.Fatalf("correction stopped before fulfillment: executions=%d checks=%d reviews=%d", executions, checkRuns, reviews)
+	}
+}
+
+func TestRunTaskRejectsAnyExecutorAuthoredResultCategory(t *testing.T) {
+	task := fixtureWorkload().Tasks[0]
+	controller, _ := fixtureController(t, fixtureWorkload(), func(call Assignment) (any, error) {
+		if call.Role == Execute {
+			return map[string]any{"questions": []string{"misrouted completion summary"}}, nil
+		}
+		return cleanReview(), nil
+	}, passingChecks)
+	err := controller.RunTask(context.Background(), task)
+	if err == nil || !strings.Contains(err.Error(), "decode ordinary Codex response") {
+		t.Fatalf("executor selected a semantic result destination: %v", err)
+	}
+}
+
 func TestRunTaskAllowsReviewOnlyVerification(t *testing.T) {
 	task := Task{ID: "inspect", Goal: "Inspect delivered state", Acceptance: []string{"state is correct"}}
 	controller, journal := fixtureController(t, fixtureWorkload(), func(call Assignment) (any, error) {
 		if call.Role == Execute {
-			return ExecutionResult{Questions: []string{}}, nil
+			return "Task completed.", nil
 		}
 		return cleanReview(), nil
 	}, func(context.Context, Assignment, []Check) ([]CheckResult, error) {

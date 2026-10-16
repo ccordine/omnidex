@@ -3,8 +3,9 @@ package assemblyline
 // The registered decoder's grammar and actual choices share one resolver.
 // Choice values remain internal; public observations receive descriptions only.
 type portableResponseContract struct {
-	maximum int
-	choices []OpaqueModelChoice
+	maximum  int
+	openText bool
+	choices  []OpaqueModelChoice
 }
 
 func opaqueModelChoiceResponseContract(choices []OpaqueModelChoice) (portableResponseContract, error) {

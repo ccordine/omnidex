@@ -1,0 +1,291 @@
+{
+  "origin": "Exact failed ordinary planning amendment, history_roundtrip_v3 job1 generation1, 2026-10-16. Blank parser target was correctly prevented from mutating the ledger, but its semantic validation error terminalized the job instead of the existing parser retry path.",
+  "failure": "ledger mutation requires owner-statement dispositions",
+  "instruction": "Finish the existing word-counter README and verification without changing the Python files.",
+  "responses": [
+    {
+      "owner_turn": "Plan the remaining README and verification work before implementing.",
+      "response": "The implementation SHA-256 matches the supplied original. No files have been changed.\n\nProposed plan for review:\n\n1. Add a short `README.md` covering Python 3 invocation, a reproducible example and exact output, counting rules, input errors, and `python3 -m unittest -v test_wordcounter.py`.\n   - Acceptance: explain LF-based lines and final unterminated lines, whitespace-separated words, and Unicode code points including whitespace and preserved CR/LF characters.\n\n2. Verify the documented example and run the existing tests.\n   - Acceptance: example output matches exactly; tests pass, with any skips reported; both Python files retain their current hashes. Remove any verification artifacts.\n\nAll work will stay in this pilot directory, without modifying Omnidex or initializing Git. Does this plan look right?"
+    },
+    {
+      "owner_turn": "For the preservation check, record these exact baselines in the relevant ledger task context: wordcounter.py SHA-256 d720deeea8d9732c3267b261ba30e5dea716e5b0939b9eb1159e4623727666ef and test_wordcounter.py SHA-256 f2caaf7c165dbc7de127703d47963bbd3adeb3d05e23462fa16881e389be49de. They are the current pre-execution file hashes. Keep the same README-and-verification scope.",
+      "response": "Proposed ledger update: add this preservation context to `t2`:\n\n- `wordcounter.py` SHA-256: `d720deeea8d9732c3267b261ba30e5dea716e5b0939b9eb1159e4623727666ef`\n- `test_wordcounter.py` SHA-256: `f2caaf7c165dbc7de127703d47963bbd3adeb3d05e23462fa16881e389be49de`\n\nBoth are owner-supplied current pre-execution file hashes. `check4` will compare against these exact baselines.\n\nAll existing ledger entries remain proposed and unchanged. Scope remains the short README followed by example verification, existing tests, hash preservation, and verification-artifact cleanup, within the disposable pilot directory. No implementation has started. The pending review question remains: “Does this plan look right?”"
+    }
+  ],
+  "base_ledger": {
+    "id": "1",
+    "revision": 1,
+    "objectives": null,
+    "requirements": [
+      {
+        "id": "r1",
+        "provenance": {
+          "kind": "response",
+          "reference": "Proposed plan, item 1",
+          "revision": 0
+        },
+        "rationale": "",
+        "priority": "normal",
+        "rank": 1,
+        "disposition": "active",
+        "review_state": "proposed",
+        "outcome": "Add a short README.md covering Python 3 invocation, a reproducible example and exact output, counting rules, input errors, and the stated test command."
+      },
+      {
+        "id": "r2",
+        "provenance": {
+          "kind": "response",
+          "reference": "Proposed plan, item 2",
+          "revision": 0
+        },
+        "rationale": "",
+        "priority": "normal",
+        "rank": 2,
+        "disposition": "active",
+        "review_state": "proposed",
+        "outcome": "Verify the documented example and existing tests, report any skips, preserve both Python files' current hashes, and remove verification artifacts."
+      }
+    ],
+    "constraints": [
+      {
+        "id": "c1",
+        "provenance": {
+          "kind": "response",
+          "reference": "Closing scope statement",
+          "revision": 0
+        },
+        "rationale": "",
+        "priority": "normal",
+        "rank": 1,
+        "disposition": "active",
+        "review_state": "proposed",
+        "rule": "Keep all work in this pilot directory; do not modify Omnidex or initialize Git."
+      }
+    ],
+    "groups": null,
+    "tasks": [
+      {
+        "id": "t1",
+        "provenance": {
+          "kind": "response",
+          "reference": "Proposed plan, item 1",
+          "revision": 0
+        },
+        "rationale": "",
+        "priority": "normal",
+        "rank": 1,
+        "disposition": "active",
+        "review_state": "proposed",
+        "goal": "Document invocation, example output, counting rules, input errors, and testing.",
+        "requirement_ids": [
+          "r1"
+        ],
+        "constraint_ids": [
+          "c1"
+        ],
+        "acceptance_criterion_ids": [
+          "ac1"
+        ],
+        "delivery_obligation": "Add the short README.md with all stated content.",
+        "read_files": [],
+        "write_files": [
+          "README.md"
+        ],
+        "delete_files": []
+      },
+      {
+        "id": "t2",
+        "provenance": {
+          "kind": "response",
+          "reference": "Proposed plan, item 2",
+          "revision": 0
+        },
+        "rationale": "",
+        "priority": "normal",
+        "rank": 2,
+        "disposition": "active",
+        "review_state": "proposed",
+        "goal": "Verify the documentation and existing tests while preserving the Python files.",
+        "requirement_ids": [
+          "r2"
+        ],
+        "constraint_ids": [
+          "c1"
+        ],
+        "acceptance_criterion_ids": [
+          "ac2"
+        ],
+        "delivery_obligation": "Verify exact example output and passing existing tests, report skips, confirm unchanged Python-file hashes, and remove verification artifacts.",
+        "read_files": [
+          "README.md"
+        ],
+        "write_files": [],
+        "delete_files": []
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "ac1",
+        "provenance": {
+          "kind": "response",
+          "reference": "Proposed plan, item 1",
+          "revision": 0
+        },
+        "rationale": "",
+        "priority": "normal",
+        "rank": 1,
+        "disposition": "active",
+        "review_state": "proposed",
+        "outcome": "README.md is short and covers Python 3 invocation, a reproducible example with exact output, input errors, and python3 -m unittest -v test_wordcounter.py. Counting rules explain LF-based lines and final unterminated lines, whitespace-separated words, and Unicode code points including whitespace and preserved CR/LF characters.",
+        "requirement_ids": [
+          "r1"
+        ],
+        "task_ids": [
+          "t1"
+        ],
+        "required": true
+      },
+      {
+        "id": "ac2",
+        "provenance": {
+          "kind": "response",
+          "reference": "Proposed plan, item 2",
+          "revision": 0
+        },
+        "rationale": "",
+        "priority": "normal",
+        "rank": 2,
+        "disposition": "active",
+        "review_state": "proposed",
+        "outcome": "The documented example output matches exactly; existing tests pass with any skips reported; both Python files retain their current hashes; verification artifacts are removed.",
+        "requirement_ids": [
+          "r2"
+        ],
+        "task_ids": [
+          "t2"
+        ],
+        "required": true
+      }
+    ],
+    "checks": [
+      {
+        "id": "check1",
+        "provenance": {
+          "kind": "response",
+          "reference": "Proposed plan, item 1",
+          "revision": 0
+        },
+        "rationale": "",
+        "priority": "normal",
+        "rank": 1,
+        "disposition": "active",
+        "review_state": "proposed",
+        "observation": "Observe that README.md contains all stated documentation topics and counting-rule details.",
+        "requirement_ids": [
+          "r1"
+        ],
+        "acceptance_criterion_ids": [
+          "ac1"
+        ],
+        "required": true
+      },
+      {
+        "id": "check2",
+        "provenance": {
+          "kind": "response",
+          "reference": "Proposed plan, item 2",
+          "revision": 0
+        },
+        "rationale": "",
+        "priority": "normal",
+        "rank": 2,
+        "disposition": "active",
+        "review_state": "proposed",
+        "observation": "Verify the documented example output matches exactly.",
+        "requirement_ids": [
+          "r2"
+        ],
+        "acceptance_criterion_ids": [
+          "ac2"
+        ],
+        "required": true
+      },
+      {
+        "id": "check3",
+        "provenance": {
+          "kind": "response",
+          "reference": "Proposed plan, items 1–2",
+          "revision": 0
+        },
+        "rationale": "Tests must pass and any skips must be reported.",
+        "priority": "normal",
+        "rank": 3,
+        "disposition": "active",
+        "review_state": "proposed",
+        "argv": [
+          "python3",
+          "-m",
+          "unittest",
+          "-v",
+          "test_wordcounter.py"
+        ],
+        "requirement_ids": [
+          "r2"
+        ],
+        "acceptance_criterion_ids": [
+          "ac2"
+        ],
+        "required": true
+      },
+      {
+        "id": "check4",
+        "provenance": {
+          "kind": "response",
+          "reference": "Proposed plan, item 2",
+          "revision": 0
+        },
+        "rationale": "",
+        "priority": "normal",
+        "rank": 4,
+        "disposition": "active",
+        "review_state": "proposed",
+        "observation": "Verify both Python files retain their current hashes and verification artifacts have been removed.",
+        "requirement_ids": [
+          "r2"
+        ],
+        "acceptance_criterion_ids": [
+          "ac2"
+        ],
+        "required": true
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "d1",
+        "provenance": {
+          "kind": "response",
+          "reference": "Proposed plan, items 1–2",
+          "revision": 0
+        },
+        "rationale": "Verify the example documented in README.md.",
+        "priority": "normal",
+        "rank": 1,
+        "disposition": "active",
+        "review_state": "proposed",
+        "task_id": "t2",
+        "prerequisite_id": "t1",
+        "kind": "requires"
+      }
+    ]
+  },
+  "shared_context": "Assignment: `planning_mutation`. Answer: “owner-turn-ledger-mutation: Which planning ledger updates are expressed in this conversation response?” Preserve exact IDs and all proposed changes, questions, permission requests, errors, findings, and verification results without resolving or reinterpreting them.\n\nSupplied context contains segments 1–3 of 8; segment 3 ends mid-field. No response to parse, owner answers, questions, permission requests, errors, findings, or observed verification results are supplied.\n\nLedger entries share: `disposition: active`, `priority: normal`, `required: true`, `review_state: proposed`, provenance `kind: response`, `revision: 0`. All supplied rationales are empty.\n\n- **ac1** — rank 1; requirement `r1`; task `t1`; provenance reference `Proposed plan, item 1`.\n  Outcome: README.md is short and covers Python 3 invocation, a reproducible example with exact output, input errors, and `python3 -m unittest -v test_wordcounter.py`. Counting rules explain LF-based lines and final unterminated lines, whitespace-separated words, and Unicode code points including whitespace and preserved `CR/LF` characters.\n- **ac2** — rank 2; requirement `r2`; task `t2`; provenance reference `Proposed plan, item 2`.\n  Outcome: The documented example output matches exactly; existing tests pass with any skips reported; both Python files retain their current hashes; verification artifacts are removed.\n- **check1** — rank 1; requirement `r1`; acceptance criterion `ac1`; provenance reference `Proposed plan, item 1`.\n  Observation: Observe that README.md contains all stated documentation topics and counting-rule details.\n- **check2** — rank 2; requirement `r2`; acceptance criterion `ac2`; provenance reference `Proposed plan, item 2`.\n  Observation: Verify the documented example output matches exactly.\n- **check3** — acceptance criterion `ac2`; argv `[\"python3\", \"-m\", \"unittest\", \"-v\", \"test_wordcounter.py\"]`; provenance reference `Proposed plan, items 1–2`. Remaining fields are not supplied.\n\nRetain the supplied proposed ledger data without resolving or reinterpreting it.\n\n**Ledger:** `context.construction_facts[1].quote.ledger`; `id: 1`, `revision: 1`, `groups: null`, `objectives: null`.\n\n**Shared metadata:** All shown checks, constraints, dependencies, and requirements have `disposition: active`, `priority: normal`, `review_state: proposed`, and provenance `{kind: response, revision: 0}`. Empty rationales remain empty.\n\n- **`checks[2]`** (ID not supplied): rank `3`; required `true`; requirement IDs `[\"r2\"]`; rationale: “Tests must pass and any skips must be reported.” Provenance reference and other fields are not supplied in these segments.\n- **`check4` / `checks[3]`**: rank `4`; required `true`; acceptance criterion IDs `[\"ac2\"]`; requirement IDs `[\"r2\"]`; observation: “Verify both Python files retain their current hashes and verification artifacts have been removed.” Rationale `\"\"`; provenance reference `\"Proposed plan, item 2\"`.\n- **`c1`**: rank `1`; rule: “Keep all work in this pilot directory; do not modify Omnidex or initialize Git.” Rationale `\"\"`; provenance reference `\"Closing scope statement\"`.\n- **`d1`**: rank `1`; kind `requires`; task ID `t2`; prerequisite ID `t1`; rationale: “Verify the example documented in README.md.” Provenance reference `\"Proposed plan, items 1–2\"`.\n- **`r1`**: rank `1`; outcome: “Add a short README.md covering Python 3 invocation, a reproducible example and exact output, counting rules, input errors, and the stated test command.” Rationale `\"\"`; provenance reference `\"Proposed plan, item 1\"`.\n- **`r2`**: rank `2`; outcome: “Verify the documented example and existing tests, report any skips, preserve both Python files' current hashes, and remove verification artifacts.” Rationale `\"\"`; provenance reference `\"Proposed plan, item 2\"`.\n- **`tasks[0]`** (ID not supplied): acceptance criterion IDs `[\"ac1\"]`; constraint IDs `[\"c1\"]`; `delete_files: []`; delivery obligation: “Add the short README.md with all stated content.” Disposition `active`. The segment ends at the `goal` field without its value.\n\nNo owner answers, questions, permission requests, observed errors, findings, verification failures, or verification results are supplied in these segments. The verification statements above are proposed obligations, not observed results.\n\nPreserve these planning_mutation facts exactly; do not resolve or reinterpret proposed changes.\n\n- Documentation scope: invocation, example output, counting rules, input errors, and testing.\n- Ledger task `t1`: priority `normal`; rank `1`; requirement IDs `[\"r1\"]`; review state `proposed`; provenance `{kind: \"response\", reference: \"Proposed plan, item 1\", revision: 0}`; rationale empty; read files `[]`; write files `[\"README.md\"]`.\n- Ledger task `t2`:\n  - Goal: “Verify the documentation and existing tests while preserving the Python files.”\n  - Delivery obligation: “Verify exact example output and passing existing tests, report skips, confirm unchanged Python-file hashes, and remove verification artifacts.”\n  - Acceptance criterion IDs `[\"ac2\"]`; constraint IDs `[\"c1\"]`; requirement IDs `[\"r2\"]`.\n  - Disposition `active`; priority `normal`; rank `2`; review state `proposed`.\n  - Provenance `{kind: \"response\", reference: \"Proposed plan, item 2\", revision: 0}`.\n  - Rationale empty; read files `[\"README.md\"]`; write files `[]`; delete files `[]`.\n- Owner turn: observed revision `1`; operation ID and owner-turn ID both `lifecycle_operation_a07469b232d6637e6891e4b2d70899d0fe4bf21977f7ac4b9d709b925f621fa5`.\n- Owner requests recording these exact current **pre-execution** baselines in the relevant ledger task context:\n  - `wordcounter.py` SHA-256 `d720deeea8d9732c3267b261ba30e5dea716e5b0939b9eb1159e4623727666ef`\n  - `test_wordcounter.py` SHA-256 `f2caaf7c165dbc7de127703d47963bbd3adeb3d05e23462fa16881e389be49de`\n- Owner constraint: “Keep the same README-and-verification scope.”",
+  "mutation_parser_response": {
+    "operations": [
+      {
+        "kind": "remove",
+        "rationale": "",
+        "target_id": ""
+      }
+    ]
+  }
+}

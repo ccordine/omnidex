@@ -1,0 +1,413 @@
+{
+  "instruction": "Build a tiny Python 3 standard-library command-line word counter in this directory. It should accept a UTF-8 text file and print line, word and character counts, handle unreadable or invalid UTF-8 files with a clean nonzero-exit error, and include automated tests and a short usage README. Words are whitespace-separated, characters are Unicode code points including whitespace and newlines, and a final nonempty unterminated line counts as a line; an empty file has zero counts. Plan it for my review before implementing. This is a disposable pilot app; do not modify Omnidex itself.",
+  "planning_response": "The directory is empty and isn’t a Git repository. No files have been changed. All work will stay in this directory; Omnidex will remain untouched.\n\nProposed plan, in order:\n\n1. Create `wordcounter.py` using only Python 3’s standard library.\n   - Accept one file path and print `Lines: N`, `Words: N`, and `Characters: N`.\n   - Decode strict UTF-8 and preserve newline characters when counting Unicode code points.\n   - Count whitespace-separated words, newline-terminated lines, and a final nonempty unterminated line. Empty files return three zeros.\n   - Report file-access and decoding errors to stderr with a nonzero exit and no traceback.\n   - Verify with small known-input CLI checks before advancing.\n\n2. Add `test_wordcounter.py` using `unittest`.\n   - Cover empty files, trailing and missing final newlines, blank lines, mixed whitespace, Unicode, CRLF preservation, missing/unreadable files, invalid UTF-8, and incorrect arguments.\n   - Verify exact counts, output streams, and exit statuses by running the CLI. Run the full suite before advancing.\n\n3. Add a short `README.md`.\n   - Document invocation, sample output, counting rules, errors, and the test command.\n   - Run the documented commands and inspect the final files for scope and consistency.\n\nDoes this plan look right to implement?",
+  "parser_response": {
+    "ledger": {
+      "id": "planning-ledger",
+      "tasks": [
+        {
+          "id": "t1",
+          "goal": "Implement the standard-library word-counting CLI and error handling.",
+          "rank": 1,
+          "group_id": "",
+          "priority": "normal",
+          "rationale": "",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "1"
+          },
+          "read_files": [],
+          "disposition": "active",
+          "write_files": [
+            "wordcounter.py"
+          ],
+          "delete_files": [],
+          "review_state": "proposed",
+          "constraint_ids": [
+            "c1"
+          ],
+          "requirement_ids": [
+            "r1",
+            "r2",
+            "r3"
+          ],
+          "delivery_obligation": "Create wordcounter.py and verify with small known-input CLI checks before advancing.",
+          "known_affected_systems": [],
+          "acceptance_criterion_ids": [
+            "ac1",
+            "ac2",
+            "ac3"
+          ]
+        },
+        {
+          "id": "t2",
+          "goal": "Test the stated counting, error, and argument cases through the CLI.",
+          "rank": 2,
+          "group_id": "",
+          "priority": "normal",
+          "rationale": "",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "2"
+          },
+          "read_files": [],
+          "disposition": "active",
+          "write_files": [
+            "test_wordcounter.py"
+          ],
+          "delete_files": [],
+          "review_state": "proposed",
+          "constraint_ids": [
+            "c1"
+          ],
+          "requirement_ids": [
+            "r4"
+          ],
+          "delivery_obligation": "Add unittest CLI coverage and run the full suite before advancing.",
+          "known_affected_systems": [],
+          "acceptance_criterion_ids": [
+            "ac4"
+          ]
+        },
+        {
+          "id": "t3",
+          "goal": "Document usage, output, counting rules, errors, and testing.",
+          "rank": 3,
+          "group_id": "",
+          "priority": "normal",
+          "rationale": "",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "3"
+          },
+          "read_files": [],
+          "disposition": "active",
+          "write_files": [
+            "README.md"
+          ],
+          "delete_files": [],
+          "review_state": "proposed",
+          "constraint_ids": [
+            "c1"
+          ],
+          "requirement_ids": [
+            "r5"
+          ],
+          "delivery_obligation": "Add the short usage README, run its documented commands, and inspect final files for scope and consistency.",
+          "known_affected_systems": [],
+          "acceptance_criterion_ids": [
+            "ac5"
+          ]
+        }
+      ],
+      "checks": [
+        {
+          "id": "ch1",
+          "argv": [],
+          "rank": 1,
+          "priority": "normal",
+          "required": false,
+          "rationale": "",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "1"
+          },
+          "disposition": "active",
+          "observation": "Verify the CLI obligations with small known-input CLI checks before advancing.",
+          "review_state": "proposed",
+          "requirement_ids": [
+            "r1",
+            "r2",
+            "r3"
+          ],
+          "acceptance_criterion_ids": [
+            "ac1",
+            "ac2",
+            "ac3"
+          ]
+        },
+        {
+          "id": "ch2",
+          "argv": [],
+          "rank": 2,
+          "priority": "normal",
+          "required": false,
+          "rationale": "",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "2"
+          },
+          "disposition": "active",
+          "observation": "Run the full unittest suite before advancing; verify exact counts, output streams, and exit statuses by running the CLI across the stated cases.",
+          "review_state": "proposed",
+          "requirement_ids": [
+            "r4"
+          ],
+          "acceptance_criterion_ids": [
+            "ac4"
+          ]
+        },
+        {
+          "id": "ch3",
+          "argv": [],
+          "rank": 3,
+          "priority": "normal",
+          "required": false,
+          "rationale": "",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "3"
+          },
+          "disposition": "active",
+          "observation": "Run the documented commands and inspect the final files for scope and consistency, including the stated README content.",
+          "review_state": "proposed",
+          "requirement_ids": [
+            "r5"
+          ],
+          "acceptance_criterion_ids": [
+            "ac5"
+          ]
+        }
+      ],
+      "groups": [],
+      "revision": 0,
+      "objectives": [],
+      "constraints": [
+        {
+          "id": "c1",
+          "rank": 1,
+          "rule": "All work stays in this directory; Omnidex remains untouched.",
+          "priority": "normal",
+          "rationale": "",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "opening"
+          },
+          "disposition": "active",
+          "review_state": "proposed"
+        }
+      ],
+      "dependencies": [
+        {
+          "id": "d1",
+          "kind": "requires",
+          "rank": 1,
+          "task_id": "t2",
+          "priority": "normal",
+          "rationale": "Verify small known-input CLI checks before advancing.",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "Proposed plan, in order"
+          },
+          "disposition": "active",
+          "review_state": "proposed",
+          "prerequisite_id": "t1"
+        },
+        {
+          "id": "d2",
+          "kind": "requires",
+          "rank": 2,
+          "task_id": "t3",
+          "priority": "normal",
+          "rationale": "Run the full suite before advancing.",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "Proposed plan, in order"
+          },
+          "disposition": "active",
+          "review_state": "proposed",
+          "prerequisite_id": "t2"
+        }
+      ],
+      "requirements": [
+        {
+          "id": "r1",
+          "rank": 1,
+          "outcome": "Create wordcounter.py using only Python 3’s standard library; accept one file path and print Lines: N, Words: N, and Characters: N.",
+          "priority": "normal",
+          "rationale": "",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "1"
+          },
+          "disposition": "active",
+          "review_state": "proposed"
+        },
+        {
+          "id": "r2",
+          "rank": 2,
+          "outcome": "Decode strict UTF-8, preserve newline characters when counting Unicode code points, count whitespace-separated words and newline-terminated lines plus a final nonempty unterminated line, and return three zeros for empty files.",
+          "priority": "normal",
+          "rationale": "",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "1"
+          },
+          "disposition": "active",
+          "review_state": "proposed"
+        },
+        {
+          "id": "r3",
+          "rank": 3,
+          "outcome": "Report file-access and decoding errors to stderr with a nonzero exit and no traceback.",
+          "priority": "normal",
+          "rationale": "",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "1"
+          },
+          "disposition": "active",
+          "review_state": "proposed"
+        },
+        {
+          "id": "r4",
+          "rank": 4,
+          "outcome": "Add test_wordcounter.py using unittest, covering empty files, trailing and missing final newlines, blank lines, mixed whitespace, Unicode, CRLF preservation, missing/unreadable files, invalid UTF-8, and incorrect arguments; verify exact counts, output streams, and exit statuses by running the CLI.",
+          "priority": "normal",
+          "rationale": "",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "2"
+          },
+          "disposition": "active",
+          "review_state": "proposed"
+        },
+        {
+          "id": "r5",
+          "rank": 5,
+          "outcome": "Add a short README.md documenting invocation, sample output, counting rules, errors, and the test command; run documented commands and inspect final files for scope and consistency.",
+          "priority": "normal",
+          "rationale": "",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "3"
+          },
+          "disposition": "active",
+          "review_state": "proposed"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "ac1",
+          "rank": 1,
+          "outcome": "wordcounter.py uses only Python 3’s standard library, accepts one file path, and prints Lines: N, Words: N, and Characters: N.",
+          "priority": "normal",
+          "required": false,
+          "task_ids": [
+            "t1"
+          ],
+          "rationale": "",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "1"
+          },
+          "disposition": "active",
+          "review_state": "proposed",
+          "requirement_ids": [
+            "r1"
+          ]
+        },
+        {
+          "id": "ac2",
+          "rank": 2,
+          "outcome": "Strict UTF-8 decoding preserves newline characters in Unicode-code-point counts; words are whitespace-separated; lines include newline-terminated lines and a final nonempty unterminated line; empty files return three zeros.",
+          "priority": "normal",
+          "required": false,
+          "task_ids": [
+            "t1"
+          ],
+          "rationale": "",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "1"
+          },
+          "disposition": "active",
+          "review_state": "proposed",
+          "requirement_ids": [
+            "r2"
+          ]
+        },
+        {
+          "id": "ac3",
+          "rank": 3,
+          "outcome": "File-access and decoding errors go to stderr with a nonzero exit and no traceback.",
+          "priority": "normal",
+          "required": false,
+          "task_ids": [
+            "t1"
+          ],
+          "rationale": "",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "1"
+          },
+          "disposition": "active",
+          "review_state": "proposed",
+          "requirement_ids": [
+            "r3"
+          ]
+        },
+        {
+          "id": "ac4",
+          "rank": 4,
+          "outcome": "test_wordcounter.py uses unittest and runs the CLI to verify exact counts, output streams, and exit statuses for empty files, trailing and missing final newlines, blank lines, mixed whitespace, Unicode, CRLF preservation, missing/unreadable files, invalid UTF-8, and incorrect arguments.",
+          "priority": "normal",
+          "required": false,
+          "task_ids": [
+            "t2"
+          ],
+          "rationale": "",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "2"
+          },
+          "disposition": "active",
+          "review_state": "proposed",
+          "requirement_ids": [
+            "r4"
+          ]
+        },
+        {
+          "id": "ac5",
+          "rank": 5,
+          "outcome": "A short README.md documents invocation, sample output, counting rules, errors, and the test command; documented commands run and final files are inspected for scope and consistency.",
+          "priority": "normal",
+          "required": false,
+          "task_ids": [
+            "t3"
+          ],
+          "rationale": "",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "3"
+          },
+          "disposition": "active",
+          "review_state": "proposed",
+          "requirement_ids": [
+            "r5"
+          ]
+        }
+      ]
+    }
+  },
+  "freeze_error": "coding ledger requires exactly one active objective for frozen workload authority"
+}

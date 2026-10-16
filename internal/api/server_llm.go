@@ -135,6 +135,7 @@ func (s *Server) submitJobFeedback(w http.ResponseWriter, r *http.Request, jobID
 	result, err := s.repo.SubmitJobFeedback(r.Context(), queue.SubmitJobFeedbackCommand{
 		ExpectedGeneration:     req.ExpectedGeneration,
 		ExpectedWaitingAttempt: req.ExpectedWaitingAttempt,
+		ExpectedInputID:        req.ExpectedInputID,
 		OperationID:            req.OperationID, JobID: jobID, Feedback: req.Feedback,
 		WorkspaceRoot: req.WorkspaceRoot.Value, WorkspaceIdentity: req.WorkspaceIdentity.Value,
 	})
@@ -172,7 +173,7 @@ func (s *Server) interruptJob(w http.ResponseWriter, r *http.Request, jobID int6
 		writeError(w, lifecycleControlBodyStatus(err), err.Error())
 		return
 	}
-	if req.ExpectedGeneration != nil || req.ExpectedWaitingAttempt != nil {
+	if req.ExpectedGeneration != nil || req.ExpectedWaitingAttempt != nil || req.ExpectedInputID != nil {
 		writeError(w, http.StatusBadRequest, "expected_generation applies only to feedback")
 		return
 	}

@@ -21,7 +21,14 @@ func (r *nativeRuntimeV3) acquireWorkspaceMutationFence(root string) error {
 		}
 		return nil
 	}
-	scope, err := r.svc.workspaceScopeForV3Job(r.ctx, r.claim.Job)
+	nativeExecution := r.claim.Step.Action == "v3_coding"
+	var scope v3WorkspaceScope
+	var err error
+	if nativeExecution {
+		scope, err = workspaceAuthorityForV3Job(r.claim.Job)
+	} else {
+		scope, err = r.svc.workspaceScopeForV3Job(r.ctx, r.claim.Job)
+	}
 	if err != nil {
 		return err
 	}
@@ -29,7 +36,7 @@ func (r *nativeRuntimeV3) acquireWorkspaceMutationFence(root string) error {
 		return fmt.Errorf("workspace acquisition differs from its exact job root")
 	}
 	var fence workspacefacts.Access
-	if r.claim.Job.Pipeline == model.PipelineChat {
+	if r.claim.Job.Pipeline == model.PipelineChat && !nativeExecution {
 		fence, err = r.svc.workspaceConnections.Acquire(r.ctx, scope.Root, scope.Identity)
 	} else {
 		fence, err = workspacefacts.AcquireMutationFence(r.ctx, root)

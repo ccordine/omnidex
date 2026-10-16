@@ -39,7 +39,7 @@ func renderUIAdminCodingAgents() string {
 	body.WriteString(`<div data-controller="coding-agent-settings" data-action="coding-agent-settings:status->admin#receiveStatus" class="space-y-4">`)
 	body.WriteString(`<p class="text-xs text-zinc-500">Applies to new jobs. Codex models come from your account; Refresh reloads the catalog. Update changes the installed Codex CLI.</p>`)
 	body.WriteString(`<div class="space-y-3">`)
-	for _, role := range []struct{ key, label string }{{"planner", "Task planner"}, {"executor", "Executor"}, {"reviewer", "Reviewer"}} {
+	for _, role := range []struct{ key, label string }{{"planner", "Planning chat"}, {"ledger_parser", "Response parser"}, {"executor", "Executor"}, {"reviewer", "Reviewer"}} {
 		body.WriteString(`<fieldset class="grid min-w-0 gap-3 rounded-lg border border-white/10 p-3 sm:grid-cols-3"><legend class="px-1 text-sm text-zinc-300">` + role.label + `</legend>`)
 		for _, field := range []struct{ key, label string }{{"model", "Model"}, {"effort", "Effort"}, {"service_tier", "Speed"}} {
 			action := `change->coding-agent-settings#changed`

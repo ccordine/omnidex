@@ -29,6 +29,9 @@ func (r *Repository) MarkCodingLedgerReviewReady(ctx context.Context, authority 
 	if locked.StepStatus != model.StepStatusRunning || locked.JobStatus != model.JobStatusRunning {
 		return staleStepAttemptError(authority, "coding ledger review writer is not running", nil)
 	}
+	if err := requireNoPendingChannelSessionMessagesTx(ctx, tx, authority.JobID, authority.Generation); err != nil {
+		return err
+	}
 	var exists bool
 	if err := tx.QueryRow(ctx, `SELECT EXISTS(
 		SELECT 1 FROM coding_ledgers ledger

@@ -3,6 +3,8 @@ package codingagent
 import (
 	"fmt"
 	"strings"
+
+	"github.com/gryph/omnidex/internal/model"
 )
 
 func (task Task) Validate() error {
@@ -26,7 +28,7 @@ func (task Task) Validate() error {
 	read := map[string]bool{}
 	deleted := map[string]bool{}
 	for _, file := range task.WriteFiles {
-		if err := ValidatePath(file); err != nil {
+		if err := model.ValidateTaskFileReference(file); err != nil {
 			return err
 		}
 		if write[file] {
@@ -35,26 +37,20 @@ func (task Task) Validate() error {
 		write[file] = true
 	}
 	for _, file := range task.DeleteFiles {
-		if err := ValidatePath(file); err != nil {
+		if err := model.ValidateTaskFileReference(file); err != nil {
 			return err
 		}
 		if deleted[file] {
 			return fmt.Errorf("task packet repeats delete file %q", file)
 		}
-		if write[file] {
-			return fmt.Errorf("task packet both writes and deletes %q", file)
-		}
 		deleted[file] = true
 	}
 	for _, file := range task.ReadFiles {
-		if err := ValidatePath(file); err != nil {
+		if err := model.ValidateTaskFileReference(file); err != nil {
 			return err
 		}
 		if read[file] {
 			return fmt.Errorf("task packet repeats read file %q", file)
-		}
-		if write[file] || deleted[file] {
-			return fmt.Errorf("task packet assigns file %q to multiple access classes", file)
 		}
 		read[file] = true
 	}
@@ -69,11 +65,8 @@ func (task Task) Validate() error {
 }
 
 func ValidateReview(taskIDs map[string]Task, result ReviewResult, requirements ...Requirement) error {
-	if result.Findings == nil || result.Questions == nil {
-		return fmt.Errorf("review requires findings and questions arrays")
-	}
-	if err := validateTextList(result.Questions, "questions"); err != nil {
-		return err
+	if result.Findings == nil {
+		return fmt.Errorf("review requires a findings array")
 	}
 	if strings.TrimSpace(result.Verification) == "" {
 		return fmt.Errorf("review requires concrete verification text")
@@ -93,12 +86,8 @@ func ValidateReview(taskIDs map[string]Task, result ReviewResult, requirements .
 			return fmt.Errorf("review cannot introduce a new acceptance requirement")
 		}
 		if finding.File != "" {
-			if err := ValidatePath(finding.File); err != nil {
+			if err := model.ValidateTaskFileReference(finding.File); err != nil {
 				return fmt.Errorf("review finding file: %w", err)
-			}
-			allowed := uniqueFiles(append(append(append([]string{}, task.ReadFiles...), task.WriteFiles...), task.DeleteFiles...))
-			if !contains(allowed, finding.File) {
-				return fmt.Errorf("review finding escaped its task packet")
 			}
 		}
 	}

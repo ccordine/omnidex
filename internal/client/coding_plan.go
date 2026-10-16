@@ -89,14 +89,8 @@ func projectCodingLedgerForTerminal(revision ledgerapi.CodingLedgerRevision) (mo
 		}
 		add(value.LedgerItem, "check", statement)
 	}
-	for _, value := range revision.Ledger.DecisionsAndQuestions {
-		add(value.LedgerItem, string(value.Kind), value.Prompt)
-	}
 	for _, value := range revision.Ledger.Dependencies {
 		add(value.LedgerItem, "dependency", string(value.TaskID)+" "+string(value.Kind)+" "+string(value.PrerequisiteID))
-	}
-	for _, value := range revision.Ledger.Findings {
-		add(value.LedgerItem, "finding", value.Observation)
 	}
 	if err := plan.Validate(); err != nil {
 		return model.CodingPlan{}, err

@@ -86,10 +86,18 @@ type Step struct {
 	UpdatedAt              time.Time  `json:"updated_at"`
 }
 
+type CodingInputDisposition string
+
+const (
+	CodingInputReply  CodingInputDisposition = "reply"
+	CodingInputReplan CodingInputDisposition = "replan"
+)
+
 type JobDetails struct {
-	Job        Job               `json:"job"`
-	Steps      []Step            `json:"steps"`
-	AgentPause *CodingAgentPause `json:"agent_pause,omitempty"`
+	Job                    Job                    `json:"job"`
+	Steps                  []Step                 `json:"steps"`
+	ExecutionInputID       *int64                 `json:"execution_input_id,omitempty"`
+	CodingInputDisposition CodingInputDisposition `json:"coding_input_disposition,omitempty"`
 }
 
 type ClaimedStep struct {
@@ -198,9 +206,16 @@ type ChannelMessageTurnState struct {
 }
 
 type ChannelMessagePage struct {
-	Messages     []ChannelMessage `json:"messages"`
-	NextBeforeID *int64           `json:"next_before_id,omitempty"`
-	HasMore      bool             `json:"has_more"`
+	Messages           []ChannelMessage     `json:"messages"`
+	NextBeforeID       *int64               `json:"next_before_id,omitempty"`
+	HasMore            bool                 `json:"has_more"`
+	ActivePlanningTurn *ChannelPlanningTurn `json:"-"`
+}
+
+type ChannelPlanningTurn struct {
+	MessageID int64
+	JobID     int64
+	Status    string
 }
 
 type DataSourceChannel struct {

@@ -170,6 +170,14 @@ func applyReplanJobTx(
 	if err != nil {
 		return model.Job{}, 0, err
 	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO ai_channel_messages(channel_id,role,content)
+		SELECT metadata->>'channel_id','user',$2 FROM jobs
+		WHERE id=$1 AND pipeline='chat' AND metadata->>'channel_mode'='assistant'
+		  AND metadata->'coding_execution'->>'mode'='agents'
+	`, job.ID, command.Feedback); err != nil {
+		return model.Job{}, 0, err
+	}
 	if err := retireChannelSessionMessagesTx(ctx, tx, job, currentGeneration, command.OperationID); err != nil {
 		return model.Job{}, 0, err
 	}

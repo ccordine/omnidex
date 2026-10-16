@@ -45,6 +45,9 @@ func (repository *Repository) loadCodingAgentConfiguration(ctx context.Context, 
 	if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
 		return configuration, "", fmt.Errorf("stored coding-agent settings contain trailing content")
 	}
+	if configuration.LedgerParser == (codingagent.Route{}) {
+		configuration.LedgerParser = repository.codingAgents.LedgerParser
+	}
 	if configuration.Mode != codingagent.Agents {
 		return configuration, "", fmt.Errorf("stored coding-agent settings require Agents mode")
 	}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/model"
@@ -12,14 +11,12 @@ import (
 
 const (
 	initialPlanningQuestion  = "initial-ledger-proposal"
-	targetPlanningQuestion   = "owner-turn-target-resolution"
 	mutationPlanningQuestion = "owner-turn-ledger-mutation"
-	defaultPlanningItemLimit = 64
 )
 
 // PlanningTurn is the complete authority for one conversational edit. The
-// observed revision is supplied by the client and is never inferred from model
-// output or conversation memory.
+// observed revision comes from the persisted proposal, never model output or
+// conversation memory.
 type PlanningTurn struct {
 	OperationID      string `json:"operation_id"`
 	OwnerTurnID      string `json:"owner_turn_id"`
@@ -41,8 +38,8 @@ func (turn PlanningTurn) validate(initial bool) error {
 	return nil
 }
 
-// InitialPlanningProposal is the only provider result allowed to contain a
-// complete ledger. Subsequent provider calls return LedgerMutation instead.
+// InitialPlanningProposal contains the first parsed draft and code-bound turn
+// provenance. Later parsing produces changes against the persisted draft.
 type InitialPlanningProposal struct {
 	Ledger               EngineeringLedger          `json:"ledger"`
 	OwnerTurnDisposition model.OwnerTurnDisposition `json:"owner_turn_disposition"`
@@ -77,7 +74,7 @@ func DirectPlanningMutation(turn PlanningTurn, action DirectPlanningAction) (Led
 		OperationID: turn.OperationID, BaseRevision: turn.ObservedRevision,
 		OwnerTurnID: turn.OwnerTurnID,
 		OwnerTurnDisposition: model.OwnerTurnDisposition{
-			Kind: model.OwnerTurnRepresented, ItemIDs: []model.LedgerItemID{action.TargetID},
+			Statements: []model.OwnerStatementDisposition{{Kind: model.OwnerTurnRepresented, ItemIDs: []model.LedgerItemID{action.TargetID}}},
 		},
 		Operations: []model.LedgerMutationOperation{operation},
 	}
@@ -87,11 +84,8 @@ func DirectPlanningMutation(turn PlanningTurn, action DirectPlanningAction) (Led
 	return mutation, nil
 }
 
-const maxInitialPlanningContractAttempts = 3
-
-// ProposePlanningLedger is the one station permitted to return a full ledger.
-// A proposal that fails the deterministic contract is never persisted; a
-// bounded fresh replacement receives only the exact code validation error.
+// ProposePlanningLedger parses the ordinary planning reply once for the
+// existing ledger repository to persist.
 func (controller *Controller) ProposePlanningLedger(ctx context.Context, turn PlanningTurn) (InitialPlanningProposal, error) {
 	if err := controller.validatePlanning(); err != nil {
 		return InitialPlanningProposal{}, err
@@ -99,63 +93,44 @@ func (controller *Controller) ProposePlanningLedger(ctx context.Context, turn Pl
 	if err := turn.validate(true); err != nil {
 		return InitialPlanningProposal{}, err
 	}
-	files, err := controller.Environment.ReadFiles(ctx)
+	response, err := controller.planningResponse(ctx, turn, nil)
 	if err != nil {
 		return InitialPlanningProposal{}, err
 	}
-	sort.Strings(files)
 	call := controller.planningAssignment(PlanningInitial, initialPlanningQuestion,
-		"What normalized engineering ledger exactly represents this initial owner objective?", turn, nil)
-	call.Requirements, call.Objective, call.ReadFiles = controller.Requirements, controller.Objective, files
-	call.ArtifactBindings, call.PlanningEnvironment = controller.ArtifactBindings, controller.PlanningEnvironment
-	call.ConstructionFacts = append(call.ConstructionFacts, controller.ConstructionFacts...)
-
-	var contractErr error
-	for attempt := 1; attempt <= maxInitialPlanningContractAttempts; attempt++ {
-		if contractErr != nil {
-			call.ValidationNotes = []string{"Code rejected the prior complete proposal: " + contractErr.Error() + ". Return a complete replacement that satisfies this exact contract."}
-		}
-		result, err := controller.invoke(ctx, call, int64(attempt))
-		if err != nil {
-			return InitialPlanningProposal{}, err
-		}
-		var proposal InitialPlanningProposal
-		if err := decodeContract(result.Content, &proposal); err != nil {
-			contractErr = err
-			continue
-		}
-		proposal.Ledger.Revision = 1
-		if err := validateInitialPlanningProposal(proposal); err != nil {
-			contractErr = err
-			continue
-		}
-		return proposal, nil
+		"Which planning ledger items are expressed in this conversation response?", turn, nil)
+	call.Route = controller.Configuration.LedgerParser
+	call.PlanningResponse = response
+	call.ValidationNotes, err = controller.planningValidationNotes(ctx, turn.OperationID)
+	if err != nil {
+		return InitialPlanningProposal{}, err
 	}
-	return InitialPlanningProposal{}, fmt.Errorf("initial planning proposal remained invalid after %d attempts: %w", maxInitialPlanningContractAttempts, contractErr)
+	result, err := controller.invoke(ctx, call, 1)
+	if err != nil {
+		return InitialPlanningProposal{}, err
+	}
+	var parsed struct {
+		Ledger EngineeringLedger `json:"ledger"`
+	}
+	if err := decodeContract(result.Content, &parsed); err != nil {
+		return InitialPlanningProposal{}, controller.rejectPlanningParse(ctx, turn, PlanningInitial, result.CallID, err)
+	}
+	ledger := parsed.Ledger
+	ledger.ID, ledger.Revision = fmt.Sprintf("planning-%d", controller.JobID), 1
+	requirePlanningVerification(&ledger)
+	for _, item := range planningItemPointers(&ledger) {
+		if item.Disposition == model.LedgerDispositionActive {
+			item.ReviewState = model.LedgerReviewProposed
+		}
+	}
+	if err := ledger.ValidateDraft(); err != nil {
+		return InitialPlanningProposal{}, controller.rejectPlanningParse(ctx, turn, PlanningInitial, result.CallID, err)
+	}
+	return InitialPlanningProposal{Ledger: ledger, OwnerTurnDisposition: parsedPlanningDisposition(ledger, nil)}, nil
 }
 
-func validateInitialPlanningProposal(proposal InitialPlanningProposal) error {
-	if err := proposal.Ledger.Validate(); err != nil {
-		return fmt.Errorf("initial planning ledger: %w", err)
-	}
-	activeObjectives := 0
-	for _, objective := range proposal.Ledger.Objectives {
-		if objective.Disposition == model.LedgerDispositionActive {
-			activeObjectives++
-		}
-	}
-	if activeObjectives != 1 {
-		return fmt.Errorf("initial planning ledger requires exactly one active objective")
-	}
-	if err := validateInitialTurnDisposition(proposal.Ledger, proposal.OwnerTurnDisposition); err != nil {
-		return err
-	}
-	return nil
-}
-
-// PlanPlanningMutation asks one narrow semantic question over a bounded slice
-// of the exact persisted revision. The provider cannot choose operation, turn,
-// or base-revision authority.
+// PlanPlanningMutation continues the chat with the current ledger, then asks
+// the separate parser only for ledger operations present in the reply.
 func (controller *Controller) PlanPlanningMutation(ctx context.Context, ledger EngineeringLedger, turn PlanningTurn) (LedgerMutation, error) {
 	if err := controller.validatePlanning(); err != nil {
 		return LedgerMutation{}, err
@@ -166,146 +141,41 @@ func (controller *Controller) PlanPlanningMutation(ctx context.Context, ledger E
 	if ledger.Revision != turn.ObservedRevision {
 		return LedgerMutation{}, fmt.Errorf("planning turn observed revision %d but database revision is %d", turn.ObservedRevision, ledger.Revision)
 	}
-	if err := ledger.ValidateDraft(); err != nil {
-		return LedgerMutation{}, err
-	}
-	relevant, err := controller.resolvePlanningTargets(ctx, ledger, turn)
+	response, err := controller.planningResponse(ctx, turn, &ledger)
 	if err != nil {
 		return LedgerMutation{}, err
 	}
-	if len(relevant) > defaultPlanningItemLimit {
-		return LedgerMutation{}, fmt.Errorf("owner turn resolves to %d explicit ledger records; split it into turns of at most %d records", len(relevant), defaultPlanningItemLimit)
-	}
-	contextLedger := BoundedPlanningLedger(ledger, relevant, defaultPlanningItemLimit)
 	call := controller.planningAssignment(PlanningMutation, mutationPlanningQuestion,
-		"Which typed ledger operations exactly represent this owner turn?", turn, &contextLedger)
+		"Which planning ledger updates are expressed in this conversation response?", turn, &ledger)
+	call.Route = controller.Configuration.LedgerParser
+	call.PlanningResponse = response
+	call.ValidationNotes, err = controller.planningValidationNotes(ctx, turn.OperationID)
+	if err != nil {
+		return LedgerMutation{}, err
+	}
 	result, err := controller.invoke(ctx, call, 1)
 	if err != nil {
 		return LedgerMutation{}, err
 	}
-	var mutation LedgerMutation
-	if err := decodeContract(result.Content, &mutation); err != nil {
-		return LedgerMutation{}, err
+	operations, err := decodePlanningOperations(result.Content, ledger)
+	if err != nil {
+		return LedgerMutation{}, controller.rejectPlanningParse(ctx, turn, PlanningMutation, result.CallID, err)
 	}
-	mutation.OperationID = turn.OperationID
-	mutation.OwnerTurnID = turn.OwnerTurnID
-	mutation.BaseRevision = turn.ObservedRevision
-	if err := ValidateLedgerMutation(ledger.Revision, mutation); err != nil {
-		return LedgerMutation{}, err
+	mutation := LedgerMutation{
+		OperationID: turn.OperationID, OwnerTurnID: turn.OwnerTurnID,
+		BaseRevision: turn.ObservedRevision, Operations: operations,
+		OwnerTurnDisposition: parsedPlanningDisposition(ledger, operations),
+	}
+	if len(operations) > 0 {
+		next, err := ApplyPlanningMutation(ledger, mutation)
+		if err == nil {
+			err = validateAddedConstraintConsumers(next, operations, controller.CompletedTaskIDs)
+		}
+		if err != nil {
+			return LedgerMutation{}, controller.rejectPlanningParse(ctx, turn, PlanningMutation, result.CallID, err)
+		}
 	}
 	return mutation, nil
-}
-
-type PlanningTargetSelection struct {
-	Question     string               `json:"question"`
-	BaseRevision int64                `json:"base_revision"`
-	ItemIDs      []model.LedgerItemID `json:"item_ids"`
-}
-
-// resolvePlanningTargets performs semantic reference resolution before the
-// mutation context is bounded. Each provider call sees at most one partition
-// and answers only whether records in that partition are referenced.
-func (controller *Controller) resolvePlanningTargets(ctx context.Context, ledger EngineeringLedger, turn PlanningTurn) ([]model.LedgerItemID, error) {
-	resolved := PlanningRelevantItemIDs(ledger, turn.Text)
-	items := planningItemPointers(&ledger)
-	if len(items) <= defaultPlanningItemLimit {
-		return resolved, nil
-	}
-	seen := make(map[model.LedgerItemID]bool, len(resolved))
-	for _, id := range resolved {
-		seen[id] = true
-	}
-	for offset := 0; offset < len(items); offset += defaultPlanningItemLimit {
-		end := offset + defaultPlanningItemLimit
-		if end > len(items) {
-			end = len(items)
-		}
-		partitionIDs := make([]model.LedgerItemID, 0, end-offset)
-		allowed := make(map[model.LedgerItemID]bool, end-offset)
-		for _, item := range items[offset:end] {
-			partitionIDs = append(partitionIDs, item.ID)
-			allowed[item.ID] = true
-		}
-		partition := BoundedPlanningLedger(ledger, partitionIDs, defaultPlanningItemLimit)
-		question := fmt.Sprintf("Which records in persisted ledger partition %d/%d are semantically referenced by this exact owner turn?", offset/defaultPlanningItemLimit+1, (len(items)+defaultPlanningItemLimit-1)/defaultPlanningItemLimit)
-		call := controller.planningAssignment(PlanningTarget, targetPlanningQuestion, question, turn, &partition)
-		result, err := controller.invoke(ctx, call, 1)
-		if err != nil {
-			return nil, err
-		}
-		var selection PlanningTargetSelection
-		if err := decodeContract(result.Content, &selection); err != nil {
-			return nil, err
-		}
-		if selection.Question != targetPlanningQuestion || selection.BaseRevision != ledger.Revision {
-			return nil, fmt.Errorf("planning target selection does not answer %q at revision %d", targetPlanningQuestion, ledger.Revision)
-		}
-		for _, id := range selection.ItemIDs {
-			if !allowed[id] {
-				return nil, fmt.Errorf("planning target selection returned item %q outside its bounded partition", id)
-			}
-			if !seen[id] {
-				seen[id] = true
-				resolved = append(resolved, id)
-			}
-		}
-	}
-	return resolved, nil
-}
-
-// PlanningRelevantItemIDs resolves only exact stable identities. Semantic
-// references and paraphrases are resolved by bounded PlanningTarget calls.
-func PlanningRelevantItemIDs(ledger EngineeringLedger, exactTurn string) []model.LedgerItemID {
-	seen := map[model.LedgerItemID]bool{}
-	result := make([]model.LedgerItemID, 0)
-	for _, reference := range planningItemReferences(&ledger) {
-		matched := reference.id != "" && strings.Contains(exactTurn, string(reference.id))
-		if matched && !seen[reference.id] {
-			seen[reference.id] = true
-			result = append(result, reference.id)
-		}
-	}
-	return result
-}
-
-type planningItemReference struct {
-	id   model.LedgerItemID
-	text []string
-}
-
-func planningItemReferences(ledger *EngineeringLedger) []planningItemReference {
-	result := make([]planningItemReference, 0, len(planningItemPointers(ledger)))
-	for _, value := range ledger.Objectives {
-		result = append(result, planningItemReference{value.ID, []string{value.Outcome}})
-	}
-	for _, value := range ledger.Requirements {
-		result = append(result, planningItemReference{value.ID, []string{value.Outcome}})
-	}
-	for _, value := range ledger.Constraints {
-		result = append(result, planningItemReference{value.ID, []string{value.Rule}})
-	}
-	for _, value := range ledger.Groups {
-		result = append(result, planningItemReference{value.ID, []string{value.Title}})
-	}
-	for _, value := range ledger.Tasks {
-		result = append(result, planningItemReference{value.ID, []string{value.Goal, value.DeliveryObligation}})
-	}
-	for _, value := range ledger.AcceptanceCriteria {
-		result = append(result, planningItemReference{value.ID, []string{value.Outcome}})
-	}
-	for _, value := range ledger.Checks {
-		result = append(result, planningItemReference{value.ID, []string{value.Observation, strings.Join(value.Argv, " ")}})
-	}
-	for _, value := range ledger.DecisionsAndQuestions {
-		result = append(result, planningItemReference{value.ID, []string{value.Prompt, value.Answer}})
-	}
-	for _, value := range ledger.Dependencies {
-		result = append(result, planningItemReference{value.ID, nil})
-	}
-	for _, value := range ledger.Findings {
-		result = append(result, planningItemReference{value.ID, []string{value.Observation}})
-	}
-	return result
 }
 
 func (controller *Controller) planningAssignment(role Role, name, question string, turn PlanningTurn, ledger *EngineeringLedger) Assignment {
@@ -313,12 +183,9 @@ func (controller *Controller) planningAssignment(role Role, name, question strin
 	call.PlanningQuestionID = name
 	call.PlanningBaseRevision = turn.ObservedRevision
 	payload := struct {
-		OwnerTurn *PlanningTurn      `json:"owner_turn,omitempty"`
+		OwnerTurn *PlanningTurn      `json:"owner_turn"`
 		Ledger    *EngineeringLedger `json:"ledger,omitempty"`
-	}{Ledger: ledger}
-	if role != PlanningAudit {
-		payload.OwnerTurn = &turn
-	}
+	}{OwnerTurn: &turn, Ledger: ledger}
 	encoded, _ := json.Marshal(payload)
 	call.ConstructionFacts = []ConstructionFact{
 		{Kind: "engineering_question", Quote: name + ": " + question},
@@ -327,9 +194,8 @@ func (controller *Controller) planningAssignment(role Role, name, question strin
 	return call
 }
 
-// ApplyPlanningMutation is the code-owned mechanical preview used before a
-// repository transaction and coverage call. The repository remains the durable
-// transaction authority.
+// ApplyPlanningMutation previews the parsed operations before the repository
+// transaction. The repository remains the durable transaction authority.
 func ApplyPlanningMutation(current EngineeringLedger, mutation LedgerMutation) (EngineeringLedger, error) {
 	if err := current.ValidateDraft(); err != nil {
 		return EngineeringLedger{}, err
@@ -440,12 +306,8 @@ func planningMutationItemID(item *model.LedgerMutationItem) model.LedgerItemID {
 		return item.AcceptanceCriterion.ID
 	case item.Check != nil:
 		return item.Check.ID
-	case item.DecisionQuestion != nil:
-		return item.DecisionQuestion.ID
 	case item.Dependency != nil:
 		return item.Dependency.ID
-	case item.Finding != nil:
-		return item.Finding.ID
 	default:
 		return ""
 	}
@@ -540,12 +402,8 @@ func appendPlanningItem(ledger *EngineeringLedger, item *model.LedgerMutationIte
 		ledger.AcceptanceCriteria = append(ledger.AcceptanceCriteria, *item.AcceptanceCriterion)
 	case item.Check != nil:
 		ledger.Checks = append(ledger.Checks, *item.Check)
-	case item.DecisionQuestion != nil:
-		ledger.DecisionsAndQuestions = append(ledger.DecisionsAndQuestions, *item.DecisionQuestion)
 	case item.Dependency != nil:
 		ledger.Dependencies = append(ledger.Dependencies, *item.Dependency)
-	case item.Finding != nil:
-		ledger.Findings = append(ledger.Findings, *item.Finding)
 	}
 }
 
@@ -600,24 +458,10 @@ func replacePlanningItem(ledger *EngineeringLedger, id model.LedgerItemID, item 
 				return true
 			}
 		}
-	case item.DecisionQuestion != nil:
-		for i := range ledger.DecisionsAndQuestions {
-			if ledger.DecisionsAndQuestions[i].ID == id {
-				ledger.DecisionsAndQuestions[i] = *item.DecisionQuestion
-				return true
-			}
-		}
 	case item.Dependency != nil:
 		for i := range ledger.Dependencies {
 			if ledger.Dependencies[i].ID == id {
 				ledger.Dependencies[i] = *item.Dependency
-				return true
-			}
-		}
-	case item.Finding != nil:
-		for i := range ledger.Findings {
-			if ledger.Findings[i].ID == id {
-				ledger.Findings[i] = *item.Finding
 				return true
 			}
 		}
@@ -657,63 +501,8 @@ func planningItemPointers(ledger *EngineeringLedger) []*model.LedgerItem {
 	for i := range ledger.Checks {
 		items = append(items, &ledger.Checks[i].LedgerItem)
 	}
-	for i := range ledger.DecisionsAndQuestions {
-		items = append(items, &ledger.DecisionsAndQuestions[i].LedgerItem)
-	}
 	for i := range ledger.Dependencies {
 		items = append(items, &ledger.Dependencies[i].LedgerItem)
 	}
-	for i := range ledger.Findings {
-		items = append(items, &ledger.Findings[i].LedgerItem)
-	}
 	return items
-}
-
-func validateInitialTurnDisposition(ledger EngineeringLedger, disposition model.OwnerTurnDisposition) error {
-	known := map[model.LedgerItemID]bool{}
-	questions := map[model.LedgerItemID]bool{}
-	for _, item := range planningItemPointers(&ledger) {
-		known[item.ID] = true
-	}
-	for _, question := range ledger.DecisionsAndQuestions {
-		questions[question.ID] = question.Kind == model.LedgerQuestion
-	}
-	for _, disposition := range disposition.StatementDispositions() {
-		switch disposition.Kind {
-		case model.OwnerTurnRepresented:
-			if disposition.Reason != "" || len(disposition.QuestionIDs) != 0 {
-				return fmt.Errorf("represented initial owner turn contains fields from another disposition")
-			}
-			if len(disposition.ItemIDs) == 0 {
-				return fmt.Errorf("initial owner turn requires represented ledger items")
-			}
-			for _, id := range disposition.ItemIDs {
-				if !known[id] {
-					return fmt.Errorf("initial owner turn references unknown item %s", id)
-				}
-			}
-		case model.OwnerTurnUnresolved:
-			if disposition.Reason != "" || len(disposition.ItemIDs) != 0 {
-				return fmt.Errorf("unresolved initial owner turn contains fields from another disposition")
-			}
-			if len(disposition.QuestionIDs) == 0 {
-				return fmt.Errorf("unresolved initial owner turn requires a question")
-			}
-			for _, id := range disposition.QuestionIDs {
-				if !questions[id] {
-					return fmt.Errorf("initial owner turn references non-question %s", id)
-				}
-			}
-		case model.OwnerTurnOutOfScope:
-			if len(disposition.ItemIDs) != 0 || len(disposition.QuestionIDs) != 0 {
-				return fmt.Errorf("out-of-scope initial owner turn contains represented items")
-			}
-			if strings.TrimSpace(disposition.Reason) == "" {
-				return fmt.Errorf("out-of-scope initial owner turn requires a reason")
-			}
-		default:
-			return fmt.Errorf("initial owner turn requires an explicit disposition")
-		}
-	}
-	return nil
 }

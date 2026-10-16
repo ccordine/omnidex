@@ -50,7 +50,7 @@ func TestContextUsageRecordsActualSuccessAndFailureWithoutCallReceipts(t *testin
 				if outcome == "relevance failure" {
 					responses = []string{"A", "invalid"}
 				} else if outcome == "minification failure" {
-					responses[2] = strings.Repeat("x", assemblyline.MaxContextMinifiedBytes+1)
+					responses[2] = " Invalid untrimmed context."
 				}
 				provider := &exactEvidenceStationClient{}
 				for _, response := range responses {

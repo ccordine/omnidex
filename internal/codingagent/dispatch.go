@@ -37,47 +37,30 @@ func uniqueFiles(files []string) []string {
 }
 
 func (controller *Controller) invoke(ctx context.Context, call Assignment, round int64) (Result, error) {
-	var result Result
-	var err error
-	for attempt := 0; attempt < 3; attempt++ {
-		result, err = controller.invokeOnce(ctx, call, round)
-		if err == nil {
-			return result, nil
-		}
-		var transient interface{ Retryable() bool }
-		if !errors.As(err, &transient) || !transient.Retryable() {
-			return result, err
-		}
+	result, err := controller.invokeOnce(ctx, call, round)
+	if err != nil && !call.Role.IsNative() && ctx.Err() == nil {
+		return result, &ParserFailure{Cause: err}
 	}
-	return result, fmt.Errorf("agent provider remained unavailable after 3 attempts: %w", err)
+	return result, err
 }
 
 func (controller *Controller) invokeOnce(ctx context.Context, call Assignment, round int64) (Result, error) {
 	if err := call.ValidateTaskContext(); err != nil {
 		return Result{}, err
 	}
-	if err := controller.Environment.Attest(ctx); err != nil {
-		return Result{}, err
+	if controller.MinifyContext != nil && !(call.Role == Execute && call.Session != nil && call.Reply != "") {
+		var err error
+		call.Context, err = controller.MinifyContext(ctx, call)
+		if err != nil {
+			return Result{}, err
+		}
 	}
-	entries, err := controller.Evidence.Read(ctx)
-	if err != nil {
+	if err := controller.Environment.Attest(ctx); err != nil {
 		return Result{}, err
 	}
 	taskID := ""
 	if call.Task != nil {
 		taskID = call.Task.ID
-	}
-	questions := map[int64]Entry{}
-	for _, entry := range entries {
-		if entry.Phase == "questions" {
-			questions[entry.ID] = entry
-		}
-		if entry.Phase == "answers" {
-			question, known := questions[entry.QuestionID]
-			if known && call.Role.IsPlanning() && question.TaskID == "" {
-				call.QuestionContext = append(call.QuestionContext, QuestionContext{Questions: question.Questions, Answers: entry.Answers})
-			}
-		}
 	}
 	entry := Entry{Generation: controller.Generation, Phase: "call_opened", TaskID: taskID, Round: round, Role: call.Role, Assignment: &call}
 	callID, err := controller.Evidence.Append(ctx, entry)
@@ -96,12 +79,8 @@ func (controller *Controller) invokeOnce(ctx context.Context, call Assignment, r
 	if err := json.Unmarshal(encodedCall, &providerCall); err != nil {
 		return Result{}, err
 	}
-	var writer FileWriter
-	if call.Role == Execute || call.Role == Review || call.Role.IsPlanning() && len(call.ReadFiles) > 0 {
-		writer = taskFileWriter{environment: controller.Environment, reads: call.ReadFiles, files: call.WriteFiles, deletes: call.DeleteFiles}
-	}
 	frames := 0
-	result, runErr := provider.Run(ctx, providerCall, writer, func(event NativeEvent) error {
+	result, runErr := provider.Run(ctx, providerCall, func(event NativeEvent) error {
 		if len(event.Frame) != 0 {
 			if !json.Valid(event.Frame) {
 				return fmt.Errorf("agent emitted an invalid native receipt")
@@ -110,6 +89,25 @@ func (controller *Controller) invokeOnce(ctx context.Context, call Assignment, r
 			if _, err := controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "native_event", CallID: callID, Role: call.Role, TaskID: taskID, Round: round, Frame: event.Frame}); err != nil {
 				return err
 			}
+		}
+		if event.Session != nil {
+			if call.Role != Execute || event.Session.ThreadID == "" {
+				return fmt.Errorf("native continuation lacks its exact execution assignment")
+			}
+			if _, err := controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "execution_session", CallID: callID,
+				Role: call.Role, TaskID: taskID, Round: round, Session: event.Session}); err != nil {
+				return err
+			}
+		}
+		if event.Input != nil {
+			if controller.NativeInput == nil || !call.Role.IsNative() || frames == 0 {
+				return fmt.Errorf("native request has no owner conversation handler")
+			}
+			response, err := controller.NativeInput(ctx, event.Input.Request, callID, taskID)
+			if err != nil {
+				return err
+			}
+			event.Input.Response = response
 		}
 		if event.Activity != nil {
 			if frames == 0 {
@@ -123,6 +121,9 @@ func (controller *Controller) invokeOnce(ctx context.Context, call Assignment, r
 				return err
 			}
 			for _, file := range activity.Paths {
+				if call.Role.IsNative() {
+					continue
+				}
 				if err := ValidatePath(file); err != nil {
 					return fmt.Errorf("agent activity path: %w", err)
 				}
@@ -131,6 +132,11 @@ func (controller *Controller) invokeOnce(ctx context.Context, call Assignment, r
 				}
 			}
 			activity.Paths = append([]string(nil), activity.Paths...)
+			if call.Role == Execute && activity.Kind == model.AgentActivityFileEdit && activity.Status == model.AgentActivityCompleted {
+				if _, err := controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "files_written", TaskID: taskID, CallID: callID, WrittenFiles: activity.Paths}); err != nil {
+					return err
+				}
+			}
 			if controller.Activity != nil {
 				controller.Activity(activity)
 			}
@@ -141,6 +147,14 @@ func (controller *Controller) invokeOnce(ctx context.Context, call Assignment, r
 		runErr = fmt.Errorf("agent returned unbound or incomplete native evidence")
 	}
 	if runErr != nil {
+		var incomplete *IncompleteTaskError
+		if call.Role.IsNative() && ctx.Err() == nil && result.ThreadID != "" && !errors.As(runErr, &incomplete) {
+			runErr = &IncompleteTaskError{Reason: "Native session interrupted; inspect partial work and plan continuation without replaying commands: " + runErr.Error()}
+		}
+		if errors.As(runErr, &incomplete) && result.ThreadID != "" {
+			incomplete.ThreadID, incomplete.TurnID = result.ThreadID, result.TurnID
+		}
+		result.CallID = callID
 		if _, err := controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "call_failed", CallID: callID, Role: call.Role, TaskID: taskID, Round: round}); err != nil {
 			return result, errors.Join(runErr, err)
 		}

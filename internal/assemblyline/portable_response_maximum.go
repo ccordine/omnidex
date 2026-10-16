@@ -12,12 +12,16 @@ var errPortableResponseMaximumKindMissing = errors.New(
 // PortableResponseMaximumBytesForJob returns the exact largest raw provider
 // candidate that the validated job's registered decoder can accept. Dynamic
 // candidate sets and correction inheritance are resolved from immutable job
-// payload authority.
+// payload authority. Zero means the registered ordinary-text decoder imposes
+// no semantic byte ceiling; it is not a replacement larger fixed limit.
 func PortableResponseMaximumBytesForJob(job PortableJob) (int, error) {
 	contract, err := portableResponseContractForValidatedJob(job)
 	maximum := contract.maximum
 	if err != nil {
 		return 0, err
+	}
+	if contract.openText {
+		return 0, nil
 	}
 	if maximum < 1 || maximum > MaxPortableRawCandidateBytes {
 		return 0, fmt.Errorf(

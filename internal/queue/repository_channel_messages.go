@@ -118,7 +118,28 @@ func listChannelMessages(
 		value := messages[0].ID
 		nextBeforeID = &value
 	}
-	return model.ChannelMessagePage{Messages: messages, NextBeforeID: nextBeforeID, HasMore: hasMore}, nil
+	page := model.ChannelMessagePage{Messages: messages, NextBeforeID: nextBeforeID, HasMore: hasMore}
+	if beforeID == nil {
+		var active model.ChannelPlanningTurn
+		err := querier.QueryRow(ctx, `
+			SELECT origin.id,job.id,job.status
+			FROM jobs job
+			JOIN ai_channel_messages origin
+			  ON origin.id::text=job.metadata->>'channel_user_message_id'
+			 AND origin.channel_id=$1 AND origin.role='user' AND origin.content=job.instruction
+			WHERE job.pipeline='chat' AND job.metadata->>'channel_id'=$1
+			  AND job.metadata->'coding_execution'->>'mode'='agents'
+			  AND job.status IN ('pending','running','waiting_input')
+			ORDER BY job.id DESC LIMIT 1
+		`, channelID).Scan(&active.MessageID, &active.JobID, &active.Status)
+		if err != nil && err != pgx.ErrNoRows {
+			return model.ChannelMessagePage{}, err
+		}
+		if err == nil {
+			page.ActivePlanningTurn = &active
+		}
+	}
+	return page, nil
 }
 
 func scanPresentedChannelMessage(row channelRowScanner) (model.ChannelMessage, error) {

@@ -2,6 +2,7 @@ package queue
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/codingagent"
@@ -17,6 +18,24 @@ func (r *Repository) applyChannelSessionTurnTx(
 	job model.Job,
 	found bool,
 ) (ChannelSessionTurnResult, *int64, error) {
+	if command.ExpectedInputID != nil {
+		if !found || job.Status != model.JobStatusWaiting {
+			return ChannelSessionTurnResult{}, nil, fmt.Errorf("%w: native request is no longer waiting", ErrChannelSessionTurnInvalid)
+		}
+		var matches bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM evidence request
+		  WHERE id=$1 AND job_id=$2 AND kind='coding_agent' AND payload_json->>'generation'=$3::bigint::text
+		    AND payload_json->>'phase'='execution_native_input'
+		    AND NOT EXISTS(SELECT 1 FROM evidence later WHERE later.job_id=request.job_id AND later.step_id=request.step_id
+		      AND later.id>request.id AND later.kind='coding_agent'
+		      AND later.payload_json->>'phase' IN ('execution_reply','execution_native_input','execution_response','review_response','task_incomplete')))`,
+			*command.ExpectedInputID, job.ID, job.CurrentGeneration).Scan(&matches); err != nil {
+			return ChannelSessionTurnResult{}, nil, err
+		}
+		if !matches {
+			return ChannelSessionTurnResult{}, nil, fmt.Errorf("%w: native request identity changed", ErrChannelSessionTurnInvalid)
+		}
+	}
 	if !found {
 		configuration, err := r.codingConfigurationForMode(ctx, tx, command.CodingMode)
 		if err != nil {
@@ -55,6 +74,7 @@ func (r *Repository) applyChannelSessionTurnTx(
 		return ChannelSessionTurnResult{}, nil, err
 	}
 	authoritativeJobID := job.ID
+	observedGeneration := job.CurrentGeneration
 
 	disposition := model.ChannelSessionTurnReplanned
 	var resultStepID *int64
@@ -81,6 +101,37 @@ func (r *Repository) applyChannelSessionTurnTx(
 		case jobGenerationPurposeInterrupt:
 			job, err = applyChannelSessionReplanTx(ctx, tx, command, job)
 		case jobGenerationPurposeInitial, jobGenerationPurposeReplan:
+			configuration, configurationErr := codingagent.ConfigurationFromMetadata(job.Metadata)
+			if configurationErr != nil {
+				return ChannelSessionTurnResult{}, nil, configurationErr
+			}
+			if configuration.Mode == codingagent.Agents {
+				var planning, interruptedPlanning bool
+				if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM job_steps WHERE job_id=$1 AND generation=$2
+				  AND action='v3_coding_plan' AND status='waiting_input' AND superseded_at_generation IS NULL),
+				  EXISTS(SELECT 1 FROM evidence event JOIN job_steps step ON step.id=event.step_id
+				    WHERE event.job_id=$1 AND step.generation=$2 AND step.action='v3_coding_plan'
+				      AND step.status='waiting_input' AND event.kind='coding_agent'
+				      AND event.payload_json->>'phase'='planning_incomplete')`,
+					job.ID, job.CurrentGeneration).Scan(&planning, &interruptedPlanning); err != nil {
+					return ChannelSessionTurnResult{}, nil, err
+				}
+				if planning && !interruptedPlanning && command.ExpectedInputID == nil {
+					job, err = applyChannelSessionReplanTx(ctx, tx, command, job)
+				} else {
+					disposition = model.ChannelSessionTurnFeedback
+					var stepID int64
+					job, stepID, err = applyChannelSessionFeedbackTx(ctx, tx, command, job)
+					if err == nil {
+						if job.CurrentGeneration != observedGeneration {
+							disposition = model.ChannelSessionTurnReplanned
+						} else {
+							resultStepID = &stepID
+						}
+					}
+				}
+				break
+			}
 			disposition = model.ChannelSessionTurnFeedback
 			var stepID int64
 			job, stepID, err = applyChannelSessionFeedbackTx(ctx, tx, command, job)
@@ -135,12 +186,6 @@ func applyChannelSessionReplanTx(
 	if err != nil {
 		return model.Job{}, err
 	}
-	if configuration.Mode == codingagent.Agents {
-		return model.Job{}, fmt.Errorf(
-			"%w: Agents mode interruption must resume through an exact revision-bound planning ledger replan",
-			ErrChannelSessionTurnInvalid,
-		)
-	}
 	feedback, err := validateSessionReplanFeedback(command.Text)
 	if err != nil {
 		return model.Job{}, fmt.Errorf("%w: %v", ErrChannelSessionTurnInvalid, err)
@@ -152,8 +197,35 @@ func applyChannelSessionReplanTx(
 		WorkspaceRoot:     command.WorkspaceRoot,
 		WorkspaceIdentity: command.WorkspaceIdentity,
 	}
-	result, _, err := applyReplanJobTx(ctx, tx, replan, job)
-	return result, err
+	if configuration.Mode == codingagent.Agents {
+		if err := tx.QueryRow(ctx, `
+			SELECT ledger.current_revision FROM coding_ledgers ledger
+			WHERE ledger.job_id=$1 AND (ledger.state='proposed' OR
+			  (ledger.state='revising' AND EXISTS (SELECT 1 FROM job_generations generation
+			    WHERE generation.job_id=$1 AND generation.generation=$2 AND generation.purpose=$3)))
+			  AND EXISTS (SELECT 1 FROM job_steps step WHERE step.job_id=$1
+			      AND step.generation=$2 AND step.action='v3_coding_plan'
+			      AND step.status='waiting_input' AND step.superseded_at_generation IS NULL)
+			FOR UPDATE OF ledger
+		`, job.ID, job.CurrentGeneration, jobGenerationPurposeInterrupt).Scan(&replan.ObservedLedgerRevision); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return model.Job{}, fmt.Errorf("%w: continuation requires a proposed ledger or an interrupted ledger open for revision, with a waiting planning step", ErrChannelSessionTurnInvalid)
+			}
+			return model.Job{}, err
+		}
+	}
+	// The session turn owns replay of its result; the child replan retains the
+	// exact revision-bound authority consumed by the planning continuation.
+	replan.OperationID, err = model.NewLifecycleOperationID()
+	if err != nil {
+		return model.Job{}, err
+	}
+	descriptor, err := describeLifecycleOperation(replan.OperationID, LifecycleReplanJob, replan)
+	if err != nil {
+		return model.Job{}, err
+	}
+	result, err := replanJobTx(ctx, tx, replan, descriptor)
+	return result.Job, err
 }
 
 func applyChannelSessionFeedbackTx(
@@ -162,26 +234,14 @@ func applyChannelSessionFeedbackTx(
 	command ChannelSessionTurnCommand,
 	job model.Job,
 ) (model.Job, int64, error) {
-	var expectedWaitingAttempt *int64
-	configuration, err := codingagent.ConfigurationFromMetadata(job.Metadata)
-	if err != nil {
-		return model.Job{}, 0, err
-	}
-	if configuration.Mode == codingagent.Agents {
-		var waitingAttempt int64
-		if err := tx.QueryRow(ctx, `SELECT current_attempt FROM job_steps WHERE job_id=$1 AND generation=$2 AND status='waiting_input' AND superseded_at_generation IS NULL ORDER BY sort_index,id LIMIT 1 FOR UPDATE`, job.ID, job.CurrentGeneration).Scan(&waitingAttempt); err != nil {
-			return model.Job{}, 0, err
-		}
-		expectedWaitingAttempt = &waitingAttempt
-	}
 	feedback, err := normalizeSubmitFeedbackCommand(SubmitJobFeedbackCommand{
-		OperationID:            command.OperationID,
-		JobID:                  job.ID,
-		ExpectedGeneration:     &job.CurrentGeneration,
-		ExpectedWaitingAttempt: expectedWaitingAttempt,
-		Feedback:               command.Text,
-		WorkspaceRoot:          command.WorkspaceRoot,
-		WorkspaceIdentity:      command.WorkspaceIdentity,
+		OperationID:        command.OperationID,
+		JobID:              job.ID,
+		ExpectedGeneration: &job.CurrentGeneration,
+		ExpectedInputID:    command.ExpectedInputID,
+		Feedback:           command.Text,
+		WorkspaceRoot:      command.WorkspaceRoot,
+		WorkspaceIdentity:  command.WorkspaceIdentity,
 	})
 	if err != nil {
 		return model.Job{}, 0, fmt.Errorf("%w: %v", ErrChannelSessionTurnInvalid, err)

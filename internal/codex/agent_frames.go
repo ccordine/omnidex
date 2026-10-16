@@ -46,10 +46,10 @@ func validateAgentItemsTracked(frame rpcFrame, role codingagent.Role, open, clos
 		return nil
 	}
 	if kind := agentDeltaItemKind(frame.Method); kind != "" {
-		if kind == "commandExecution" {
+		if kind == "commandExecution" && !role.IsNative() {
 			return &agentInferenceFailure{message: "task agent attempted native command execution", retryable: false}
 		}
-		if kind == "plan" && role != codingagent.Plan {
+		if kind == "plan" && !role.IsNative() {
 			return fmt.Errorf("non-planning agent emitted a native plan")
 		}
 		var params struct {
@@ -96,16 +96,16 @@ func validateAgentItemsTracked(frame rpcFrame, role codingagent.Role, open, clos
 	if item.ID == "" {
 		return fmt.Errorf("native agent item lacks identity")
 	}
-	if item.Type == "commandExecution" || item.Type == "fileChange" {
+	if !role.IsNative() && (item.Type == "commandExecution" || item.Type == "fileChange") {
 		return &agentInferenceFailure{message: "task agent attempted a native side effect", retryable: false}
 	}
-	if item.Type == "dynamicToolCall" && role != codingagent.Execute && role != codingagent.Review && !role.IsPlanning() {
+	if item.Type == "dynamicToolCall" && !role.IsNative() {
 		return &agentInferenceFailure{message: "agent attempted an ungranted dynamic tool", retryable: false}
 	}
-	if item.Type == "plan" && role != codingagent.Plan {
+	if item.Type == "plan" && role != codingagent.Plan && !role.IsNative() {
 		return fmt.Errorf("non-planning agent emitted a native plan")
 	}
-	if item.Type == "enteredReviewMode" || item.Type == "exitedReviewMode" {
+	if !role.IsNative() && (item.Type == "enteredReviewMode" || item.Type == "exitedReviewMode") {
 		return &agentInferenceFailure{message: "agent attempted repository review mode outside its task packet", retryable: false}
 	}
 	if frame.Method == "item/started" {
@@ -155,8 +155,10 @@ func validateAgentItemsTracked(frame rpcFrame, role codingagent.Role, open, clos
 
 func recordAgentFrame(result *codingagent.Result, raw json.RawMessage, event func(codingagent.NativeEvent) error) error {
 	count := len(raw)
-	for _, frame := range result.Evidence {
-		count += len(frame)
+	if event == nil {
+		for _, frame := range result.Evidence {
+			count += len(frame)
+		}
 	}
 	if count > llm.MaxExactPreparedProviderResponseBytes {
 		return fmt.Errorf("native agent evidence exceeds its transport boundary")
@@ -166,17 +168,24 @@ func recordAgentFrame(result *codingagent.Result, raw json.RawMessage, event fun
 		if err := event(codingagent.NativeEvent{Frame: owned}); err != nil {
 			return err
 		}
+		return nil
 	}
 	result.Evidence = append(result.Evidence, owned)
 	return nil
 }
 
 func consumeAgentFrame(frame rpcFrame, raw json.RawMessage, result *codingagent.Result, role codingagent.Role, items map[string]string, event func(codingagent.NativeEvent) error) (bool, error) {
-	return consumeAgentFrameTracked(frame, raw, result, role, items, nil, event)
+	return consumeAgentFrameTracked(frame, raw, result, role, items, nil, &agentResponseMessages{}, event)
 }
 
-func consumeAgentFrameTracked(frame rpcFrame, raw json.RawMessage, result *codingagent.Result, role codingagent.Role, items, closed map[string]string, event func(codingagent.NativeEvent) error) (bool, error) {
+func consumeAgentFrameTracked(frame rpcFrame, raw json.RawMessage, result *codingagent.Result, role codingagent.Role, items, closed map[string]string, messages *agentResponseMessages, event func(codingagent.NativeEvent) error) (bool, error) {
 	if err := validateAgentFrameBinding(frame, result); err != nil {
+		return false, err
+	}
+	if err := nativeContextBoundary(frame, role, result); err != nil {
+		if receiptErr := recordAgentFrame(result, raw, event); receiptErr != nil {
+			return false, receiptErr
+		}
 		return false, err
 	}
 	if err := validateAgentItemsTracked(frame, role, items, closed, true); err != nil {
@@ -187,7 +196,7 @@ func consumeAgentFrameTracked(frame rpcFrame, raw json.RawMessage, result *codin
 			return false, err
 		}
 	}
-	return collectAgentFrame(frame, raw, result, role)
+	return messages.collectFrame(frame, raw, result, role)
 }
 
 func agentDeltaItemKind(method string) string {
@@ -214,7 +223,7 @@ func validateAgentFrameBinding(frame rpcFrame, result *codingagent.Result) error
 		return err
 	}
 	if (params.ThreadID != "" && params.ThreadID != result.ThreadID) || (params.TurnID != "" && params.TurnID != result.TurnID) {
-		return fmt.Errorf("agent event belongs to another assignment")
+		return fmt.Errorf("agent event belongs to another assignment: method=%s thread=%q turn=%q expected_thread=%q expected_turn=%q", frame.Method, params.ThreadID, params.TurnID, result.ThreadID, result.TurnID)
 	}
 	if frame.Method == "item/started" || frame.Method == "item/completed" || agentDeltaItemKind(frame.Method) != "" {
 		if params.ThreadID != result.ThreadID || params.TurnID != result.TurnID || result.ThreadID == "" || result.TurnID == "" {
@@ -239,24 +248,30 @@ func (failure *agentInferenceFailure) Error() string   { return failure.message 
 func (failure *agentInferenceFailure) Retryable() bool { return failure.retryable }
 
 func collectAgentFrame(frame rpcFrame, raw json.RawMessage, result *codingagent.Result, role codingagent.Role) (bool, error) {
+	return (&agentResponseMessages{}).collectFrame(frame, raw, result, role)
+}
+
+func (messages *agentResponseMessages) collectFrame(frame rpcFrame, raw json.RawMessage, result *codingagent.Result, role codingagent.Role) (bool, error) {
 	var params struct {
 		ThreadID  string            `json:"threadId"`
 		TurnID    string            `json:"turnId"`
 		WillRetry *bool             `json:"willRetry"`
 		Error     *agentNativeError `json:"error"`
 		Item      struct {
-			Type  string `json:"type"`
-			Phase string `json:"phase"`
-			Text  string `json:"text"`
+			Type     string `json:"type"`
+			Phase    string `json:"phase"`
+			Text     string `json:"text"`
+			Delivery string `json:"delivery"`
 		} `json:"item"`
 		Turn struct {
 			ID     string            `json:"id"`
 			Status string            `json:"status"`
 			Error  *agentNativeError `json:"error"`
 			Items  []struct {
-				Type  string `json:"type"`
-				Phase string `json:"phase"`
-				Text  string `json:"text"`
+				Type     string `json:"type"`
+				Phase    string `json:"phase"`
+				Text     string `json:"text"`
+				Delivery string `json:"delivery"`
 			} `json:"items"`
 		} `json:"turn"`
 	}
@@ -269,7 +284,7 @@ func collectAgentFrame(frame rpcFrame, raw json.RawMessage, result *codingagent.
 	switch frame.Method {
 	case "item/started", "item/completed":
 		if frame.Method == "item/completed" {
-			if err := collectAgentResultItem(result, role, params.Item.Type, params.Item.Phase, params.Item.Text); err != nil {
+			if err := messages.collectItem(result, role, params.Item.Type, params.Item.Phase, params.Item.Delivery, params.Item.Text); err != nil {
 				return false, err
 			}
 		}
@@ -279,13 +294,16 @@ func collectAgentFrame(frame rpcFrame, raw json.RawMessage, result *codingagent.
 		}
 		if params.Turn.ID == result.TurnID && params.Turn.Status == "completed" && len(result.Content) == 0 {
 			for _, item := range params.Turn.Items {
-				if err := collectAgentResultItem(result, role, item.Type, item.Phase, item.Text); err != nil {
+				if err := messages.collectItem(result, role, item.Type, item.Phase, item.Delivery, item.Text); err != nil {
 					return false, err
 				}
 			}
 		}
 		if params.Turn.ID != result.TurnID || params.Turn.Status != "completed" || len(result.Content) == 0 {
 			return false, fmt.Errorf("agent did not complete the exact assignment")
+		}
+		if err := messages.finish(result); err != nil {
+			return false, err
 		}
 		result.Completed = true
 		return true, nil
@@ -304,15 +322,18 @@ func collectAgentFrame(frame rpcFrame, raw json.RawMessage, result *codingagent.
 func collectAgentResultItem(result *codingagent.Result, role codingagent.Role, itemType, phase, text string) error {
 	var content string
 	switch {
-	case itemType == "agentMessage" && phase == "final_answer":
-		content = text
-	case itemType == "plan" && role == codingagent.Plan:
+	case itemType == "agentMessage" && (phase == "final_answer" || (role == codingagent.Plan || role == codingagent.Execute || role == codingagent.Review) && phase == ""):
 		content = text
 	default:
 		return nil
 	}
 	if len(result.Content) != 0 || strings.TrimSpace(content) == "" {
-		return fmt.Errorf("agent returned missing or duplicate structured result")
+		return fmt.Errorf("agent returned a missing or duplicate final response")
+	}
+	if role == codingagent.Plan || role == codingagent.Execute || role == codingagent.Review {
+		encoded, err := json.Marshal(content)
+		result.Content = encoded
+		return err
 	}
 	if !json.Valid([]byte(content)) {
 		return fmt.Errorf("agent returned an invalid structured result")
@@ -322,6 +343,9 @@ func collectAgentResultItem(result *codingagent.Result, role codingagent.Role, i
 }
 
 func nativeAgentFailure(detail *agentNativeError) error {
+	if detail != nil && contextWindowExceeded(detail.CodexErrorInfo) {
+		return &codingagent.IncompleteTaskError{Reason: "Native context window exhausted; the task remains incomplete and requires owner-approved continuation planning."}
+	}
 	message := "native agent reported an inference failure"
 	if detail != nil {
 		if text := strings.TrimSpace(detail.Message); text != "" {

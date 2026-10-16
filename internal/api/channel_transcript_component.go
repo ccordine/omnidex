@@ -82,6 +82,9 @@ func channelTranscriptResponseFor(
 				}
 			}
 		}
+		if active := page.ActivePlanningTurn; active != nil {
+			latestTurn = &channelTranscriptUserTurn{MessageID: active.MessageID, JobID: active.JobID, Status: active.Status}
+		}
 	}
 	return channelTranscriptResponse{
 		ChannelID: channelID, NextBeforeID: page.NextBeforeID, HasMore: page.HasMore,

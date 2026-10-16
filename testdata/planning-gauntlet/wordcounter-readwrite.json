@@ -1,0 +1,343 @@
+{
+  "origin": "Observed ordinary Omnidex pilot, history_roundtrip_v2 job 1 generation 1, 2026-10-16. Exact native planning prose and initial parser output; no ledger was persisted and no execution occurred.",
+  "failure": "task t1 assigns file \"wordcounter.py\" to both read and write",
+  "instruction": "Finish the tiny Python 3 standard-library word counter in this directory. There is an existing wordcounter.py from a prior interrupted run; inspect it and preserve working behavior. It must accept a UTF-8 file, report line/word/Unicode-character counts including whitespace and newlines, count a final nonempty unterminated line and zeros for empty files, and give clean nonzero errors for unreadable or invalid UTF-8 input. Complete automated tests and a short usage README. Plan the remaining work for my review before implementing. This is a disposable pilot app; do not modify Omnidex or initialize Git.",
+  "planning_response": "The existing `wordcounter.py` appears to meet the requested behavior: strict UTF-8 decoding, whitespace-separated words, Unicode-character counts preserving whitespace and newlines, empty-file zeros, final unterminated-line counting, and clean nonzero read/decode errors. No tests or README exist yet.\n\nProposed remaining work, in order:\n\n1. **Verify and preserve the script.** Add standard-library `unittest` tests that run the CLI against temporary files. Cover empty input, trailing and missing final newlines, blank lines, Unicode text and whitespace, CRLF preservation, missing/unreadable input, and invalid UTF-8. Acceptance: exact counts on success; nonzero exit, clear stderr, and no traceback or count output on failure. Run the suite before proceeding; change the script only if tests expose a requirement gap.\n\n2. **Add a short usage README.** Document the Python 3 command, output format, counting rules, error behavior, and test command. Acceptance: run the documented example and confirm its output.\n\n3. **Complete verification and cleanup.** Run the full suite, inspect the final files, and remove any task-created disposable artifacts. Report results and any verification limits.\n\nAll work stays in this directory. I won’t modify Omnidex or initialize Git. Does this plan look right before I implement it?",
+  "parser_response": {
+    "ledger": {
+      "id": "",
+      "tasks": [
+        {
+          "id": "t1",
+          "goal": "Verify and preserve the script by adding and running the stated standard-library unittest CLI tests; fix the script only if tests expose a requirement gap.",
+          "rank": 1,
+          "group_id": "",
+          "priority": "normal",
+          "rationale": "",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "1"
+          },
+          "read_files": [
+            "wordcounter.py"
+          ],
+          "disposition": "active",
+          "write_files": [
+            "wordcounter.py"
+          ],
+          "delete_files": [],
+          "review_state": "proposed",
+          "constraint_ids": [
+            "c1",
+            "c2"
+          ],
+          "requirement_ids": [
+            "r1"
+          ],
+          "delivery_obligation": "",
+          "known_affected_systems": [],
+          "acceptance_criterion_ids": [
+            "ac1"
+          ]
+        },
+        {
+          "id": "t2",
+          "goal": "Add the short usage README and verify its documented example.",
+          "rank": 2,
+          "group_id": "",
+          "priority": "normal",
+          "rationale": "",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "2"
+          },
+          "read_files": [],
+          "disposition": "active",
+          "write_files": [],
+          "delete_files": [],
+          "review_state": "proposed",
+          "constraint_ids": [
+            "c2"
+          ],
+          "requirement_ids": [
+            "r2"
+          ],
+          "delivery_obligation": "",
+          "known_affected_systems": [],
+          "acceptance_criterion_ids": [
+            "ac2"
+          ]
+        },
+        {
+          "id": "t3",
+          "goal": "Run the full suite, inspect final files, and remove task-created disposable artifacts.",
+          "rank": 3,
+          "group_id": "",
+          "priority": "normal",
+          "rationale": "",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "3"
+          },
+          "read_files": [],
+          "disposition": "active",
+          "write_files": [],
+          "delete_files": [],
+          "review_state": "proposed",
+          "constraint_ids": [
+            "c2"
+          ],
+          "requirement_ids": [
+            "r3"
+          ],
+          "delivery_obligation": "Report results and any verification limits.",
+          "known_affected_systems": [],
+          "acceptance_criterion_ids": [
+            "ac3"
+          ]
+        }
+      ],
+      "checks": [
+        {
+          "id": "check1",
+          "argv": [],
+          "rank": 1,
+          "priority": "normal",
+          "rationale": "",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "1"
+          },
+          "disposition": "active",
+          "observation": "Run the CLI unittest suite before proceeding; verify exact successful counts and nonzero failures with clear stderr and no traceback or count output across the stated cases.",
+          "review_state": "proposed",
+          "requirement_ids": [
+            "r1"
+          ],
+          "acceptance_criterion_ids": [
+            "ac1"
+          ]
+        },
+        {
+          "id": "check2",
+          "argv": [],
+          "rank": 2,
+          "priority": "normal",
+          "rationale": "",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "2"
+          },
+          "disposition": "active",
+          "observation": "Inspect the README for the stated documentation topics and run its documented example to confirm its output.",
+          "review_state": "proposed",
+          "requirement_ids": [
+            "r2"
+          ],
+          "acceptance_criterion_ids": [
+            "ac2"
+          ]
+        },
+        {
+          "id": "check3",
+          "argv": [],
+          "rank": 3,
+          "priority": "normal",
+          "rationale": "",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "3"
+          },
+          "disposition": "active",
+          "observation": "Run the full suite, inspect final files, confirm task-created disposable artifacts are removed, and report results and any verification limits.",
+          "review_state": "proposed",
+          "requirement_ids": [
+            "r3"
+          ],
+          "acceptance_criterion_ids": [
+            "ac3"
+          ]
+        }
+      ],
+      "groups": [],
+      "revision": 0,
+      "objectives": [],
+      "constraints": [
+        {
+          "id": "c1",
+          "rank": 1,
+          "rule": "Preserve working script behavior; change wordcounter.py only if tests expose a requirement gap.",
+          "priority": "normal",
+          "rationale": "",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "1"
+          },
+          "disposition": "active",
+          "review_state": "proposed"
+        },
+        {
+          "id": "c2",
+          "rank": 2,
+          "rule": "All work stays in this directory; do not modify Omnidex or initialize Git.",
+          "priority": "normal",
+          "rationale": "",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "closing scope statement"
+          },
+          "disposition": "active",
+          "review_state": "proposed"
+        }
+      ],
+      "dependencies": [
+        {
+          "id": "d1",
+          "kind": "requires",
+          "rank": 1,
+          "task_id": "t2",
+          "priority": "normal",
+          "rationale": "Run the suite before proceeding.",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "Proposed remaining work, in order"
+          },
+          "disposition": "active",
+          "review_state": "proposed",
+          "prerequisite_id": "t1"
+        },
+        {
+          "id": "d2",
+          "kind": "requires",
+          "rank": 2,
+          "task_id": "t3",
+          "priority": "normal",
+          "rationale": "Complete verification and cleanup after adding the README.",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "Proposed remaining work, in order"
+          },
+          "disposition": "active",
+          "review_state": "proposed",
+          "prerequisite_id": "t2"
+        }
+      ],
+      "requirements": [
+        {
+          "id": "r1",
+          "rank": 1,
+          "outcome": "Verify and preserve the script using standard-library unittest CLI tests against temporary files covering the stated success and failure cases; change the script only for a requirement gap exposed by tests.",
+          "priority": "normal",
+          "rationale": "",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "1"
+          },
+          "disposition": "active",
+          "review_state": "proposed"
+        },
+        {
+          "id": "r2",
+          "rank": 2,
+          "outcome": "Add a short usage README documenting the Python 3 command, output format, counting rules, error behavior, and test command, with a verified example.",
+          "priority": "normal",
+          "rationale": "",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "2"
+          },
+          "disposition": "active",
+          "review_state": "proposed"
+        },
+        {
+          "id": "r3",
+          "rank": 3,
+          "outcome": "Complete full-suite verification, inspect final files, remove task-created disposable artifacts, and report results and any verification limits.",
+          "priority": "normal",
+          "rationale": "",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "3"
+          },
+          "disposition": "active",
+          "review_state": "proposed"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "ac1",
+          "rank": 1,
+          "outcome": "Standard-library unittest tests run the CLI against temporary files and cover empty input, trailing and missing final newlines, blank lines, Unicode text and whitespace, CRLF preservation, missing/unreadable input, and invalid UTF-8. Success produces exact counts; failure produces a nonzero exit and clear stderr without traceback or count output.",
+          "priority": "normal",
+          "task_ids": [
+            "t1"
+          ],
+          "rationale": "",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "1"
+          },
+          "disposition": "active",
+          "review_state": "proposed",
+          "requirement_ids": [
+            "r1"
+          ]
+        },
+        {
+          "id": "ac2",
+          "rank": 2,
+          "outcome": "The short README documents the Python 3 command, output format, counting rules, error behavior, and test command; its documented example runs with the expected output.",
+          "priority": "normal",
+          "task_ids": [
+            "t2"
+          ],
+          "rationale": "",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "2"
+          },
+          "disposition": "active",
+          "review_state": "proposed",
+          "requirement_ids": [
+            "r2"
+          ]
+        },
+        {
+          "id": "ac3",
+          "rank": 3,
+          "outcome": "The full suite has been run, final files inspected, task-created disposable artifacts removed, and results and any verification limits reported.",
+          "priority": "normal",
+          "task_ids": [
+            "t3"
+          ],
+          "rationale": "",
+          "provenance": {
+            "kind": "response",
+            "revision": 0,
+            "reference": "3"
+          },
+          "disposition": "active",
+          "review_state": "proposed",
+          "requirement_ids": [
+            "r3"
+          ]
+        }
+      ]
+    }
+  }
+}
