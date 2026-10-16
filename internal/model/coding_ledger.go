@@ -630,26 +630,10 @@ func (mutation LedgerMutation) Validate() error {
 	return nil
 }
 func (item LedgerMutationItem) ledgerItem() LedgerItem {
-	switch {
-	case item.Objective != nil:
-		return item.Objective.LedgerItem
-	case item.Requirement != nil:
-		return item.Requirement.LedgerItem
-	case item.Constraint != nil:
-		return item.Constraint.LedgerItem
-	case item.Group != nil:
-		return item.Group.LedgerItem
-	case item.Task != nil:
-		return item.Task.LedgerItem
-	case item.AcceptanceCriterion != nil:
-		return item.AcceptanceCriterion.LedgerItem
-	case item.Check != nil:
-		return item.Check.LedgerItem
-	case item.Dependency != nil:
-		return item.Dependency.LedgerItem
-	default:
-		return LedgerItem{}
+	if base := item.Base(); base != nil {
+		return *base
 	}
+	return LedgerItem{}
 }
 
 func (item LedgerMutationItem) count() int {

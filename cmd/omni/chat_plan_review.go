@@ -69,7 +69,7 @@ func (session *chatSession) reconcilePlanReview() error {
 		if err != nil {
 			return err
 		}
-		if !required {
+		if !required || session.currentJobInterrupted() {
 			return session.clearPlanReview()
 		}
 		jobID := session.active.Job.ID

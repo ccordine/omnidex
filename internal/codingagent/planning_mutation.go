@@ -101,6 +101,10 @@ func (controller *Controller) ProposePlanningLedger(ctx context.Context, turn Pl
 		"Which planning ledger items are expressed in this conversation response?", turn, nil)
 	call.Route = controller.Configuration.LedgerParser
 	call.PlanningResponse = response
+	call.ValidationNotes, err = controller.planningValidationNotes(ctx, turn.OperationID)
+	if err != nil {
+		return InitialPlanningProposal{}, err
+	}
 	result, err := controller.invoke(ctx, call, 1)
 	if err != nil {
 		return InitialPlanningProposal{}, err
@@ -109,7 +113,7 @@ func (controller *Controller) ProposePlanningLedger(ctx context.Context, turn Pl
 		Ledger EngineeringLedger `json:"ledger"`
 	}
 	if err := decodeContract(result.Content, &parsed); err != nil {
-		return InitialPlanningProposal{}, &ParserFailure{Cause: err}
+		return InitialPlanningProposal{}, controller.rejectPlanningParse(ctx, turn, PlanningInitial, result.CallID, err)
 	}
 	ledger := parsed.Ledger
 	ledger.ID, ledger.Revision = fmt.Sprintf("planning-%d", controller.JobID), 1
@@ -120,7 +124,7 @@ func (controller *Controller) ProposePlanningLedger(ctx context.Context, turn Pl
 		}
 	}
 	if err := ledger.ValidateDraft(); err != nil {
-		return InitialPlanningProposal{}, &ParserFailure{Cause: err}
+		return InitialPlanningProposal{}, controller.rejectPlanningParse(ctx, turn, PlanningInitial, result.CallID, err)
 	}
 	return InitialPlanningProposal{Ledger: ledger, OwnerTurnDisposition: parsedPlanningDisposition(ledger, nil)}, nil
 }
@@ -145,13 +149,17 @@ func (controller *Controller) PlanPlanningMutation(ctx context.Context, ledger E
 		"Which planning ledger updates are expressed in this conversation response?", turn, &ledger)
 	call.Route = controller.Configuration.LedgerParser
 	call.PlanningResponse = response
+	call.ValidationNotes, err = controller.planningValidationNotes(ctx, turn.OperationID)
+	if err != nil {
+		return LedgerMutation{}, err
+	}
 	result, err := controller.invoke(ctx, call, 1)
 	if err != nil {
 		return LedgerMutation{}, err
 	}
 	operations, err := decodePlanningOperations(result.Content, ledger)
 	if err != nil {
-		return LedgerMutation{}, &ParserFailure{Cause: err}
+		return LedgerMutation{}, controller.rejectPlanningParse(ctx, turn, PlanningMutation, result.CallID, err)
 	}
 	mutation := LedgerMutation{
 		OperationID: turn.OperationID, OwnerTurnID: turn.OwnerTurnID,
@@ -159,8 +167,12 @@ func (controller *Controller) PlanPlanningMutation(ctx context.Context, ledger E
 		OwnerTurnDisposition: parsedPlanningDisposition(ledger, operations),
 	}
 	if len(operations) > 0 {
-		if _, err := ApplyPlanningMutation(ledger, mutation); err != nil {
-			return LedgerMutation{}, &ParserFailure{Cause: err}
+		next, err := ApplyPlanningMutation(ledger, mutation)
+		if err == nil {
+			err = validateAddedConstraintConsumers(next, operations, controller.CompletedTaskIDs)
+		}
+		if err != nil {
+			return LedgerMutation{}, controller.rejectPlanningParse(ctx, turn, PlanningMutation, result.CallID, err)
 		}
 	}
 	return mutation, nil

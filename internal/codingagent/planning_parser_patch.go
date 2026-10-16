@@ -45,6 +45,10 @@ func decodePlanningOperations(content json.RawMessage, ledger EngineeringLedger)
 				return nil, err
 			}
 			if value.Kind == model.LedgerMutationAdd {
+				if base := operation.Item.Base(); base != nil {
+					base.Disposition = model.LedgerDispositionActive
+					base.ReviewState = model.LedgerReviewProposed
+				}
 				requirePlanningItemVerification(operation.Item)
 			}
 		}
