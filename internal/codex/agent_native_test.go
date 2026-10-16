@@ -42,7 +42,16 @@ func installedAgentClient(t *testing.T) (*Client, string) {
 			}
 		})
 	}
-	t.Setenv("TMPDIR", base)
+	runtimeDirectory, err := os.MkdirTemp(base, "runtime-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(runtimeDirectory); err != nil {
+			t.Errorf("retire owned native sandbox runtime: %v", err)
+		}
+	})
+	t.Setenv("TMPDIR", runtimeDirectory)
 	client, err := New(command, directory, 2*time.Minute)
 	if err != nil {
 		t.Fatal(err)

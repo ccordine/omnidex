@@ -69,3 +69,18 @@ func TestForeignNativeInputCannotReachOwnerOrProcess(t *testing.T) {
 		t.Fatal("foreign native request crossed its task boundary")
 	}
 }
+
+func TestPlanningCannotEscalateItsReadOnlyBoundary(t *testing.T) {
+	for _, method := range []string{"item/commandExecution/requestApproval", "item/fileChange/requestApproval", "item/permissions/requestApproval"} {
+		t.Run(method, func(t *testing.T) {
+			input := &agentStartInput{}
+			connection := &connection{input: input}
+			asked := false
+			connection.bindAgentRequests(t.Context(), codingagent.Assignment{Role: codingagent.Plan}, &codingagent.Result{ThreadID: "thread"}, func(codingagent.NativeEvent) error { asked = true; return nil })
+			frame := decodeAgentTestFrame(t, `{"id":1,"method":"`+method+`","params":{"threadId":"thread","turnId":"turn"}}`)
+			if err := connection.serverRequest(frame); err == nil || asked || input.Len() != 0 {
+				t.Fatal("planning acquired execution authority through an approval request")
+			}
+		})
+	}
+}

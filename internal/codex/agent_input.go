@@ -150,6 +150,10 @@ func nativeInputRequest(frame rpcFrame) (codingagent.NativeInputRequest, error) 
 func (connection *connection) bindAgentRequests(ctx context.Context, call codingagent.Assignment, result *codingagent.Result, event func(codingagent.NativeEvent) error) {
 	connection.serverRequest = func(frame rpcFrame) error {
 		if call.Role.IsNative() {
+			if call.Role == codingagent.Plan && (frame.Method == "item/commandExecution/requestApproval" ||
+				frame.Method == "item/fileChange/requestApproval" || frame.Method == "item/permissions/requestApproval") {
+				return fmt.Errorf("planning cannot request execution permissions before ledger approval")
+			}
 			// A new thread can elicit input before thread/start is acknowledged.
 			// This connection owns exactly one assignment; bind that provisional
 			// identity and require the later acknowledgement to confirm it.

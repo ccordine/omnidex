@@ -50,7 +50,7 @@ func TestNativeAgentRolesUseOnlyIsolatedSchemaBoundTurns(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			input := &agentStartInput{}
 			connection := &connection{input: input, output: bufio.NewScanner(strings.NewReader(test.response))}
-			call := codingagent.Assignment{Role: test.role, Route: codingagent.Route{Model: "fixture-model", Effort: "high"}}
+			call := codingagent.Assignment{Role: test.role, Root: "/workspace", Route: codingagent.Route{Model: "fixture-model", Effort: "high"}}
 			turnID, _, pending, err := connection.startAgentTurn(call, thread, "exact assignment")
 			if err != nil {
 				t.Fatal(err)
@@ -70,8 +70,18 @@ func TestNativeAgentRolesUseOnlyIsolatedSchemaBoundTurns(t *testing.T) {
 			}
 			if test.role.IsNative() {
 				policy := request.Params["sandboxPolicy"].(map[string]any)
-				if request.Params["outputSchema"] != nil || policy["type"] != "dangerFullAccess" || request.Params["approvalPolicy"] != "never" {
-					t.Fatalf("execution is not an ordinary full-access turn: %+v", request.Params)
+				wantType, wantApproval := "workspaceWrite", "on-request"
+				if test.role == codingagent.Plan {
+					wantType, wantApproval = "readOnly", "never"
+				}
+				if request.Params["outputSchema"] != nil || policy["type"] != wantType || request.Params["approvalPolicy"] != wantApproval || policy["networkAccess"] != false {
+					t.Fatalf("native role lost its permission boundary: %+v", request.Params)
+				}
+				if wantType == "workspaceWrite" {
+					roots := policy["writableRoots"].([]any)
+					if len(roots) != 1 || roots[0] != "/workspace" {
+						t.Fatalf("native writable scope changed: %+v", policy)
+					}
 				}
 			} else if request.Params["collaborationMode"] != nil || (request.Params["outputSchema"] != nil) != (test.role != codingagent.PlanningMutation) || request.Params["target"] != nil || request.Params["delivery"] != nil {
 				t.Fatalf("isolated schema-bound settings changed: %+v", request.Params)
@@ -124,13 +134,21 @@ func TestNativeThreadsKeepNormalCodexToolsAndInstructions(t *testing.T) {
 				if request.Method != "thread/start" {
 					continue
 				}
-				if request.Params["sandbox"] != "danger-full-access" || request.Params["approvalPolicy"] != "never" || request.Params["cwd"] != "/workspace" {
-					t.Fatalf("executor thread lost normal full-access settings: %#v", request.Params)
+				wantSandbox, wantApproval := "workspace-write", "on-request"
+				if role == codingagent.Plan {
+					wantSandbox, wantApproval = "read-only", "never"
+				}
+				if request.Params["sandbox"] != wantSandbox || request.Params["approvalPolicy"] != wantApproval || request.Params["cwd"] != "/workspace" {
+					t.Fatalf("native thread lost its role-owned permissions: %#v", request.Params)
 				}
 				if request.Params["ephemeral"] != (role != codingagent.Execute) {
 					t.Fatal("native role lost its owned thread lifecycle")
 				}
-				for _, field := range []string{"dynamicTools", "config", "baseInstructions", "outputSchema"} {
+				configuration := request.Params["config"].(map[string]any)
+				if len(configuration) != 1 || configuration["approvals_reviewer"] != "user" {
+					t.Fatalf("native approvals escaped the Omnidex owner: %#v", configuration)
+				}
+				for _, field := range []string{"dynamicTools", "baseInstructions", "outputSchema"} {
 					if _, present := request.Params[field]; present {
 						t.Fatalf("executor retained a special %s override", field)
 					}

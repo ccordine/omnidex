@@ -33,8 +33,12 @@ func renderAgentAssignment(call codingagent.Assignment) (string, error) {
 		instruction = "Independently inspect whether this task was fulfilled, using normal Codex tools and the host environment as needed. Inspect only this task, not the full plan or sibling tasks. The file list is context, not an access allowlist. Do not modify the implementation or ledger. Apply exactly the supplied acceptance criteria and recheck supplied findings. Respond naturally in ordinary prose: describe what you verified and any concrete defects against the supplied criteria, or ask any necessary question or permission and explain any unresolved error or inability to verify. Do not add requirements, suggestions, adjacent work, or preferences."
 	case codingagent.ReviewResponse:
 		instruction = "Parse the supplied final Codex review response. Extract only the concrete findings and verification it reports, binding findings to the supplied criterion references. Use question when it needs an answer, permission when it asks for authorization, error when it reports an unresolved failure, blocker, or inability to finish verification, and done when the review finished (with or without findings) without needing further input. Do not conduct another review, infer success from silence, invent findings, or judge the implementation."
+		instruction += " Only the supplied task criteria determine whether verification is unfinished. Preserve diagnostics and unsuccessful optional or unrelated checks in verification; they do not make an explicitly completed required review an error. An unresolved inability to verify a supplied criterion remains an error."
 	default:
 		return "", fmt.Errorf("unknown agent role")
+	}
+	if call.Role == codingagent.PlanningInitial || call.Role == codingagent.PlanningMutation {
+		instruction += " Separate instructions for this planning conversation from future implementation obligations. Planning-only restrictions and bookkeeping are not task delivery obligations. Extract future task changes, preserving their actual scope and verification requirements."
 	}
 	if !call.Role.IsNative() {
 		instruction += " Return only valid JSON matching the result API contract supplied in shared context, without prose or Markdown fences."

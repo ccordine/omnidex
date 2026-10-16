@@ -15,16 +15,14 @@ type pendingAgentFrame struct {
 // deliberately does not use Codex's repository-review mode: that mode can add
 // context outside the frozen task packet and owns a separate output contract.
 func (connection *connection) startAgentTurn(call codingagent.Assignment, thread threadResult, prompt string) (string, json.RawMessage, []pendingAgentFrame, error) {
+	_, approval, policy := agentPermissions(call)
 	parameters := map[string]any{
 		"threadId":       thread.Thread.ID,
 		"input":          []any{map[string]string{"type": "text", "text": prompt}},
 		"model":          call.Route.Model,
-		"approvalPolicy": "never",
-		"sandboxPolicy":  map[string]any{"type": "readOnly", "networkAccess": false},
+		"approvalPolicy": approval,
+		"sandboxPolicy":  policy,
 		"summary":        "auto",
-	}
-	if call.Role.IsNative() {
-		parameters["sandboxPolicy"] = map[string]any{"type": "dangerFullAccess"}
 	}
 	if !call.Role.IsNative() && call.Role != codingagent.PlanningMutation {
 		parameters["outputSchema"] = agentOutputSchema(call)
