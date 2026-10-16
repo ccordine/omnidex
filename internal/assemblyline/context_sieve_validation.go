@@ -17,7 +17,8 @@ const (
 	MaxContextCandidateProjectionBytes    = 8 * 1024
 	MaxContextMinificationAuthorities     = 8
 	MaxContextMinificationProjectionBytes = 6 * 1024
-	MaxContextMinifiedBytes               = 2 * 1024
+	// This is a trigger to consider minification, not a result-size limit.
+	ContextMinificationThresholdBytes = 2 * 1024
 )
 
 var (
@@ -173,7 +174,7 @@ func validateContextText(label, value string, maximum int) error {
 	if value == "" || value != strings.TrimSpace(value) {
 		return fmt.Errorf("%s must be non-empty trimmed text", label)
 	}
-	if len(value) > maximum {
+	if maximum > 0 && len(value) > maximum {
 		return fmt.Errorf("%s exceeds %d bytes", label, maximum)
 	}
 	if !utf8.ValidString(value) {

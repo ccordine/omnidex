@@ -199,9 +199,6 @@ func TestInstalledTerminalAgentsUpdateExistingProject(t *testing.T) {
 			switch details.Job.Status {
 			case model.JobStatusFailed, model.JobStatusCanceled:
 				questions := []string{}
-				if details.AgentPause != nil {
-					questions = details.AgentPause.Questions
-				}
 				for _, step := range details.Steps {
 					if step.Status == model.StepStatusWaiting {
 						questions = append(questions, step.Error)
@@ -211,11 +208,8 @@ func TestInstalledTerminalAgentsUpdateExistingProject(t *testing.T) {
 				_ = runtime.pool.QueryRow(ctx, `SELECT jsonb_build_object('role',payload_json->>'role','task',payload_json->'assignment'->'task') FROM evidence WHERE job_id=$1 AND kind='coding_agent' AND payload_json->>'phase'='call_opened' ORDER BY id DESC LIMIT 1`, details.Job.ID).Scan(&assignment)
 				t.Fatalf("ordinary terminal job %d stopped as %s: %s; questions=%v; assignment=%s", details.Job.ID, details.Job.Status, details.Job.Error, questions, assignment)
 			case model.JobStatusWaiting:
-				if details.AgentPause != nil || !terminalWaitingPlanReview(details) {
+				if !terminalWaitingPlanReview(details) {
 					questions := []string{}
-					if details.AgentPause != nil {
-						questions = details.AgentPause.Questions
-					}
 					for _, step := range details.Steps {
 						if step.Status == model.StepStatusWaiting {
 							questions = append(questions, step.Error)

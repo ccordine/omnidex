@@ -9,36 +9,6 @@ import (
 	"github.com/gryph/omnidex/internal/codingagent"
 )
 
-func TestPlanningOwnsBroadPictureAndCompilesTaskLocalPackets(t *testing.T) {
-	for _, role := range []codingagent.Role{codingagent.PlanningInitial, codingagent.PlanningMutation} {
-		call := codingagent.Assignment{Role: role}
-		if role == codingagent.PlanningInitial {
-			call.ReadFiles = []string{"AGENTS.md", "internal/runtime.go"}
-		}
-		prompt, err := renderAgentAssignment(call)
-		if err != nil {
-			t.Fatal(err)
-		}
-		instruction, assignment, _ := strings.Cut(prompt, "\n\nAssignment:\n")
-		for _, boundary := range []string{"task", "requirement", "constraint", "acceptance", "file", "sibling"} {
-			if !strings.Contains(strings.ToLower(instruction), boundary) {
-				t.Fatalf("%s planning boundary lacks %q: %s", role, boundary, instruction)
-			}
-		}
-		if role == codingagent.PlanningInitial && (!strings.Contains(assignment, `"workspace_files"`) || !strings.Contains(assignment, `"internal/runtime.go"`)) {
-			t.Fatalf("initial planning did not receive the code-enumerated workspace picture: %s", assignment)
-		}
-		if role == codingagent.PlanningInitial && (!strings.Contains(instruction, "Every active requirement") ||
-			!strings.Contains(instruction, "Every active required acceptance criterion") ||
-			!strings.Contains(instruction, "exactly one active objective") ||
-			!strings.Contains(instruction, "Never elevate an inferred") ||
-			!strings.Contains(instruction, "File lists are code-owned capabilities") ||
-			!strings.Contains(instruction, "fewest finite task records")) {
-			t.Fatalf("initial planning omitted normalized ledger invariants: %s", instruction)
-		}
-	}
-}
-
 func TestPlanningSchemaConstrainsCodeOwnedLedgerEnums(t *testing.T) {
 	text := map[string]any{"type": "string"}
 	strings := map[string]any{"type": "array", "items": text}
@@ -47,6 +17,12 @@ func TestPlanningSchemaConstrainsCodeOwnedLedgerEnums(t *testing.T) {
 	}
 	ledger := planningLedgerSchema(object, text, strings)
 	properties := ledger["properties"].(map[string]any)
+	for _, name := range []string{"acceptance_criteria", "checks"} {
+		item := properties[name].(map[string]any)["items"].(map[string]any)
+		if item["properties"].(map[string]any)["required"] != nil {
+			t.Fatal("parser schema asks AI to decide whether planned verification is required")
+		}
+	}
 	objective := properties["objectives"].(map[string]any)["items"].(map[string]any)
 	item := objective["properties"].(map[string]any)
 	for name, expected := range map[string][]string{
@@ -63,51 +39,10 @@ func TestPlanningSchemaConstrainsCodeOwnedLedgerEnums(t *testing.T) {
 	if variants, ok := check["anyOf"].([]map[string]any); !ok || len(variants) != 2 {
 		t.Fatalf("planning check schema does not require exactly one command or observation: %#v", check)
 	}
-	disposition := planningDispositionSchema(object, text, strings)
-	if variants, ok := disposition["anyOf"].([]map[string]any); !ok || len(variants) != 3 {
-		t.Fatalf("planning owner-turn schema does not bind fields to disposition: %#v", disposition)
-	}
-}
-
-func TestInitialPlanningSchemaRequiresEveryGeneratedAcceptanceAndCheck(t *testing.T) {
-	schema := agentOutputSchema(codingagent.Assignment{Role: codingagent.PlanningInitial})
-	ledger := schema["properties"].(map[string]any)["ledger"].(map[string]any)
-	properties := ledger["properties"].(map[string]any)
-	for _, collection := range []string{"acceptance_criteria", "checks"} {
-		item := properties[collection].(map[string]any)["items"].(map[string]any)
-		actual := item["properties"].(map[string]any)["required"].(map[string]any)["enum"]
-		if !reflect.DeepEqual(actual, []bool{true}) {
-			t.Fatalf("initial %s required schema = %#v", collection, actual)
+	for _, forbidden := range []string{"decisions", "findings", "questions"} {
+		if _, exists := properties[forbidden]; exists {
+			t.Fatalf("planning schema retained model-authored routing bucket %q", forbidden)
 		}
-	}
-}
-
-func TestPlanningJudgmentsCannotMutateOrExpandLedger(t *testing.T) {
-	for _, role := range []codingagent.Role{codingagent.PlanningCoverage, codingagent.PlanningAudit} {
-		prompt, err := renderAgentAssignment(codingagent.Assignment{Role: role})
-		if err != nil {
-			t.Fatal(err)
-		}
-		instruction, _, _ := strings.Cut(prompt, "\n\nAssignment:\n")
-		if !strings.Contains(instruction, "read-only judgment") || !strings.Contains(instruction, "only a human-origin planning action may alter the ledger") {
-			t.Fatalf("%s has autonomous ledger authority", role)
-		}
-		if role == codingagent.PlanningCoverage && !strings.Contains(instruction, "no obligation beyond that exact owner scope") {
-			t.Fatal("planning coverage permits scope inflation")
-		}
-	}
-}
-
-func TestPlanningJudgmentSchemaBindsCodeOwnedQuestionAndRevision(t *testing.T) {
-	call := codingagent.Assignment{
-		Role: codingagent.PlanningCoverage, PlanningQuestionID: "owner-turn-coverage", PlanningBaseRevision: 7,
-	}
-	properties := agentOutputSchema(call)["properties"].(map[string]any)
-	if actual := properties["question"].(map[string]any)["enum"]; !reflect.DeepEqual(actual, []string{"owner-turn-coverage"}) {
-		t.Fatalf("planning question schema = %#v", actual)
-	}
-	if actual := properties["base_revision"].(map[string]any)["enum"]; !reflect.DeepEqual(actual, []int64{7}) {
-		t.Fatalf("planning revision schema = %#v", actual)
 	}
 }
 
@@ -129,9 +64,21 @@ func TestExecutionAndReviewReceiveOnlyExactTaskPacket(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		instruction, assignment, _ := strings.Cut(prompt, "\n\nAssignment:\n")
-		if !strings.Contains(instruction, "entire context") || !strings.Contains(instruction, "sibling") || strings.Contains(instruction, "full filesystem") {
+		instruction := prompt
+		context, err := renderAgentContext(call)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, assignment, found := strings.Cut(context, "\n\nAssignment:\n")
+		if !found || strings.Contains(prompt, "Assignment:") || strings.Contains(prompt, task.Goal) {
+			t.Fatal("task context leaked into the literal user prompt")
+		}
+		if role == codingagent.Review && (!strings.Contains(instruction, "Inspect only this task") || !strings.Contains(instruction, "sibling") ||
+			!strings.Contains(instruction, "file list is context") || strings.Contains(instruction, "supplied read tool")) {
 			t.Fatalf("%s prompt can escape its packet: %s", role, instruction)
+		}
+		if role == codingagent.Execute && (!strings.Contains(instruction, "Codex normally") || strings.Contains(instruction, "file tools") || strings.Contains(instruction, "receipt")) {
+			t.Fatalf("executor retained custom tool or result instructions: %s", instruction)
 		}
 		var decoded struct {
 			Task *struct {

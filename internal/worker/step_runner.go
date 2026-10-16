@@ -85,22 +85,14 @@ func (s *Service) runLoop(
 func (s *Service) runClaim(ctx context.Context, workerID string, claim *model.ClaimedStep) error {
 	s.emitStepEvent(claim.Authority, "step_start", fmt.Sprintf("action=%s worker=%s", claim.Step.Action, workerID))
 	if err := s.processStep(ctx, claim); err != nil {
-		if s.skipFailureForLostExecutionAuthority(workerID, claim, err) || s.skipFailureForControlledCancel(ctx, workerID, claim, err) {
-			return nil
-		}
-		var questions *codingagent.QuestionsPending
-		if errors.As(err, &questions) {
-			s.emitStepEvent(claim.Authority, "step_waiting_input", questions.Error())
-			return nil
-		}
-		if errors.Is(err, errCodingLedgerReviewPending) {
+		if errors.Is(err, errCodingLedgerReviewPending) || errors.Is(err, errCodingExecutionInputPending) {
 			s.emitStepEvent(
 				claim.Authority,
 				"step_waiting_input",
 				fmt.Sprintf("action=%s worker=%s", claim.Step.Action, workerID),
 			)
 			s.logf(
-				"worker=%s job=%d step=%d action=%s waiting for coding plan review",
+				"worker=%s job=%d step=%d action=%s waiting for owner conversation",
 				workerID, claim.Job.ID, claim.Step.ID, claim.Step.Action,
 			)
 			return nil
@@ -111,7 +103,8 @@ func (s *Service) runClaim(ctx context.Context, workerID string, claim *model.Cl
 		if s.skipFailureForControlledCancel(ctx, workerID, claim, err) {
 			return nil
 		}
-		if retryableAgentSessionFailure(err) && claim.Authority.Attempt < 3 {
+		var parserFailure *codingagent.ParserFailure
+		if errors.As(err, &parserFailure) || claim.Step.Action != "v3_coding" && retryableAgentSessionFailure(err) {
 			// The attempt remains active but is no longer renewed after
 			// processStep returns. ClaimNextStep will expire it at the database
 			// lease boundary and open a fresh attempt against the same generation,

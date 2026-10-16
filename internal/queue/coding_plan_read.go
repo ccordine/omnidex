@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
 )
@@ -69,36 +68,6 @@ func (r *Repository) CodingLedgerRevisionForOperation(ctx context.Context, ledge
 	return revision, err == nil, err
 }
 
-func (r *Repository) CodingLedgerPlanningTurns(ctx context.Context, ledgerID int64) ([]codingagent.PersistedPlanningTurn, error) {
-	if r == nil || r.pool == nil || ledgerID <= 0 {
-		return nil, fmt.Errorf("coding ledger planning turns require repository and ledger identity")
-	}
-	rows, err := r.pool.Query(ctx, `
-		SELECT turn_record.owner_turn_id,turn_record.base_revision,turn_record.exact_text,disposition.statements
-		FROM coding_ledger_owner_turns turn_record
-		JOIN coding_ledger_owner_turn_dispositions disposition USING(ledger_id,owner_turn_id)
-		WHERE turn_record.ledger_id=$1 AND turn_record.action='planning'
-		ORDER BY turn_record.created_at,turn_record.owner_turn_id
-	`, ledgerID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	result := make([]codingagent.PersistedPlanningTurn, 0)
-	for rows.Next() {
-		var value codingagent.PersistedPlanningTurn
-		var raw []byte
-		if err := rows.Scan(&value.OwnerTurnID, &value.BaseRevision, &value.ExactText, &raw); err != nil {
-			return nil, err
-		}
-		if err := json.Unmarshal(raw, &value.Dispositions); err != nil {
-			return nil, err
-		}
-		result = append(result, value)
-	}
-	return result, rows.Err()
-}
-
 func codingLedgerLiteralSearchPattern(search string) string {
 	escaped := strings.NewReplacer(
 		`\`, `\\`,
@@ -114,15 +83,15 @@ func readCodingLedgerRevisionTx(ctx context.Context, tx pgx.Tx, ledgerID, revisi
 	result.LedgerID = ledgerID
 	if err := tx.QueryRow(ctx, `
 		SELECT ledger.job_id,job.current_generation,revision.revision,revision.base_revision,revision.operation_id,
-		       revision.state,revision.coverage_passed,COALESCE(revision.planning_audit_id,''),
-		       COALESCE(revision.owner_turn_id,''),revision.mutation_payload,ledger.created_at,ledger.updated_at
+		       revision.state,COALESCE(revision.owner_turn_id,''),revision.mutation_payload,
+		       ledger.created_at,ledger.updated_at
 		FROM coding_ledgers ledger
 		JOIN jobs job ON job.id=ledger.job_id
 		JOIN coding_ledger_revisions revision ON revision.ledger_id=ledger.id
 		WHERE ledger.id=$1 AND revision.revision=$2
 	`, ledgerID, revision).Scan(&result.JobID, &result.Generation, &result.Revision, &result.BaseRevision,
-		&result.OperationID, &result.State, &result.CoveragePassed, &result.AuditID,
-		&result.OwnerTurnID, &rawMutation, &result.CreatedAt, &result.UpdatedAt); err != nil {
+		&result.OperationID, &result.State, &result.OwnerTurnID, &rawMutation,
+		&result.CreatedAt, &result.UpdatedAt); err != nil {
 		return CodingLedgerRevision{}, err
 	}
 	if result.OwnerTurnID != "" {
@@ -226,58 +195,6 @@ func readCodingLedgerRevisionTx(ctx context.Context, tx pgx.Tx, ledgerID, revisi
 		       (kind='constraint' AND id IN (
 		         SELECT jsonb_array_elements_text(payload->'constraint_ids') FROM selected_task
 		       )) OR
-		       (kind IN ('decision','question') AND EXISTS (
-		         SELECT 1 FROM selected_task
-		         WHERE records.payload->'affects' ? $8
-		            OR records.payload->'affects' ? COALESCE(selected_task.payload->>'group_id','')
-		            OR EXISTS (
-		              SELECT 1 FROM jsonb_array_elements_text(
-		                COALESCE(selected_task.payload->'requirement_ids','[]'::jsonb)
-		              ) AS linked_requirement(id)
-		              WHERE records.payload->'affects' ? linked_requirement.id
-		            )
-		            OR EXISTS (
-		              SELECT 1 FROM jsonb_array_elements_text(
-		                COALESCE(selected_task.payload->'acceptance_criterion_ids','[]'::jsonb)
-		              ) AS linked_acceptance(id)
-		              WHERE records.payload->'affects' ? linked_acceptance.id
-		            )
-		            OR EXISTS (
-		              SELECT 1 FROM jsonb_array_elements_text(
-		                COALESCE(selected_task.payload->'constraint_ids','[]'::jsonb)
-		              ) AS linked_constraint(id)
-		              WHERE records.payload->'affects' ? linked_constraint.id
-		            )
-		            OR EXISTS (
-		              SELECT 1
-		              FROM records AS linked_check
-		              WHERE linked_check.kind='check'
-		                AND linked_check.payload->>'disposition'='active'
-		                AND COALESCE((linked_check.payload->>'required')::boolean,false)
-		                AND records.payload->'affects' ? linked_check.id
-		                AND (
-		                  (
-		                    jsonb_array_length(COALESCE(selected_task.payload->'requirement_ids','[]'::jsonb))=0
-		                    AND btrim(COALESCE(selected_task.payload->>'delivery_obligation',''))<>''
-		                  )
-		                  OR EXISTS (
-		                    SELECT 1
-		                    FROM jsonb_array_elements_text(
-		                      COALESCE(selected_task.payload->'requirement_ids','[]'::jsonb)
-		                    ) AS linked_requirement(id)
-		                    WHERE linked_check.payload->'requirement_ids' ? linked_requirement.id
-		                  )
-		                )
-		                AND EXISTS (
-		                  SELECT 1
-		                  FROM jsonb_array_elements_text(
-		                    COALESCE(selected_task.payload->'acceptance_criterion_ids','[]'::jsonb)
-		                  ) AS linked_acceptance(id)
-		                  WHERE linked_check.payload->'acceptance_criterion_ids' ? linked_acceptance.id
-		                )
-		            )
-		       )) OR
-		       (kind='finding' AND payload->'target_ids' ? $8) OR
 		       (kind='group' AND id=(SELECT payload->>'group_id' FROM selected_task)) OR
 		       (kind='requirement' AND id IN (
 		         SELECT jsonb_array_elements_text(payload->'requirement_ids') FROM selected_task
@@ -366,18 +283,6 @@ func readCodingLedgerRevisionTx(ctx context.Context, tx pgx.Tx, ledgerID, revisi
 				return CodingLedgerRevision{}, err
 			}
 			result.Ledger.Checks = append(result.Ledger.Checks, value)
-		case "decision", "question":
-			var value model.LedgerDecisionQuestion
-			if err := json.Unmarshal(raw, &value); err != nil {
-				return CodingLedgerRevision{}, err
-			}
-			result.Ledger.DecisionsAndQuestions = append(result.Ledger.DecisionsAndQuestions, value)
-		case "finding":
-			var value model.LedgerFinding
-			if err := json.Unmarshal(raw, &value); err != nil {
-				return CodingLedgerRevision{}, err
-			}
-			result.Ledger.Findings = append(result.Ledger.Findings, value)
 		case "dependency":
 			var value model.LedgerDependency
 			if err := json.Unmarshal(raw, &value); err != nil {
@@ -466,12 +371,8 @@ func codingLedgerMutationItemID(item model.LedgerMutationItem) model.LedgerItemI
 		return item.AcceptanceCriterion.ID
 	case item.Check != nil:
 		return item.Check.ID
-	case item.DecisionQuestion != nil:
-		return item.DecisionQuestion.ID
 	case item.Dependency != nil:
 		return item.Dependency.ID
-	case item.Finding != nil:
-		return item.Finding.ID
 	default:
 		return ""
 	}
@@ -748,7 +649,7 @@ func (r *Repository) CodingLedgerTaskDetail(
 		Revision: task.Revision, Limit: page.Limit, Offset: page.Offset,
 		Kinds: []string{
 			"requirement", "constraint", "group", "acceptance_criterion", "check",
-			"decision", "question", "finding", "dependency",
+			"dependency",
 		},
 		Removed: &active, RelatedTaskID: taskID,
 	})
@@ -760,8 +661,6 @@ func (r *Repository) CodingLedgerTaskDetail(
 	task.Ledger.Groups = related.Ledger.Groups
 	task.Ledger.AcceptanceCriteria = related.Ledger.AcceptanceCriteria
 	task.Ledger.Checks = related.Ledger.Checks
-	task.Ledger.DecisionsAndQuestions = related.Ledger.DecisionsAndQuestions
-	task.Ledger.Findings = related.Ledger.Findings
 	task.Ledger.Dependencies = related.Ledger.Dependencies
 	return task, nil
 }

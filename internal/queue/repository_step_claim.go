@@ -45,9 +45,8 @@ func (r *Repository) ClaimNextStep(ctx context.Context, workerID string) (*model
 		                  AND attempts.generation=candidate.generation
 		                  AND attempts.step_id=candidate.id
 		                  AND attempts.attempt=candidate.current_attempt
-		                  AND ((attempts.status=$5 AND attempts.expires_at<=$6)
-					       OR (attempts.status='waiting_input' AND candidate.action IN ('v3_coding_plan','v3_coding')
-                           AND jobs.metadata->'coding_execution'->>'mode'='agents'))
+			                  AND ((attempts.status=$5 AND attempts.expires_at<=$6) OR
+			                       (candidate.action='v3_coding' AND attempts.status='waiting_input'))
 		            ))
 		        )
 		        AND NOT EXISTS (
@@ -92,9 +91,8 @@ func (r *Repository) ClaimNextStep(ctx context.Context, workerID string) (*model
 		            AND attempts.generation=s.generation
 		            AND attempts.step_id=s.id
 		            AND attempts.attempt=s.current_attempt
-		            AND ((attempts.status=$6 AND attempts.expires_at<=$7)
-			         OR (attempts.status='waiting_input' AND s.action IN ('v3_coding_plan','v3_coding')
-                     AND j.metadata->'coding_execution'->>'mode'='agents'))
+			            AND ((attempts.status=$6 AND attempts.expires_at<=$7) OR
+			                 (s.action='v3_coding' AND attempts.status='waiting_input'))
 		      ))
 		  )
 		  AND NOT EXISTS (
@@ -147,11 +145,7 @@ func (r *Repository) ClaimNextStep(ctx context.Context, workerID string) (*model
 					Attempt: previousAttempt, WorkerID: step.WorkerID,
 				}, "expired attempt lost reclaim authority", nil)
 			}
-		} else if previousStatus == model.StepAttemptWaiting {
-			if err := requireCodingAgentResumeClaimTx(ctx, tx, step.JobID, step.ID, step.Generation, previousAttempt); err != nil {
-				return nil, err
-			}
-		} else {
+		} else if previousStatus != model.StepAttemptWaiting || step.Action != "v3_coding" {
 			return nil, fmt.Errorf("step cannot reclaim terminal attempt %q", previousStatus)
 		}
 	}

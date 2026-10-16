@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/contextcompiler"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
@@ -33,6 +34,15 @@ func newChannelSessionMessageConsumer(runtime *nativeRuntimeV3) (*channelSession
 		return nil, fmt.Errorf("session conversation requires a claimed runtime")
 	}
 	if runtime.claim.Job.Pipeline != model.PipelineChat {
+		return nil, nil
+	}
+	configuration, err := codingagent.ConfigurationFromMetadata(runtime.claim.Job.Metadata)
+	if err != nil {
+		return nil, err
+	}
+	if runtime.action == "v3_coding_plan" && configuration.Mode == codingagent.Agents {
+		// Native planning drains its own durable replies after each parsed ledger
+		// is saved. Portable minification must not classify or redirect them.
 		return nil, nil
 	}
 	var origin struct {

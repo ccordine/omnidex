@@ -115,7 +115,7 @@ func (session *chatSession) reconcilePlanReview() error {
 				}
 				session.planReview = &state
 			}
-			return session.showPlanReview()
+			return session.beginPlanReviewNote("")
 		}
 		if attempt == 1 {
 			return staleObservation
@@ -155,9 +155,6 @@ func activeJobRequiresPlanReview(details *model.JobDetails) (bool, error) {
 			details.Job.ID,
 			details.Job.Status,
 		)
-	}
-	if details.AgentPause != nil {
-		return false, nil
 	}
 	return true, nil
 }

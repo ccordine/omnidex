@@ -26,11 +26,11 @@ func (session *chatSession) beginPlanReviewNote(leafID model.CodingPlanLeafID) e
 	session.planNoteEditing = true
 	session.planNoteAuthority = authority
 	session.planNoteSubject = subject
-	if err := session.renderer.console.SetPrompt(fmt.Sprintf("plan note #%d> ", jobID)); err != nil {
+	if err := session.renderer.console.SetPrompt(fmt.Sprintf("plan #%d> ", jobID)); err != nil {
 		return err
 	}
 	return session.renderer.system(
-		"job %d · enter one exact planning note to replan this same job; submit an empty line to return",
+		"job %d · continue planning; submit an empty line to review the ledger",
 		jobID,
 	)
 }
@@ -45,9 +45,6 @@ func (session *chatSession) acceptPlanReviewNote(note string) error {
 		}
 		session.planNoteEditing = false
 		session.planNoteSubject = ""
-		if err := session.renderer.system("plan note canceled"); err != nil {
-			return err
-		}
 		return session.showPlanReview()
 	}
 	feedback, err := planReviewNoteFeedback(session.planNoteSubject, note)
@@ -77,7 +74,7 @@ func (session *chatSession) acceptPlanReviewNote(note string) error {
 			return err
 		}
 		session.planNoteEditing = true
-		if promptErr := session.renderer.console.SetPrompt(fmt.Sprintf("plan note #%d> ", jobID)); promptErr != nil {
+		if promptErr := session.renderer.console.SetPrompt(fmt.Sprintf("plan #%d> ", jobID)); promptErr != nil {
 			return errors.Join(err, promptErr)
 		}
 		return err
@@ -98,6 +95,23 @@ func (session *chatSession) endPlanReviewNoteInput() error {
 	}
 	session.planNoteAuthority = terminalInputAuthority{}
 	return nil
+}
+
+// Typed lifecycle controls remain controls while the planning editor is open.
+// Suppress review re-entry during the operation's authoritative snapshot reads.
+func (session *chatSession) acceptPlanReviewControl(line string) (bool, error) {
+	if err := session.endPlanReviewNoteInput(); err != nil {
+		return false, err
+	}
+	session.planNoteEditing = false
+	session.planNoteSubject = ""
+	session.planNoteSubmitting = true
+	quit, err := session.acceptInput(line, false)
+	session.planNoteSubmitting = false
+	if !quit {
+		err = errors.Join(err, session.reconcilePlanReview())
+	}
+	return quit, err
 }
 
 func planReviewNoteSubject(

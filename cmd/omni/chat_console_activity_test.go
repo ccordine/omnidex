@@ -119,8 +119,14 @@ func TestChatVerbosityCommandsChangeOnlyPresentation(t *testing.T) {
 }
 
 func TestCancelAndStopSubmitCurrentBoundControlWithoutReason(t *testing.T) {
-	for _, command := range []string{"/cancel", "/stop"} {
-		t.Run(command, func(t *testing.T) {
+	for _, test := range []struct {
+		name, command string
+		planning      bool
+	}{
+		{"cancel", "/cancel", false}, {"stop", "/stop", false},
+		{"planning cancel", "/cancel", true}, {"planning stop", "/stop", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
 			var session *chatSession
 			var snapshot client.ChatSessionSnapshot
 			posts := 0
@@ -150,13 +156,33 @@ func TestCancelAndStopSubmitCurrentBoundControlWithoutReason(t *testing.T) {
 			if err := session.reloadSnapshot(); err != nil {
 				t.Fatal(err)
 			}
-			quit, err := session.acceptInput(command, false)
+			if test.planning {
+				console, _ := planReviewTestConsole(t)
+				session.renderer.console = console
+				authority, err := console.BeginPlanReviewNote()
+				if err != nil {
+					t.Fatal(err)
+				}
+				session.planNoteAuthority, session.planNoteEditing = authority, true
+			}
+			quit, err := session.acceptInput(test.command, false)
 			if quit || !client.IsHTTPStatus(err, http.StatusConflict) || posts != 1 {
 				t.Fatalf("cancel = quit %t, posts %d, error %v", quit, posts, err)
 			}
 			if session.pendingControl != nil {
 				t.Fatal("definitive rejection retained a cancellation")
 			}
+			if session.pendingTurn != nil || session.planNoteSubmitting || session.planNoteEditing {
+				t.Fatal("typed stop became planning work or stranded the input mode")
+			}
 		})
+	}
+}
+
+func TestPlanningExitRemainsATypedCommand(t *testing.T) {
+	session := &chatSession{planNoteEditing: true}
+	quit, err := session.acceptInput("/exit", false)
+	if err != nil || !quit || session.pendingTurn != nil || session.pendingControl != nil {
+		t.Fatalf("planning /exit was reinterpreted as feedback: quit=%v error=%v", quit, err)
 	}
 }

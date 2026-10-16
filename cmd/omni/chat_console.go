@@ -61,7 +61,6 @@ type chatConsole struct {
 	renderedPrompt string
 	terminalWidth  int
 	terminalHeight int
-	questionScope  chatQuestionScope
 }
 
 func newChatConsole(

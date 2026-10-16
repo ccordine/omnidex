@@ -47,17 +47,69 @@ letters are local to each reduced round; no model response carries the selected 
 ## Coding task ledger
 
 PostgreSQL owns the planning ledger, frozen task ledger, task order, dependencies,
-review state, checks, and completion. Planning receives the broad request and the
-bounded repository facts needed to construct the ledger. No planning response is
+review state, checks, and completion. Planning uses normal unrestricted Codex tools
+and receives the request, conversation, and one current remaining-ledger snapshot.
+No planning response is
 executable until deterministic validation and owner approval freeze a revision.
 
 Execution receives only the selected task's goal, guidance, relevant files,
-constraints, acceptance criteria, and checks. It never receives or controls the
-remaining queue. Code owns workspace authority and every state transition. After
-execution, code runs the declared checks from a sealed source tree and dispatches a
-fresh reviewer with only that task and its observed result. A task advances only
-after its checks and review are recorded. The executor and reviewer cannot select,
-reorder, expand, reopen, or complete ledger work.
+constraints, acceptance criteria, and checks. Each task gets its own normal Codex thread
+with full access, native tools, and an ordinary text response. No Omnidex file tools
+or structured executor response are supplied. The configured response parser reads
+that final text and identifies completion, a question, a permission request, or an
+error. Questions and permission requests wait for an owner reply on the same job
+and task; they resume the same persisted native thread and do not reopen planning.
+Native tool questions, approvals, and MCP elicitations retain the live turn while
+the owner replies through the existing conversation. Permission grants require an
+explicit owner choice; they are never inferred or automatically accepted.
+Code owns every ledger transition.
+The public waiting-state contract explicitly identifies reply versus replan;
+clients do not infer that decision from a step name or response wording.
+
+After reported completion, code runs the declared checks in the authoritative
+workspace and dispatches a fresh reviewer with only that task and its observed
+result. Execution, review, and checks use normal host tools, environment, and
+network access. File lists are task context, not permission allowlists. Approved
+execution survives a disconnected CLI while retaining its exact job/directory
+identity, attempt lease, and explicit cancellation. A task advances only after its checks and review are recorded. Neither
+executor output nor parser output alone marks ledger work complete.
+
+Review returns ordinary Codex prose without an output schema. The same configured
+response parser extracts its findings, reported verification, questions, permission
+requests, or errors using only that response and the task's acceptance criteria.
+Code binds the parsed result to the exact native review and frozen parser route.
+Parser failures never replay completed native review work. A final review question
+waits on the same job and task; the reply goes to a fresh disposable reviewer with
+the task, previous question, and owner reply, not back to execution. The existing
+end-of-run evidence audit is unchanged; no aggregate AI review is introduced.
+
+Every new coding or parsing channel consumes the existing context compiler's
+minification, without repeating raw history beside it or automatically injecting
+project documents. Large inputs use its chunking rather than a native 128 KiB cap.
+Exact source assignments and responses remain in the journal. The parser is pure
+tool-free inference, not another executor. Its failures retain the queued job and
+retry through the existing lease boundary without repeating completed native work.
+Minification has no fixed result-size target or response ceiling. Its 2 KiB
+threshold only skips unnecessary inference for already-small input; it does not
+reject necessary context or force repeated compaction. Codex owns its real native
+context window; the Ollama `INFERENCE_CONTEXT_TOKENS` setting cannot reject a
+completed Codex turn. Exact prompts and their PostgreSQL evidence have no 128 KiB
+input ceiling.
+
+There is no three-round execution/review cutoff. The selected approved task
+continues until verified, canceled, or in need of owner input. Task-local owner
+clarifications reach execution, review, and continuation planning programmatically,
+including after replanning.
+
+Execution is never blindly replayed. Continuation metadata is journaled before
+dispatch. Recovery reads the original native turn. Native context exhaustion,
+compaction start, or interrupted work preserves the task as incomplete and opens
+planning to inspect partial work and propose its remainder. An owner reply returns
+the same job to mutable planning; execution cannot resume until the owner freezes
+the ledger. The approved remainder, interrupted task, and prerequisites precede
+untouched work, even after multiple planning turns. Exact accepted contracts carry
+forward without reexecution. Long responses remain exact in the journal and project
+atomically into bounded transcript parts. No aggregate AI reviewer is introduced.
 
 There is no alternate direct-coding pipeline. Missing ledger authority, invalid
 routes, stale revisions, failed checks, and rejected review all fail explicitly.

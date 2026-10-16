@@ -38,8 +38,6 @@ type CodingLedgerRevision struct {
 	BaseRevision          int64                             `json:"base_revision"`
 	OperationID           string                            `json:"operation_id"`
 	State                 string                            `json:"state"`
-	CoveragePassed        bool                              `json:"coverage_passed"`
-	AuditID               string                            `json:"audit_id,omitempty"`
 	OwnerTurnID           string                            `json:"owner_turn_id,omitempty"`
 	OwnerTurnDispositions []model.OwnerStatementDisposition `json:"owner_turn_dispositions,omitempty"`
 	LatestDelta           CodingLedgerDelta                 `json:"latest_delta"`

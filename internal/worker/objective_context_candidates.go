@@ -404,7 +404,7 @@ func splitContextCandidateContent(content string) []string {
 	chunks := make([]string, len(rawChunks))
 	for index, raw := range rawChunks {
 		chunks[index] = fmt.Sprintf(
-			"Segment %d/%d:\n%s", index+1, len(rawChunks), raw,
+			"Segment %d of %d:\n%s", index+1, len(rawChunks), raw,
 		)
 		if len(chunks[index]) > maximum {
 			return []string{""}

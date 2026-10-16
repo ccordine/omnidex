@@ -22,7 +22,12 @@ func (connection *connection) startAgentTurn(call codingagent.Assignment, thread
 		"approvalPolicy": "never",
 		"sandboxPolicy":  map[string]any{"type": "readOnly", "networkAccess": false},
 		"summary":        "auto",
-		"outputSchema":   agentOutputSchema(call),
+	}
+	if call.Role.IsNative() {
+		parameters["sandboxPolicy"] = map[string]any{"type": "dangerFullAccess"}
+	}
+	if !call.Role.IsNative() && call.Role != codingagent.PlanningMutation {
+		parameters["outputSchema"] = agentOutputSchema(call)
 	}
 	applyAgentInferenceOptions(parameters, call.Route)
 	var response struct {

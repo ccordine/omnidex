@@ -46,9 +46,7 @@ func TestCodingLedgerRouteReplacementRequiresRepresentedMaterialMutation(t *test
 	current := repositoryLedgerRoutes(1)
 	replacement := repositoryLedgerRoutes(1)
 	replacement[0].Model = "replacement"
-	outOfScope := model.OwnerTurnDisposition{
-		Kind: model.OwnerTurnOutOfScope, Reason: "not represented",
-	}
+	outOfScope := model.OutOfScopeOwnerTurn("not represented")
 	if err := validateCodingLedgerRouteMutation(current, replacement, 2, nil, outOfScope); err == nil {
 		t.Fatal("out-of-scope zero-operation route replacement was accepted")
 	}
@@ -57,9 +55,7 @@ func TestCodingLedgerRouteReplacementRequiresRepresentedMaterialMutation(t *test
 		Kind: model.LedgerMutationReview, TargetID: "task",
 		ReviewState: model.LedgerReviewAgreed,
 	}}
-	represented := model.OwnerTurnDisposition{
-		Kind: model.OwnerTurnRepresented, ItemIDs: []model.LedgerItemID{"task"},
-	}
+	represented := model.RepresentedOwnerTurn([]model.LedgerItemID{"task"})
 	if err := validateCodingLedgerRouteMutation(current, replacement, 2, operation, represented); err == nil {
 		t.Fatal("route replacement reused an old configuration revision")
 	}
@@ -74,9 +70,9 @@ func TestCodingLedgerRouteReplacementRequiresRepresentedMaterialMutation(t *test
 func TestInitialCodingLedgerRejectsMixedOwnerTurnDisposition(t *testing.T) {
 	ledger := repositoryLedgerFixture()
 	disposition := model.OwnerTurnDisposition{
-		Kind:    model.OwnerTurnOutOfScope,
-		Reason:  "not part of this ledger",
-		ItemIDs: []model.LedgerItemID{"task"},
+		Statements: []model.OwnerStatementDisposition{{
+			Kind: model.OwnerTurnOutOfScope, Reason: "not part of this ledger", ItemIDs: []model.LedgerItemID{"task"},
+		}},
 	}
 	if err := validateOwnerTurnDisposition(ledger, disposition); err == nil {
 		t.Fatal("out-of-scope disposition with represented item references was accepted")

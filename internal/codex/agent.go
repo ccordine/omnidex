@@ -10,55 +10,107 @@ import (
 	"github.com/gryph/omnidex/internal/codingagent"
 )
 
-func (client *Client) Run(parent context.Context, call codingagent.Assignment, writer codingagent.FileWriter, event func(codingagent.NativeEvent) error) (codingagent.Result, error) {
+func (client *Client) Run(parent context.Context, call codingagent.Assignment, event func(codingagent.NativeEvent) error) (codingagent.Result, error) {
 	result := codingagent.Result{Provider: "codex", Model: call.Route.Model, Evidence: []json.RawMessage{}}
 	if err := validateAgentAssignment(call); err != nil {
 		return result, err
 	}
-	requiresFileAccess := call.Role == codingagent.Execute || call.Role == codingagent.Review || call.Role.IsPlanning() && len(call.ReadFiles) > 0
-	if requiresFileAccess != (writer != nil) {
-		return result, fmt.Errorf("agent assignment changed its exact scoped file access")
-	}
 	activity := newAgentActivityStream(call, &result, event)
 	event = activity.observe
-	ctx, cancel := context.WithTimeout(parent, client.timeout)
-	defer cancel()
-	scratch, cleanup, err := client.agentScratch()
-	if err != nil {
-		return result, err
+	ctx, cancel := context.WithCancel(parent)
+	if !call.Role.IsNative() {
+		cancel()
+		ctx, cancel = context.WithTimeout(parent, client.timeout)
 	}
-	defer cleanup()
-	connection, err := startConfiguredConnection(ctx, client.command, call.Root, true, nil)
+	defer cancel()
+	var scratch string
+	var err error
+	if !call.Role.IsNative() {
+		var cleanup func()
+		scratch, cleanup, err = client.agentScratch()
+		if err != nil {
+			return result, err
+		}
+		defer cleanup()
+	}
+	var connection *connection
+	if call.Role.IsNative() {
+		connection, err = startExecutionConnection(ctx, client.command, call.Root)
+	} else {
+		connection, err = startConfiguredConnection(ctx, client.command, call.Root, true, nil)
+	}
 	if err != nil {
 		return result, retryableAgentSessionError(err)
 	}
 	defer connection.close()
+	connection.bindAgentRequests(ctx, call, &result, event)
 	thread, raw, err := connection.startAgentThread(call, scratch)
 	if err != nil {
 		return result, retryableAgentSessionError(err)
+	}
+	if result.ThreadID != "" && result.ThreadID != thread.Thread.ID {
+		return result, fmt.Errorf("native thread start differs from its early request")
 	}
 	result.ThreadID = thread.Thread.ID
 	if err := recordAgentFrame(&result, raw, event); err != nil {
 		return result, err
 	}
+	if call.Role == codingagent.Execute {
+		if call.Session != nil && call.Session.State != "idle" {
+			return connection.recoverExecutionResult(call, result, event)
+		}
+	}
 	prompt, err := renderAgentAssignment(call)
 	if err != nil {
 		return result, err
+	}
+	contextReceipt, err := connection.injectAgentContext(call, thread.Thread.ID)
+	if err != nil {
+		return result, retryableAgentSessionError(err)
+	}
+	if len(contextReceipt) != 0 {
+		if err := recordAgentFrame(&result, contextReceipt, event); err != nil {
+			return result, err
+		}
+	}
+	if call.Role == codingagent.Execute {
+		session := &codingagent.ExecutionSession{ThreadID: result.ThreadID, State: "dispatching"}
+		if call.Session != nil {
+			session.PreviousTurnID = call.Session.TurnID
+		}
+		if err := event(codingagent.NativeEvent{Session: session}); err != nil {
+			return result, err
+		}
 	}
 	turnID, raw, pending, err := connection.startAgentTurn(call, thread, prompt)
 	if err != nil {
 		return result, retryableAgentSessionError(err)
 	}
+	if result.TurnID != "" && result.TurnID != turnID {
+		return result, fmt.Errorf("native turn start differs from its early request")
+	}
 	result.TurnID = turnID
 	if result.TurnID == "" {
 		return result, fmt.Errorf("agent turn lacks its native identity")
 	}
+	if call.Role == codingagent.Execute {
+		if err := event(codingagent.NativeEvent{Session: &codingagent.ExecutionSession{ThreadID: result.ThreadID, TurnID: result.TurnID, State: "running"}}); err != nil {
+			return result, err
+		}
+	}
 	items := map[string]string{}
 	closedItems := map[string]string{}
+	messages := &agentResponseMessages{}
+	consume := func(frame rpcFrame, raw json.RawMessage) (bool, error) {
+		if resumedUsageSnapshot(call, frame) {
+			return false, nil
+		}
+		return consumeAgentFrameTracked(frame, raw, &result, call.Role, items, closedItems, messages, event)
+	}
 	finished := false
 	for _, notification := range pending {
 		var done bool
-		done, err = consumeAgentFrameTracked(notification.frame, notification.raw, &result, call.Role, items, closedItems, event)
+		done, err = consume(notification.frame, notification.raw)
 		if err != nil {
 			return result, err
 		}
@@ -73,15 +125,12 @@ func (client *Client) Run(parent context.Context, call codingagent.Assignment, w
 			return result, retryableAgentSessionError(err)
 		}
 		if frame.ID != nil {
-			if frame.Method == "item/tool/requestUserInput" {
-				return result, fmt.Errorf("frozen task agents cannot request owner input")
-			}
-			if err := connection.handleAgentTool(ctx, frame, &result, call, writer, event); err != nil {
+			if err := connection.serverRequest(frame); err != nil {
 				return result, err
 			}
 			continue
 		}
-		finished, err = consumeAgentFrameTracked(frame, connection.lastFrame, &result, call.Role, items, closedItems, event)
+		finished, err = consume(frame, connection.lastFrame)
 		if err != nil {
 			return result, err
 		}
@@ -96,7 +145,7 @@ func (client *Client) Run(parent context.Context, call codingagent.Assignment, w
 	if len(items) > 0 {
 		return result, fmt.Errorf("agent ended with incomplete native items")
 	}
-	mapped, err := mapAgentReviewRunResult(call, result.Content)
+	mapped, err := mapAgentReviewResponse(call, result.Content)
 	if err != nil {
 		return result, err
 	}
@@ -104,9 +153,8 @@ func (client *Client) Run(parent context.Context, call codingagent.Assignment, w
 	return result, nil
 }
 
-// Provider processes and their streams are disposable. Losing one never proves
-// the durable task failed; the worker must open a fresh session against the same
-// frozen task and persisted evidence.
+// Pure inference may be retried. Effectful execution is never blindly retried;
+// its persisted native thread is the only continuation authority.
 func retryableAgentSessionError(err error) error {
 	if err == nil {
 		return nil
@@ -132,22 +180,37 @@ func (connection *connection) startAgentThread(call codingagent.Assignment, scra
 	if err := connection.send("initialized", map[string]any{}, nil); err != nil {
 		return thread, nil, err
 	}
+	if call.Role.IsNative() {
+		parameters := map[string]any{"model": call.Route.Model, "allowProviderModelFallback": false,
+			"cwd": call.Root, "sandbox": "danger-full-access", "approvalPolicy": "never", "ephemeral": call.Role != codingagent.Execute}
+		applyAgentInferenceOptions(parameters, call.Route)
+		method := "thread/start"
+		if call.Role == codingagent.Execute && call.Session != nil {
+			method = "thread/resume"
+			parameters["threadId"] = call.Session.ThreadID
+			delete(parameters, "ephemeral")
+			parameters["excludeTurns"] = true
+		}
+		raw, err := connection.call(method, parameters, &thread)
+		if err == nil && (thread.Model != call.Route.Model || thread.Thread.ID == "") {
+			err = fmt.Errorf("agent thread changed its immutable model or lacks identity")
+		}
+		if err == nil && call.Session != nil && thread.Thread.ID != call.Session.ThreadID {
+			err = fmt.Errorf("agent continuation changed its exact task thread")
+		}
+		return thread, raw, err
+	}
 	configuration, err := connection.disabledToolsConfiguration()
 	if err != nil {
 		return thread, nil, err
 	}
-	baseInstructions := "Perform only the supplied assignment. Omnidex owns workflow and side effects. Use only explicitly supplied file tools and return the requested structured result."
+	baseInstructions := "Parse only the supplied response into the requested result."
 	configuration["shell_environment_policy"] = map[string]any{"inherit": "none", "set": agentToolEnvironment(scratch)}
 	parameters := map[string]any{"model": call.Route.Model, "allowProviderModelFallback": false,
 		"cwd": call.Root, "sandbox": "read-only", "approvalPolicy": "never", "config": configuration,
 		"baseInstructions": baseInstructions,
 		"serviceName":      "omnidex-agents", "ephemeral": true}
 	applyAgentInferenceOptions(parameters, call.Route)
-	if call.Role == codingagent.Execute {
-		parameters["dynamicTools"] = []any{agentReadTool(), agentWriteTool(), agentDeleteTool()}
-	} else if len(call.ReadFiles) > 0 {
-		parameters["dynamicTools"] = []any{agentReadTool()}
-	}
 	raw, err := connection.call("thread/start", parameters, &thread)
 	if err == nil && (thread.Model != call.Route.Model || thread.Thread.ID == "") {
 		err = fmt.Errorf("agent thread changed its immutable model or lacks identity")
@@ -163,14 +226,16 @@ func validateAgentAssignment(call codingagent.Assignment) error {
 		return fmt.Errorf("agent assignment lacks exact authority, workspace or route")
 	}
 	switch call.Role {
-	case codingagent.PlanningInitial, codingagent.PlanningTarget, codingagent.PlanningMutation,
-		codingagent.PlanningCoverage, codingagent.PlanningAudit,
+	case codingagent.Plan, codingagent.PlanningInitial, codingagent.PlanningMutation, codingagent.ExecutionResponse, codingagent.ReviewResponse,
 		codingagent.Execute, codingagent.Review:
 	default:
 		return fmt.Errorf("unknown agent assignment role")
 	}
 	if call.Role != codingagent.Execute && (len(call.WriteFiles) != 0 || len(call.DeleteFiles) != 0) {
 		return fmt.Errorf("planning and review agents cannot receive write access")
+	}
+	if call.Role.IsNative() {
+		return nil
 	}
 	for _, file := range append(append(append([]string{}, call.ReadFiles...), call.WriteFiles...), call.DeleteFiles...) {
 		if err := codingagent.ValidatePath(file); err != nil {

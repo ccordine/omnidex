@@ -9,13 +9,13 @@ import (
 )
 
 func TestAgentCallLifecycleShowsTypedActualRoleAndStatus(t *testing.T) {
-	for _, role := range []string{"plan", "planning_initial", "planning_target", "planning_mutation", "planning_coverage", "planning_audit", "execute", "review"} {
+	for _, role := range []string{"plan", "planning_initial", "planning_mutation", "execution_response", "execute", "review", "review_response"} {
 		for _, status := range []model.AgentCallActivityStatus{model.AgentCallActivityStarted, model.AgentCallActivityCompleted, model.AgentCallActivityFailed} {
 			t.Run(role+"/"+string(status), func(t *testing.T) {
 				console, output := planReviewTestConsole(t)
 				renderer := chatRenderer{console: console}
 				activity := model.AgentCallActivity{Schema: 1, CallID: 73, Role: role, Status: status}
-				if role == "execute" || role == "review" {
+				if role == "execute" || role == "review" || role == "review_response" {
 					activity.TaskID = "actual-task"
 				}
 				if err := renderer.realtime(client.RealtimeEvent{EventName: client.RealtimeJobRuntimeEvent, JobID: 41, StepID: 12,

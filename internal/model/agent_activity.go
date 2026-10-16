@@ -78,11 +78,11 @@ func (activity AgentActivity) Validate() error {
 		return fmt.Errorf("agent activity has unregistered source %q", activity.Source)
 	}
 	switch activity.Role {
-	case "plan", "planning_initial", "planning_target", "planning_mutation", "planning_coverage", "planning_audit":
+	case "plan", "planning_initial", "planning_mutation", "execution_response":
 		if activity.TaskID != "" {
 			return fmt.Errorf("global agent activity cannot carry a task identity")
 		}
-	case "execute", "review":
+	case "execute", "review", "review_response":
 		if activity.TaskID == "" || !activityText(activity.TaskID, 256) || strings.TrimSpace(activity.TaskID) != activity.TaskID {
 			return fmt.Errorf("task agent activity lacks its exact task identity")
 		}

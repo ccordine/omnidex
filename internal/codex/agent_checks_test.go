@@ -7,12 +7,12 @@ import (
 	"github.com/gryph/omnidex/internal/codingagent"
 )
 
-func TestReadOnlyCheckScopePreservesOneTaskPacket(t *testing.T) {
+func TestDeterministicCheckScopePreservesOneTaskPacket(t *testing.T) {
 	for _, role := range []codingagent.Role{codingagent.Execute, codingagent.Review} {
 		t.Run(string(role), func(t *testing.T) {
 			scope := agentTestScope(t)
 			scope.Role = role
-			projected, err := readOnlyCheckScope(scope)
+			projected, err := deterministicCheckScope(scope)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -29,7 +29,7 @@ func TestReadOnlyCheckScopePreservesOneTaskPacket(t *testing.T) {
 	}
 }
 
-func TestReadOnlyCheckScopeRejectsAnythingButOneTaskPacket(t *testing.T) {
+func TestDeterministicCheckScopeRejectsAnythingButOneTaskPacket(t *testing.T) {
 	for _, mutate := range []func(*codingagent.Assignment){
 		func(scope *codingagent.Assignment) { scope.Role = codingagent.PlanningInitial },
 		func(scope *codingagent.Assignment) { scope.Role = "unregistered" },
@@ -42,7 +42,7 @@ func TestReadOnlyCheckScopeRejectsAnythingButOneTaskPacket(t *testing.T) {
 		scope := agentTestScope(t)
 		scope.Role = codingagent.Review
 		mutate(&scope)
-		if _, err := readOnlyCheckScope(scope); err == nil {
+		if _, err := deterministicCheckScope(scope); err == nil {
 			t.Fatal("check scope accepted context outside one task packet")
 		}
 	}

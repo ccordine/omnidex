@@ -23,6 +23,7 @@ const (
 	ChannelSessionMessageRedirected ChannelSessionMessageState = "workspace_mutation"
 	ChannelSessionMessageRetired    ChannelSessionMessageState = "retired"
 	ChannelSessionMessageFailed     ChannelSessionMessageState = "failed"
+	ChannelSessionMessagePlanning   ChannelSessionMessageState = "planning"
 )
 
 type ChannelSessionTurn struct {

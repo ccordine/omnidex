@@ -2,9 +2,9 @@ package model
 
 import (
 	"fmt"
-	"path"
 	"reflect"
 	"strings"
+	"unicode/utf8"
 )
 
 // Ledger records are normalized: references connect records, while every record
@@ -96,21 +96,6 @@ type LedgerCheck struct {
 	Required               bool           `json:"required"`
 }
 
-type LedgerDecisionQuestionKind string
-
-const (
-	LedgerDecision LedgerDecisionQuestionKind = "decision"
-	LedgerQuestion LedgerDecisionQuestionKind = "question"
-)
-
-type LedgerDecisionQuestion struct {
-	LedgerItem
-	Kind    LedgerDecisionQuestionKind `json:"kind"`
-	Prompt  string                     `json:"prompt"`
-	Answer  string                     `json:"answer,omitempty"`
-	Affects []LedgerItemID             `json:"affects,omitempty"`
-}
-
 type LedgerDependencyKind string
 
 const (
@@ -125,38 +110,21 @@ type LedgerDependency struct {
 	Kind           LedgerDependencyKind `json:"kind"`
 }
 
-type LedgerFindingKind string
-
-const (
-	LedgerFindingPlanning LedgerFindingKind = "planning"
-)
-
-type LedgerFinding struct {
-	LedgerItem
-	Kind        LedgerFindingKind `json:"kind"`
-	Observation string            `json:"observation"`
-	TargetIDs   []LedgerItemID    `json:"target_ids"`
-	ResolvedBy  []LedgerItemID    `json:"resolved_by,omitempty"`
-}
-
 // EngineeringLedger has no aggregate item-count limit.
 type EngineeringLedger struct {
-	ID                    string                      `json:"id"`
-	Revision              int64                       `json:"revision"`
-	Objectives            []LedgerObjective           `json:"objectives"`
-	Requirements          []LedgerRequirement         `json:"requirements"`
-	Constraints           []LedgerConstraint          `json:"constraints"`
-	Groups                []LedgerGroup               `json:"groups"`
-	Tasks                 []LedgerTask                `json:"tasks"`
-	AcceptanceCriteria    []LedgerAcceptanceCriterion `json:"acceptance_criteria"`
-	Checks                []LedgerCheck               `json:"checks"`
-	DecisionsAndQuestions []LedgerDecisionQuestion    `json:"decisions_and_questions"`
-	Dependencies          []LedgerDependency          `json:"dependencies"`
-	Findings              []LedgerFinding             `json:"findings"`
+	ID                 string                      `json:"id"`
+	Revision           int64                       `json:"revision"`
+	Objectives         []LedgerObjective           `json:"objectives"`
+	Requirements       []LedgerRequirement         `json:"requirements"`
+	Constraints        []LedgerConstraint          `json:"constraints"`
+	Groups             []LedgerGroup               `json:"groups"`
+	Tasks              []LedgerTask                `json:"tasks"`
+	AcceptanceCriteria []LedgerAcceptanceCriterion `json:"acceptance_criteria"`
+	Checks             []LedgerCheck               `json:"checks"`
+	Dependencies       []LedgerDependency          `json:"dependencies"`
 }
 
 func validateLedgerTaskFiles(task LedgerTask) error {
-	seen := map[string]string{}
 	for _, group := range []struct {
 		name  string
 		files []string
@@ -165,25 +133,25 @@ func validateLedgerTaskFiles(task LedgerTask) error {
 		{name: "write", files: task.WriteFiles},
 		{name: "delete", files: task.DeleteFiles},
 	} {
+		seen := map[string]bool{}
 		for _, file := range group.files {
-			if file == "" || file == "." || path.IsAbs(file) || path.Clean(file) != file ||
-				strings.ContainsAny(file, "\\\x00\r\n") || file == ".." || strings.HasPrefix(file, "../") {
+			if err := ValidateTaskFileReference(file); err != nil {
 				return fmt.Errorf("task %s has invalid %s file %q", task.ID, group.name, file)
 			}
-			for _, part := range strings.Split(file, "/") {
-				if part == ".git" || part == ".codex" || part == ".env" || strings.HasPrefix(part, ".env.") ||
-					part == "node_modules" || part == ".agent-cache" || part == "bin" {
-					return fmt.Errorf("task %s %s files include protected path %q", task.ID, group.name, file)
-				}
+			if seen[file] {
+				return fmt.Errorf("task %s repeats %s file %q", task.ID, group.name, file)
 			}
-			if prior := seen[file]; prior != "" {
-				if prior == group.name {
-					return fmt.Errorf("task %s repeats %s file %q", task.ID, group.name, file)
-				}
-				return fmt.Errorf("task %s assigns file %q to both %s and %s", task.ID, file, prior, group.name)
-			}
-			seen[file] = group.name
+			seen[file] = true
 		}
+	}
+	return nil
+}
+
+// File references describe task context, not filesystem permission grants.
+// They may name absolute paths, generated files, configuration, or remote paths.
+func ValidateTaskFileReference(value string) error {
+	if strings.TrimSpace(value) == "" || len(value) > 4096 || !utf8.ValidString(value) || strings.ContainsAny(value, "\x00\r\n") {
+		return fmt.Errorf("task file reference must be nonblank UTF-8 text of at most 4096 bytes")
 	}
 	return nil
 }
@@ -193,25 +161,31 @@ type OwnerTurnDispositionKind string
 const (
 	OwnerTurnRepresented OwnerTurnDispositionKind = "represented"
 	OwnerTurnOutOfScope  OwnerTurnDispositionKind = "out_of_scope"
-	OwnerTurnUnresolved  OwnerTurnDispositionKind = "unresolved"
 )
 
 type OwnerTurnDisposition struct {
-	Kind        OwnerTurnDispositionKind    `json:"kind"`
-	ItemIDs     []LedgerItemID              `json:"item_ids,omitempty"`
-	Reason      string                      `json:"reason,omitempty"`
-	QuestionIDs []LedgerItemID              `json:"question_ids,omitempty"`
-	Statements  []OwnerStatementDisposition `json:"statements,omitempty"`
+	Statements []OwnerStatementDisposition `json:"statements"`
 }
 
 // OwnerStatementDisposition records one independently actionable clause. A
-// turn may combine represented work, unresolved questions, and visible
-// out-of-scope clauses without forcing those distinct facts into one label.
+// turn may combine represented work and visible out-of-scope clauses without
+// forcing those distinct facts into one label.
 type OwnerStatementDisposition struct {
-	Kind        OwnerTurnDispositionKind `json:"kind"`
-	ItemIDs     []LedgerItemID           `json:"item_ids,omitempty"`
-	Reason      string                   `json:"reason,omitempty"`
-	QuestionIDs []LedgerItemID           `json:"question_ids,omitempty"`
+	Kind    OwnerTurnDispositionKind `json:"kind"`
+	ItemIDs []LedgerItemID           `json:"item_ids,omitempty"`
+	Reason  string                   `json:"reason,omitempty"`
+}
+
+func RepresentedOwnerTurn(itemIDs []LedgerItemID) OwnerTurnDisposition {
+	return OwnerTurnDisposition{Statements: []OwnerStatementDisposition{{
+		Kind: OwnerTurnRepresented, ItemIDs: append([]LedgerItemID(nil), itemIDs...),
+	}}}
+}
+
+func OutOfScopeOwnerTurn(reason string) OwnerTurnDisposition {
+	return OwnerTurnDisposition{Statements: []OwnerStatementDisposition{{
+		Kind: OwnerTurnOutOfScope, Reason: reason,
+	}}}
 }
 
 func (disposition OwnerStatementDisposition) Validate() error {
@@ -220,22 +194,15 @@ func (disposition OwnerStatementDisposition) Validate() error {
 		if err := validateLedgerItemIDs(disposition.ItemIDs, "represented owner turn"); err != nil {
 			return err
 		}
-		if disposition.Reason != "" || len(disposition.QuestionIDs) != 0 {
+		if disposition.Reason != "" {
 			return fmt.Errorf("represented owner turn contains fields from another disposition")
 		}
 	case OwnerTurnOutOfScope:
 		if strings.TrimSpace(disposition.Reason) == "" {
 			return fmt.Errorf("out-of-scope owner turn requires a reason")
 		}
-		if len(disposition.ItemIDs) != 0 || len(disposition.QuestionIDs) != 0 {
+		if len(disposition.ItemIDs) != 0 {
 			return fmt.Errorf("out-of-scope owner turn contains fields from another disposition")
-		}
-	case OwnerTurnUnresolved:
-		if err := validateLedgerItemIDs(disposition.QuestionIDs, "unresolved owner turn"); err != nil {
-			return err
-		}
-		if len(disposition.ItemIDs) != 0 || disposition.Reason != "" {
-			return fmt.Errorf("unresolved owner turn contains fields from another disposition")
 		}
 	default:
 		return fmt.Errorf("owner statement requires a disposition")
@@ -244,11 +211,7 @@ func (disposition OwnerStatementDisposition) Validate() error {
 }
 
 func (disposition OwnerTurnDisposition) StatementDispositions() []OwnerStatementDisposition {
-	if len(disposition.Statements) > 0 {
-		return append([]OwnerStatementDisposition(nil), disposition.Statements...)
-	}
-	return []OwnerStatementDisposition{{Kind: disposition.Kind, ItemIDs: disposition.ItemIDs,
-		Reason: disposition.Reason, QuestionIDs: disposition.QuestionIDs}}
+	return append([]OwnerStatementDisposition(nil), disposition.Statements...)
 }
 
 type LedgerMutationKind string
@@ -270,9 +233,7 @@ type LedgerMutationItem struct {
 	Task                *LedgerTask                `json:"task,omitempty"`
 	AcceptanceCriterion *LedgerAcceptanceCriterion `json:"acceptance_criterion,omitempty"`
 	Check               *LedgerCheck               `json:"check,omitempty"`
-	DecisionQuestion    *LedgerDecisionQuestion    `json:"decision_question,omitempty"`
 	Dependency          *LedgerDependency          `json:"dependency,omitempty"`
-	Finding             *LedgerFinding             `json:"finding,omitempty"`
 }
 type LedgerMutationOperation struct {
 	Kind        LedgerMutationKind  `json:"kind"`
@@ -296,9 +257,6 @@ func (item LedgerItem) Validate() error {
 	}
 	if strings.TrimSpace(item.Provenance.Kind) == "" || strings.TrimSpace(item.Provenance.Reference) == "" || item.Provenance.Revision < 0 {
 		return fmt.Errorf("ledger item %s requires provenance", item.ID)
-	}
-	if strings.TrimSpace(item.Rationale) == "" {
-		return fmt.Errorf("ledger item %s requires rationale", item.ID)
 	}
 	switch item.Priority {
 	case LedgerPriorityCritical, LedgerPriorityHigh, LedgerPriorityNormal, LedgerPriorityLow:
@@ -388,18 +346,8 @@ func (ledger EngineeringLedger) validate(complete bool) error {
 			return err
 		}
 	}
-	for i := range ledger.DecisionsAndQuestions {
-		if err := add(ledger.DecisionsAndQuestions[i].LedgerItem, "decision/question"); err != nil {
-			return err
-		}
-	}
 	for i := range ledger.Dependencies {
 		if err := add(ledger.Dependencies[i].LedgerItem, "dependency"); err != nil {
-			return err
-		}
-	}
-	for i := range ledger.Findings {
-		if err := add(ledger.Findings[i].LedgerItem, "finding"); err != nil {
 			return err
 		}
 	}
@@ -410,15 +358,6 @@ func (ledger EngineeringLedger) validate(complete bool) error {
 		}
 		if active && dispositions[id] != LedgerDispositionActive {
 			return fmt.Errorf("active ledger relationship requires active %s %s", kind, id)
-		}
-		return nil
-	}
-	requireKnown := func(id LedgerItemID, active bool) error {
-		if ids[id] == "" {
-			return fmt.Errorf("ledger reference %s must identify an item", id)
-		}
-		if active && dispositions[id] != LedgerDispositionActive {
-			return fmt.Errorf("active ledger relationship requires active item %s", id)
 		}
 		return nil
 	}
@@ -456,10 +395,10 @@ func (ledger EngineeringLedger) validate(complete bool) error {
 				return err
 			}
 		}
-		if len(value.RequirementIDs) == 0 && strings.TrimSpace(value.DeliveryObligation) == "" {
+		if complete && len(value.RequirementIDs) == 0 && strings.TrimSpace(value.DeliveryObligation) == "" {
 			return fmt.Errorf("task %s requires a requirement or delivery obligation", value.ID)
 		}
-		if len(value.AcceptanceCriterionIDs) == 0 {
+		if complete && len(value.AcceptanceCriterionIDs) == 0 {
 			return fmt.Errorf("task %s requires acceptance criteria", value.ID)
 		}
 		for _, id := range value.RequirementIDs {
@@ -482,7 +421,7 @@ func (ledger EngineeringLedger) validate(complete bool) error {
 		}
 	}
 	for _, value := range ledger.AcceptanceCriteria {
-		if strings.TrimSpace(value.Outcome) == "" || len(value.RequirementIDs) == 0 {
+		if strings.TrimSpace(value.Outcome) == "" || complete && len(value.RequirementIDs) == 0 {
 			return fmt.Errorf("acceptance criterion %s requires an outcome and requirements", value.ID)
 		}
 		for _, id := range value.RequirementIDs {
@@ -503,7 +442,7 @@ func (ledger EngineeringLedger) validate(complete bool) error {
 		if len(value.Argv) > 0 && strings.TrimSpace(value.Argv[0]) == "" {
 			return fmt.Errorf("check %s requires a nonblank command executable", value.ID)
 		}
-		if len(value.RequirementIDs) == 0 || len(value.AcceptanceCriterionIDs) == 0 {
+		if complete && (len(value.RequirementIDs) == 0 || len(value.AcceptanceCriterionIDs) == 0) {
 			return fmt.Errorf("check %s requires explicit requirement and acceptance bindings", value.ID)
 		}
 		for _, id := range value.RequirementIDs {
@@ -514,16 +453,6 @@ func (ledger EngineeringLedger) validate(complete bool) error {
 		for _, id := range value.AcceptanceCriterionIDs {
 			if err := require(id, "acceptance criterion", complete && value.Disposition == LedgerDispositionActive); err != nil {
 				return err
-			}
-		}
-	}
-	for _, value := range ledger.DecisionsAndQuestions {
-		if strings.TrimSpace(value.Prompt) == "" || (value.Kind != LedgerDecision && value.Kind != LedgerQuestion) {
-			return fmt.Errorf("decision/question %s is invalid", value.ID)
-		}
-		for _, id := range value.Affects {
-			if err := requireKnown(id, complete && value.Disposition == LedgerDispositionActive); err != nil {
-				return fmt.Errorf("decision/question %s: %w", value.ID, err)
 			}
 		}
 	}
@@ -538,20 +467,6 @@ func (ledger EngineeringLedger) validate(complete bool) error {
 			return err
 		}
 	}
-	for _, value := range ledger.Findings {
-		if value.Kind != LedgerFindingPlanning {
-			return fmt.Errorf("finding %s has invalid kind %q", value.ID, value.Kind)
-		}
-		if strings.TrimSpace(value.Observation) == "" || len(value.TargetIDs) == 0 {
-			return fmt.Errorf("finding %s requires an observation and targets", value.ID)
-		}
-		for _, id := range append(append([]LedgerItemID{}, value.TargetIDs...), value.ResolvedBy...) {
-			if err := requireKnown(id, complete && value.Disposition == LedgerDispositionActive); err != nil {
-				return fmt.Errorf("finding %s: %w", value.ID, err)
-			}
-		}
-	}
-
 	// Validate normalized coverage without flattening it into task text.
 	taskCoverage := map[LedgerItemID]bool{}
 	acceptanceCoverage := map[LedgerItemID]bool{}
@@ -641,9 +556,6 @@ func (mutation LedgerMutation) Validate() error {
 	if len(statements) == 0 {
 		return fmt.Errorf("ledger mutation requires owner-statement dispositions")
 	}
-	if len(disposition.Statements) > 0 && (disposition.Kind != "" || len(disposition.ItemIDs) != 0 || disposition.Reason != "" || len(disposition.QuestionIDs) != 0) {
-		return fmt.Errorf("owner turn cannot mix aggregate and per-statement disposition fields")
-	}
 	hasMaterialDisposition := false
 	for _, statement := range statements {
 		if statement.Kind != OwnerTurnOutOfScope {
@@ -669,9 +581,6 @@ func (mutation LedgerMutation) Validate() error {
 			}
 		}
 		seenOperations = append(seenOperations, operation)
-		if strings.TrimSpace(operation.Rationale) == "" {
-			return fmt.Errorf("ledger mutation operation requires rationale")
-		}
 		targetSet := operation.TargetID != ""
 		targetValid := strings.TrimSpace(string(operation.TargetID)) != ""
 		switch operation.Kind {
@@ -736,12 +645,8 @@ func (item LedgerMutationItem) ledgerItem() LedgerItem {
 		return item.AcceptanceCriterion.LedgerItem
 	case item.Check != nil:
 		return item.Check.LedgerItem
-	case item.DecisionQuestion != nil:
-		return item.DecisionQuestion.LedgerItem
 	case item.Dependency != nil:
 		return item.Dependency.LedgerItem
-	case item.Finding != nil:
-		return item.Finding.LedgerItem
 	default:
 		return LedgerItem{}
 	}
@@ -749,7 +654,7 @@ func (item LedgerMutationItem) ledgerItem() LedgerItem {
 
 func (item LedgerMutationItem) count() int {
 	count := 0
-	for _, present := range []bool{item.Objective != nil, item.Requirement != nil, item.Constraint != nil, item.Group != nil, item.Task != nil, item.AcceptanceCriterion != nil, item.Check != nil, item.DecisionQuestion != nil, item.Dependency != nil, item.Finding != nil} {
+	for _, present := range []bool{item.Objective != nil, item.Requirement != nil, item.Constraint != nil, item.Group != nil, item.Task != nil, item.AcceptanceCriterion != nil, item.Check != nil, item.Dependency != nil} {
 		if present {
 			count++
 		}
@@ -771,7 +676,12 @@ func validateLedgerItemIDs(ids []LedgerItemID, subject string) error {
 
 func (item LedgerMutationItem) validate() (LedgerItemID, error) {
 	requireIDs := func(ids []LedgerItemID, subject string) error {
-		return validateLedgerItemIDs(ids, subject)
+		for _, id := range ids {
+			if strings.TrimSpace(string(id)) == "" {
+				return fmt.Errorf("%s contains a blank item reference", subject)
+			}
+		}
+		return nil
 	}
 	validateBase := func(base LedgerItem) (LedgerItemID, error) {
 		if err := base.Validate(); err != nil {
@@ -810,9 +720,8 @@ func (item LedgerMutationItem) validate() (LedgerItemID, error) {
 		if err != nil {
 			return id, err
 		}
-		if strings.TrimSpace(item.Task.Goal) == "" ||
-			(len(item.Task.RequirementIDs) == 0 && strings.TrimSpace(item.Task.DeliveryObligation) == "") {
-			return id, fmt.Errorf("task %s requires a goal and requirement or delivery obligation", id)
+		if strings.TrimSpace(item.Task.Goal) == "" {
+			return id, fmt.Errorf("task %s requires a goal", id)
 		}
 		if err := requireIDs(item.Task.AcceptanceCriterionIDs, "task acceptance bindings"); err != nil {
 			return id, err
@@ -866,21 +775,6 @@ func (item LedgerMutationItem) validate() (LedgerItemID, error) {
 			return id, err
 		}
 		return id, nil
-	case item.DecisionQuestion != nil:
-		id, err := validateBase(item.DecisionQuestion.LedgerItem)
-		if err != nil {
-			return id, err
-		}
-		if strings.TrimSpace(item.DecisionQuestion.Prompt) == "" ||
-			(item.DecisionQuestion.Kind != LedgerDecision && item.DecisionQuestion.Kind != LedgerQuestion) {
-			return id, fmt.Errorf("decision/question %s is invalid", id)
-		}
-		for _, affectedID := range item.DecisionQuestion.Affects {
-			if strings.TrimSpace(string(affectedID)) == "" {
-				return id, fmt.Errorf("decision/question affects contains a blank item reference")
-			}
-		}
-		return id, nil
 	case item.Dependency != nil:
 		id, err := validateBase(item.Dependency.LedgerItem)
 		if err != nil {
@@ -891,26 +785,6 @@ func (item LedgerMutationItem) validate() (LedgerItemID, error) {
 			item.Dependency.TaskID == item.Dependency.PrerequisiteID ||
 			(item.Dependency.Kind != LedgerDependencyRequires && item.Dependency.Kind != LedgerDependencyBlocks) {
 			return id, fmt.Errorf("dependency %s is invalid", id)
-		}
-		return id, nil
-	case item.Finding != nil:
-		id, err := validateBase(item.Finding.LedgerItem)
-		if err != nil {
-			return id, err
-		}
-		if item.Finding.Kind != LedgerFindingPlanning {
-			return id, fmt.Errorf("finding %s has invalid kind %q", id, item.Finding.Kind)
-		}
-		if strings.TrimSpace(item.Finding.Observation) == "" {
-			return id, fmt.Errorf("finding %s requires an observation", id)
-		}
-		if err := requireIDs(item.Finding.TargetIDs, "finding targets"); err != nil {
-			return id, err
-		}
-		for _, resolvedByID := range item.Finding.ResolvedBy {
-			if strings.TrimSpace(string(resolvedByID)) == "" {
-				return id, fmt.Errorf("finding resolutions contain a blank item reference")
-			}
 		}
 		return id, nil
 	default:

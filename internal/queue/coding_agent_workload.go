@@ -2,6 +2,7 @@ package queue
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -53,6 +54,17 @@ func (repository *Repository) FrozenCodingLedgerConfiguration(
 }
 
 func frozenCodingLedgerConfigurationTx(ctx context.Context, tx pgx.Tx, jobID int64) (codingagent.Configuration, error) {
+	var metadata json.RawMessage
+	if err := tx.QueryRow(ctx, `SELECT metadata FROM jobs WHERE id=$1`, jobID).Scan(&metadata); err != nil {
+		return codingagent.Configuration{}, err
+	}
+	persisted, err := codingagent.ConfigurationFromMetadata(metadata)
+	if err != nil {
+		return codingagent.Configuration{}, err
+	}
+	if persisted.LedgerParser == (codingagent.Route{}) {
+		return codingagent.Configuration{}, fmt.Errorf("frozen coding ledger lacks its immutable job parser route")
+	}
 	rows, err := tx.Query(ctx, `
 		SELECT route.role,route.provider,route.model,route.reasoning_effort,route.service_tier
 		FROM coding_ledgers ledger
@@ -65,7 +77,7 @@ func frozenCodingLedgerConfigurationTx(ctx context.Context, tx pgx.Tx, jobID int
 		return codingagent.Configuration{}, err
 	}
 	defer rows.Close()
-	configuration := codingagent.Configuration{Mode: codingagent.Agents}
+	configuration := codingagent.Configuration{Mode: codingagent.Agents, LedgerParser: persisted.LedgerParser}
 	count := 0
 	for rows.Next() {
 		var role string
@@ -147,7 +159,7 @@ func (repository *Repository) NextIncompleteCodingLedgerTask(
 		  AND ledger.state='frozen'
 		  AND ledger.frozen_revision IS NOT NULL
 		  AND task.state='ready'
-		ORDER BY version.rank,task.fairness_key
+		ORDER BY task.continuation_priority DESC,version.rank,task.fairness_key
 		LIMIT 1
 	`, authority.JobID).Scan(&ledgerID, &revision, &taskID)
 	if err != nil {
@@ -292,9 +304,7 @@ func (repository *Repository) completeCodingLedgerTaskDetail(
 			complete.Ledger.Groups = nil
 			complete.Ledger.AcceptanceCriteria = nil
 			complete.Ledger.Checks = nil
-			complete.Ledger.DecisionsAndQuestions = nil
 			complete.Ledger.Dependencies = nil
-			complete.Ledger.Findings = nil
 		} else if page.Revision != complete.Revision {
 			return CodingLedgerRevision{}, fmt.Errorf("coding ledger changed while loading task %s", taskID)
 		}
@@ -303,13 +313,10 @@ func (repository *Repository) completeCodingLedgerTaskDetail(
 		complete.Ledger.Groups = append(complete.Ledger.Groups, page.Ledger.Groups...)
 		complete.Ledger.AcceptanceCriteria = append(complete.Ledger.AcceptanceCriteria, page.Ledger.AcceptanceCriteria...)
 		complete.Ledger.Checks = append(complete.Ledger.Checks, page.Ledger.Checks...)
-		complete.Ledger.DecisionsAndQuestions = append(complete.Ledger.DecisionsAndQuestions, page.Ledger.DecisionsAndQuestions...)
 		complete.Ledger.Dependencies = append(complete.Ledger.Dependencies, page.Ledger.Dependencies...)
-		complete.Ledger.Findings = append(complete.Ledger.Findings, page.Ledger.Findings...)
 		count := len(page.Ledger.Requirements) + len(page.Ledger.Constraints) + len(page.Ledger.Groups) +
 			len(page.Ledger.AcceptanceCriteria) + len(page.Ledger.Checks) +
-			len(page.Ledger.DecisionsAndQuestions) + len(page.Ledger.Dependencies) +
-			len(page.Ledger.Findings)
+			len(page.Ledger.Dependencies)
 		if count < pageSize {
 			return complete, nil
 		}
@@ -387,35 +394,6 @@ func codingAgentTaskFromLedger(ledger model.EngineeringLedger, taskID model.Ledg
 			return nil, fmt.Errorf("coding ledger task %s lacks group %s", ledgerTask.ID, ledgerTask.GroupID)
 		}
 	}
-	decisionTargets := map[model.LedgerItemID]bool{ledgerTask.ID: true}
-	if ledgerTask.GroupID != "" {
-		decisionTargets[ledgerTask.GroupID] = true
-	}
-	for _, id := range append(append(append([]model.LedgerItemID{}, ledgerTask.RequirementIDs...), ledgerTask.ConstraintIDs...), ledgerTask.AcceptanceCriterionIDs...) {
-		decisionTargets[id] = true
-	}
-	for _, check := range ledger.Checks {
-		if check.Disposition == model.LedgerDispositionActive && check.Required &&
-			ledgerIDsOverlap(ledgerTask.AcceptanceCriterionIDs, check.AcceptanceCriterionIDs) &&
-			(len(ledgerTask.RequirementIDs) == 0 || ledgerIDsOverlap(ledgerTask.RequirementIDs, check.RequirementIDs)) {
-			decisionTargets[check.ID] = true
-		}
-	}
-	for _, decision := range ledger.DecisionsAndQuestions {
-		if decision.Disposition != model.LedgerDispositionActive || strings.TrimSpace(decision.Answer) == "" {
-			continue
-		}
-		relevant := false
-		for _, id := range decision.Affects {
-			relevant = relevant || decisionTargets[id]
-		}
-		if !relevant {
-			continue
-		}
-		task.Guidance = append(task.Guidance, codingagent.TaskGuidance{
-			ID: string(decision.ID), Kind: "decision", Text: decision.Prompt + ": " + decision.Answer,
-		})
-	}
 	criteria := make(map[model.LedgerItemID]model.LedgerAcceptanceCriterion, len(ledger.AcceptanceCriteria))
 	for _, criterion := range ledger.AcceptanceCriteria {
 		if criterion.Disposition != model.LedgerDispositionActive {
@@ -438,8 +416,7 @@ func codingAgentTaskFromLedger(ledger model.EngineeringLedger, taskID model.Ledg
 	checkIDs := make(map[model.LedgerItemID]bool)
 	for _, check := range ledger.Checks {
 		if check.Disposition != model.LedgerDispositionActive || !check.Required ||
-			!ledgerIDsOverlap(ledgerTask.AcceptanceCriterionIDs, check.AcceptanceCriterionIDs) ||
-			(len(ledgerTask.RequirementIDs) > 0 && !ledgerIDsOverlap(ledgerTask.RequirementIDs, check.RequirementIDs)) {
+			!codingLedgerCheckBelongsToTask(ledger, *ledgerTask, check) {
 			continue
 		}
 		if checkIDs[check.ID] {
@@ -447,7 +424,11 @@ func codingAgentTaskFromLedger(ledger model.EngineeringLedger, taskID model.Ledg
 		}
 		checkIDs[check.ID] = true
 		if len(check.Argv) > 0 {
-			task.Checks = append(task.Checks, codingagent.Check{ID: string(check.ID), Argv: append([]string(nil), check.Argv...)})
+			task.Checks = append(task.Checks, codingagent.Check{
+				ID: string(check.ID), Argv: append([]string(nil), check.Argv...),
+				RequirementIDs:         ledgerItemIDsToStrings(check.RequirementIDs),
+				AcceptanceCriterionIDs: ledgerItemIDsToStrings(check.AcceptanceCriterionIDs),
+			})
 		} else {
 			task.Guidance = append(task.Guidance, codingagent.TaskGuidance{ID: string(check.ID), Kind: "verification_observation", Text: check.Observation})
 		}
@@ -459,6 +440,20 @@ func codingAgentTaskFromLedger(ledger model.EngineeringLedger, taskID model.Ledg
 }
 
 func validateFrozenCodingAgentTasks(ledger model.EngineeringLedger) error {
+	checkOwners := make(map[model.LedgerItemID][]model.LedgerItemID)
+	for _, check := range ledger.Checks {
+		if check.Disposition != model.LedgerDispositionActive || !check.Required {
+			continue
+		}
+		for _, task := range ledger.Tasks {
+			if task.Disposition == model.LedgerDispositionActive && codingLedgerCheckBelongsToTask(ledger, task, check) {
+				checkOwners[check.ID] = append(checkOwners[check.ID], task.ID)
+			}
+		}
+		if len(checkOwners[check.ID]) != 1 {
+			return fmt.Errorf("required check %s must belong to exactly one atomic task, found %d", check.ID, len(checkOwners[check.ID]))
+		}
+	}
 	count := 0
 	for _, ledgerTask := range ledger.Tasks {
 		if ledgerTask.Disposition != model.LedgerDispositionActive {
@@ -476,8 +471,8 @@ func validateFrozenCodingAgentTasks(ledger model.EngineeringLedger) error {
 			covered := false
 			for _, check := range ledger.Checks {
 				covered = covered || check.Disposition == model.LedgerDispositionActive && check.Required &&
-					ledgerIDsOverlap([]model.LedgerItemID{requirementID}, check.RequirementIDs) &&
-					ledgerIDsOverlap(ledgerTask.AcceptanceCriterionIDs, check.AcceptanceCriterionIDs)
+					codingLedgerCheckBelongsToTask(ledger, ledgerTask, check) &&
+					ledgerIDsOverlap([]model.LedgerItemID{requirementID}, check.RequirementIDs)
 			}
 			if !covered {
 				return fmt.Errorf("task %s requirement %s lacks a bound required check", ledgerTask.ID, requirementID)
@@ -487,6 +482,7 @@ func validateFrozenCodingAgentTasks(ledger model.EngineeringLedger) error {
 			covered := false
 			for _, check := range ledger.Checks {
 				covered = covered || check.Disposition == model.LedgerDispositionActive && check.Required &&
+					codingLedgerCheckBelongsToTask(ledger, ledgerTask, check) &&
 					ledgerIDsOverlap([]model.LedgerItemID{acceptanceID}, check.AcceptanceCriterionIDs) &&
 					(deliveryOnly || ledgerIDsOverlap(ledgerTask.RequirementIDs, check.RequirementIDs))
 			}
@@ -500,6 +496,47 @@ func validateFrozenCodingAgentTasks(ledger model.EngineeringLedger) error {
 		return fmt.Errorf("coding ledger requires executable tasks")
 	}
 	return nil
+}
+
+// A frozen check is task-local only when every binding is contained by that
+// task. Overlap is insufficient: it lets a whole-ledger check run after the
+// first partially related task and prevents the PostgreSQL scheduler from
+// advancing. Freeze validation additionally proves that each required check
+// has exactly one owner.
+func codingLedgerCheckBelongsToTask(ledger model.EngineeringLedger, task model.LedgerTask, check model.LedgerCheck) bool {
+	requirements := append([]model.LedgerItemID(nil), task.RequirementIDs...)
+	for _, criterion := range ledger.AcceptanceCriteria {
+		if criterion.Disposition == model.LedgerDispositionActive &&
+			ledgerIDsOverlap(task.AcceptanceCriterionIDs, []model.LedgerItemID{criterion.ID}) {
+			requirements = append(requirements, criterion.RequirementIDs...)
+		}
+	}
+	return ledgerIDsContainAll(task.AcceptanceCriterionIDs, check.AcceptanceCriterionIDs) &&
+		ledgerIDsContainAll(requirements, check.RequirementIDs)
+}
+
+func ledgerIDsContainAll(container, values []model.LedgerItemID) bool {
+	if len(values) == 0 {
+		return false
+	}
+	available := make(map[model.LedgerItemID]bool, len(container))
+	for _, id := range container {
+		available[id] = true
+	}
+	for _, id := range values {
+		if !available[id] {
+			return false
+		}
+	}
+	return true
+}
+
+func ledgerItemIDsToStrings(values []model.LedgerItemID) []string {
+	result := make([]string, len(values))
+	for index, value := range values {
+		result[index] = string(value)
+	}
+	return result
 }
 
 func (r *Repository) readCompleteCodingLedger(
@@ -528,9 +565,7 @@ func (r *Repository) readCompleteCodingLedger(
 		result.Ledger.Tasks = append(result.Ledger.Tasks, page.Ledger.Tasks...)
 		result.Ledger.AcceptanceCriteria = append(result.Ledger.AcceptanceCriteria, page.Ledger.AcceptanceCriteria...)
 		result.Ledger.Checks = append(result.Ledger.Checks, page.Ledger.Checks...)
-		result.Ledger.DecisionsAndQuestions = append(result.Ledger.DecisionsAndQuestions, page.Ledger.DecisionsAndQuestions...)
 		result.Ledger.Dependencies = append(result.Ledger.Dependencies, page.Ledger.Dependencies...)
-		result.Ledger.Findings = append(result.Ledger.Findings, page.Ledger.Findings...)
 		count := len(ledgerRepositoryRecords(page.Ledger)) + len(page.Ledger.Dependencies)
 		if count < 1000 {
 			return result, nil

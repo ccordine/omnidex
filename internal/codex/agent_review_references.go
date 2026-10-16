@@ -22,7 +22,7 @@ type agentReviewTaskReference struct {
 
 func agentReviewReferences(call codingagent.Assignment) []agentReviewTaskReference {
 	tasks := []codingagent.Task{}
-	if call.Role == codingagent.Review && call.Task != nil {
+	if call.Role == codingagent.ReviewResponse && call.Task != nil {
 		tasks = append(tasks, *call.Task)
 	}
 	references := make([]agentReviewTaskReference, 0, len(tasks))
@@ -45,60 +45,48 @@ func agentReviewReferences(call codingagent.Assignment) []agentReviewTaskReferen
 }
 
 type nativeAgentReviewFinding struct {
-	TaskReference      string  `json:"task_id"`
 	CriterionReference string  `json:"requirement"`
 	File               *string `json:"file"`
 	Observation        *string `json:"observation"`
 }
 
-func mapAgentReviewRunResult(call codingagent.Assignment, content json.RawMessage) (json.RawMessage, error) {
-	mapped, err := mapAgentReviewResult(call, content)
-	if err == nil {
-		return mapped, nil
-	}
-	// The native session completed, but its model-authored payload did not
-	// satisfy the review contract. That is a disposable-session failure, not
-	// evidence that the durable task or its frozen ledger failed.
-	return nil, &agentInferenceFailure{message: err.Error(), retryable: true}
-}
-
-func mapAgentReviewResult(call codingagent.Assignment, content json.RawMessage) (json.RawMessage, error) {
-	if call.Role != codingagent.Review {
+func mapAgentReviewResponse(call codingagent.Assignment, content json.RawMessage) (json.RawMessage, error) {
+	if call.Role != codingagent.ReviewResponse {
 		return content, nil
 	}
-	review, err := decodeAgentReviewReceipt(call, content)
+	review, err := decodeAgentReviewResponse(call, content)
 	if err != nil {
-		return nil, fmt.Errorf("decode task-local agent review: %w", err)
+		return nil, fmt.Errorf("decode task-local review response parser: %w", err)
 	}
 	return json.Marshal(review)
 }
 
-func decodeAgentReviewReceipt(call codingagent.Assignment, content json.RawMessage) (codingagent.ReviewResult, error) {
+func decodeAgentReviewResponse(call codingagent.Assignment, content json.RawMessage) (codingagent.ReviewResponseResult, error) {
 	var native struct {
-		Findings     []nativeAgentReviewFinding `json:"findings"`
-		Questions    []string                   `json:"questions"`
-		Verification string                     `json:"verification,omitempty"`
+		Kind         codingagent.ExecutionResponseKind `json:"kind"`
+		Findings     []nativeAgentReviewFinding        `json:"findings"`
+		Verification string                            `json:"verification,omitempty"`
 	}
 	decoder := json.NewDecoder(bytes.NewReader(content))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&native); err != nil {
-		return codingagent.ReviewResult{}, err
+		return codingagent.ReviewResponseResult{}, err
 	}
 	if err := decoder.Decode(new(any)); err != io.EOF {
-		return codingagent.ReviewResult{}, fmt.Errorf("agent review contains trailing data")
+		return codingagent.ReviewResponseResult{}, fmt.Errorf("review parser contains trailing data")
 	}
-	if native.Findings == nil || native.Questions == nil {
-		return codingagent.ReviewResult{}, fmt.Errorf("agent review requires findings and questions arrays")
+	if native.Findings == nil {
+		return codingagent.ReviewResponseResult{}, fmt.Errorf("review parser requires a findings array")
 	}
-	tasks := map[string]agentReviewTaskReference{}
-	for _, task := range agentReviewReferences(call) {
-		tasks[task.Reference] = task
+	references := agentReviewReferences(call)
+	if len(references) != 1 {
+		return codingagent.ReviewResponseResult{}, fmt.Errorf("review parser requires one code-selected task")
 	}
-	review := codingagent.ReviewResult{Findings: make([]codingagent.Finding, 0, len(native.Findings)), Questions: native.Questions, Verification: native.Verification}
+	task := references[0]
+	review := codingagent.ReviewResponseResult{Kind: native.Kind, ReviewResult: codingagent.ReviewResult{Findings: make([]codingagent.Finding, 0, len(native.Findings)), Verification: native.Verification}}
 	for _, finding := range native.Findings {
-		task, known := tasks[finding.TaskReference]
-		if !known || finding.File == nil || finding.Observation == nil {
-			return codingagent.ReviewResult{}, fmt.Errorf("agent review finding lacks its exact task reference or result fields")
+		if finding.File == nil || finding.Observation == nil {
+			return codingagent.ReviewResponseResult{}, fmt.Errorf("review parser finding lacks its exact result fields")
 		}
 		criteria := map[string]string{}
 		for _, criterion := range task.Criteria {
@@ -106,7 +94,7 @@ func decodeAgentReviewReceipt(call codingagent.Assignment, content json.RawMessa
 		}
 		requirement, known := criteria[finding.CriterionReference]
 		if !known {
-			return codingagent.ReviewResult{}, fmt.Errorf("agent review finding has an unknown criterion reference for its task")
+			return codingagent.ReviewResponseResult{}, fmt.Errorf("review parser finding has an unknown criterion reference for its task")
 		}
 		review.Findings = append(review.Findings, codingagent.Finding{
 			TaskID: task.TaskID, Requirement: requirement, File: *finding.File, Observation: *finding.Observation,

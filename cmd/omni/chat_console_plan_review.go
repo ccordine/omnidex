@@ -59,20 +59,19 @@ func (console *chatConsole) HidePlanReview() error {
 }
 
 func (console *chatConsole) BeginPlanReviewNote() (terminalInputAuthority, error) {
-	if console == nil || console.reviewInput == nil {
+	if console == nil || console.terminal == nil || console.reviewInput == nil || console.output == nil {
 		return terminalInputAuthority{}, fmt.Errorf("interactive plan-review console is unavailable")
 	}
 	console.presentationMu.Lock()
 	defer console.presentationMu.Unlock()
-	if !console.reviewActive {
-		return terminalInputAuthority{}, fmt.Errorf("interactive plan-review screen is not active")
-	}
 	authority, err := console.reviewInput.BeginNoteInput()
 	if err != nil {
 		return terminalInputAuthority{}, err
 	}
-	if err := console.leavePlanReviewScreenLocked(); err != nil {
-		return terminalInputAuthority{}, err
+	if console.reviewActive {
+		if err := console.leavePlanReviewScreenLocked(); err != nil {
+			return terminalInputAuthority{}, err
+		}
 	}
 	return authority, nil
 }

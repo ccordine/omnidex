@@ -53,17 +53,16 @@ func (r *Repository) applyCodingLedgerMutation(ctx context.Context, command Appl
 	}
 	var replayRevision, replayBase int64
 	var replayOwner, replayAction, replayText string
-	var replayCoverage bool
 	var replayMutation []byte
 	err = tx.QueryRow(ctx, `
-		SELECT revision.revision,revision.base_revision,revision.owner_turn_id,turn_record.action,turn_record.exact_text,revision.coverage_passed,
+		SELECT revision.revision,revision.base_revision,revision.owner_turn_id,turn_record.action,turn_record.exact_text,
 		       revision.mutation_payload
 		FROM coding_ledger_revisions revision
 		JOIN coding_ledger_owner_turns turn_record
 		  ON turn_record.ledger_id=revision.ledger_id AND turn_record.owner_turn_id=revision.owner_turn_id
 		WHERE revision.ledger_id=$1 AND revision.operation_id=$2
 	`, command.LedgerID, command.Mutation.OperationID).Scan(
-		&replayRevision, &replayBase, &replayOwner, &replayAction, &replayText, &replayCoverage, &replayMutation,
+		&replayRevision, &replayBase, &replayOwner, &replayAction, &replayText, &replayMutation,
 	)
 	if err == nil {
 		expectedMutation, encodeErr := json.Marshal(command.Mutation)
@@ -72,7 +71,7 @@ func (r *Repository) applyCodingLedgerMutation(ctx context.Context, command Appl
 		}
 		if replayBase != command.Mutation.BaseRevision || replayOwner != command.Mutation.OwnerTurnID ||
 			replayAction != ownerAction ||
-			replayText != command.OwnerTurnText || replayCoverage != command.CoveragePassed ||
+			replayText != command.OwnerTurnText ||
 			!sameCodingLedgerJSON(replayMutation, expectedMutation) {
 			return CodingLedgerRevision{}, fmt.Errorf("coding ledger operation %q was already used by a different mutation", command.Mutation.OperationID)
 		}
@@ -143,19 +142,16 @@ func (r *Repository) applyCodingLedgerMutation(ctx context.Context, command Appl
 		current, ownerAction, command.OwnerTurnText); err != nil {
 		return CodingLedgerRevision{}, err
 	}
-	if err := closeCodingLedgerQuestionsTx(ctx, tx, command.LedgerID, command.Mutation.OwnerTurnID, next); err != nil {
-		return CodingLedgerRevision{}, err
-	}
 	mutationPayload, err := json.Marshal(command.Mutation)
 	if err != nil {
 		return CodingLedgerRevision{}, err
 	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO coding_ledger_revisions(
-			ledger_id,revision,base_revision,operation_id,owner_turn_id,state,coverage_passed,mutation_payload
-		) VALUES($1,$2,$3,$4,$5,'proposed',$6,$7::jsonb)
+			ledger_id,revision,base_revision,operation_id,owner_turn_id,state,mutation_payload
+		) VALUES($1,$2,$3,$4,$5,'proposed',$6::jsonb)
 	`, command.LedgerID, next.Revision, current, command.Mutation.OperationID,
-		command.Mutation.OwnerTurnID, command.CoveragePassed, string(mutationPayload)); err != nil {
+		command.Mutation.OwnerTurnID, string(mutationPayload)); err != nil {
 		return CodingLedgerRevision{}, fmt.Errorf("create coding ledger revision: %w", err)
 	}
 	if err := persistCodingLedgerSnapshotTx(ctx, tx, command.LedgerID, next.Revision, current,
@@ -285,7 +281,6 @@ func codingLedgerDispositionMatchesTx(
 	expectedIDs := make([]model.LedgerItemID, 0)
 	for _, statement := range expectedStatements {
 		expectedIDs = append(expectedIDs, statement.ItemIDs...)
-		expectedIDs = append(expectedIDs, statement.QuestionIDs...)
 	}
 	dependencyByID := make(map[model.LedgerItemID][]model.LedgerDependency)
 	ledgers := append([]model.EngineeringLedger{ledger}, authorityLedgers...)
@@ -515,12 +510,8 @@ func ledgerMutationItemID(item *model.LedgerMutationItem) model.LedgerItemID {
 		return item.AcceptanceCriterion.ID
 	case item.Check != nil:
 		return item.Check.ID
-	case item.DecisionQuestion != nil:
-		return item.DecisionQuestion.ID
 	case item.Dependency != nil:
 		return item.Dependency.ID
-	case item.Finding != nil:
-		return item.Finding.ID
 	default:
 		return ""
 	}
@@ -548,12 +539,8 @@ func appendCodingLedgerMutationItem(ledger *model.EngineeringLedger, item *model
 		ledger.AcceptanceCriteria = append(ledger.AcceptanceCriteria, *item.AcceptanceCriterion)
 	case item.Check != nil:
 		ledger.Checks = append(ledger.Checks, *item.Check)
-	case item.DecisionQuestion != nil:
-		ledger.DecisionsAndQuestions = append(ledger.DecisionsAndQuestions, *item.DecisionQuestion)
 	case item.Dependency != nil:
 		ledger.Dependencies = append(ledger.Dependencies, *item.Dependency)
-	case item.Finding != nil:
-		ledger.Findings = append(ledger.Findings, *item.Finding)
 	}
 }
 
@@ -608,27 +595,10 @@ func replaceCodingLedgerMutationItem(ledger *model.EngineeringLedger, target mod
 				return true
 			}
 		}
-	case item.DecisionQuestion != nil:
-		for index := range ledger.DecisionsAndQuestions {
-			if ledger.DecisionsAndQuestions[index].ID == target {
-				if ledger.DecisionsAndQuestions[index].Kind != item.DecisionQuestion.Kind {
-					return false
-				}
-				ledger.DecisionsAndQuestions[index] = *item.DecisionQuestion
-				return true
-			}
-		}
 	case item.Dependency != nil:
 		for index := range ledger.Dependencies {
 			if ledger.Dependencies[index].ID == target {
 				ledger.Dependencies[index] = *item.Dependency
-				return true
-			}
-		}
-	case item.Finding != nil:
-		for index := range ledger.Findings {
-			if ledger.Findings[index].ID == target {
-				ledger.Findings[index] = *item.Finding
 				return true
 			}
 		}
@@ -679,21 +649,9 @@ func setCodingLedgerItem(ledger *model.EngineeringLedger, id model.LedgerItemID,
 			return true
 		}
 	}
-	for index := range ledger.DecisionsAndQuestions {
-		if ledger.DecisionsAndQuestions[index].ID == id {
-			update(&ledger.DecisionsAndQuestions[index].LedgerItem)
-			return true
-		}
-	}
 	for index := range ledger.Dependencies {
 		if ledger.Dependencies[index].ID == id {
 			update(&ledger.Dependencies[index].LedgerItem)
-			return true
-		}
-	}
-	for index := range ledger.Findings {
-		if ledger.Findings[index].ID == id {
-			update(&ledger.Findings[index].LedgerItem)
 			return true
 		}
 	}

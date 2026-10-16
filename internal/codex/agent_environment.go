@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 )
 
-// Authentication belongs to the host Codex process. Runtime service secrets
-// are not inherited by the agent or its commands.
+// Restricted planning and parsing processes use this minimal environment.
+// Execution, review, and checks inherit the launching host environment.
 func agentProcessEnvironment() []string {
 	result := []string{}
 	for _, key := range []string{"HOME", "USER", "LOGNAME", "PATH", "LANG", "LC_ALL", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "CODEX_HOME"} {
@@ -15,12 +15,6 @@ func agentProcessEnvironment() []string {
 		}
 	}
 	return result
-}
-
-func agentPermissionFlags() []string {
-	return []string{
-		"-c", "shell_environment_policy.inherit=\"all\"",
-	}
 }
 
 func agentGoModuleCache() string {

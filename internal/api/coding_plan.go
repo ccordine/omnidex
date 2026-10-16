@@ -92,20 +92,7 @@ func (s *Server) applyCodingPlanDecisions(w http.ResponseWriter, r *http.Request
 		var result queue.CodingLedgerRevision
 		result, err = s.repo.ApplyCodingLedgerControl(r.Context(), queue.ApplyCodingLedgerMutationCommand{
 			LedgerID: current.LedgerID, OwnerTurnText: request.OwnerTurnText, Mutation: mutation,
-			CoveragePassed: !codingagent.RequiresPlanningCoverage(mutation),
 		})
-		if err == nil && codingagent.RequiresPlanningCoverage(mutation) {
-			if !result.Applied {
-				var found bool
-				result, found, err = s.repo.CurrentCodingLedgerForJob(r.Context(), jobID)
-				if err == nil && !found {
-					err = pgx.ErrNoRows
-				}
-			}
-		}
-		if err == nil && codingagent.RequiresPlanningCoverage(mutation) {
-			result, err = s.analyzeDirectPlanningCoverage(r.Context(), jobID, request.WorkspaceRoot.Value, turn, result)
-		}
 		if err == nil {
 			writeJSON(w, http.StatusOK, codingLedgerRevisionResponse(result))
 			return
@@ -139,7 +126,20 @@ func (s *Server) freezeCodingPlan(w http.ResponseWriter, r *http.Request, jobID 
 	}
 	s.codingAgentsMu.RLock()
 	defer s.codingAgentsMu.RUnlock()
-	result, err := s.auditAndFreezeCodingLedger(r.Context(), jobID, request)
+	current, found, err := s.repo.CurrentCodingLedgerForJob(r.Context(), jobID)
+	if err == nil && !found {
+		err = pgx.ErrNoRows
+	}
+	var result queue.CodingLedgerRevision
+	if err == nil {
+		result, err = s.repo.FreezeCodingLedger(r.Context(), queue.FreezeCodingLedgerCommand{
+			LedgerID: current.LedgerID, Revision: request.Revision, OperationID: request.OperationID,
+			OwnerTurnID: request.OwnerTurnID, OwnerTurnText: request.OwnerTurnText,
+		})
+	}
+	if err == nil {
+		err = s.repo.CompleteCodingLedgerReview(r.Context(), jobID, result.LedgerID, result.Revision)
+	}
 	if err != nil {
 		writeError(w, codingPlanMutationStatus(err), err.Error())
 		return

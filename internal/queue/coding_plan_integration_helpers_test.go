@@ -82,8 +82,8 @@ func codingAgentPlanReviewFixture(t *testing.T, repository *Repository, planner 
 	seed := fmt.Sprintf("agent-%d-%d", planner.Job.ID, planner.Authority.Generation)
 	created, err := repository.CreateCodingLedger(context.Background(), CreateCodingLedgerCommand{
 		JobID: planner.Job.ID, OperationID: seed + "-create", OwnerTurnID: seed + "-create-turn",
-		OwnerTurnText: goal, Ledger: ledger, CoveragePassed: true, Routes: routes,
-		OwnerTurnDisposition: model.OwnerTurnDisposition{Kind: model.OwnerTurnRepresented, ItemIDs: itemIDs},
+		OwnerTurnText: goal, Ledger: ledger, Routes: routes,
+		OwnerTurnDisposition: model.RepresentedOwnerTurn(itemIDs),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -103,11 +103,11 @@ func freezeCodingAgentPlanFixture(t *testing.T, repository *Repository, job mode
 		})
 	}
 	agreed, err := repository.ApplyCodingLedgerMutation(ctx, ApplyCodingLedgerMutationCommand{
-		LedgerID: fixture.created.LedgerID, OwnerTurnText: fixture.goal, CoveragePassed: true,
+		LedgerID: fixture.created.LedgerID, OwnerTurnText: fixture.goal,
 		Mutation: model.LedgerMutation{
 			OperationID: seed + "-agree", BaseRevision: fixture.created.Revision,
 			OwnerTurnID:          seed + "-agree-turn",
-			OwnerTurnDisposition: model.OwnerTurnDisposition{Kind: model.OwnerTurnRepresented, ItemIDs: fixture.itemIDs},
+			OwnerTurnDisposition: model.RepresentedOwnerTurn(fixture.itemIDs),
 			Operations:           operations,
 		},
 	})
@@ -117,10 +117,9 @@ func freezeCodingAgentPlanFixture(t *testing.T, repository *Repository, job mode
 	if err := repository.MarkCodingLedgerReviewReady(ctx, fixture.authority, agreed.LedgerID, agreed.Revision); err != nil {
 		t.Fatal(err)
 	}
-	auditID := repositoryReadyPlanningAudit(t, repository, agreed.LedgerID, agreed.Revision, seed)
 	frozen, err := repository.FreezeCodingLedger(ctx, FreezeCodingLedgerCommand{
 		LedgerID: agreed.LedgerID, Revision: agreed.Revision, OperationID: seed + "-freeze",
-		OwnerTurnID: seed + "-freeze-turn", OwnerTurnText: fixture.goal, AuditID: auditID,
+		OwnerTurnID: seed + "-freeze-turn", OwnerTurnText: fixture.goal,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -196,8 +195,14 @@ func acceptCodingLedgerTaskFixture(
 		TaskID: task.ID, CallID: executeCall, Result: &codingagent.Result{
 			CallID: executeCall, Provider: configuration.Executor.Provider, Model: configuration.Executor.Model,
 			ThreadID: "execution-" + task.ID, TurnID: "execution-turn-" + task.ID,
-			Completed: true, Content: []byte(`{"questions":[]}`),
+			Completed: true, Content: []byte(`"Task completed."`),
 		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Append(ctx, codingagent.Entry{
+		Generation: authority.Generation, Phase: "execution_response", TaskID: task.ID, CallID: executeCall,
+		ResponseKind: codingagent.ExecutionDone, Notes: []string{"Task completed."},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -224,11 +229,25 @@ func acceptCodingLedgerTaskFixture(
 		TaskID: task.ID, CallID: reviewCall, Result: &codingagent.Result{
 			CallID: reviewCall, Provider: configuration.Reviewer.Provider, Model: configuration.Reviewer.Model,
 			ThreadID: "review-" + task.ID, TurnID: "review-turn-" + task.ID,
-			Completed: true, Content: []byte(`{"findings":[],"questions":[]}`),
+			Completed: true, Content: []byte(`"Checked the exact task; no defects found."`),
 		},
 	}); err != nil {
 		t.Fatal(err)
 	}
+	entries, err := store.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayable := false
+	for _, entry := range entries {
+		if entry.Phase == "call_completed" && entry.Role == codingagent.Review && entry.CallID == reviewCall && entry.Result != nil {
+			replayable = string(entry.Result.Content) == `"Checked the exact task; no defects found."`
+		}
+	}
+	if !replayable {
+		t.Fatal("completed native review is unavailable for parser recovery")
+	}
+	appendCodingReviewParserFixture(t, store, authority, &task, configuration.LedgerParser, reviewCall)
 	checks := make([]codingagent.CheckResult, len(task.Checks))
 	for index, check := range task.Checks {
 		checks[index] = codingagent.CheckResult{ID: check.ID}

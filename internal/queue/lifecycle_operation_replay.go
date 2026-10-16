@@ -60,11 +60,24 @@ func requireSubmitFeedbackReplayTx(
 	if record.StepID == nil || record.ResultStepStatus == nil {
 		return lifecycleReplayStateError(record.ID, "feedback step result")
 	}
-	if *record.ResultStepStatus == model.StepStatusRunning {
-		if record.ResultJobStatus != model.JobStatusRunning || record.ResultGeneration != record.ObservedGeneration {
-			return lifecycleReplayStateError(record.ID, "scoped-agent resume result")
+	if record.ResultGeneration > record.ObservedGeneration {
+		var bound bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM evidence reply
+		  JOIN evidence source ON source.job_id=reply.job_id AND source.step_id=reply.step_id
+		    AND source.kind='coding_agent' AND source.payload_json->>'phase' IN ('task_incomplete','planning_incomplete')
+		    AND source.payload_json->>'call_id'=reply.payload_json->>'call_id'
+		  WHERE reply.job_id=$1 AND reply.kind='coding_agent' AND reply.payload_json->>'generation'=$2::bigint::text
+		    AND reply.payload_json->>'phase'='execution_reply' AND reply.payload_json->'notes'->>0=$3 AND reply.payload_json->'notes'->>1=$4)`,
+			record.JobID, record.ObservedGeneration, command.OperationID, command.Feedback).Scan(&bound); err != nil {
+			return err
 		}
-		return requireCodingAgentAnswerReplayTx(ctx, tx, record.JobID, *record.StepID, record.ObservedGeneration, record.ID, command.Feedback, command.ExpectedWaitingAttempt)
+		if !bound {
+			return lifecycleReplayStateError(record.ID, "continuation owner reply")
+		}
+		return nil
+	}
+	if *record.ResultStepStatus == model.StepStatusRunning {
+		return requireCodingExecutionReplyTx(ctx, tx, record.JobID, *record.StepID, record.ObservedGeneration, command.OperationID, command.Feedback)
 	}
 	if *record.ResultStepStatus != model.StepStatusCompleted {
 		return lifecycleReplayStateError(record.ID, "feedback step result")

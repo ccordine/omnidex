@@ -11,7 +11,7 @@ vi.mock("../lib/coding_agent_settings_api", async (original) => ({
 function settings(): AgentSettings {
   const route = { provider: "codex", model: "future-model", effort: "ultra", service_tier: "fast" };
   return {
-    configuration: { mode: "agents", planner: { ...route }, executor: { ...route }, reviewer: { ...route } },
+    configuration: { mode: "agents", planner: { ...route }, ledger_parser: { ...route }, executor: { ...route }, reviewer: { ...route } },
     models: [{ id: "future-model", display_name: "Future <model>", default_effort: "max", efforts: ["low", "xhigh", "max", "ultra"].map((value) => ({ value, description: `${value} reasoning` })), service_tiers: ["default", "fast", "new-tier"].map((id) => ({ id, name: id, description: `${id} processing` })) }],
     installation: { version: "0.999.0", can_update: true }, source: "startup",
   };
@@ -59,6 +59,7 @@ describe("Agent settings controller", () => {
     await controller.save();
     expect(api.saveAgentSettings).toHaveBeenCalledWith({
       mode: "agents", planner: { provider: "codex", model: "future-model", effort: "xhigh", service_tier: "fast" },
+      ledger_parser: { provider: "codex", model: "future-model", effort: "ultra", service_tier: "fast" },
       executor: { provider: "codex", model: "future-model", effort: "ultra", service_tier: "new-tier" },
       reviewer: { provider: "codex", model: "future-model", effort: "ultra", service_tier: "default" },
     }, expect.any(AbortSignal));

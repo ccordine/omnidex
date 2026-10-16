@@ -2,7 +2,6 @@ package queue
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -166,11 +165,12 @@ func TestCodingLedgerRepositoryTransactionallyFreezesExactRevision(t *testing.T)
 	ledger.Tasks = append(ledger.Tasks, model.LedgerTask{
 		LedgerItem: repositoryLedgerItem("delivery-task", 7), Goal: "deliver the integrated change",
 		DeliveryObligation:     "publish the completed integration",
-		AcceptanceCriterionIDs: []model.LedgerItemID{"acceptance"},
+		AcceptanceCriterionIDs: []model.LedgerItemID{"overall-acceptance"},
 	})
 	ledger.AcceptanceCriteria = append(ledger.AcceptanceCriteria, model.LedgerAcceptanceCriterion{
 		LedgerItem: repositoryLedgerItem("overall-acceptance", 5),
-		Outcome:    "integrated", RequirementIDs: []model.LedgerItemID{"requirement"}, Required: true,
+		Outcome:    "integrated", RequirementIDs: []model.LedgerItemID{"requirement"},
+		TaskIDs: []model.LedgerItemID{"delivery-task"}, Required: true,
 	})
 	ledger.Checks = append(ledger.Checks, model.LedgerCheck{
 		LedgerItem:             repositoryLedgerItem("overall-check", 6),
@@ -191,10 +191,10 @@ func TestCodingLedgerRepositoryTransactionallyFreezesExactRevision(t *testing.T)
 	created, err := repository.CreateCodingLedger(ctx, CreateCodingLedgerCommand{
 		JobID: job.ID, OperationID: "ledger-create", OwnerTurnID: "owner-create",
 		OwnerTurnText: "Ship the normalized ledger.",
-		OwnerTurnDisposition: model.OwnerTurnDisposition{
-			Kind: model.OwnerTurnRepresented, ItemIDs: []model.LedgerItemID{"objective", "requirement", "task", "delivery-task", "acceptance", "check", "overall-acceptance", "overall-check"},
-		},
-		Ledger: ledger, CoveragePassed: true, Routes: routes,
+		OwnerTurnDisposition: model.RepresentedOwnerTurn(
+			[]model.LedgerItemID{"objective", "requirement", "task", "delivery-task", "acceptance", "check", "overall-acceptance", "overall-check"}),
+
+		Ledger: ledger, Routes: routes,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -202,10 +202,10 @@ func TestCodingLedgerRepositoryTransactionallyFreezesExactRevision(t *testing.T)
 	rank := int64(8)
 	mutation := model.LedgerMutation{
 		OperationID: "ledger-reorder", BaseRevision: created.Revision, OwnerTurnID: "owner-reorder",
-		OwnerTurnDisposition: model.OwnerTurnDisposition{
-			Kind:    model.OwnerTurnRepresented,
-			ItemIDs: []model.LedgerItemID{"objective", "requirement", "task", "delivery-task", "acceptance", "check", "overall-acceptance", "overall-check"},
-		},
+		OwnerTurnDisposition: model.RepresentedOwnerTurn(
+
+			[]model.LedgerItemID{"objective", "requirement", "task", "delivery-task", "acceptance", "check", "overall-acceptance", "overall-check"}),
+
 		Operations: []model.LedgerMutationOperation{
 			{Kind: model.LedgerMutationReview, TargetID: "objective", ReviewState: model.LedgerReviewAgreed, Rationale: "owner agreed"},
 			{Kind: model.LedgerMutationReview, TargetID: "requirement", ReviewState: model.LedgerReviewAgreed, Rationale: "owner agreed"},
@@ -219,7 +219,7 @@ func TestCodingLedgerRepositoryTransactionallyFreezesExactRevision(t *testing.T)
 		},
 	}
 	controlCommand := ApplyCodingLedgerMutationCommand{
-		LedgerID: created.LedgerID, OwnerTurnText: "Move the task.", Mutation: mutation, CoveragePassed: true,
+		LedgerID: created.LedgerID, OwnerTurnText: "Move the task.", Mutation: mutation,
 	}
 	changed, err := repository.ApplyCodingLedgerControl(ctx, controlCommand)
 	if err != nil {
@@ -245,20 +245,13 @@ func TestCodingLedgerRepositoryTransactionallyFreezesExactRevision(t *testing.T)
 	if ownerAction != "planning_control" {
 		t.Fatalf("direct owner action = %q, want planning_control", ownerAction)
 	}
-	planningTurns, err := repository.CodingLedgerPlanningTurns(ctx, created.LedgerID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(planningTurns) != 1 || planningTurns[0].OwnerTurnID != "owner-create" {
-		t.Fatalf("semantic planning turns include deterministic controls: %#v", planningTurns)
-	}
 	conflictingMutation := mutation
 	conflictingMutation.Operations = append([]model.LedgerMutationOperation(nil), mutation.Operations...)
 	conflictingRank := int64(9)
 	conflictingMutation.Operations[len(conflictingMutation.Operations)-1].Rank = &conflictingRank
 	if _, err := repository.ApplyCodingLedgerControl(ctx, ApplyCodingLedgerMutationCommand{
 		LedgerID: created.LedgerID, OwnerTurnText: "Move the task.",
-		Mutation: conflictingMutation, CoveragePassed: true,
+		Mutation: conflictingMutation,
 	}); err == nil {
 		t.Fatal("operation identity conflict was accepted as an idempotent replay")
 	}
@@ -267,7 +260,7 @@ func TestCodingLedgerRepositoryTransactionallyFreezesExactRevision(t *testing.T)
 	sameResultConflict.Operations[0].Rationale = "different rationale with the same materialized result"
 	if _, err := repository.ApplyCodingLedgerControl(ctx, ApplyCodingLedgerMutationCommand{
 		LedgerID: created.LedgerID, OwnerTurnText: "Move the task.",
-		Mutation: sameResultConflict, CoveragePassed: true,
+		Mutation: sameResultConflict,
 	}); err == nil {
 		t.Fatal("operation identity accepted a different exact command with the same result")
 	}
@@ -306,10 +299,9 @@ func TestCodingLedgerRepositoryTransactionallyFreezesExactRevision(t *testing.T)
 	if len(diff.Amended) == 0 {
 		t.Fatalf("revision diff omitted changed records: %#v", diff)
 	}
-	auditID := repositoryReadyPlanningAudit(t, repository, created.LedgerID, changed.Revision, "ledger-freeze")
 	frozen, err := repository.FreezeCodingLedger(ctx, FreezeCodingLedgerCommand{
 		LedgerID: created.LedgerID, Revision: changed.Revision, OperationID: "ledger-freeze",
-		OwnerTurnID: "owner-freeze", OwnerTurnText: "Freeze this exact revision.", AuditID: auditID,
+		OwnerTurnID: "owner-freeze", OwnerTurnText: "Freeze this exact revision.",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -325,20 +317,31 @@ func TestCodingLedgerRepositoryTransactionallyFreezesExactRevision(t *testing.T)
 	}
 }
 
-func TestCodingLedgerValidationRequiresOneActiveObjective(t *testing.T) {
+func TestCodingLedgerValidationDoesNotRequireAGlobalObjective(t *testing.T) {
 	ledger := repositoryLedgerFixture()
+	ledger.Objectives = nil
+	if err := validateLedgerForRepository(ledger); err != nil {
+		t.Fatalf("valid finite task graph depends on an invented global objective: %v", err)
+	}
+	if err := validateDraftLedgerForRepository(ledger); err != nil {
+		t.Fatalf("draft depends on an invented global objective: %v", err)
+	}
+	ledger = repositoryLedgerFixture()
 	second := ledger.Objectives[0]
 	second.ID = "objective-two"
 	second.Outcome = "ship another contract"
 	second.Rank = 10
 	ledger.Objectives = append(ledger.Objectives, second)
-	if err := validateLedgerForRepository(ledger); err == nil || !strings.Contains(err.Error(), "exactly one active objective") {
-		t.Fatalf("multiple active objective validation = %v", err)
+	if err := validateLedgerForRepository(ledger); err != nil {
+		t.Fatalf("descriptive objectives became an aggregate execution gate: %v", err)
+	}
+	if err := validateDraftLedgerForRepository(ledger); err != nil {
+		t.Fatalf("draft retained an aggregate-objective gate: %v", err)
 	}
 }
 
-func TestCodingLedgerQuestionAndDependencyLifecycleUsesRevisionAuthority(t *testing.T) {
-	pool, repository := freshCodingPlanRepository(t)
+func TestCodingLedgerDependencyLifecycleUsesRevisionAuthority(t *testing.T) {
+	_, repository := freshCodingPlanRepository(t)
 	ctx := context.Background()
 	job, err := repository.EnqueueCodingJob(ctx, "Exercise normalized lifecycle.", t.TempDir())
 	if err != nil {
@@ -354,17 +357,8 @@ func TestCodingLedgerQuestionAndDependencyLifecycleUsesRevisionAuthority(t *test
 		LedgerItem: repositoryLedgerItem("dependency", 6), TaskID: "task",
 		PrerequisiteID: "prerequisite", Kind: model.LedgerDependencyRequires,
 	}
-	withdrawnQuestion := model.LedgerDecisionQuestion{
-		LedgerItem: repositoryLedgerItem("question-restore", 7), Kind: model.LedgerQuestion,
-		Prompt: "Should this be restored?",
-	}
-	answeredQuestion := model.LedgerDecisionQuestion{
-		LedgerItem: repositoryLedgerItem("question-answer", 8), Kind: model.LedgerQuestion,
-		Prompt: "What is the answer?",
-	}
 	ledger.Tasks = append(ledger.Tasks, prerequisite)
 	ledger.Dependencies = append(ledger.Dependencies, dependency)
-	ledger.DecisionsAndQuestions = append(ledger.DecisionsAndQuestions, withdrawnQuestion, answeredQuestion)
 	for _, record := range ledgerRepositoryRecords(ledger) {
 		setCodingLedgerItem(&ledger, record.item.ID, func(item *model.LedgerItem) {
 			item.ReviewState = model.LedgerReviewProposed
@@ -380,13 +374,13 @@ func TestCodingLedgerQuestionAndDependencyLifecycleUsesRevisionAuthority(t *test
 	}
 	allIDs := []model.LedgerItemID{
 		"objective", "requirement", "task", "acceptance", "check",
-		"prerequisite", "dependency", "question-restore", "question-answer",
+		"prerequisite", "dependency",
 	}
 	created, err := repository.CreateCodingLedger(ctx, CreateCodingLedgerCommand{
 		JobID: job.ID, OperationID: "lifecycle-create", OwnerTurnID: "lifecycle-create-turn",
 		OwnerTurnText:        "Exercise normalized lifecycle.",
-		OwnerTurnDisposition: model.OwnerTurnDisposition{Kind: model.OwnerTurnRepresented, ItemIDs: allIDs},
-		Ledger:               ledger, CoveragePassed: true, Routes: routes,
+		OwnerTurnDisposition: model.RepresentedOwnerTurn(allIDs),
+		Ledger:               ledger, Routes: routes,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -398,10 +392,9 @@ func TestCodingLedgerQuestionAndDependencyLifecycleUsesRevisionAuthority(t *test
 			LedgerID: created.LedgerID, OwnerTurnText: operationID,
 			Mutation: model.LedgerMutation{
 				OperationID: operationID, BaseRevision: base, OwnerTurnID: turnID,
-				OwnerTurnDisposition: model.OwnerTurnDisposition{Kind: model.OwnerTurnRepresented, ItemIDs: ids},
+				OwnerTurnDisposition: model.RepresentedOwnerTurn(ids),
 				Operations:           operations,
 			},
-			CoveragePassed: true,
 		})
 		if applyErr != nil {
 			t.Fatal(applyErr)
@@ -409,36 +402,7 @@ func TestCodingLedgerQuestionAndDependencyLifecycleUsesRevisionAuthority(t *test
 		return result
 	}
 
-	removedQuestion := apply("remove-question", "remove-question-turn", created.Revision,
-		[]model.LedgerMutationOperation{{Kind: model.LedgerMutationRemove, TargetID: "question-restore", Rationale: "withdraw"}},
-		[]model.LedgerItemID{"question-restore"})
-	restoredQuestion := apply("restore-question", "restore-question-turn", removedQuestion.Revision,
-		[]model.LedgerMutationOperation{{Kind: model.LedgerMutationRestore, TargetID: "question-restore", Rationale: "restore"}},
-		[]model.LedgerItemID{"question-restore"})
-	if restoredQuestion.Ledger.DecisionsAndQuestions[0].Disposition != model.LedgerDispositionActive {
-		t.Fatal("restored question did not remain active")
-	}
-
-	answer := answeredQuestion
-	answer.Answer = "Use the exact base revision."
-	answer.ReviewState = model.LedgerReviewProposed
-	answered := apply("answer-question", "answer-question-turn", restoredQuestion.Revision,
-		[]model.LedgerMutationOperation{{
-			Kind: model.LedgerMutationAmend, TargetID: "question-answer",
-			Item: &model.LedgerMutationItem{DecisionQuestion: &answer}, Rationale: "answer",
-		}}, []model.LedgerItemID{"question-answer"})
-	var questionStatus, questionAnswer string
-	if err := pool.QueryRow(ctx, `
-		SELECT status,answer FROM coding_ledger_questions
-		WHERE ledger_id=$1 AND question_id='question-answer'
-	`, created.LedgerID).Scan(&questionStatus, &questionAnswer); err != nil {
-		t.Fatal(err)
-	}
-	if questionStatus != "answered" || questionAnswer != answer.Answer {
-		t.Fatalf("durable question = %s %q", questionStatus, questionAnswer)
-	}
-
-	removedDependency := apply("remove-dependency-endpoint", "remove-dependency-turn", answered.Revision,
+	removedDependency := apply("remove-dependency-endpoint", "remove-dependency-turn", created.Revision,
 		[]model.LedgerMutationOperation{
 			{Kind: model.LedgerMutationRemove, TargetID: "dependency", Rationale: "remove edge"},
 			{Kind: model.LedgerMutationRemove, TargetID: "prerequisite", Rationale: "remove endpoint"},
@@ -486,11 +450,11 @@ func TestCodingLedgerConcurrentInitialReplayIsSerialized(t *testing.T) {
 	command := CreateCodingLedgerCommand{
 		JobID: job.ID, OperationID: "concurrent-create", OwnerTurnID: "concurrent-create-turn",
 		OwnerTurnText: "Serialize initial proposal.",
-		OwnerTurnDisposition: model.OwnerTurnDisposition{
-			Kind:    model.OwnerTurnRepresented,
-			ItemIDs: []model.LedgerItemID{"objective", "requirement", "task", "acceptance", "check"},
-		},
-		Ledger: ledger, CoveragePassed: true,
+		OwnerTurnDisposition: model.RepresentedOwnerTurn(
+
+			[]model.LedgerItemID{"objective", "requirement", "task", "acceptance", "check"}),
+
+		Ledger: ledger,
 		Routes: []CodingLedgerRoute{
 			{Role: "planner", ConfigurationRevision: 1, Provider: "codex", Model: "gpt-5.6-sol", ReasoningEffort: "medium", ServiceTier: "priority"},
 			{Role: "executor", ConfigurationRevision: 1, Provider: "codex", Model: "gpt-5.6-sol", ReasoningEffort: "medium", ServiceTier: "priority"},
@@ -531,17 +495,6 @@ func repositoryLedgerRoutes(revision int64) []CodingLedgerRoute {
 	}
 }
 
-func repositoryReadyPlanningAudit(t *testing.T, repository *Repository, ledgerID, revision int64, seed string) string {
-	t.Helper()
-	auditID := "audit-" + seed
-	if err := repository.RecordCodingLedgerPlanningAudit(context.Background(), RecordCodingLedgerPlanningAuditCommand{
-		LedgerID: ledgerID, AuditID: auditID, Revision: revision, Ready: true, Explanation: "fresh complete planning audit",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	return auditID
-}
-
 func TestCodingLedgerRepositoryFindingRegressions(t *testing.T) {
 	t.Run("out of scope replay and cross command reuse", func(t *testing.T) {
 		_, repository := freshCodingPlanRepository(t)
@@ -561,8 +514,7 @@ func TestCodingLedgerRepositoryFindingRegressions(t *testing.T) {
 		created, err := repository.CreateCodingLedger(ctx, CreateCodingLedgerCommand{
 			JobID: job.ID, OperationID: "finding-create", OwnerTurnID: "finding-create-turn",
 			OwnerTurnText: "Record an excluded request.", Ledger: ledger, Routes: repositoryLedgerRoutes(1),
-			OwnerTurnDisposition: model.OwnerTurnDisposition{Kind: model.OwnerTurnRepresented, ItemIDs: ids},
-			CoveragePassed:       true,
+			OwnerTurnDisposition: model.RepresentedOwnerTurn(ids),
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -573,7 +525,6 @@ func TestCodingLedgerRepositoryFindingRegressions(t *testing.T) {
 				OperationID: "out-of-scope", BaseRevision: created.Revision, OwnerTurnID: "out-of-scope-turn",
 				OwnerTurnDisposition: model.OwnerTurnDisposition{Statements: []model.OwnerStatementDisposition{{Kind: model.OwnerTurnOutOfScope, Reason: "deployment is a separate request"}}},
 			},
-			CoveragePassed: true,
 		}
 		applied, err := repository.ApplyCodingLedgerMutation(ctx, command)
 		if err != nil {
@@ -603,8 +554,8 @@ func TestCodingLedgerRepositoryFindingRegressions(t *testing.T) {
 		}
 	})
 
-	t.Run("answered initial question and transient dependency tombstone", func(t *testing.T) {
-		pool, repository := freshCodingPlanRepository(t)
+	t.Run("transient dependency tombstone", func(t *testing.T) {
+		_, repository := freshCodingPlanRepository(t)
 		ctx := context.Background()
 		job, err := repository.EnqueueCodingJob(ctx, "Preserve normalized history.", t.TempDir())
 		if err != nil {
@@ -615,12 +566,7 @@ func TestCodingLedgerRepositoryFindingRegressions(t *testing.T) {
 			LedgerItem: repositoryLedgerItem("transient-prerequisite", 5), Goal: "prepare",
 			RequirementIDs: []model.LedgerItemID{"requirement"}, AcceptanceCriterionIDs: []model.LedgerItemID{"acceptance"},
 		}
-		question := model.LedgerDecisionQuestion{
-			LedgerItem: repositoryLedgerItem("answered-initially", 6), Kind: model.LedgerQuestion,
-			Prompt: "Which authority?", Answer: "The exact owner turn.",
-		}
 		ledger.Tasks = append(ledger.Tasks, prerequisite)
-		ledger.DecisionsAndQuestions = append(ledger.DecisionsAndQuestions, question)
 		ids := make([]model.LedgerItemID, 0)
 		for _, record := range ledgerRepositoryRecords(ledger) {
 			setCodingLedgerItem(&ledger, record.item.ID, func(item *model.LedgerItem) {
@@ -631,16 +577,10 @@ func TestCodingLedgerRepositoryFindingRegressions(t *testing.T) {
 		created, err := repository.CreateCodingLedger(ctx, CreateCodingLedgerCommand{
 			JobID: job.ID, OperationID: "history-create", OwnerTurnID: "history-create-turn",
 			OwnerTurnText: "Preserve normalized history.", Ledger: ledger, Routes: repositoryLedgerRoutes(1),
-			OwnerTurnDisposition: model.OwnerTurnDisposition{Kind: model.OwnerTurnRepresented, ItemIDs: ids},
-			CoveragePassed:       true,
+			OwnerTurnDisposition: model.RepresentedOwnerTurn(ids),
 		})
 		if err != nil {
 			t.Fatal(err)
-		}
-		var status string
-		if err := pool.QueryRow(ctx, `SELECT status FROM coding_ledger_questions WHERE ledger_id=$1 AND question_id='answered-initially'`,
-			created.LedgerID).Scan(&status); err != nil || status != "answered" {
-			t.Fatalf("initial answered question status=%q err=%v", status, err)
 		}
 		dependency := model.LedgerDependency{
 			LedgerItem: repositoryLedgerItem("transient-dependency", 7),
@@ -651,16 +591,15 @@ func TestCodingLedgerRepositoryFindingRegressions(t *testing.T) {
 			LedgerID: created.LedgerID, OwnerTurnText: "Add and remove the transient dependency.",
 			Mutation: model.LedgerMutation{
 				OperationID: "transient-dependency-change", BaseRevision: created.Revision, OwnerTurnID: "transient-dependency-turn",
-				OwnerTurnDisposition: model.OwnerTurnDisposition{
-					Kind: model.OwnerTurnRepresented, ItemIDs: []model.LedgerItemID{dependency.ID, prerequisite.ID},
-				},
+				OwnerTurnDisposition: model.RepresentedOwnerTurn(
+					[]model.LedgerItemID{dependency.ID, prerequisite.ID}),
+
 				Operations: []model.LedgerMutationOperation{
 					{Kind: model.LedgerMutationAdd, Item: &model.LedgerMutationItem{Dependency: &dependency}, Rationale: "temporarily add"},
 					{Kind: model.LedgerMutationRemove, TargetID: dependency.ID, Rationale: "remove the transient edge"},
 					{Kind: model.LedgerMutationRemove, TargetID: prerequisite.ID, Rationale: "remove the transient endpoint"},
 				},
 			},
-			CoveragePassed: true,
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -713,10 +652,8 @@ func TestCodingLedgerRepositoryFindingRegressions(t *testing.T) {
 		command := CreateCodingLedgerCommand{
 			JobID: job.ID, OperationID: "large-create", OwnerTurnID: "large-create-turn",
 			OwnerTurnText: "Retain every initial record.", Ledger: ledger, Routes: repositoryLedgerRoutes(1),
-			OwnerTurnDisposition: model.OwnerTurnDisposition{
-				Kind: model.OwnerTurnRepresented, ItemIDs: []model.LedgerItemID{"objective"},
-			},
-			CoveragePassed: true,
+			OwnerTurnDisposition: model.RepresentedOwnerTurn(
+				[]model.LedgerItemID{"objective"}),
 		}
 		created, err := repository.CreateCodingLedger(ctx, command)
 		if err != nil {
@@ -751,8 +688,7 @@ func TestCodingLedgerRepositoryFindingRegressions(t *testing.T) {
 		created, err := repository.CreateCodingLedger(ctx, CreateCodingLedgerCommand{
 			JobID: job.ID, OperationID: "diff-create", OwnerTurnID: "diff-create-turn",
 			OwnerTurnText: "Page revision differences.", Ledger: ledger, Routes: repositoryLedgerRoutes(1),
-			OwnerTurnDisposition: model.OwnerTurnDisposition{Kind: model.OwnerTurnRepresented, ItemIDs: ids},
-			CoveragePassed:       true,
+			OwnerTurnDisposition: model.RepresentedOwnerTurn(ids),
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -761,15 +697,14 @@ func TestCodingLedgerRepositoryFindingRegressions(t *testing.T) {
 			LedgerID: created.LedgerID, OwnerTurnText: "Agree two records.",
 			Mutation: model.LedgerMutation{
 				OperationID: "diff-change", BaseRevision: created.Revision, OwnerTurnID: "diff-change-turn",
-				OwnerTurnDisposition: model.OwnerTurnDisposition{
-					Kind: model.OwnerTurnRepresented, ItemIDs: []model.LedgerItemID{"objective", "requirement"},
-				},
+				OwnerTurnDisposition: model.RepresentedOwnerTurn(
+					[]model.LedgerItemID{"objective", "requirement"}),
+
 				Operations: []model.LedgerMutationOperation{
 					{Kind: model.LedgerMutationReview, TargetID: "objective", ReviewState: model.LedgerReviewAgreed, Rationale: "agree"},
 					{Kind: model.LedgerMutationReview, TargetID: "requirement", ReviewState: model.LedgerReviewAgreed, Rationale: "agree"},
 				},
 			},
-			CoveragePassed: true,
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -784,43 +719,6 @@ func TestCodingLedgerRepositoryFindingRegressions(t *testing.T) {
 	})
 }
 
-func TestCodingLedgerUnresolvedDispositionRejectsMaterialMutation(t *testing.T) {
-	ledger := repositoryLedgerFixture()
-	question := model.LedgerDecisionQuestion{
-		LedgerItem: repositoryLedgerItem("question", 5),
-		Kind:       model.LedgerQuestion,
-		Prompt:     "Which behavior?",
-	}
-	ledger.DecisionsAndQuestions = append(ledger.DecisionsAndQuestions, question)
-	rank := int64(10)
-	err := validateMutationOwnerTurnDisposition(ledger, ledger, []model.LedgerMutationOperation{{
-		Kind: model.LedgerMutationReorder, TargetID: "task", Rank: &rank, Rationale: "change task",
-	}}, model.OwnerTurnDisposition{Kind: model.OwnerTurnUnresolved, QuestionIDs: []model.LedgerItemID{"question"}})
-	if err == nil || !strings.Contains(err.Error(), "cannot contain material mutations") {
-		t.Fatalf("unresolved material mutation validation = %v", err)
-	}
-}
-
-func TestCodingLedgerDecisionQuestionKindIsImmutable(t *testing.T) {
-	ledger := repositoryLedgerFixture()
-	question := model.LedgerDecisionQuestion{
-		LedgerItem: repositoryLedgerItem("question", 5),
-		Kind:       model.LedgerQuestion,
-		Prompt:     "Which behavior?",
-	}
-	ledger.DecisionsAndQuestions = append(ledger.DecisionsAndQuestions, question)
-	decision := question
-	decision.Kind = model.LedgerDecision
-	decision.Answer = "Use the normalized ledger."
-	err := applyCodingLedgerOperations(&ledger, []model.LedgerMutationOperation{{
-		Kind: model.LedgerMutationAmend, TargetID: question.ID,
-		Item: &model.LedgerMutationItem{DecisionQuestion: &decision}, Rationale: "change kind",
-	}})
-	if err == nil || !strings.Contains(err.Error(), "same kind") {
-		t.Fatalf("decision/question kind change validation = %v", err)
-	}
-}
-
 func TestCodingLedgerFrozenProjectionRejectsMismatchedBindings(t *testing.T) {
 	ledger := repositoryLedgerFixture()
 	ledger.Requirements = append(ledger.Requirements, model.LedgerRequirement{
@@ -830,6 +728,18 @@ func TestCodingLedgerFrozenProjectionRejectsMismatchedBindings(t *testing.T) {
 	projection := CodingLedgerRevision{Ledger: ledger, Routes: repositoryLedgerRoutes(1)}
 	if err := validateFrozenCodingAgentTasks(projection.Ledger); err == nil {
 		t.Fatal("mismatched task, acceptance, and check bindings produced a frozen workload")
+	}
+}
+
+func TestCodingLedgerFrozenProjectionRejectsCheckSharedAcrossTasks(t *testing.T) {
+	ledger := repositoryLedgerFixture()
+	ledger.Tasks = append(ledger.Tasks, model.LedgerTask{
+		LedgerItem: repositoryLedgerItem("task-two", 5), Goal: "implement second behavior",
+		RequirementIDs:         []model.LedgerItemID{"requirement"},
+		AcceptanceCriterionIDs: []model.LedgerItemID{"acceptance"},
+	})
+	if err := validateFrozenCodingAgentTasks(ledger); err == nil || !strings.Contains(err.Error(), "exactly one atomic task") {
+		t.Fatalf("shared required check entered frozen task queue: %v", err)
 	}
 }
 
@@ -861,10 +771,11 @@ func TestCodingLedgerDependencyPreservesMaximumRationale(t *testing.T) {
 	created, err := repository.CreateCodingLedger(ctx, CreateCodingLedgerCommand{
 		JobID: job.ID, OperationID: "boundary-create", OwnerTurnID: "boundary-turn",
 		OwnerTurnText: "Preserve dependency rationale.", Ledger: ledger,
-		OwnerTurnDisposition: model.OwnerTurnDisposition{Kind: model.OwnerTurnRepresented, ItemIDs: []model.LedgerItemID{
+		OwnerTurnDisposition: model.RepresentedOwnerTurn([]model.LedgerItemID{
 			"objective", "requirement", "task", "acceptance", "check", "prerequisite", "dependency",
-		}},
-		CoveragePassed: true, Routes: repositoryLedgerRoutes(1),
+		}),
+
+		Routes: repositoryLedgerRoutes(1),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -876,14 +787,13 @@ func TestCodingLedgerDependencyPreservesMaximumRationale(t *testing.T) {
 		LedgerID: created.LedgerID, OwnerTurnText: "Remove the dependency.",
 		Mutation: model.LedgerMutation{
 			OperationID: "boundary-remove", BaseRevision: created.Revision, OwnerTurnID: "boundary-remove-turn",
-			OwnerTurnDisposition: model.OwnerTurnDisposition{
-				Kind: model.OwnerTurnRepresented, ItemIDs: []model.LedgerItemID{dependency.ID},
-			},
+			OwnerTurnDisposition: model.RepresentedOwnerTurn(
+				[]model.LedgerItemID{dependency.ID}),
+
 			Operations: []model.LedgerMutationOperation{{
 				Kind: model.LedgerMutationRemove, TargetID: dependency.ID, Rationale: "remove obsolete dependency",
 			}},
 		},
-		CoveragePassed: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -921,11 +831,11 @@ func TestCodingLedgerMutationReceiptFitsMaximumOriginDetail(t *testing.T) {
 	created, err := repository.CreateCodingLedger(ctx, CreateCodingLedgerCommand{
 		JobID: job.ID, OperationID: "origin-boundary-create", OwnerTurnID: "origin-boundary-turn",
 		OwnerTurnText: "Create the maximum provenance item.", Ledger: ledger,
-		OwnerTurnDisposition: model.OwnerTurnDisposition{
-			Kind:    model.OwnerTurnRepresented,
-			ItemIDs: []model.LedgerItemID{"objective", "requirement", "task", "acceptance", "check"},
-		},
-		CoveragePassed: true, Routes: repositoryLedgerRoutes(1),
+		OwnerTurnDisposition: model.RepresentedOwnerTurn(
+
+			[]model.LedgerItemID{"objective", "requirement", "task", "acceptance", "check"}),
+
+		Routes: repositoryLedgerRoutes(1),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -933,60 +843,29 @@ func TestCodingLedgerMutationReceiptFitsMaximumOriginDetail(t *testing.T) {
 	rank := int64(20)
 	mutation := model.LedgerMutation{
 		OperationID: "origin-boundary-reorder", BaseRevision: created.Revision, OwnerTurnID: "origin-boundary-reorder-turn",
-		OwnerTurnDisposition: model.OwnerTurnDisposition{
-			Kind: model.OwnerTurnRepresented, ItemIDs: []model.LedgerItemID{"objective"},
-		},
+		OwnerTurnDisposition: model.RepresentedOwnerTurn(
+			[]model.LedgerItemID{"objective"}),
+
 		Operations: []model.LedgerMutationOperation{{
 			Kind: model.LedgerMutationReorder, TargetID: "objective", Rank: &rank, Rationale: "move objective",
 		}},
 	}
 	changed, err := repository.ApplyCodingLedgerMutation(ctx, ApplyCodingLedgerMutationCommand{
 		LedgerID: created.LedgerID, OwnerTurnText: "Move the objective.",
-		Mutation: mutation, CoveragePassed: true,
+		Mutation: mutation,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	replayed, err := repository.ApplyCodingLedgerMutation(ctx, ApplyCodingLedgerMutationCommand{
 		LedgerID: created.LedgerID, OwnerTurnText: "Move the objective.",
-		Mutation: mutation, CoveragePassed: true,
+		Mutation: mutation,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if replayed.Applied || replayed.Revision != changed.Revision {
 		t.Fatalf("maximum-origin replay = %#v", replayed)
-	}
-}
-
-func TestCodingLedgerUnresolvedDispositionCanRaiseReferencedQuestion(t *testing.T) {
-	base := repositoryLedgerFixture()
-	question := model.LedgerDecisionQuestion{
-		LedgerItem: repositoryLedgerItem("raised-question", 5),
-		Kind:       model.LedgerQuestion,
-		Prompt:     "Which exact behavior should apply?",
-	}
-	question.ReviewState = model.LedgerReviewProposed
-	operation := model.LedgerMutationOperation{
-		Kind: model.LedgerMutationAdd, Item: &model.LedgerMutationItem{DecisionQuestion: &question},
-		Rationale: "the owner instruction requires clarification",
-	}
-	mutation := model.LedgerMutation{
-		OperationID: "raise-question", BaseRevision: 1, OwnerTurnID: "raise-question-turn",
-		OwnerTurnDisposition: model.OwnerTurnDisposition{
-			Kind: model.OwnerTurnUnresolved, QuestionIDs: []model.LedgerItemID{question.ID},
-		},
-		Operations: []model.LedgerMutationOperation{operation},
-	}
-	if err := mutation.Validate(); err != nil {
-		t.Fatal(err)
-	}
-	next := base
-	if err := applyCodingLedgerOperations(&next, mutation.Operations); err != nil {
-		t.Fatal(err)
-	}
-	if err := validateMutationOwnerTurnDisposition(base, next, mutation.Operations, mutation.OwnerTurnDisposition); err != nil {
-		t.Fatal(err)
 	}
 }
 
@@ -1077,8 +956,8 @@ func TestCodingLedgerDependencyTombstonesRemainNormalizedAndRevisionBound(t *tes
 	created, err := repository.CreateCodingLedger(ctx, CreateCodingLedgerCommand{
 		JobID: job.ID, OperationID: "fanout-create", OwnerTurnID: "fanout-create-turn",
 		OwnerTurnText: "Preserve high-fanout dependency history.", Ledger: ledger,
-		OwnerTurnDisposition: model.OwnerTurnDisposition{Kind: model.OwnerTurnRepresented, ItemIDs: ids},
-		CoveragePassed:       true, Routes: repositoryLedgerRoutes(1),
+		OwnerTurnDisposition: model.RepresentedOwnerTurn(ids),
+		Routes:               repositoryLedgerRoutes(1),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1096,10 +975,9 @@ func TestCodingLedgerDependencyTombstonesRemainNormalizedAndRevisionBound(t *tes
 		LedgerID: created.LedgerID, OwnerTurnText: "Remove the obsolete dependencies.",
 		Mutation: model.LedgerMutation{
 			OperationID: "fanout-remove", BaseRevision: created.Revision, OwnerTurnID: "fanout-remove-turn",
-			OwnerTurnDisposition: model.OwnerTurnDisposition{Kind: model.OwnerTurnRepresented, ItemIDs: removedIDs},
+			OwnerTurnDisposition: model.RepresentedOwnerTurn(removedIDs),
 			Operations:           operations,
 		},
-		CoveragePassed: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1130,14 +1008,13 @@ func TestCodingLedgerDependencyTombstonesRemainNormalizedAndRevisionBound(t *tes
 		LedgerID: created.LedgerID, OwnerTurnText: "Move the objective.",
 		Mutation: model.LedgerMutation{
 			OperationID: "fanout-unrelated", BaseRevision: removed.Revision, OwnerTurnID: "fanout-unrelated-turn",
-			OwnerTurnDisposition: model.OwnerTurnDisposition{
-				Kind: model.OwnerTurnRepresented, ItemIDs: []model.LedgerItemID{"objective"},
-			},
+			OwnerTurnDisposition: model.RepresentedOwnerTurn(
+				[]model.LedgerItemID{"objective"}),
+
 			Operations: []model.LedgerMutationOperation{{
 				Kind: model.LedgerMutationReorder, TargetID: "objective", Rank: &rank, Rationale: "move the objective",
 			}},
 		},
-		CoveragePassed: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1224,46 +1101,6 @@ func TestCodingLedgerFindingValidationGuards(t *testing.T) {
 		}
 	})
 
-	t.Run("unresolved disposition requires active unanswered question", func(t *testing.T) {
-		for _, test := range []struct {
-			name     string
-			question model.LedgerDecisionQuestion
-		}{
-			{
-				name: "answered",
-				question: model.LedgerDecisionQuestion{
-					LedgerItem: repositoryLedgerItem("answered-question", 5),
-					Kind:       model.LedgerQuestion, Prompt: "Which route?", Answer: "The frozen route.",
-				},
-			},
-			{
-				name: "tombstoned",
-				question: model.LedgerDecisionQuestion{
-					LedgerItem: func() model.LedgerItem {
-						item := repositoryLedgerItem("tombstoned-question", 5)
-						item.Disposition = model.LedgerDispositionTombstoned
-						item.ReviewState = ""
-						return item
-					}(),
-					Kind: model.LedgerQuestion, Prompt: "Which route?",
-				},
-			},
-		} {
-			t.Run(test.name, func(t *testing.T) {
-				ledger := repositoryLedgerFixture()
-				ledger.DecisionsAndQuestions = append(ledger.DecisionsAndQuestions, test.question)
-				err := validateMutationOwnerTurnDisposition(
-					ledger, ledger, nil,
-					model.OwnerTurnDisposition{
-						Kind: model.OwnerTurnUnresolved, QuestionIDs: []model.LedgerItemID{test.question.ID},
-					},
-				)
-				if err == nil || !strings.Contains(err.Error(), "not active and open") {
-					t.Fatalf("closed question unresolved validation = %v", err)
-				}
-			})
-		}
-	})
 }
 
 func TestCodingLedgerDependencyAmendmentRetainsBothEndpointAuthorities(t *testing.T) {
@@ -1301,8 +1138,8 @@ func TestCodingLedgerDependencyAmendmentRetainsBothEndpointAuthorities(t *testin
 	created, err := repository.CreateCodingLedger(ctx, CreateCodingLedgerCommand{
 		JobID: job.ID, OperationID: "dependency-authority-create", OwnerTurnID: "dependency-authority-create-turn",
 		OwnerTurnText: "Amend dependency authority.", Ledger: ledger,
-		OwnerTurnDisposition: model.OwnerTurnDisposition{Kind: model.OwnerTurnRepresented, ItemIDs: ids},
-		CoveragePassed:       true, Routes: repositoryLedgerRoutes(1),
+		OwnerTurnDisposition: model.RepresentedOwnerTurn(ids),
+		Routes:               repositoryLedgerRoutes(1),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1316,15 +1153,14 @@ func TestCodingLedgerDependencyAmendmentRetainsBothEndpointAuthorities(t *testin
 		Mutation: model.LedgerMutation{
 			OperationID: "dependency-authority-amend", BaseRevision: created.Revision,
 			OwnerTurnID: "dependency-authority-amend-turn",
-			OwnerTurnDisposition: model.OwnerTurnDisposition{
-				Kind: model.OwnerTurnRepresented, ItemIDs: []model.LedgerItemID{dependency.ID},
-			},
+			OwnerTurnDisposition: model.RepresentedOwnerTurn(
+				[]model.LedgerItemID{dependency.ID}),
+
 			Operations: []model.LedgerMutationOperation{{
 				Kind: model.LedgerMutationAmend, TargetID: dependency.ID,
 				Item: &model.LedgerMutationItem{Dependency: &amendedDependency}, Rationale: "change prerequisite",
 			}},
 		},
-		CoveragePassed: true,
 	}
 	applied, err := repository.ApplyCodingLedgerMutation(ctx, command)
 	if err != nil {
@@ -1365,15 +1201,14 @@ func TestCodingLedgerDependencyAmendmentRetainsBothEndpointAuthorities(t *testin
 		Mutation: model.LedgerMutation{
 			OperationID: "dependency-precision-amend", BaseRevision: applied.Revision,
 			OwnerTurnID: "dependency-precision-amend-turn",
-			OwnerTurnDisposition: model.OwnerTurnDisposition{
-				Kind: model.OwnerTurnRepresented, ItemIDs: []model.LedgerItemID{dependency.ID},
-			},
+			OwnerTurnDisposition: model.RepresentedOwnerTurn(
+				[]model.LedgerItemID{dependency.ID}),
+
 			Operations: []model.LedgerMutationOperation{{
 				Kind: model.LedgerMutationAmend, TargetID: dependency.ID,
 				Item: &model.LedgerMutationItem{Dependency: &precisionDependency}, Rationale: "change exact rank",
 			}},
 		},
-		CoveragePassed: true,
 	}
 	precisionApplied, err := repository.ApplyCodingLedgerMutation(ctx, precisionCommand)
 	if err != nil {
@@ -1405,9 +1240,7 @@ func TestCodingLedgerInitialJSONReplayNormalizesEmptyCollections(t *testing.T) {
 	}
 	ledger.Constraints = []model.LedgerConstraint{}
 	ledger.Groups = []model.LedgerGroup{}
-	ledger.DecisionsAndQuestions = []model.LedgerDecisionQuestion{}
 	ledger.Dependencies = []model.LedgerDependency{}
-	ledger.Findings = []model.LedgerFinding{}
 	raw, err := json.Marshal(ledger)
 	if err != nil {
 		t.Fatal(err)
@@ -1419,11 +1252,11 @@ func TestCodingLedgerInitialJSONReplayNormalizesEmptyCollections(t *testing.T) {
 	command := CreateCodingLedgerCommand{
 		JobID: job.ID, OperationID: "json-replay-create", OwnerTurnID: "json-replay-turn",
 		OwnerTurnText: "Replay the exact JSON proposal.", Ledger: decoded,
-		OwnerTurnDisposition: model.OwnerTurnDisposition{
-			Kind:    model.OwnerTurnRepresented,
-			ItemIDs: []model.LedgerItemID{"objective", "requirement", "task", "acceptance", "check"},
-		},
-		CoveragePassed: true, Routes: repositoryLedgerRoutes(1),
+		OwnerTurnDisposition: model.RepresentedOwnerTurn(
+
+			[]model.LedgerItemID{"objective", "requirement", "task", "acceptance", "check"}),
+
+		Routes: repositoryLedgerRoutes(1),
 	}
 	created, err := repository.CreateCodingLedger(ctx, command)
 	if err != nil {
@@ -1466,8 +1299,8 @@ func TestCodingLedgerDependencyMetadataDoesNotEnterIndexedEdgeIdentity(t *testin
 	created, err := repository.CreateCodingLedger(ctx, CreateCodingLedgerCommand{
 		JobID: job.ID, OperationID: "metadata-create", OwnerTurnID: "metadata-turn",
 		OwnerTurnText: "Preserve large dependency provenance.", Ledger: ledger,
-		OwnerTurnDisposition: model.OwnerTurnDisposition{Kind: model.OwnerTurnRepresented, ItemIDs: ids},
-		CoveragePassed:       true, Routes: repositoryLedgerRoutes(1),
+		OwnerTurnDisposition: model.RepresentedOwnerTurn(ids),
+		Routes:               repositoryLedgerRoutes(1),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1484,68 +1317,6 @@ func TestCodingLedgerDependencyMetadataDoesNotEnterIndexedEdgeIdentity(t *testin
 	}
 	if got := created.Ledger.Dependencies[0].Provenance.Reference; got != dependency.Provenance.Reference {
 		t.Fatalf("dependency provenance bytes=%d, want %d", len(got), len(dependency.Provenance.Reference))
-	}
-}
-
-func TestCodingLedgerPlanningFindingCanBeRemovedAndRestored(t *testing.T) {
-	_, repository := freshCodingPlanRepository(t)
-	ctx := context.Background()
-	job, err := repository.EnqueueCodingJob(ctx, "Restore a planning finding.", t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	ledger := repositoryLedgerFixture()
-	finding := model.LedgerFinding{
-		LedgerItem: repositoryLedgerItem("restorable-finding", 5),
-		Kind:       model.LedgerFindingPlanning, Observation: "Needs owner review.",
-		TargetIDs: []model.LedgerItemID{"task"},
-	}
-	finding.ReviewState = model.LedgerReviewProposed
-	ledger.Findings = append(ledger.Findings, finding)
-	for _, record := range ledgerRepositoryRecords(ledger) {
-		setCodingLedgerItem(&ledger, record.item.ID, func(item *model.LedgerItem) {
-			item.ReviewState = model.LedgerReviewProposed
-		})
-	}
-	created, err := repository.CreateCodingLedger(ctx, CreateCodingLedgerCommand{
-		JobID: job.ID, OperationID: "finding-restore-create", OwnerTurnID: "finding-restore-create-turn",
-		OwnerTurnText: "Restore a planning finding.", Ledger: ledger,
-		OwnerTurnDisposition: model.OwnerTurnDisposition{
-			Kind:    model.OwnerTurnRepresented,
-			ItemIDs: []model.LedgerItemID{"objective", "requirement", "task", "acceptance", "check", finding.ID},
-		},
-		CoveragePassed: true, Routes: repositoryLedgerRoutes(1),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	removed, err := repository.ApplyCodingLedgerMutation(ctx, ApplyCodingLedgerMutationCommand{
-		LedgerID: created.LedgerID, OwnerTurnText: "Remove the finding.",
-		Mutation: model.LedgerMutation{
-			OperationID: "finding-remove", BaseRevision: created.Revision, OwnerTurnID: "finding-remove-turn",
-			OwnerTurnDisposition: model.OwnerTurnDisposition{Kind: model.OwnerTurnRepresented, ItemIDs: []model.LedgerItemID{finding.ID}},
-			Operations:           []model.LedgerMutationOperation{{Kind: model.LedgerMutationRemove, TargetID: finding.ID, Rationale: "temporarily resolved"}},
-		},
-		CoveragePassed: true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	restored, err := repository.ApplyCodingLedgerMutation(ctx, ApplyCodingLedgerMutationCommand{
-		LedgerID: created.LedgerID, OwnerTurnText: "Restore the finding.",
-		Mutation: model.LedgerMutation{
-			OperationID: "finding-restore", BaseRevision: removed.Revision, OwnerTurnID: "finding-restore-turn",
-			OwnerTurnDisposition: model.OwnerTurnDisposition{Kind: model.OwnerTurnRepresented, ItemIDs: []model.LedgerItemID{finding.ID}},
-			Operations:           []model.LedgerMutationOperation{{Kind: model.LedgerMutationRestore, TargetID: finding.ID, Rationale: "review remains necessary"}},
-		},
-		CoveragePassed: true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(restored.Ledger.Findings) != 1 || restored.Ledger.Findings[0].ID != finding.ID ||
-		restored.Ledger.Findings[0].Disposition != model.LedgerDispositionActive {
-		t.Fatalf("restored finding = %#v", restored.Ledger.Findings)
 	}
 }
 
@@ -1590,16 +1361,16 @@ func TestCodingLedgerInitialReplayPreservesDependencyDispositionIdentity(t *test
 	command := CreateCodingLedgerCommand{
 		JobID: job.ID, OperationID: "dependency-replay-create", OwnerTurnID: "dependency-replay-turn",
 		OwnerTurnText: "Preserve exact dependency disposition identity.", Ledger: ledger,
-		OwnerTurnDisposition: model.OwnerTurnDisposition{
-			Kind: model.OwnerTurnRepresented, ItemIDs: []model.LedgerItemID{"dependency-requires"},
-		},
-		CoveragePassed: true, Routes: repositoryLedgerRoutes(1),
+		OwnerTurnDisposition: model.RepresentedOwnerTurn(
+			[]model.LedgerItemID{"dependency-requires"}),
+
+		Routes: repositoryLedgerRoutes(1),
 	}
 	if _, err := repository.CreateCodingLedger(ctx, command); err != nil {
 		t.Fatal(err)
 	}
 	changed := command
-	changed.OwnerTurnDisposition.ItemIDs = []model.LedgerItemID{"dependency-blocks"}
+	changed.OwnerTurnDisposition.Statements[0].ItemIDs = []model.LedgerItemID{"dependency-blocks"}
 	if _, err := repository.CreateCodingLedger(ctx, changed); err == nil ||
 		!strings.Contains(err.Error(), "different proposal") {
 		t.Fatalf("changed dependency identity replay error = %v", err)
@@ -1629,10 +1400,10 @@ func TestCodingLedgerTaskDetailIncludesLinkedGroup(t *testing.T) {
 	created, err := repository.CreateCodingLedger(ctx, CreateCodingLedgerCommand{
 		JobID: job.ID, OperationID: "task-detail-group-create", OwnerTurnID: "task-detail-group-turn",
 		OwnerTurnText: "Read task group context.", Ledger: ledger,
-		OwnerTurnDisposition: model.OwnerTurnDisposition{
-			Kind: model.OwnerTurnRepresented, ItemIDs: []model.LedgerItemID{"task", group.ID},
-		},
-		CoveragePassed: true, Routes: repositoryLedgerRoutes(1),
+		OwnerTurnDisposition: model.RepresentedOwnerTurn(
+			[]model.LedgerItemID{"task", group.ID}),
+
+		Routes: repositoryLedgerRoutes(1),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1643,61 +1414,6 @@ func TestCodingLedgerTaskDetailIncludesLinkedGroup(t *testing.T) {
 	}
 	if len(detail.Ledger.Groups) != 1 || detail.Ledger.Groups[0].ID != group.ID {
 		t.Fatalf("task detail groups = %#v", detail.Ledger.Groups)
-	}
-}
-
-func TestCodingLedgerPersistsDecisionBindingsToTaskContextItems(t *testing.T) {
-	_, repository := freshCodingPlanRepository(t)
-	ctx := context.Background()
-	job, err := repository.EnqueueCodingJob(ctx, "Persist decision bindings to task context.", t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	ledger := repositoryLedgerFixture()
-	ledger.Constraints = []model.LedgerConstraint{{
-		LedgerItem: repositoryLedgerItem("constraint", 5), Rule: "preserve the public contract",
-	}}
-	ledger.Groups = []model.LedgerGroup{{
-		LedgerItem: repositoryLedgerItem("group", 6), Title: "task-local subsystem",
-	}}
-	ledger.Tasks[0].ConstraintIDs = []model.LedgerItemID{"constraint"}
-	ledger.Tasks[0].GroupID = "group"
-	ledger.DecisionsAndQuestions = []model.LedgerDecisionQuestion{
-		{
-			LedgerItem: repositoryLedgerItem("constraint-decision", 7), Kind: model.LedgerDecision,
-			Prompt: "Which contract?", Answer: "The existing public contract.",
-			Affects: []model.LedgerItemID{"constraint"},
-		},
-		{
-			LedgerItem: repositoryLedgerItem("group-decision", 8), Kind: model.LedgerDecision,
-			Prompt: "Which subsystem?", Answer: "Only the task-local subsystem.",
-			Affects: []model.LedgerItemID{"group"},
-		},
-	}
-	for _, record := range ledgerRepositoryRecords(ledger) {
-		setCodingLedgerItem(&ledger, record.item.ID, func(item *model.LedgerItem) {
-			item.ReviewState = model.LedgerReviewProposed
-		})
-	}
-	itemIDs := make([]model.LedgerItemID, 0, len(ledgerRepositoryRecords(ledger)))
-	for _, record := range ledgerRepositoryRecords(ledger) {
-		itemIDs = append(itemIDs, record.item.ID)
-	}
-	created, err := repository.CreateCodingLedger(ctx, CreateCodingLedgerCommand{
-		JobID: job.ID, OperationID: "decision-binding-create", OwnerTurnID: "decision-binding-turn",
-		OwnerTurnText: "Persist decision bindings to task context.", Ledger: ledger,
-		OwnerTurnDisposition: model.OwnerTurnDisposition{Kind: model.OwnerTurnRepresented, ItemIDs: itemIDs},
-		CoveragePassed:       true, Routes: repositoryLedgerRoutes(1),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	detail, err := repository.CodingLedgerTaskDetail(ctx, created.LedgerID, created.Revision, "task")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(detail.Ledger.DecisionsAndQuestions) != 2 {
-		t.Fatalf("task decision bindings = %#v", detail.Ledger.DecisionsAndQuestions)
 	}
 }
 
@@ -1723,51 +1439,6 @@ func TestCodingAgentTaskFromLedgerDetailKeepsOnlySelectedTaskContext(t *testing.
 	}
 }
 
-func TestCodingAgentTaskFromLedgerIncludesOnlyBoundGuidance(t *testing.T) {
-	ledger := repositoryLedgerFixture()
-	ledger.Constraints = []model.LedgerConstraint{{
-		LedgerItem: repositoryLedgerItem("constraint", 5), Rule: "preserve the public contract",
-	}}
-	ledger.Groups = []model.LedgerGroup{{
-		LedgerItem: repositoryLedgerItem("group", 6), Title: "task-local subsystem",
-	}}
-	ledger.Tasks[0].ConstraintIDs = []model.LedgerItemID{"constraint"}
-	ledger.Tasks[0].GroupID = "group"
-	ledger.DecisionsAndQuestions = []model.LedgerDecisionQuestion{
-		{
-			LedgerItem: repositoryLedgerItem("bound-decision", 7), Kind: model.LedgerDecision,
-			Prompt: "Which contract?", Answer: "The existing public contract.",
-			Affects: []model.LedgerItemID{"constraint"},
-		},
-		{
-			LedgerItem: repositoryLedgerItem("sibling-decision", 8), Kind: model.LedgerDecision,
-			Prompt: "Which sibling behavior?", Answer: "Unrelated behavior.",
-			Affects: []model.LedgerItemID{"other-task"},
-		},
-	}
-	task, err := codingAgentTaskFromLedger(ledger, "task")
-	if err != nil {
-		t.Fatal(err)
-	}
-	kinds := make(map[string]string)
-	for _, guidance := range task.Guidance {
-		kinds[guidance.ID] = guidance.Kind
-	}
-	for id, kind := range map[string]string{
-		"requirement":    "requirement",
-		"constraint":     "constraint",
-		"group":          "group",
-		"bound-decision": "decision",
-	} {
-		if kinds[id] != kind {
-			t.Fatalf("task guidance omitted %s %s: %#v", kind, id, task.Guidance)
-		}
-	}
-	if _, exists := kinds["sibling-decision"]; exists {
-		t.Fatalf("task guidance included a sibling decision: %#v", task.Guidance)
-	}
-}
-
 func TestNextIncompleteCodingLedgerTaskSelectsOneTaskAtATime(t *testing.T) {
 	_, repository := freshCodingPlanRepository(t)
 	repository.WithCodingAgents(codingAgentTestConfiguration())
@@ -1785,12 +1456,11 @@ func TestNextIncompleteCodingLedgerTaskSelectsOneTaskAtATime(t *testing.T) {
 	ledger.Tasks = append(ledger.Tasks, model.LedgerTask{
 		LedgerItem: repositoryLedgerItem("later-task", 5), Goal: "implement the later task",
 		RequirementIDs:         []model.LedgerItemID{"requirement"},
-		AcceptanceCriterionIDs: []model.LedgerItemID{"acceptance"},
+		AcceptanceCriterionIDs: []model.LedgerItemID{"overall-acceptance"},
 	})
-	ledger.AcceptanceCriteria[0].TaskIDs = append(ledger.AcceptanceCriteria[0].TaskIDs, "later-task")
 	ledger.AcceptanceCriteria = append(ledger.AcceptanceCriteria, model.LedgerAcceptanceCriterion{
 		LedgerItem: repositoryLedgerItem("overall-acceptance", 6), Outcome: "the integrated task set is verified",
-		RequirementIDs: []model.LedgerItemID{"requirement"}, Required: true,
+		RequirementIDs: []model.LedgerItemID{"requirement"}, TaskIDs: []model.LedgerItemID{"later-task"}, Required: true,
 	})
 	ledger.Checks = append(ledger.Checks, model.LedgerCheck{
 		LedgerItem: repositoryLedgerItem("overall-check", 7), Argv: []string{"go", "test", "./..."},
@@ -1807,8 +1477,8 @@ func TestNextIncompleteCodingLedgerTaskSelectsOneTaskAtATime(t *testing.T) {
 	created, err := repository.CreateCodingLedger(ctx, CreateCodingLedgerCommand{
 		JobID: job.ID, OperationID: "task-selector-create", OwnerTurnID: "task-selector-create-turn",
 		OwnerTurnText: "Execute one durable ledger task at a time.", Ledger: ledger,
-		OwnerTurnDisposition: model.OwnerTurnDisposition{Kind: model.OwnerTurnRepresented, ItemIDs: itemIDs},
-		CoveragePassed:       true, Routes: repositoryLedgerRoutes(1),
+		OwnerTurnDisposition: model.RepresentedOwnerTurn(itemIDs),
+		Routes:               repositoryLedgerRoutes(1),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1825,10 +1495,9 @@ func TestNextIncompleteCodingLedgerTaskSelectsOneTaskAtATime(t *testing.T) {
 		Mutation: model.LedgerMutation{
 			OperationID: "task-selector-agree", BaseRevision: created.Revision,
 			OwnerTurnID:          "task-selector-agree-turn",
-			OwnerTurnDisposition: model.OwnerTurnDisposition{Kind: model.OwnerTurnRepresented, ItemIDs: itemIDs},
+			OwnerTurnDisposition: model.RepresentedOwnerTurn(itemIDs),
 			Operations:           reviews,
 		},
-		CoveragePassed: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1836,10 +1505,9 @@ func TestNextIncompleteCodingLedgerTaskSelectsOneTaskAtATime(t *testing.T) {
 	if err := repository.MarkCodingLedgerReviewReady(ctx, planner.Authority, created.LedgerID, agreed.Revision); err != nil {
 		t.Fatal(err)
 	}
-	auditID := repositoryReadyPlanningAudit(t, repository, created.LedgerID, agreed.Revision, "task-selector-freeze")
 	frozen, err := repository.FreezeCodingLedger(ctx, FreezeCodingLedgerCommand{
 		LedgerID: created.LedgerID, Revision: agreed.Revision, OperationID: "task-selector-freeze",
-		OwnerTurnID: "task-selector-freeze-turn", OwnerTurnText: "Freeze the task selector fixture.", AuditID: auditID,
+		OwnerTurnID: "task-selector-freeze-turn", OwnerTurnText: "Freeze the task selector fixture.",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1908,14 +1576,6 @@ func TestCodingLedgerTaskDetailUsesExactActiveBindings(t *testing.T) {
 		LedgerItem: repositoryLedgerItem("removed-dependency", 9),
 		TaskID:     "task", PrerequisiteID: "other-task", Kind: model.LedgerDependencyRequires,
 	})
-	ledger.DecisionsAndQuestions = append(ledger.DecisionsAndQuestions, model.LedgerDecisionQuestion{
-		LedgerItem: repositoryLedgerItem("removed-decision", 10), Kind: model.LedgerDecision,
-		Prompt: "Use removed context?", Answer: "No.", Affects: []model.LedgerItemID{"task"},
-	})
-	ledger.Findings = append(ledger.Findings, model.LedgerFinding{
-		LedgerItem: repositoryLedgerItem("removed-finding", 11), Kind: model.LedgerFindingPlanning,
-		Observation: "Removed planning context.", TargetIDs: []model.LedgerItemID{"task"},
-	})
 	for _, record := range ledgerRepositoryRecords(ledger) {
 		setCodingLedgerItem(&ledger, record.item.ID, func(item *model.LedgerItem) {
 			if item.Disposition == model.LedgerDispositionActive {
@@ -1926,9 +1586,7 @@ func TestCodingLedgerTaskDetailUsesExactActiveBindings(t *testing.T) {
 	for index := range ledger.Dependencies {
 		ledger.Dependencies[index].ReviewState = model.LedgerReviewProposed
 	}
-	for _, id := range []model.LedgerItemID{
-		"removed-check", "removed-dependency", "removed-decision", "removed-finding",
-	} {
+	for _, id := range []model.LedgerItemID{"removed-check", "removed-dependency"} {
 		setCodingLedgerItem(&ledger, id, func(item *model.LedgerItem) {
 			item.Disposition = model.LedgerDispositionTombstoned
 			item.ReviewState = ""
@@ -1948,8 +1606,8 @@ func TestCodingLedgerTaskDetailUsesExactActiveBindings(t *testing.T) {
 	created, err := repository.CreateCodingLedger(ctx, CreateCodingLedgerCommand{
 		JobID: job.ID, OperationID: "task-detail-bindings-create", OwnerTurnID: "task-detail-bindings-turn",
 		OwnerTurnText: "Read only exact active task bindings.", Ledger: ledger,
-		OwnerTurnDisposition: model.OwnerTurnDisposition{Kind: model.OwnerTurnRepresented, ItemIDs: ids},
-		CoveragePassed:       true, Routes: repositoryLedgerRoutes(1),
+		OwnerTurnDisposition: model.RepresentedOwnerTurn(ids),
+		Routes:               repositoryLedgerRoutes(1),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1961,11 +1619,8 @@ func TestCodingLedgerTaskDetailUsesExactActiveBindings(t *testing.T) {
 	if len(detail.Ledger.Checks) != 1 || detail.Ledger.Checks[0].ID != "check" {
 		t.Fatalf("task detail checks = %#v", detail.Ledger.Checks)
 	}
-	if len(detail.Ledger.Dependencies) != 0 ||
-		len(detail.Ledger.DecisionsAndQuestions) != 0 ||
-		len(detail.Ledger.Findings) != 0 {
-		t.Fatalf("task detail included removed related records: dependencies=%#v decisions=%#v findings=%#v",
-			detail.Ledger.Dependencies, detail.Ledger.DecisionsAndQuestions, detail.Ledger.Findings)
+	if len(detail.Ledger.Dependencies) != 0 {
+		t.Fatalf("task detail included removed dependencies: %#v", detail.Ledger.Dependencies)
 	}
 }
 
@@ -1989,8 +1644,8 @@ func TestCodingLedgerSearchTreatsLikeMetacharactersLiterally(t *testing.T) {
 	created, err := repository.CreateCodingLedger(ctx, CreateCodingLedgerCommand{
 		JobID: job.ID, OperationID: "literal-search-create", OwnerTurnID: "literal-search-turn",
 		OwnerTurnText: "Search literal ledger text.", Ledger: ledger,
-		OwnerTurnDisposition: model.OwnerTurnDisposition{Kind: model.OwnerTurnRepresented, ItemIDs: ids},
-		CoveragePassed:       true, Routes: repositoryLedgerRoutes(1),
+		OwnerTurnDisposition: model.RepresentedOwnerTurn(ids),
+		Routes:               repositoryLedgerRoutes(1),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -2019,11 +1674,12 @@ func TestCodingLedgerChangedRoutesCanBeRefrozenWithExactConfigurationAuthority(t
 	ledger.Tasks = append(ledger.Tasks, model.LedgerTask{
 		LedgerItem: repositoryLedgerItem("route-delivery-task", 7), Goal: "deliver the integrated change",
 		DeliveryObligation:     "publish the completed integration",
-		AcceptanceCriterionIDs: []model.LedgerItemID{"acceptance"},
+		AcceptanceCriterionIDs: []model.LedgerItemID{"route-overall-acceptance"},
 	})
 	ledger.AcceptanceCriteria = append(ledger.AcceptanceCriteria, model.LedgerAcceptanceCriterion{
 		LedgerItem: repositoryLedgerItem("route-overall-acceptance", 5),
-		Outcome:    "integrated", RequirementIDs: []model.LedgerItemID{"requirement"}, Required: true,
+		Outcome:    "integrated", RequirementIDs: []model.LedgerItemID{"requirement"},
+		TaskIDs: []model.LedgerItemID{"route-delivery-task"}, Required: true,
 	})
 	ledger.Checks = append(ledger.Checks, model.LedgerCheck{
 		LedgerItem:             repositoryLedgerItem("route-overall-check", 6),
@@ -2041,8 +1697,8 @@ func TestCodingLedgerChangedRoutesCanBeRefrozenWithExactConfigurationAuthority(t
 	created, err := repository.CreateCodingLedger(ctx, CreateCodingLedgerCommand{
 		JobID: job.ID, OperationID: "route-refreeze-create", OwnerTurnID: "route-second-freeze-turn:sign_off",
 		OwnerTurnText: "Refreeze changed routes.", Ledger: ledger,
-		OwnerTurnDisposition: model.OwnerTurnDisposition{Kind: model.OwnerTurnRepresented, ItemIDs: ids},
-		CoveragePassed:       true, Routes: repositoryLedgerRoutes(1),
+		OwnerTurnDisposition: model.RepresentedOwnerTurn(ids),
+		Routes:               repositoryLedgerRoutes(1),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -2059,18 +1715,16 @@ func TestCodingLedgerChangedRoutesCanBeRefrozenWithExactConfigurationAuthority(t
 		Mutation: model.LedgerMutation{
 			OperationID: "route-refreeze-agree", BaseRevision: created.Revision,
 			OwnerTurnID:          "route-refreeze-agree-turn",
-			OwnerTurnDisposition: model.OwnerTurnDisposition{Kind: model.OwnerTurnRepresented, ItemIDs: ids},
+			OwnerTurnDisposition: model.RepresentedOwnerTurn(ids),
 			Operations:           operations,
 		},
-		CoveragePassed: true,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	firstAudit := repositoryReadyPlanningAudit(t, repository, created.LedgerID, agreed.Revision, "route-first-freeze")
 	firstFrozen, err := repository.FreezeCodingLedger(ctx, FreezeCodingLedgerCommand{
 		LedgerID: created.LedgerID, Revision: agreed.Revision, OperationID: "route-first-freeze",
-		OwnerTurnID: "route-first-freeze-turn", OwnerTurnText: "Freeze the initial routes.", AuditID: firstAudit,
+		OwnerTurnID: "route-first-freeze-turn", OwnerTurnText: "Freeze the initial routes.",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -2091,23 +1745,22 @@ func TestCodingLedgerChangedRoutesCanBeRefrozenWithExactConfigurationAuthority(t
 		Mutation: model.LedgerMutation{
 			OperationID: "route-replacement", BaseRevision: firstFrozen.Revision,
 			OwnerTurnID: "route-replacement-turn",
-			OwnerTurnDisposition: model.OwnerTurnDisposition{
-				Kind: model.OwnerTurnRepresented, ItemIDs: []model.LedgerItemID{"task"},
-			},
+			OwnerTurnDisposition: model.RepresentedOwnerTurn(
+				[]model.LedgerItemID{"task"}),
+
 			Operations: []model.LedgerMutationOperation{{
 				Kind: model.LedgerMutationReview, TargetID: "task",
 				ReviewState: model.LedgerReviewAgreed, Rationale: "approve replacement route authority",
 			}},
 		},
-		CoveragePassed: true, Routes: replacement,
+		Routes: replacement,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	secondAudit := repositoryReadyPlanningAudit(t, repository, created.LedgerID, changed.Revision, "route-second-freeze")
 	refrozen, err := repository.FreezeCodingLedger(ctx, FreezeCodingLedgerCommand{
 		LedgerID: created.LedgerID, Revision: changed.Revision, OperationID: "route-second-freeze",
-		OwnerTurnID: "route-second-freeze-turn", OwnerTurnText: "Freeze the replacement routes.", AuditID: secondAudit,
+		OwnerTurnID: "route-second-freeze-turn", OwnerTurnText: "Freeze the replacement routes.",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -2115,18 +1768,20 @@ func TestCodingLedgerChangedRoutesCanBeRefrozenWithExactConfigurationAuthority(t
 	if refrozen.State != "frozen" || refrozen.BaseRevision != changed.Revision {
 		t.Fatalf("replacement route freeze = %#v", refrozen)
 	}
-	var action, disposition string
+	var action string
+	var represented bool
 	if err := pool.QueryRow(ctx, `
-		SELECT turn_record.action,disposition.disposition
+		SELECT turn_record.action,
+		       disposition.statements @> '[{"kind":"represented"}]'::jsonb
 		FROM coding_ledger_owner_turns turn_record
 		JOIN coding_ledger_owner_turn_dispositions disposition
 		  USING (ledger_id,owner_turn_id)
 		WHERE turn_record.ledger_id=$1 AND turn_record.owner_turn_id=$2
-	`, created.LedgerID, "route-second-freeze-turn").Scan(&action, &disposition); err != nil {
+	`, created.LedgerID, "route-second-freeze-turn").Scan(&action, &represented); err != nil {
 		t.Fatal(err)
 	}
-	if action != "execution_configuration" || disposition != "represented" {
-		t.Fatalf("replacement route authority = %s/%s", action, disposition)
+	if action != "execution_configuration" || !represented {
+		t.Fatalf("replacement route authority = %s represented=%t", action, represented)
 	}
 }
 
@@ -2180,24 +1835,22 @@ func TestAgentsReplanCarriesOnlyTheExactAcceptedTaskContract(t *testing.T) {
 		Mutation: model.LedgerMutation{
 			OperationID: "accepted-carry-confirm", BaseRevision: firstFrozen.Revision,
 			OwnerTurnID: "accepted-carry-confirm-turn",
-			OwnerTurnDisposition: model.OwnerTurnDisposition{
-				Kind: model.OwnerTurnRepresented, ItemIDs: []model.LedgerItemID{model.LedgerItemID(task.ID)},
-			},
+			OwnerTurnDisposition: model.RepresentedOwnerTurn(
+				[]model.LedgerItemID{model.LedgerItemID(task.ID)}),
+
 			Operations: []model.LedgerMutationOperation{{
 				Kind: model.LedgerMutationReview, TargetID: model.LedgerItemID(task.ID),
 				ReviewState: model.LedgerReviewAgreed, Rationale: "the exact contract remains approved",
 			}},
 		},
-		CoveragePassed: true,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	auditID := repositoryReadyPlanningAudit(t, repository, current.LedgerID, current.Revision, "accepted-carry-refreeze")
 	refrozen, err := repository.FreezeCodingLedger(ctx, FreezeCodingLedgerCommand{
 		LedgerID: current.LedgerID, Revision: current.Revision,
 		OperationID: "accepted-carry-refreeze", OwnerTurnID: "accepted-carry-refreeze-turn",
-		OwnerTurnText: "Freeze the unchanged approved task contract.", AuditID: auditID,
+		OwnerTurnText: "Freeze the unchanged approved task contract.",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -2230,15 +1883,14 @@ func TestAgentsReplanCarriesOnlyTheExactAcceptedTaskContract(t *testing.T) {
 		Mutation: model.LedgerMutation{
 			OperationID: "accepted-contract-change", BaseRevision: refrozen.Revision,
 			OwnerTurnID: "accepted-contract-change-turn",
-			OwnerTurnDisposition: model.OwnerTurnDisposition{
-				Kind: model.OwnerTurnRepresented, ItemIDs: []model.LedgerItemID{amendedTask.ID},
-			},
+			OwnerTurnDisposition: model.RepresentedOwnerTurn(
+				[]model.LedgerItemID{amendedTask.ID}),
+
 			Operations: []model.LedgerMutationOperation{{
 				Kind: model.LedgerMutationAmend, TargetID: amendedTask.ID,
 				Item: &model.LedgerMutationItem{Task: &amendedTask}, Rationale: "the task contract changed",
 			}},
 		},
-		CoveragePassed: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -2248,24 +1900,22 @@ func TestAgentsReplanCarriesOnlyTheExactAcceptedTaskContract(t *testing.T) {
 		Mutation: model.LedgerMutation{
 			OperationID: "accepted-contract-change-agree", BaseRevision: changed.Revision,
 			OwnerTurnID: "accepted-contract-change-agree-turn",
-			OwnerTurnDisposition: model.OwnerTurnDisposition{
-				Kind: model.OwnerTurnRepresented, ItemIDs: []model.LedgerItemID{amendedTask.ID},
-			},
+			OwnerTurnDisposition: model.RepresentedOwnerTurn(
+				[]model.LedgerItemID{amendedTask.ID}),
+
 			Operations: []model.LedgerMutationOperation{{
 				Kind: model.LedgerMutationReview, TargetID: amendedTask.ID,
 				ReviewState: model.LedgerReviewAgreed, Rationale: "approve the changed contract",
 			}},
 		},
-		CoveragePassed: true,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	changedAuditID := repositoryReadyPlanningAudit(t, repository, agreedChange.LedgerID, agreedChange.Revision, "accepted-contract-change-freeze")
 	changedFrozen, err := repository.FreezeCodingLedger(ctx, FreezeCodingLedgerCommand{
 		LedgerID: agreedChange.LedgerID, Revision: agreedChange.Revision,
 		OperationID: "accepted-contract-change-freeze", OwnerTurnID: "accepted-contract-change-freeze-turn",
-		OwnerTurnText: "Freeze the changed approved task contract.", AuditID: changedAuditID,
+		OwnerTurnText: "Freeze the changed approved task contract.",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -2343,8 +1993,8 @@ func TestCodingLedgerDependencyEdgeIdentityIsNamespaced(t *testing.T) {
 	created, err := repository.CreateCodingLedger(ctx, CreateCodingLedgerCommand{
 		JobID: job.ID, OperationID: "edge-namespace-create", OwnerTurnID: "edge-namespace-turn",
 		OwnerTurnText: "Persist colliding logical edge identities.", Ledger: ledger,
-		OwnerTurnDisposition: model.OwnerTurnDisposition{Kind: model.OwnerTurnRepresented, ItemIDs: ids},
-		CoveragePassed:       true, Routes: repositoryLedgerRoutes(1),
+		OwnerTurnDisposition: model.RepresentedOwnerTurn(ids),
+		Routes:               repositoryLedgerRoutes(1),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -2388,8 +2038,8 @@ func TestCodingLedgerUnchangedRemovedCheckRetainsRemovalVersion(t *testing.T) {
 	created, err := repository.CreateCodingLedger(ctx, CreateCodingLedgerCommand{
 		JobID: job.ID, OperationID: "check-tombstone-create", OwnerTurnID: "check-tombstone-create-turn",
 		OwnerTurnText: "Preserve an optional check tombstone.", Ledger: ledger,
-		OwnerTurnDisposition: model.OwnerTurnDisposition{Kind: model.OwnerTurnRepresented, ItemIDs: ids},
-		CoveragePassed:       true, Routes: repositoryLedgerRoutes(1),
+		OwnerTurnDisposition: model.RepresentedOwnerTurn(ids),
+		Routes:               repositoryLedgerRoutes(1),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -2398,14 +2048,13 @@ func TestCodingLedgerUnchangedRemovedCheckRetainsRemovalVersion(t *testing.T) {
 		LedgerID: created.LedgerID, OwnerTurnText: "Remove the optional check.",
 		Mutation: model.LedgerMutation{
 			OperationID: "remove-optional-check", BaseRevision: created.Revision, OwnerTurnID: "remove-optional-check-turn",
-			OwnerTurnDisposition: model.OwnerTurnDisposition{
-				Kind: model.OwnerTurnRepresented, ItemIDs: []model.LedgerItemID{"optional-check"},
-			},
+			OwnerTurnDisposition: model.RepresentedOwnerTurn(
+				[]model.LedgerItemID{"optional-check"}),
+
 			Operations: []model.LedgerMutationOperation{{
 				Kind: model.LedgerMutationRemove, TargetID: "optional-check", Rationale: "no longer needed",
 			}},
 		},
-		CoveragePassed: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -2415,14 +2064,13 @@ func TestCodingLedgerUnchangedRemovedCheckRetainsRemovalVersion(t *testing.T) {
 		LedgerID: created.LedgerID, OwnerTurnText: "Reorder the task.",
 		Mutation: model.LedgerMutation{
 			OperationID: "reorder-after-check-removal", BaseRevision: removed.Revision, OwnerTurnID: "reorder-after-check-removal-turn",
-			OwnerTurnDisposition: model.OwnerTurnDisposition{
-				Kind: model.OwnerTurnRepresented, ItemIDs: []model.LedgerItemID{"task"},
-			},
+			OwnerTurnDisposition: model.RepresentedOwnerTurn(
+				[]model.LedgerItemID{"task"}),
+
 			Operations: []model.LedgerMutationOperation{{
 				Kind: model.LedgerMutationReorder, TargetID: "task", Rank: &rank, Rationale: "move the task",
 			}},
 		},
-		CoveragePassed: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -2479,119 +2127,5 @@ func TestCodingLedgerRequiredCheckAmendmentResetsVerificationScope(t *testing.T)
 		ledger.Tasks[1].ReviewState != model.LedgerReviewAgreed {
 		t.Fatalf("unrelated agreements changed: requirement=%s task=%s",
 			ledger.Requirements[0].ReviewState, ledger.Tasks[1].ReviewState)
-	}
-}
-
-func TestCodingLedgerTaskDetailIncludesExplicitBlockers(t *testing.T) {
-	_, repository := freshCodingPlanRepository(t)
-	ctx := context.Background()
-	job, err := repository.EnqueueCodingJob(ctx, "Read explicit task blockers.", t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	ledger := repositoryLedgerFixture()
-	question := model.LedgerDecisionQuestion{
-		LedgerItem: repositoryLedgerItem("task-question", 5), Kind: model.LedgerQuestion,
-		Prompt: "Which behavior?", Affects: []model.LedgerItemID{"task"},
-	}
-	decision := model.LedgerDecisionQuestion{
-		LedgerItem: repositoryLedgerItem("task-decision", 6), Kind: model.LedgerDecision,
-		Prompt: "Use the exact behavior?", Answer: "Yes.", Affects: []model.LedgerItemID{"task"},
-	}
-	finding := model.LedgerFinding{
-		LedgerItem: repositoryLedgerItem("task-finding", 7), Kind: model.LedgerFindingPlanning,
-		Observation: "The task has an unresolved discrepancy.", TargetIDs: []model.LedgerItemID{"task"},
-	}
-	ledger.DecisionsAndQuestions = append(ledger.DecisionsAndQuestions, question, decision)
-	ledger.Findings = append(ledger.Findings, finding)
-	ids := make([]model.LedgerItemID, 0, len(ledgerRepositoryRecords(ledger)))
-	for _, record := range ledgerRepositoryRecords(ledger) {
-		setCodingLedgerItem(&ledger, record.item.ID, func(item *model.LedgerItem) {
-			item.ReviewState = model.LedgerReviewProposed
-		})
-		ids = append(ids, record.item.ID)
-	}
-	created, err := repository.CreateCodingLedger(ctx, CreateCodingLedgerCommand{
-		JobID: job.ID, OperationID: "task-detail-blockers-create", OwnerTurnID: "task-detail-blockers-turn",
-		OwnerTurnText: "Read explicit task blockers.", Ledger: ledger,
-		OwnerTurnDisposition: model.OwnerTurnDisposition{Kind: model.OwnerTurnRepresented, ItemIDs: ids},
-		CoveragePassed:       true, Routes: repositoryLedgerRoutes(1),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	detail, err := repository.CodingLedgerTaskDetail(ctx, created.LedgerID, created.Revision, "task")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(detail.Ledger.DecisionsAndQuestions) != 2 ||
-		detail.Ledger.DecisionsAndQuestions[0].ID != question.ID ||
-		detail.Ledger.DecisionsAndQuestions[1].ID != decision.ID {
-		t.Fatalf("task detail decisions/questions = %#v", detail.Ledger.DecisionsAndQuestions)
-	}
-	if len(detail.Ledger.Findings) != 1 || detail.Ledger.Findings[0].ID != finding.ID {
-		t.Fatalf("task detail findings = %#v", detail.Ledger.Findings)
-	}
-}
-
-func TestCodingLedgerGeneratedAnswerTurnUsesReservedNamespace(t *testing.T) {
-	pool, repository := freshCodingPlanRepository(t)
-	ctx := context.Background()
-	job, err := repository.EnqueueCodingJob(ctx, "Keep generated answer turns separate.", t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	const answeringTurnID = "answer-question-turn"
-	question := model.LedgerDecisionQuestion{
-		LedgerItem: repositoryLedgerItem("new-answered-question", 5), Kind: model.LedgerQuestion,
-		Prompt: "Which authority?", Answer: "The exact owner turn.",
-	}
-	digest := sha256.Sum256([]byte(answeringTurnID + "\x00" + string(question.ID)))
-	legacyGeneratedID := fmt.Sprintf("%s:answer:%x", answeringTurnID, digest[:8])
-	ledger := repositoryLedgerFixture()
-	ids := make([]model.LedgerItemID, 0, len(ledgerRepositoryRecords(ledger)))
-	for _, record := range ledgerRepositoryRecords(ledger) {
-		setCodingLedgerItem(&ledger, record.item.ID, func(item *model.LedgerItem) {
-			item.ReviewState = model.LedgerReviewProposed
-		})
-		ids = append(ids, record.item.ID)
-	}
-	created, err := repository.CreateCodingLedger(ctx, CreateCodingLedgerCommand{
-		JobID: job.ID, OperationID: "answer-namespace-create", OwnerTurnID: legacyGeneratedID,
-		OwnerTurnText: "Keep generated answer turns separate.", Ledger: ledger,
-		OwnerTurnDisposition: model.OwnerTurnDisposition{Kind: model.OwnerTurnRepresented, ItemIDs: ids},
-		CoveragePassed:       true, Routes: repositoryLedgerRoutes(1),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	question.ReviewState = model.LedgerReviewProposed
-	applied, err := repository.ApplyCodingLedgerMutation(ctx, ApplyCodingLedgerMutationCommand{
-		LedgerID: created.LedgerID, OwnerTurnText: "Add the answered question.",
-		Mutation: model.LedgerMutation{
-			OperationID: "add-answered-question", BaseRevision: created.Revision, OwnerTurnID: answeringTurnID,
-			OwnerTurnDisposition: model.OwnerTurnDisposition{
-				Kind: model.OwnerTurnRepresented, ItemIDs: []model.LedgerItemID{question.ID},
-			},
-			Operations: []model.LedgerMutationOperation{{
-				Kind: model.LedgerMutationAdd, Item: &model.LedgerMutationItem{DecisionQuestion: &question},
-				Rationale: "record the answered question",
-			}},
-		},
-		CoveragePassed: true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var answeredBy string
-	if err := pool.QueryRow(ctx, `
-		SELECT answered_by_turn_id FROM coding_ledger_questions
-		WHERE ledger_id=$1 AND question_id=$2
-	`, created.LedgerID, question.ID).Scan(&answeredBy); err != nil {
-		t.Fatal(err)
-	}
-	if applied.Revision != created.Revision+1 || answeredBy == legacyGeneratedID ||
-		!strings.HasPrefix(answeredBy, codingLedgerInternalOwnerTurnPrefix) {
-		t.Fatalf("generated answer turn = %q, revision=%d", answeredBy, applied.Revision)
 	}
 }

@@ -2,32 +2,32 @@ package codingagent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/model"
 )
 
 type Controller struct {
-	JobID, Generation   int64
-	Root                string
-	Configuration       Configuration
-	Requirements        []Requirement
-	Objective           *Objective
-	ArtifactBindings    []ArtifactBinding
-	PlanningEnvironment *PlanningEnvironment
-	ConstructionFacts   []ConstructionFact
-	Providers           map[string]Provider
-	Verifier            Verifier
-	Environment         Environment
-	Evidence            EvidenceStore
-	Activity            func(model.AgentActivity)
-	CallActivity        func(model.AgentCallActivity)
+	JobID, Generation int64
+	Root              string
+	Configuration     Configuration
+	Requirements      []Requirement
+	Providers         map[string]Provider
+	Verifier          Verifier
+	Environment       Environment
+	Evidence          EvidenceStore
+	Activity          func(model.AgentActivity)
+	CallActivity      func(model.AgentCallActivity)
+	NativeInput       func(context.Context, NativeInputRequest, int64, string) (json.RawMessage, error)
+	MinifyContext     func(context.Context, Assignment) (string, error)
+	CompletedTaskIDs  []string
 }
 
 // RunTask executes one database-selected ledger task and then opens a fresh,
-// read-only review for that same task. It does not plan, load sibling tasks, or
+// independent review for that same task. It does not plan, load sibling tasks, or
 // perform aggregate review.
-func (controller *Controller) RunTask(ctx context.Context, task Task) error {
+func (controller *Controller) resumeTask(ctx context.Context, task Task) error {
 	if err := controller.validateTaskExecution(); err != nil {
 		return err
 	}
@@ -42,6 +42,15 @@ func (controller *Controller) RunTask(ctx context.Context, task Task) error {
 	if state.accepted[task.ID] {
 		return nil
 	}
+	if state.incomplete != nil && state.inputRequired == nil {
+		return state.incomplete
+	}
+	if state.pendingResponse != nil {
+		if err := controller.handleExecutionResponse(ctx, task, *state.pendingResponse, state.round); err != nil {
+			return err
+		}
+		state.started[task.ID] = true
+	}
 	return controller.runTask(ctx, task, state)
 }
 
@@ -55,8 +64,13 @@ func (controller *Controller) validatePlanning() error {
 	if controller.Configuration.Mode != Agents {
 		return fmt.Errorf("agent controller requires explicit Agents mode")
 	}
-	if route := controller.Configuration.Planner; controller.Providers[route.Provider] == nil {
-		return fmt.Errorf("agent provider %q is not registered", route.Provider)
+	for _, route := range []Route{controller.Configuration.Planner, controller.Configuration.LedgerParser} {
+		if err := validateRoute(route); err != nil {
+			return err
+		}
+		if controller.Providers[route.Provider] == nil {
+			return fmt.Errorf("agent provider %q is not registered", route.Provider)
+		}
 	}
 	return nil
 }
@@ -76,6 +90,12 @@ func (controller *Controller) validateTaskExecution() error {
 		if controller.Providers[route.Provider] == nil {
 			return fmt.Errorf("agent provider %q is not registered", route.Provider)
 		}
+	}
+	if err := validateRoute(controller.Configuration.LedgerParser); err != nil {
+		return err
+	}
+	if controller.Providers[controller.Configuration.LedgerParser.Provider] == nil {
+		return fmt.Errorf("execution response parser provider is not registered")
 	}
 	return nil
 }

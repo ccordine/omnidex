@@ -9,20 +9,27 @@ import (
 )
 
 func TestControllerCallActivityFollowsDurableLifecycleForEveryRole(t *testing.T) {
-	for _, role := range []Role{PlanningInitial, Execute, Review} {
+	for _, role := range []Role{Plan, PlanningInitial, Execute, ExecutionResponse, Review, ReviewResponse} {
 		t.Run(string(role), func(t *testing.T) {
 			controller, journal := fixtureController(t, fixtureWorkload(), func(call Assignment) (any, error) {
-				if call.Role == Execute {
-					return ExecutionResult{Questions: []string{}}, nil
+				if call.Role == Execute || call.Role == Plan {
+					return "Task completed.", nil
 				}
 				return cleanReview(), nil
 			}, passingChecks)
 			var task *Task
-			if role == Execute || role == Review {
+			if role == Execute || role == Review || role == ReviewResponse {
 				value := fixtureWorkload().Tasks[0]
 				task = &value
 			}
 			call := controller.assignment(role, task, controller.Configuration.Executor)
+			if role == ExecutionResponse {
+				call.Response = "Task completed."
+			}
+			if role == ReviewResponse {
+				call.ReadFiles = nil
+				call.Response = "Reviewed."
+			}
 			var observed []model.AgentCallActivity
 			controller.CallActivity = func(activity model.AgentCallActivity) {
 				last := journal.entries[len(journal.entries)-1]
@@ -53,7 +60,7 @@ func TestControllerCallActivityPublishesOnlyPersistedFailures(t *testing.T) {
 				if rejectedPhase != "call_completed" {
 					return nil, providerFailure
 				}
-				return ExecutionResult{Questions: []string{}}, nil
+				return "Task completed.", nil
 			}, passingChecks)
 			store := &callActivityRejectingJournal{memoryJournal: journal, rejectedPhase: rejectedPhase}
 			controller.Evidence = store
@@ -85,13 +92,13 @@ func TestControllerCallActivityPublishesOnlyPersistedFailures(t *testing.T) {
 
 func TestControllerCallActivityRecordsRejectedNativeCompletionAsFailed(t *testing.T) {
 	controller, journal := fixtureController(t, fixtureWorkload(), func(Assignment) (any, error) {
-		return ExecutionResult{Questions: []string{}}, nil
+		return "Task completed.", nil
 	}, passingChecks)
 	task := fixtureWorkload().Tasks[0]
 	call := controller.assignment(Execute, &task, controller.Configuration.Executor)
 	provider := controller.Providers[call.Route.Provider]
-	controller.Providers[call.Route.Provider] = providerFunc(func(ctx context.Context, assignment Assignment, writer FileWriter, event func(NativeEvent) error) (Result, error) {
-		result, err := provider.Run(ctx, assignment, writer, event)
+	controller.Providers[call.Route.Provider] = providerFunc(func(ctx context.Context, assignment Assignment, event func(NativeEvent) error) (Result, error) {
+		result, err := provider.Run(ctx, assignment, event)
 		result.Completed = false
 		return result, err
 	})

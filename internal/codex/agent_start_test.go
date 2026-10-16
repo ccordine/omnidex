@@ -31,8 +31,20 @@ func TestNativeAgentRolesUseOnlyIsolatedSchemaBoundTurns(t *testing.T) {
 				`{"id":1,"result":{"turn":{"id":"turn-1"}}}` + "\n",
 		},
 		{
+			name: "normal planning", role: codingagent.Plan,
+			response: `{"id":1,"result":{"turn":{"id":"turn-plan"}}}` + "\n",
+		},
+		{
+			name: "planning mutation parser", role: codingagent.PlanningMutation,
+			response: `{"id":1,"result":{"turn":{"id":"turn-mutation"}}}` + "\n",
+		},
+		{
 			name: "review", role: codingagent.Review,
 			response: `{"id":1,"result":{"turn":{"id":"turn-2"}}}` + "\n",
+		},
+		{
+			name: "normal execution", role: codingagent.Execute,
+			response: `{"id":1,"result":{"turn":{"id":"turn-3"}}}` + "\n",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -56,7 +68,12 @@ func TestNativeAgentRolesUseOnlyIsolatedSchemaBoundTurns(t *testing.T) {
 			if request.Method != "turn/start" || request.Params["threadId"] != "thread-1" {
 				t.Fatalf("wrong native request: %+v", request)
 			}
-			if request.Params["collaborationMode"] != nil || request.Params["outputSchema"] == nil || request.Params["target"] != nil || request.Params["delivery"] != nil {
+			if test.role.IsNative() {
+				policy := request.Params["sandboxPolicy"].(map[string]any)
+				if request.Params["outputSchema"] != nil || policy["type"] != "dangerFullAccess" || request.Params["approvalPolicy"] != "never" {
+					t.Fatalf("execution is not an ordinary full-access turn: %+v", request.Params)
+				}
+			} else if request.Params["collaborationMode"] != nil || (request.Params["outputSchema"] != nil) != (test.role != codingagent.PlanningMutation) || request.Params["target"] != nil || request.Params["delivery"] != nil {
 				t.Fatalf("isolated schema-bound settings changed: %+v", request.Params)
 			}
 		})
@@ -64,7 +81,7 @@ func TestNativeAgentRolesUseOnlyIsolatedSchemaBoundTurns(t *testing.T) {
 }
 
 func TestNativePlanningStationsUseTypedSchemasWithoutLegacyPlanMode(t *testing.T) {
-	for _, role := range []codingagent.Role{codingagent.PlanningInitial, codingagent.PlanningMutation, codingagent.PlanningCoverage, codingagent.PlanningAudit} {
+	for _, role := range []codingagent.Role{codingagent.PlanningInitial, codingagent.PlanningMutation} {
 		t.Run(string(role), func(t *testing.T) {
 			schema := agentOutputSchema(codingagent.Assignment{Role: role})
 			properties := schema["properties"].(map[string]any)
@@ -80,13 +97,47 @@ func TestNativePlanningStationsUseTypedSchemasWithoutLegacyPlanMode(t *testing.T
 				if properties["operations"] == nil {
 					t.Fatal("mutation station omitted operations contract")
 				}
-			default:
-				if properties["covered"] == nil || properties["suggestions"] == nil || properties["mutation"] != nil {
-					t.Fatal("judgment station omitted coverage contract")
-				}
 			}
 		})
 	}
 }
 
 var _ io.WriteCloser = (*agentStartInput)(nil)
+
+func TestNativeThreadsKeepNormalCodexToolsAndInstructions(t *testing.T) {
+	for _, role := range []codingagent.Role{codingagent.Plan, codingagent.Execute, codingagent.Review} {
+		t.Run(string(role), func(t *testing.T) {
+			input := &agentStartInput{}
+			connection := &connection{input: input, output: bufio.NewScanner(strings.NewReader(
+				`{"id":1,"result":{}}` + "\n" +
+					`{"id":2,"result":{"model":"fixture-model","thread":{"id":"execution-thread"}}}` + "\n"))}
+			call := codingagent.Assignment{Role: role, Root: "/workspace", Route: codingagent.Route{Model: "fixture-model"}}
+			if _, _, err := connection.startAgentThread(call, ""); err != nil {
+				t.Fatal(err)
+			}
+			decoder := json.NewDecoder(bytes.NewReader(input.Bytes()))
+			var request struct {
+				Method string         `json:"method"`
+				Params map[string]any `json:"params"`
+			}
+			for decoder.Decode(&request) == nil {
+				if request.Method != "thread/start" {
+					continue
+				}
+				if request.Params["sandbox"] != "danger-full-access" || request.Params["approvalPolicy"] != "never" || request.Params["cwd"] != "/workspace" {
+					t.Fatalf("executor thread lost normal full-access settings: %#v", request.Params)
+				}
+				if request.Params["ephemeral"] != (role != codingagent.Execute) {
+					t.Fatal("native role lost its owned thread lifecycle")
+				}
+				for _, field := range []string{"dynamicTools", "config", "baseInstructions", "outputSchema"} {
+					if _, present := request.Params[field]; present {
+						t.Fatalf("executor retained a special %s override", field)
+					}
+				}
+				return
+			}
+			t.Fatal("executor never opened a normal Codex thread")
+		})
+	}
+}

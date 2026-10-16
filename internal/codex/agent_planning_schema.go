@@ -1,5 +1,7 @@
 package codex
 
+import "sort"
+
 func planningEnum(values ...string) map[string]any {
 	return map[string]any{"type": "string", "enum": values}
 }
@@ -11,73 +13,55 @@ func planningInitialOutputSchema(
 	text, strings map[string]any,
 ) map[string]any {
 	ledger := planningLedgerSchema(object, text, strings)
-	properties := ledger["properties"].(map[string]any)
-	for _, collection := range []string{"acceptance_criteria", "checks"} {
-		item := properties[collection].(map[string]any)["items"].(map[string]any)
-		item["properties"].(map[string]any)["required"] = map[string]any{"type": "boolean", "enum": []bool{true}}
-	}
 	return object(map[string]any{
-		"ledger":                 ledger,
-		"owner_turn_disposition": planningDispositionSchema(object, text, strings),
-	}, "ledger", "owner_turn_disposition")
+		"ledger": ledger,
+	}, "ledger")
 }
 
 func planningMutationOutputSchema(
 	object func(map[string]any, ...string) map[string]any,
 	text, strings map[string]any,
 ) map[string]any {
-	integer := map[string]any{"type": "integer"}
-	nullableInteger := map[string]any{"anyOf": []map[string]any{integer, {"type": "null"}}}
-	nullableItem := map[string]any{"anyOf": []map[string]any{planningMutationItemSchema(object, text, strings), {"type": "null"}}}
-	operation := object(map[string]any{
-		"kind":      planningEnum("add", "amend", "remove", "restore", "set_review_state", "reorder"),
-		"target_id": text, "item": nullableItem,
-		"review_state": planningEnum("", "proposed", "agreed", "needs_discussion"),
-		"rank":         nullableInteger, "rationale": text,
-	}, "kind", "target_id", "item", "review_state", "rank", "rationale")
+	target := map[string]any{"type": "string", "pattern": `\S`}
+	variants := []map[string]any{
+		object(map[string]any{"kind": planningEnum("add"), "item": planningMutationItemSchema(object, text, strings), "rationale": text}, "kind", "item", "rationale"),
+		object(map[string]any{"kind": planningEnum("amend"), "target_id": target, "item": planningAmendItemSchema(object, text, strings), "rationale": text}, "kind", "target_id", "item", "rationale"),
+		object(map[string]any{"kind": planningEnum("remove", "restore"), "target_id": target, "rationale": text}, "kind", "target_id", "rationale"),
+		object(map[string]any{"kind": planningEnum("set_review_state"), "target_id": target, "review_state": planningEnum("proposed", "agreed", "needs_discussion"), "rationale": text}, "kind", "target_id", "review_state", "rationale"),
+		object(map[string]any{"kind": planningEnum("reorder"), "target_id": target, "rank": map[string]any{"type": "integer", "minimum": 0}, "rationale": text}, "kind", "target_id", "rank", "rationale"),
+	}
+	operation := map[string]any{"anyOf": variants}
 	return object(map[string]any{
-		"operation_id": text, "base_revision": integer, "owner_turn_id": text,
-		"owner_turn_disposition": planningDispositionSchema(object, text, strings),
-		"operations":             map[string]any{"type": "array", "items": operation},
-	}, "operation_id", "base_revision", "owner_turn_id", "owner_turn_disposition", "operations")
+		"operations": map[string]any{"type": "array", "items": operation},
+	}, "operations")
 }
 
-func planningDispositionSchema(
+// An amendment contains semantic changes only. Null means unchanged; explicit
+// empty text/arrays mean clearing that field and still face domain validation.
+// Identity, provenance, lifecycle and order stay code-owned here.
+func planningAmendItemSchema(
 	object func(map[string]any, ...string) map[string]any,
 	text, strings map[string]any,
 ) map[string]any {
-	statement := object(map[string]any{
-		"kind":     planningEnum("represented", "out_of_scope", "unresolved"),
-		"item_ids": strings, "reason": text, "question_ids": strings,
-	}, "kind", "item_ids", "reason", "question_ids")
-	statement["anyOf"] = planningDispositionVariants(text)
-	result := object(map[string]any{
-		"kind":     planningEnum("represented", "out_of_scope", "unresolved"),
-		"item_ids": strings, "reason": text, "question_ids": strings,
-		"statements": map[string]any{"type": "array", "items": statement},
-	}, "kind", "item_ids", "reason", "question_ids", "statements")
-	result["anyOf"] = planningDispositionVariants(text)
-	return result
-}
-
-func planningDispositionVariants(text map[string]any) []map[string]any {
-	emptyItems := map[string]any{"type": "array", "items": text, "maxItems": 0}
-	nonEmptyItems := map[string]any{"type": "array", "items": text, "minItems": 1}
-	empty := map[string]any{"type": "string", "enum": []string{""}}
-	return []map[string]any{
-		{"properties": map[string]any{
-			"kind": planningEnum("represented"), "item_ids": nonEmptyItems,
-			"reason": empty, "question_ids": emptyItems,
-		}},
-		{"properties": map[string]any{
-			"kind": planningEnum("out_of_scope"), "item_ids": emptyItems,
-			"reason": map[string]any{"type": "string", "minLength": 1}, "question_ids": emptyItems,
-		}},
-		{"properties": map[string]any{
-			"kind": planningEnum("unresolved"), "item_ids": emptyItems,
-			"reason": empty, "question_ids": nonEmptyItems,
-		}},
+	schema := planningMutationItemSchema(object, text, strings)
+	for _, variant := range schema["anyOf"].([]map[string]any) {
+		for _, payload := range variant["properties"].(map[string]any) {
+			item := payload.(map[string]any)
+			properties := item["properties"].(map[string]any)
+			for _, name := range []string{"id", "provenance", "disposition", "review_state", "rank"} {
+				delete(properties, name)
+			}
+			required := []string{}
+			for name, value := range properties {
+				properties[name] = map[string]any{"anyOf": []any{value, map[string]any{"type": "null"}}}
+				required = append(required, name)
+			}
+			sort.Strings(required)
+			item["required"] = required
+			delete(item, "anyOf")
+		}
 	}
+	return schema
 }
 
 func planningLedgerSchema(
@@ -85,7 +69,6 @@ func planningLedgerSchema(
 	text, strings map[string]any,
 ) map[string]any {
 	integer := map[string]any{"type": "integer"}
-	boolean := map[string]any{"type": "boolean"}
 	base := func(extra map[string]any, required ...string) map[string]any {
 		properties := map[string]any{
 			"id": text, "provenance": object(map[string]any{"kind": text, "reference": text, "revision": integer}, "kind", "reference", "revision"),
@@ -108,10 +91,10 @@ func planningLedgerSchema(
 		"known_affected_systems": strings, "read_files": strings, "write_files": strings, "delete_files": strings},
 		"goal", "group_id", "requirement_ids", "constraint_ids", "acceptance_criterion_ids",
 		"delivery_obligation", "known_affected_systems", "read_files", "write_files", "delete_files")
-	criterion := base(map[string]any{"outcome": text, "requirement_ids": strings, "task_ids": strings, "required": boolean},
-		"outcome", "requirement_ids", "task_ids", "required")
+	criterion := base(map[string]any{"outcome": text, "requirement_ids": strings, "task_ids": strings},
+		"outcome", "requirement_ids", "task_ids")
 	check := base(map[string]any{"argv": strings, "observation": text, "requirement_ids": strings,
-		"acceptance_criterion_ids": strings, "required": boolean}, "argv", "observation", "requirement_ids", "acceptance_criterion_ids", "required")
+		"acceptance_criterion_ids": strings}, "argv", "observation", "requirement_ids", "acceptance_criterion_ids")
 	check["anyOf"] = []map[string]any{
 		{"properties": map[string]any{
 			"argv":        map[string]any{"type": "array", "items": text, "minItems": 1},
@@ -122,15 +105,13 @@ func planningLedgerSchema(
 			"observation": map[string]any{"type": "string", "minLength": 1},
 		}},
 	}
-	decision := base(map[string]any{"kind": planningEnum("decision", "question"), "prompt": text, "answer": text, "affects": strings}, "kind", "prompt", "answer", "affects")
 	dependency := base(map[string]any{"task_id": text, "prerequisite_id": text, "kind": planningEnum("requires", "blocks")}, "task_id", "prerequisite_id", "kind")
-	finding := base(map[string]any{"kind": planningEnum("planning"), "observation": text, "target_ids": strings, "resolved_by": strings}, "kind", "observation", "target_ids", "resolved_by")
 	return object(map[string]any{
 		"id": text, "revision": integer, "objectives": array(objective), "requirements": array(requirement),
 		"constraints": array(constraint), "groups": array(group), "tasks": array(task),
 		"acceptance_criteria": array(criterion), "checks": array(check),
-		"decisions_and_questions": array(decision), "dependencies": array(dependency), "findings": array(finding),
-	}, "id", "revision", "objectives", "requirements", "constraints", "groups", "tasks", "acceptance_criteria", "checks", "decisions_and_questions", "dependencies", "findings")
+		"dependencies": array(dependency),
+	}, "id", "revision", "objectives", "requirements", "constraints", "groups", "tasks", "acceptance_criteria", "checks", "dependencies")
 }
 
 func planningMutationItemSchema(
@@ -139,8 +120,8 @@ func planningMutationItemSchema(
 ) map[string]any {
 	ledger := planningLedgerSchema(object, text, strings)
 	properties := ledger["properties"].(map[string]any)
-	names := []string{"objective", "requirement", "constraint", "group", "task", "acceptance_criterion", "check", "decision_question", "dependency", "finding"}
-	sources := []string{"objectives", "requirements", "constraints", "groups", "tasks", "acceptance_criteria", "checks", "decisions_and_questions", "dependencies", "findings"}
+	names := []string{"objective", "requirement", "constraint", "group", "task", "acceptance_criterion", "check", "dependency"}
+	sources := []string{"objectives", "requirements", "constraints", "groups", "tasks", "acceptance_criteria", "checks", "dependencies"}
 	variants := make([]map[string]any, 0, len(names))
 	for index, name := range names {
 		item := properties[sources[index]].(map[string]any)["items"]

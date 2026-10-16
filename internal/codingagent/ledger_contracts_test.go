@@ -71,9 +71,7 @@ func TestLedgerMutationRejectsStaleBaseRevision(t *testing.T) {
 	}
 	mutation := LedgerMutation{
 		OperationID: "operation-1", BaseRevision: 3, OwnerTurnID: "turn-2",
-		OwnerTurnDisposition: model.OwnerTurnDisposition{
-			Kind: model.OwnerTurnRepresented, ItemIDs: []model.LedgerItemID{"constraint-1"},
-		},
+		OwnerTurnDisposition: model.RepresentedOwnerTurn([]model.LedgerItemID{"constraint-1"}),
 		Operations: []model.LedgerMutationOperation{{
 			Kind:      model.LedgerMutationAdd,
 			Item:      &model.LedgerMutationItem{Constraint: &constraint},

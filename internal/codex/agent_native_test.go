@@ -87,9 +87,8 @@ func TestInstalledCodexAgentExecutionAndIndependentReview(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
 	frames, effects := 0, 0
-	writer := &agentFixtureWriter{scope: scope}
 	activityProof := nativeActivityQualification{call: scope}
-	result, err := client.Run(ctx, scope, writer, func(event codingagent.NativeEvent) error {
+	result, err := client.Run(ctx, scope, func(event codingagent.NativeEvent) error {
 		if err := activityProof.native(event); err != nil {
 			return err
 		}
@@ -116,22 +115,22 @@ func TestInstalledCodexAgentExecutionAndIndependentReview(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Completed || result.ThreadID == "" || result.TurnID == "" || frames == 0 || effects == 0 || writer.writes == 0 {
+	if !result.Completed || result.ThreadID == "" || result.TurnID == "" || frames == 0 || effects == 0 {
 		t.Fatalf("native execution lacks exact completion and original environment-effect receipts: completed=%v frames=%d effects=%d result=%s", result.Completed, frames, effects, result.Content)
 	}
-	var execution codingagent.ExecutionResult
-	if err := json.Unmarshal(result.Content, &execution); err != nil || execution.Questions == nil || len(execution.Questions) != 0 {
+	var execution string
+	if err := json.Unmarshal(result.Content, &execution); err != nil || strings.TrimSpace(execution) == "" {
 		t.Fatalf("native execution did not fulfill its complete supplied contract: decode=%v content=%s", err, result.Content)
 	}
 	checks, err := client.ExecuteChecks(ctx, scope, scope.Task.Checks, activityProof.verification)
 	if err != nil || len(checks) != 1 || checks[0].ExitCode != 0 {
 		t.Fatalf("actual native behavior verification failed: checks=%+v error=%v", checks, err)
 	}
-	activityProof.verify(t, writer.writes)
+	activityProof.verify(t, activityProof.edits)
 	reviewScope := scope
 	reviewScope.Role, reviewScope.WriteFiles, reviewScope.Checks = codingagent.Review, nil, checks
 	reviewActivityProof := nativeActivityQualification{call: reviewScope}
-	review, err := client.Run(ctx, reviewScope, &agentFixtureWriter{scope: reviewScope}, func(event codingagent.NativeEvent) error {
+	review, err := client.Run(ctx, reviewScope, func(event codingagent.NativeEvent) error {
 		return reviewActivityProof.native(event)
 	})
 	if err != nil {
@@ -140,9 +139,18 @@ func TestInstalledCodexAgentExecutionAndIndependentReview(t *testing.T) {
 	if !review.Completed || review.ThreadID == result.ThreadID {
 		t.Fatal("review reused the executor's retained conversation")
 	}
-	var reviewed codingagent.ReviewResult
-	if err := json.Unmarshal(review.Content, &reviewed); err != nil || reviewed.Findings == nil || reviewed.Questions == nil || len(reviewed.Findings) != 0 || len(reviewed.Questions) != 0 {
-		t.Fatalf("independent reviewer did not verify the actual fulfilled task: decode=%v findings=%+v questions=%+v", err, reviewed.Findings, reviewed.Questions)
+	var reviewText string
+	if err := json.Unmarshal(review.Content, &reviewText); err != nil || strings.TrimSpace(reviewText) == "" {
+		t.Fatalf("independent reviewer did not return ordinary prose: decode=%v content=%s", err, review.Content)
+	}
+	parsed, err := client.Run(ctx, codingagent.Assignment{JobID: scope.JobID, Generation: scope.Generation,
+		Role: codingagent.ReviewResponse, Root: scope.Root, Task: scope.Task, Route: scope.Route, Response: reviewText}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reviewed codingagent.ReviewResponseResult
+	if err := json.Unmarshal(parsed.Content, &reviewed); err != nil || reviewed.Kind != codingagent.ExecutionDone || reviewed.Findings == nil || len(reviewed.Findings) != 0 {
+		t.Fatalf("parsed independent review did not verify the fulfilled task: decode=%v result=%s", err, parsed.Content)
 	}
 	unchanged, err := os.ReadFile(filepath.Join(scope.Root, "undeclared.txt"))
 	if err != nil || string(unchanged) != "keep this exact fixture unchanged\n" {
@@ -151,39 +159,22 @@ func TestInstalledCodexAgentExecutionAndIndependentReview(t *testing.T) {
 	t.Logf("native execution thread=%s turn=%s frames=%d effects=%d; independent review thread=%s turn=%s", result.ThreadID, result.TurnID, frames, effects, review.ThreadID, review.TurnID)
 }
 
-func TestInstalledCodexAgentSandboxAndServiceEnvironment(t *testing.T) {
+func TestInstalledCodexChecksUseAuthoritativeWorkspaceAndHostEnvironment(t *testing.T) {
 	client, model := installedAgentClient(t)
 	scope := nativeAgentFixture(t, model)
 	t.Setenv("OMNI_AGENT_SERVICE_SECRET", "qualification-only-value")
 	python := scope.Task.Checks[0].Argv[0]
-	denied := `import errno, os
-assert "OMNI_AGENT_SERVICE_SECRET" not in os.environ
-for path, mode in [("undeclared.txt", "r"), ("allowed.py", "w")]:
-    try:
-        stream=open(path,mode)
-    except OSError as failure:
-        assert failure.errno in (errno.EACCES, errno.EPERM, errno.ENOENT, errno.EROFS)
-        continue
-    stream.close()
-    raise AssertionError("ungranted file operation succeeded: " + path + " " + mode)
-# A private mount shadow may accept a new file; it confers no host authority.
-# The Go host independently verifies that both canonical files remain exact.
-try:
-    with open("undeclared.txt", "w") as stream:
-        stream.write("disposable sandbox shadow")
-except OSError as failure:
-    assert failure.errno in (errno.EACCES, errno.EPERM, errno.ENOENT, errno.EROFS)
-assert os.path.realpath(os.environ["HOME"])==os.path.realpath(os.environ["TMPDIR"])
+	command := `import os, pathlib
+assert os.environ["OMNI_AGENT_SERVICE_SECRET"]=="qualification-only-value"
+pathlib.Path("verification-output.txt").write_text("authoritative workspace\n")
 `
-	results, err := client.ExecuteChecks(context.Background(), scope, []codingagent.Check{{ID: "actual-sandbox-denials", Argv: []string{python, "-B", "-c", denied}}}, nil)
-	for file, expected := range map[string]string{"allowed.py": "def greet(name):\n    return 'broken'\n", "undeclared.txt": "keep this exact fixture unchanged\n"} {
-		content, err := os.ReadFile(filepath.Join(scope.Root, file))
-		if err != nil || string(content) != expected {
-			t.Fatalf("read-only native verification changed %s", file)
-		}
+	results, err := client.ExecuteChecks(context.Background(), scope, []codingagent.Check{{ID: "actual-workspace-write", Argv: []string{python, "-B", "-c", command}}}, nil)
+	content, readErr := os.ReadFile(filepath.Join(scope.Root, "verification-output.txt"))
+	if readErr != nil || string(content) != "authoritative workspace\n" {
+		t.Fatalf("native verification did not write the authoritative workspace: %q, %v", content, readErr)
 	}
 	if err != nil || len(results) != 1 || results[0].ExitCode != 0 {
-		t.Fatalf("actual native host files remained unchanged, but sandbox denial semantics differ: checks=%+v error=%v", results, err)
+		t.Fatalf("actual native workspace verification failed: checks=%+v error=%v", results, err)
 	}
 }
 

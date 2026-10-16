@@ -40,14 +40,6 @@ func validEngineeringLedger() EngineeringLedger {
 			RequirementIDs:         []LedgerItemID{"requirement-1"},
 			AcceptanceCriterionIDs: []LedgerItemID{"acceptance-1"}, Required: true,
 		}},
-		DecisionsAndQuestions: []LedgerDecisionQuestion{{
-			LedgerItem: ledgerItem("decision-1", 7), Kind: LedgerDecision,
-			Prompt: "Which route?", Answer: "frozen route", Affects: []LedgerItemID{"task-1"},
-		}},
-		Findings: []LedgerFinding{{
-			LedgerItem: ledgerItem("finding-1", 8), Kind: LedgerFindingPlanning,
-			Observation: "coverage was inspected", TargetIDs: []LedgerItemID{"task-1"},
-		}},
 	}
 }
 
@@ -88,18 +80,27 @@ func TestEngineeringLedgerRejectsMissingBindingsAndCycles(t *testing.T) {
 	}
 }
 
-func TestEngineeringLedgerRejectsRepeatedTaskFileGrants(t *testing.T) {
+func TestEngineeringLedgerRejectsRepeatedTaskFileReferences(t *testing.T) {
 	for _, mutate := range []func(*LedgerTask){
 		func(task *LedgerTask) { task.ReadFiles = []string{"source.go", "source.go"} },
 		func(task *LedgerTask) { task.WriteFiles = []string{"source.go", "source.go"} },
 		func(task *LedgerTask) { task.DeleteFiles = []string{"source.go", "source.go"} },
-		func(task *LedgerTask) { task.ReadFiles, task.WriteFiles = []string{"source.go"}, []string{"source.go"} },
 	} {
 		ledger := validEngineeringLedger()
 		mutate(&ledger.Tasks[0])
 		if err := ledger.Validate(); err == nil {
-			t.Fatal("repeated task file grant was accepted")
+			t.Fatal("repeated task file reference was accepted")
 		}
+	}
+}
+
+func TestEngineeringLedgerAllowsFileReferencesAcrossOperations(t *testing.T) {
+	ledger := validEngineeringLedger()
+	ledger.Tasks[0].ReadFiles = []string{"source.go"}
+	ledger.Tasks[0].WriteFiles = []string{"source.go"}
+	ledger.Tasks[0].DeleteFiles = []string{"source.go"}
+	if err := ledger.Validate(); err != nil {
+		t.Fatalf("file context was treated as mutually exclusive permission grants: %v", err)
 	}
 }
 
@@ -108,7 +109,7 @@ func TestLedgerMutationRequiresExactTypedDisposition(t *testing.T) {
 	constraint.ReviewState = LedgerReviewProposed
 	mutation := LedgerMutation{
 		OperationID: "operation-1", BaseRevision: 7, OwnerTurnID: "turn-2",
-		OwnerTurnDisposition: OwnerTurnDisposition{Kind: OwnerTurnRepresented, ItemIDs: []LedgerItemID{"constraint-2"}},
+		OwnerTurnDisposition: RepresentedOwnerTurn([]LedgerItemID{"constraint-2"}),
 		Operations: []LedgerMutationOperation{{
 			Kind: LedgerMutationAdd, Item: &LedgerMutationItem{Constraint: &constraint},
 			Rationale: "the owner requested it",
@@ -126,7 +127,7 @@ func TestLedgerMutationRequiresExactTypedDisposition(t *testing.T) {
 func TestLedgerMutationValidatesPayloadIdentityAndOwnerReferences(t *testing.T) {
 	mutation := LedgerMutation{
 		OperationID: "operation-1", BaseRevision: 7, OwnerTurnID: "turn-2",
-		OwnerTurnDisposition: OwnerTurnDisposition{Kind: OwnerTurnRepresented, ItemIDs: []LedgerItemID{""}},
+		OwnerTurnDisposition: RepresentedOwnerTurn([]LedgerItemID{""}),
 		Operations: []LedgerMutationOperation{{
 			Kind: LedgerMutationAdd, Item: &LedgerMutationItem{Requirement: &LedgerRequirement{}},
 			Rationale: "the owner requested it",
@@ -136,12 +137,7 @@ func TestLedgerMutationValidatesPayloadIdentityAndOwnerReferences(t *testing.T) 
 		t.Fatalf("expected blank represented item reference error, got %v", err)
 	}
 
-	mutation.OwnerTurnDisposition = OwnerTurnDisposition{Kind: OwnerTurnUnresolved, QuestionIDs: []LedgerItemID{""}}
-	if err := mutation.Validate(); err == nil || !strings.Contains(err.Error(), "blank item reference") {
-		t.Fatalf("expected blank unresolved question reference error, got %v", err)
-	}
-
-	mutation.OwnerTurnDisposition = OwnerTurnDisposition{Kind: OwnerTurnRepresented, ItemIDs: []LedgerItemID{"requirement-2"}}
+	mutation.OwnerTurnDisposition = RepresentedOwnerTurn([]LedgerItemID{"requirement-2"})
 	if err := mutation.Validate(); err == nil || !strings.Contains(err.Error(), "stable identity") {
 		t.Fatalf("expected invalid typed payload error, got %v", err)
 	}
@@ -152,14 +148,6 @@ func TestLedgerMutationValidatesPayloadIdentityAndOwnerReferences(t *testing.T) 
 	mutation.Operations[0].Item = &LedgerMutationItem{Requirement: &requirement}
 	if err := mutation.Validate(); err == nil || !strings.Contains(err.Error(), "does not match target") {
 		t.Fatalf("expected amend identity mismatch error, got %v", err)
-	}
-}
-
-func TestEngineeringLedgerRejectsUnknownFindingKind(t *testing.T) {
-	ledger := validEngineeringLedger()
-	ledger.Findings[0].Kind = LedgerFindingKind("not_a_kind")
-	if err := ledger.Validate(); err == nil || !strings.Contains(err.Error(), "invalid kind") {
-		t.Fatalf("expected invalid finding kind error, got %v", err)
 	}
 }
 
@@ -187,7 +175,7 @@ func validLedgerMutationOperation(kind LedgerMutationKind) LedgerMutation {
 		OperationID:          "operation-variant",
 		BaseRevision:         7,
 		OwnerTurnID:          "turn-2",
-		OwnerTurnDisposition: OwnerTurnDisposition{Kind: OwnerTurnRepresented, ItemIDs: []LedgerItemID{constraint.ID}},
+		OwnerTurnDisposition: RepresentedOwnerTurn([]LedgerItemID{constraint.ID}),
 		Operations:           []LedgerMutationOperation{operation},
 	}
 }
@@ -204,30 +192,18 @@ func TestLedgerMutationRejectsBlankTargets(t *testing.T) {
 
 func TestLedgerMutationRejectsMixedOwnerTurnDisposition(t *testing.T) {
 	mutation := validLedgerMutationOperation(LedgerMutationAdd)
-	mutation.OwnerTurnDisposition.QuestionIDs = []LedgerItemID{"question-1"}
-	if err := mutation.Validate(); err == nil {
-		t.Fatal("represented disposition with unresolved questions was accepted")
-	}
-
 	mutation.OwnerTurnDisposition = OwnerTurnDisposition{
-		Kind: OwnerTurnRepresented, ItemIDs: []LedgerItemID{"constraint-2"}, Reason: " ",
+		Statements: []OwnerStatementDisposition{{Kind: OwnerTurnRepresented, ItemIDs: []LedgerItemID{"constraint-2"}, Reason: " "}},
 	}
 	if err := mutation.Validate(); err == nil {
 		t.Fatal("represented disposition with an inactive reason field was accepted")
 	}
 
 	mutation.OwnerTurnDisposition = OwnerTurnDisposition{
-		Kind: OwnerTurnOutOfScope, Reason: "unrelated request", ItemIDs: []LedgerItemID{"constraint-2"},
+		Statements: []OwnerStatementDisposition{{Kind: OwnerTurnOutOfScope, Reason: "unrelated request", ItemIDs: []LedgerItemID{"constraint-2"}}},
 	}
 	if err := mutation.Validate(); err == nil {
 		t.Fatal("out-of-scope disposition with represented items was accepted")
-	}
-
-	mutation.OwnerTurnDisposition = OwnerTurnDisposition{
-		Kind: OwnerTurnUnresolved, QuestionIDs: []LedgerItemID{"question-1"}, Reason: "also out of scope",
-	}
-	if err := mutation.Validate(); err == nil {
-		t.Fatal("unresolved disposition with an out-of-scope reason was accepted")
 	}
 }
 
@@ -299,7 +275,7 @@ func TestLedgerMutationRepresentsOutOfScopeTurnWithoutOperations(t *testing.T) {
 		OperationID:          "operation-out-of-scope",
 		BaseRevision:         7,
 		OwnerTurnID:          "turn-2",
-		OwnerTurnDisposition: OwnerTurnDisposition{Kind: OwnerTurnOutOfScope, Reason: "unrelated to this ledger"},
+		OwnerTurnDisposition: OutOfScopeOwnerTurn("unrelated to this ledger"),
 	}
 	if err := mutation.Validate(); err != nil {
 		t.Fatalf("valid out-of-scope disposition rejected: %v", err)
@@ -316,7 +292,6 @@ func TestLedgerMutationSupportsPerStatementMixedDispositions(t *testing.T) {
 		OperationID: "mixed-turn", BaseRevision: 2, OwnerTurnID: "owner-mixed",
 		OwnerTurnDisposition: OwnerTurnDisposition{Statements: []OwnerStatementDisposition{
 			{Kind: OwnerTurnRepresented, ItemIDs: []LedgerItemID{"constraint-2"}},
-			{Kind: OwnerTurnUnresolved, QuestionIDs: []LedgerItemID{"question-2"}},
 			{Kind: OwnerTurnOutOfScope, Reason: "deployment belongs to another objective"},
 		}},
 		Operations: []LedgerMutationOperation{{Kind: LedgerMutationRemove, TargetID: "constraint-2", Rationale: "owner removed it"}},
@@ -345,7 +320,7 @@ func TestLedgerChecksRejectBlankCommandExecutables(t *testing.T) {
 	check.ReviewState = LedgerReviewProposed
 	mutation := LedgerMutation{
 		OperationID: "operation-blank-check", BaseRevision: ledger.Revision, OwnerTurnID: "turn-2",
-		OwnerTurnDisposition: OwnerTurnDisposition{Kind: OwnerTurnRepresented, ItemIDs: []LedgerItemID{check.ID}},
+		OwnerTurnDisposition: RepresentedOwnerTurn([]LedgerItemID{check.ID}),
 		Operations: []LedgerMutationOperation{{
 			Kind: LedgerMutationAdd, Item: &LedgerMutationItem{Check: &check}, Rationale: "owner requested it",
 		}},

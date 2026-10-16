@@ -9,6 +9,8 @@ import (
 
 var errCodingLedgerReviewPending = errors.New("coding ledger is waiting for owner review")
 
+var errCodingExecutionInputPending = errors.New("coding execution is waiting for an owner response")
+
 func (runtime *nativeRuntimeV3) runCodingLedgerPlanningAction() error {
 	configuration, err := codingagent.ConfigurationFromMetadata(runtime.claim.Job.Metadata)
 	if err != nil {

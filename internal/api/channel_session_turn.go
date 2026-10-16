@@ -19,6 +19,7 @@ type channelSessionTurnRequest struct {
 	CodingMode         channelCodingMode          `json:"coding_mode,omitzero"`
 	ExpectedJobID      *int64                     `json:"expected_job_id,omitempty"`
 	ExpectedGeneration *int64                     `json:"expected_generation,omitempty"`
+	ExpectedInputID    *int64                     `json:"expected_input_id,omitempty"`
 }
 
 type channelSessionTurnResponse struct {
@@ -85,7 +86,7 @@ func (s *Server) postChannelSessionTurn(
 			WorkspaceIdentity: request.WorkspaceIdentity,
 			Text:              request.Text,
 			CodingMode:        request.CodingMode.Value,
-			ExpectedJobID:     request.ExpectedJobID, ExpectedGeneration: request.ExpectedGeneration,
+			ExpectedJobID:     request.ExpectedJobID, ExpectedGeneration: request.ExpectedGeneration, ExpectedInputID: request.ExpectedInputID,
 		},
 	)
 	if err != nil {

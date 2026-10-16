@@ -37,6 +37,8 @@ func validatePortableSemanticCandidatePathBoundary(
 	provenance assemblyline.ArtifactIdentityProvenance,
 ) error {
 	switch kind {
+	case assemblyline.WorkContextMinification:
+		return assemblyline.ValidateMinifiedContextText(candidate, provenance)
 	case assemblyline.WorkFragmentGeneration:
 		return fmt.Errorf(
 			"work kind %q cannot use the raw semantic-leaf candidate boundary",

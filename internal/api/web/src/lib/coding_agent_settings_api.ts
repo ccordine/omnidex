@@ -1,7 +1,7 @@
 import { jsonPut, jsonRequest, readJSON } from "./api";
 import { exactRecord, exactString } from "./response_validation";
 
-export const AGENT_ROLES = ["planner", "executor", "reviewer"] as const;
+export const AGENT_ROLES = ["planner", "ledger_parser", "executor", "reviewer"] as const;
 export type AgentRole = typeof AGENT_ROLES[number];
 export type AgentRouteSettings = { provider: string; model: string; effort?: string; service_tier?: string };
 export type AgentConfiguration = { mode: "agents" } & Record<AgentRole, AgentRouteSettings>;

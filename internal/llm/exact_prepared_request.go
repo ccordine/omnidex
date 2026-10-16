@@ -11,10 +11,6 @@ const (
 	// ExactPreparedLineStopV1 terminates one-line semantic result grammars at
 	// the provider boundary. Decoders still receive and validate exact bytes.
 	ExactPreparedLineStopV1 = "\n"
-	// MaxExactPreparedModelInputBytes is a gross transport/resource ceiling.
-	// It is deliberately not a token estimate; the provider's tokenizer owns
-	// native context admission and reports the actual counts in its receipt.
-	MaxExactPreparedModelInputBytes = 128 * 1024
 )
 
 type ExactPreparedProtocol string
@@ -100,9 +96,9 @@ func validateExactPreparedRequest(prepared PreparedModel) error {
 	)
 }
 
-// ValidateExactPreparedInputAuthority validates the declared native token
-// ceilings and one coarse byte safety ceiling. It never interprets bytes as
-// tokens. Ollama tokenizes the exact raw request with truncate=false and its
+// ValidateExactPreparedInputAuthority validates declared Ollama token controls
+// and exact well-formed text, without a prompt byte ceiling or byte-to-token
+// estimate. Ollama tokenizes the exact raw request with truncate=false and its
 // response supplies the actual prompt/output token counts.
 func ValidateExactPreparedInputAuthority(
 	contextTokens int,
@@ -125,12 +121,6 @@ func validateExactPreparedInputBytes(rawInput string) error {
 	if !utf8.ValidString(rawInput) || strings.ContainsRune(rawInput, 0) ||
 		strings.TrimSpace(rawInput) == "" {
 		return fmt.Errorf("exact semantic prompt is invalid")
-	}
-	if len(rawInput) > MaxExactPreparedModelInputBytes {
-		return fmt.Errorf(
-			"exact semantic prompt exceeds %d-byte transport ceiling",
-			MaxExactPreparedModelInputBytes,
-		)
 	}
 	return nil
 }

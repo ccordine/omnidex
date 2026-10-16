@@ -65,85 +65,64 @@ func reduceSelectedAuthorities(
 	station MinificationStation,
 ) (string, int, error) {
 	verbatim := joinAuthorityContent(selected)
-	if len(verbatim) <= assemblyline.MaxContextMinifiedBytes {
+	if len(verbatim) <= assemblyline.ContextMinificationThresholdBytes {
 		return verbatim, 0, nil
 	}
 	if station == nil {
 		return "", 0, fmt.Errorf("context exceeds the verbatim target but the minification station is unavailable")
 	}
 
-	current := append([]assemblyline.ContextCandidateAuthority(nil), selected...)
-	previousBytes := len(verbatim)
-	totalCalls := 0
-	for len(current) > 0 {
-		groups, err := partitionContextAuthorities(
-			current,
-			assemblyline.MaxContextMinificationAuthorities,
-			assemblyline.MaxContextMinificationProjectionBytes,
-		)
-		if err != nil {
-			return "", totalCalls, fmt.Errorf("partition context minification input: %w", err)
-		}
-		next := make([]assemblyline.ContextCandidateAuthority, 0, len(groups))
-		seenContent := make(map[string]struct{}, len(groups))
-		for groupIndex, group := range groups {
-			pending := append([]assemblyline.ContextCandidateAuthority(nil), next...)
-			for _, remaining := range groups[groupIndex:] {
-				pending = append(pending, remaining...)
-			}
-			if content := joinAuthorityContent(pending); len(content) <= assemblyline.MaxContextMinifiedBytes {
-				return content, totalCalls, nil
-			}
-			content := joinAuthorityContent(group)
-			if len(group) > 1 {
-				input := assemblyline.ContextMinificationInput{
-					ExactInstruction:    modelInstruction,
-					SelectedAuthorities: append([]assemblyline.ContextCandidateAuthority(nil), group...),
-					Scope:               scope,
-					KnownArtifactPaths:  append([]string{}, knownArtifactPaths...),
-				}
-				if _, err := assemblyline.NewContextMinificationJob(input); err != nil {
-					return "", totalCalls, fmt.Errorf("context minification group %d: %w", groupIndex+1, err)
-				}
-				decision, leafCalls, err := station.Minify(ctx, input)
-				totalCalls += leafCalls
-				if err != nil {
-					return "", totalCalls, fmt.Errorf("context minification group %d: %w", groupIndex+1, err)
-				}
-				if err := validateCallCount("context minification", leafCalls); err != nil {
-					return "", totalCalls, err
-				}
-				if err := decision.ValidateFor(input); err != nil {
-					return "", totalCalls, err
-				}
-				content = decision.MinimalContext
-			}
-			if _, duplicate := seenContent[content]; duplicate {
-				continue
-			}
-			seenContent[content] = struct{}{}
-			authority, err := assemblyline.NewContextCandidateAuthority(
-				"context_reduction", fmt.Sprintf("CTX_%d", len(next)+1), content,
-			)
-			if err != nil {
-				return "", totalCalls, fmt.Errorf("bind context reduction group %d: %w", groupIndex+1, err)
-			}
-			next = append(next, authority)
-		}
-		reduced := joinAuthorityContent(next)
-		if len(reduced) <= assemblyline.MaxContextMinifiedBytes {
-			return reduced, totalCalls, nil
-		}
-		if len(reduced) >= previousBytes {
-			return "", totalCalls, fmt.Errorf(
-				"context semantic reduction made no progress: before=%d after=%d target=%d",
-				previousBytes, len(reduced), assemblyline.MaxContextMinifiedBytes,
-			)
-		}
-		previousBytes = len(reduced)
-		current = next
+	groups, err := partitionContextAuthorities(selected,
+		assemblyline.MaxContextMinificationAuthorities,
+		assemblyline.MaxContextMinificationProjectionBytes)
+	if err != nil {
+		return "", 0, fmt.Errorf("partition context minification input: %w", err)
 	}
-	return "", totalCalls, fmt.Errorf("context semantic reduction produced no retained authority")
+	contents := make([]string, 0, len(groups))
+	seenContent := make(map[string]struct{}, len(groups))
+	totalCalls := 0
+	for groupIndex, group := range groups {
+		pending := append([]string(nil), contents...)
+		for _, remaining := range groups[groupIndex:] {
+			pending = append(pending, joinAuthorityContent(remaining))
+		}
+		if content := strings.Join(pending, "\n\n"); len(content) <= assemblyline.ContextMinificationThresholdBytes {
+			return content, totalCalls, nil
+		}
+		content := joinAuthorityContent(group)
+		if len(group) > 1 {
+			input := assemblyline.ContextMinificationInput{
+				ExactInstruction:    modelInstruction,
+				SelectedAuthorities: append([]assemblyline.ContextCandidateAuthority(nil), group...),
+				Scope:               scope,
+				KnownArtifactPaths:  append([]string{}, knownArtifactPaths...),
+			}
+			if _, err := assemblyline.NewContextMinificationJob(input); err != nil {
+				return "", totalCalls, fmt.Errorf("context minification group %d: %w", groupIndex+1, err)
+			}
+			decision, leafCalls, err := station.Minify(ctx, input)
+			totalCalls += leafCalls
+			if err != nil {
+				return "", totalCalls, fmt.Errorf("context minification group %d: %w", groupIndex+1, err)
+			}
+			if err := validateCallCount("context minification", leafCalls); err != nil {
+				return "", totalCalls, err
+			}
+			if err := decision.ValidateFor(input); err != nil {
+				return "", totalCalls, err
+			}
+			content = decision.MinimalContext
+		}
+		if _, duplicate := seenContent[content]; duplicate {
+			continue
+		}
+		seenContent[content] = struct{}{}
+		contents = append(contents, content)
+	}
+	// Minification preserves the necessary result, even when that information
+	// cannot fit a guessed byte target. Never repeatedly squeeze accepted facts
+	// into a smaller artificial window or discard a completed semantic result.
+	return strings.Join(contents, "\n\n"), totalCalls, nil
 }
 
 func partitionContextAuthorities(

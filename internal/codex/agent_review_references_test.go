@@ -2,57 +2,53 @@ package codex
 
 import (
 	"encoding/json"
-	"errors"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/codingagent"
-	"github.com/gryph/omnidex/internal/llm"
 )
 
-func TestAgentReviewReceiptFailureIsRetryableAtProviderBoundary(t *testing.T) {
+func TestReviewParserMalformedOutputFailsExplicitly(t *testing.T) {
 	task := codingagent.Task{ID: "task-a", Acceptance: []string{"Behavior remains exact."}}
-	_, err := mapAgentReviewRunResult(
-		codingagent.Assignment{Role: codingagent.Review, Task: &task},
-		json.RawMessage(`{"findings":[],"overall_explanation":"","overall_correctness":"patch is incorrect"}`),
+	_, err := mapAgentReviewResponse(
+		codingagent.Assignment{Role: codingagent.ReviewResponse, Task: &task},
+		json.RawMessage(`{"kind":"done","findings":[],"overall_explanation":"","overall_correctness":"patch is incorrect"}`),
 	)
-	var retryable interface{ Retryable() bool }
-	if err == nil || !errors.As(err, &retryable) || !retryable.Retryable() ||
-		!strings.Contains(err.Error(), "decode task-local agent review") {
-		t.Fatal("an incomplete task-local review session became a terminal task failure")
+	if err == nil || !strings.Contains(err.Error(), "review response parser") {
+		t.Fatal("malformed parser output was accepted")
 	}
 }
 
 func TestAgentReviewReferencesRestoreExactQuotedPortableFindings(t *testing.T) {
 	task := codingagent.Task{ID: "task\"quoted\\identity", Acceptance: []string{"Preserve \"exact\" values, slash \\, and newline\nbytes."}}
-	call := codingagent.Assignment{Role: codingagent.Review, Task: &task}
-	raw := json.RawMessage(`{"findings":[{"task_id":"task_1","requirement":"criterion_1","file":"","observation":"Observed independent failure."}],"questions":[],"verification":"Inspected the task-local result against the criterion."}`)
-	mapped, err := mapAgentReviewResult(call, raw)
+	call := codingagent.Assignment{Role: codingagent.ReviewResponse, Task: &task}
+	raw := json.RawMessage(`{"kind":"done","findings":[{"requirement":"criterion_1","file":"","observation":"Observed independent failure."}],"verification":"Inspected the task-local result against the criterion."}`)
+	mapped, err := mapAgentReviewResponse(call, raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var result codingagent.ReviewResult
+	var result codingagent.ReviewResponseResult
 	if err := json.Unmarshal(mapped, &result); err != nil {
 		t.Fatal(err)
 	}
 	want := codingagent.Finding{TaskID: task.ID, Requirement: task.Acceptance[0], Observation: "Observed independent failure."}
-	if !reflect.DeepEqual(result.Findings, []codingagent.Finding{want}) || result.Questions == nil {
+	if !reflect.DeepEqual(result.Findings, []codingagent.Finding{want}) {
 		t.Fatalf("mapped review changed exact authority: %+v", result)
 	}
-	if err := codingagent.ValidateReview(map[string]codingagent.Task{task.ID: task}, result); err != nil {
+	if err := codingagent.ValidateReview(map[string]codingagent.Task{task.ID: task}, result.ReviewResult); err != nil {
 		t.Fatalf("portable validator rejected mapped exact criterion: %v", err)
 	}
 }
 
 func TestAgentReviewReferencesPreserveTypedVerification(t *testing.T) {
 	task := codingagent.Task{ID: "task-a", Acceptance: []string{"Behavior remains exact."}}
-	call := codingagent.Assignment{Role: codingagent.Review, Task: &task}
-	mapped, err := mapAgentReviewResult(call, json.RawMessage(`{"findings":[],"questions":[],"verification":"Ran the declared check and an independent edge case."}`))
+	call := codingagent.Assignment{Role: codingagent.ReviewResponse, Task: &task}
+	mapped, err := mapAgentReviewResponse(call, json.RawMessage(`{"kind":"done","findings":[],"verification":"Ran the declared check and an independent edge case."}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	var review codingagent.ReviewResult
+	var review codingagent.ReviewResponseResult
 	if err := json.Unmarshal(mapped, &review); err != nil {
 		t.Fatal(err)
 	}
@@ -63,30 +59,30 @@ func TestAgentReviewReferencesPreserveTypedVerification(t *testing.T) {
 
 func TestAgentReviewReferenceDecoderRejectsUnknownOrMalformedNativeFindings(t *testing.T) {
 	task := codingagent.Task{ID: "original-task", Acceptance: []string{"Original criterion."}, RequirementIDs: []string{"parent-a"}}
-	call := codingagent.Assignment{Role: codingagent.Review, Task: &task,
+	call := codingagent.Assignment{Role: codingagent.ReviewResponse, Task: &task,
 		Requirements: []codingagent.Requirement{{ID: "parent-a", Outcome: "Parent outcome."}}}
 	for _, raw := range []string{
-		`{"findings":[{"task_id":"original-task","requirement":"criterion_1","file":"","observation":"Defect."}],"questions":[]}`,
-		`{"findings":[{"task_id":"task_1","requirement":"Original criterion.","file":"","observation":"Defect."}],"questions":[]}`,
-		`{"findings":[{"task_id":"task_1","requirement":"parent_1","file":"","observation":"Defect."}],"questions":[]}`,
-		`{"findings":[{"task_id":"task_1","requirement":"criterion_9","file":"","observation":"Defect."}],"questions":[]}`,
-		`{"findings":[{"task_id":"task_1","requirement":"criterion_1","observation":"Defect."}],"questions":[]}`,
-		`{"findings":[{"task_id":"task_1","requirement":"criterion_1","file":"","observation":"Defect.","extra":true}],"questions":[]}`,
-		`{"findings":[],"questions":[],"extra":true}`,
-		`{"findings":null,"questions":[]}`,
-		`{"findings":[],"questions":null}`,
-		`{"findings":[],"questions":[]} {}`,
+		`{"kind":"done","findings":[{"task_id":"task_1","requirement":"criterion_1","file":"","observation":"Defect."}],"verification":"checked"}`,
+		`{"kind":"done","findings":[{"requirement":"Original criterion.","file":"","observation":"Defect."}],"verification":"checked"}`,
+		`{"kind":"done","findings":[{"requirement":"parent_1","file":"","observation":"Defect."}],"verification":"checked"}`,
+		`{"kind":"done","findings":[{"requirement":"criterion_9","file":"","observation":"Defect."}],"verification":"checked"}`,
+		`{"kind":"done","findings":[{"requirement":"criterion_1","observation":"Defect."}],"verification":"checked"}`,
+		`{"kind":"done","findings":[{"requirement":"criterion_1","file":"","observation":"Defect.","extra":true}],"verification":"checked"}`,
+		`{"kind":"done","findings":[],"verification":"checked","extra":true}`,
+		`{"kind":"done","findings":null,"verification":"checked"}`,
+		`{"verification":"checked"}`,
+		`{"kind":"done","findings":[],"verification":"checked"} {}`,
 	} {
-		if _, err := mapAgentReviewResult(call, json.RawMessage(raw)); err == nil {
+		if _, err := mapAgentReviewResponse(call, json.RawMessage(raw)); err == nil {
 			t.Errorf("invalid task-local review references accepted: %s", raw)
 		}
 	}
 }
 
-func TestAgentReviewPromptIncludesOnlyItsExactCriterionReferenceTable(t *testing.T) {
+func TestAgentReviewContextIncludesOnlyItsExactCriterionReferenceTable(t *testing.T) {
 	task := codingagent.Task{ID: `task "identity"`, Acceptance: []string{`Preserve "exact" criterion bytes.`}}
-	call := codingagent.Assignment{Role: codingagent.Review, Task: &task}
-	prompt, err := renderAgentAssignment(call)
+	call := codingagent.Assignment{Role: codingagent.ReviewResponse, Task: &task, Response: "An ordinary review response."}
+	prompt, err := renderAgentContext(call)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,27 +107,32 @@ func TestAgentReviewPromptIncludesOnlyItsExactCriterionReferenceTable(t *testing
 	if err := json.Unmarshal([]byte(assignment), &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if decoded.Task.ID != task.ID || !reflect.DeepEqual(decoded.Task.Acceptance, task.Acceptance) || decoded.Objective != nil || len(decoded.Requirements) != 0 {
+	if decoded.Response != "" || decoded.Task != nil || decoded.Objective != nil || len(decoded.Requirements) != 0 {
 		t.Fatal("task review prompt changed its exact authority or gained parent context")
+	}
+	current, err := renderAgentAssignment(call)
+	if err != nil || !strings.HasSuffix(current, call.Response) {
+		t.Fatal("review parser lost its exact current source response")
 	}
 }
 
-func TestAgentReviewPromptBoundsReferenceTableTogetherWithAssignment(t *testing.T) {
-	task := codingagent.Task{ID: "task", Acceptance: []string{strings.Repeat("x", llm.MaxExactPreparedModelInputBytes/2)}}
-	call := codingagent.Assignment{Role: codingagent.Review, Task: &task}
+func TestReviewParserDoesNotInheritTheSemantic128KiBCeiling(t *testing.T) {
+	const formerInputCeiling = 128 * 1024
+	task := codingagent.Task{ID: "task", Acceptance: []string{strings.Repeat("x", formerInputCeiling)}}
+	call := codingagent.Assignment{Role: codingagent.ReviewResponse, Task: &task}
 	encoded, err := json.Marshal(call)
-	if err != nil || len(encoded) >= llm.MaxExactPreparedModelInputBytes {
-		t.Fatalf("fixture must fit assignment-only bound: bytes=%d error=%v", len(encoded), err)
+	if err != nil || len(encoded) < formerInputCeiling {
+		t.Fatalf("fixture must exceed the prompt bound: bytes=%d error=%v", len(encoded), err)
 	}
-	if _, err := renderAgentAssignment(call); err == nil {
-		t.Fatal("combined reference table and assignment exceeded context without rejection")
+	if _, err := renderAgentContext(call); err != nil {
+		t.Fatalf("large review parser input hit an unrelated semantic ceiling: %v", err)
 	}
 }
 
 func TestAgentReviewMappingLeavesNonReviewResultsUnchanged(t *testing.T) {
-	for _, role := range []codingagent.Role{codingagent.Plan, codingagent.Execute} {
-		raw := json.RawMessage(`{"questions":[]}`)
-		mapped, err := mapAgentReviewResult(codingagent.Assignment{Role: role}, raw)
+	for _, role := range []codingagent.Role{codingagent.Plan, codingagent.Execute, codingagent.Review} {
+		raw := json.RawMessage(`"An ordinary review response."`)
+		mapped, err := mapAgentReviewResponse(codingagent.Assignment{Role: role}, raw)
 		if err != nil || string(mapped) != string(raw) {
 			t.Fatalf("%s mapping changed non-review response: %s %v", role, mapped, err)
 		}

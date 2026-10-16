@@ -2,33 +2,36 @@ package codingagent
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/gryph/omnidex/internal/model"
 )
 
 type Entry struct {
-	ID             int64       `json:"id,omitempty"`
-	Generation     int64       `json:"generation"`
-	Phase          string      `json:"phase"`
-	TaskID         string      `json:"task_id,omitempty"`
-	Round          int64       `json:"round,omitempty"`
-	CallID         int64       `json:"call_id,omitempty"`
-	OperationID    string      `json:"operation_id,omitempty"`
-	QuestionID     int64       `json:"question_id,omitempty"`
-	WaitingAttempt int64       `json:"waiting_attempt,omitempty"`
-	LedgerRevision int64       `json:"ledger_revision,omitempty"`
-	Role           Role        `json:"role,omitempty"`
-	Assignment     *Assignment `json:"assignment,omitempty"`
-	Result         *Result     `json:"result,omitempty"`
+	ID         int64       `json:"id,omitempty"`
+	Generation int64       `json:"generation"`
+	Phase      string      `json:"phase"`
+	TaskID     string      `json:"task_id,omitempty"`
+	Round      int64       `json:"round,omitempty"`
+	CallID     int64       `json:"call_id,omitempty"`
+	Role       Role        `json:"role,omitempty"`
+	Assignment *Assignment `json:"assignment,omitempty"`
+	Result     *Result     `json:"result,omitempty"`
 	// Bytes are base64 encoded in JSON so JSONB preserves the original wire frame.
-	Frame             []byte             `json:"frame,omitempty"`
-	Findings          []Finding          `json:"findings,omitempty"`
-	Checks            []CheckResult      `json:"checks,omitempty"`
-	WrittenFiles      []string           `json:"written_files,omitempty"`
-	Questions         []string           `json:"questions,omitempty"`
-	Answers           []string           `json:"answers,omitempty"`
-	Notes             []string           `json:"notes,omitempty"`
-	ConstructionFacts []ConstructionFact `json:"construction_facts,omitempty"`
+	Frame             []byte                `json:"frame,omitempty"`
+	Findings          []Finding             `json:"findings,omitempty"`
+	Checks            []CheckResult         `json:"checks,omitempty"`
+	WrittenFiles      []string              `json:"written_files,omitempty"`
+	Notes             []string              `json:"notes,omitempty"`
+	ConstructionFacts []ConstructionFact    `json:"construction_facts,omitempty"`
+	ResponseKind      ExecutionResponseKind `json:"response_kind,omitempty"`
+	Session           *ExecutionSession     `json:"session,omitempty"`
+	NativeInput       *NativeInputRequest   `json:"native_input,omitempty"`
+	InputID           int64                 `json:"input_id,omitempty"`
+	NativeReply       json.RawMessage       `json:"native_reply,omitempty"`
+	ParserCallID      int64                 `json:"parser_call_id,omitempty"`
+	ReviewResponse    *ReviewResponseResult `json:"review_response,omitempty"`
+	Continuation      *TaskContinuation     `json:"continuation,omitempty"`
 }
 
 // EvidenceStore is the existing queue's journal boundary. It is not a second
@@ -36,20 +39,12 @@ type Entry struct {
 type EvidenceStore interface {
 	Append(context.Context, Entry) (int64, error)
 	Read(context.Context) ([]Entry, error)
+	ReadTaskClarifications(context.Context, string) ([]TaskClarification, error)
 }
 
 type Verifier interface {
 	ExecuteChecks(context.Context, Assignment, []Check, func(model.AgentActivity) error) ([]CheckResult, error)
 }
 type Environment interface {
-	ReadFiles(context.Context) ([]string, error)
-	ReadTaskFile(context.Context, string) (string, error)
-	PrepareFiles(context.Context, Task) error
 	Attest(context.Context) error
-	WriteFile(context.Context, FileWrite) error
-	DeleteFile(context.Context, FileDelete) error
 }
-
-type QuestionsPending struct{ Questions []string }
-
-func (pending *QuestionsPending) Error() string { return "scoped coding task is waiting for answers" }

@@ -1,21 +1,49 @@
-import { jsonRequest, readJSON } from "./api";
-import type { CodingMode } from "./channel_api";
-import { authoritativeControlJobID } from "./chat_jobs_coordinator";
-import { LifecycleOperationAttempt } from "./lifecycle_operation";
+import { readJSON } from "./api";
 import { observeRealtimeJob, type RealtimeJobObservation } from "./realtime_job_observer";
 import { parseAgentChannelState, type AgentChannelAuthority, type AgentChannelState } from "./coding_agent_channel_contract";
 import type { ChannelTranscriptPage } from "./types";
+import { LifecycleOperationAttempt } from "./lifecycle_operation";
 
 export class CodingAgentChannelTurn {
   private readonly states = new Map<string, AgentChannelState>();
   private readonly observations = new Map<string, RealtimeJobObservation<AgentChannelState>>();
-  private readonly operations = new LifecycleOperationAttempt();
   private changed: () => void = () => undefined;
+  private readonly planningOperations = new LifecycleOperationAttempt();
 
   constructor(private readonly failed: (channelID: string, error: unknown) => void) {}
 
   onChange(handler: () => void): void { this.changed = handler; }
   state(channelID: string): AgentChannelState | undefined { return this.states.get(channelID); }
+
+  async continueConversation(channelID: string, text: string): Promise<number> {
+    const state = this.states.get(channelID);
+    if (!state || state.status !== "waiting_input") throw new Error("The conversation is not ready for another turn.");
+    const previous = this.observations.get(channelID);
+    if (previous) await previous.completion;
+    if (state.inputDisposition === undefined) throw new Error("Coding reply lacks its server-owned disposition.");
+    const planning = state.inputDisposition === "replan";
+    const authority = state.authority;
+    const key = { scope: JSON.stringify({ authority, inputID: state.executionInputID }), action: "conversation_turn", content: text };
+    const operationID = this.planningOperations.acquire(key);
+    const response = await fetch(`/v1/channels/${encodeURIComponent(channelID)}/session/turn`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ operation_id: operationID, text, coding_mode: "agents",
+        workspace_root: authority.workspaceRoot, workspace_identity: authority.workspaceIdentity,
+        ...(state.executionInputID === undefined ? {} : { expected_input_id: state.executionInputID }) }),
+    });
+    const receipt = await readJSON<Record<string, unknown>>(response);
+    if (response.status !== 202 || receipt.operation_id !== operationID || receipt.channel_id !== channelID ||
+      receipt.job_id !== authority.jobID || receipt.disposition !== (planning ? "replanned" : "feedback_submitted") ||
+      typeof receipt.generation !== "number" || !Number.isSafeInteger(receipt.generation) ||
+      (planning ? receipt.generation <= authority.generation : receipt.generation !== authority.generation)) {
+      throw new Error("The reply did not return its conversation authority.");
+    }
+    const current = await this.load(channelID, authority.jobID, { ...authority, generation: receipt.generation });
+    if (!current) throw new Error("The conversation lost its coding configuration.");
+    this.update(channelID, current);
+    this.planningOperations.confirm(key, operationID);
+    return authority.jobID;
+  }
 
   async recover(channelID: string, turn: ChannelTranscriptPage["latest_user_turn"]): Promise<void> {
     const previous = this.states.get(channelID);
@@ -51,37 +79,6 @@ export class CodingAgentChannelTurn {
     try { await observation.completion; }
     catch (error) { if (this.observations.get(channelID) === observation) throw error; }
     finally { if (this.observations.get(channelID) === observation) this.observations.delete(channelID); }
-  }
-
-  async answer(channelID: string, feedback: string, mode: CodingMode): Promise<number> {
-    const pending = this.states.get(channelID);
-    if (!pending || pending.status !== "waiting_input" || !pending.question || !pending.waitingAttempt) throw new Error("This conversation has no pending Agent question.");
-    if (mode !== "agents") throw new Error("This job is using Agents; its mode cannot change while awaiting an answer.");
-    const { authority } = pending;
-    const current = await this.load(channelID, authority.jobID, authority);
-    if (!current || current.status !== "waiting_input" && current.status !== "running") {
-      throw new Error("The Agent question is no longer waiting; refresh the conversation.");
-    }
-    if (current.status === "waiting_input" && (current.question !== pending.question || current.waitingAttempt !== pending.waitingAttempt)) {
-      throw new Error("The Agent question changed; refresh the conversation before answering.");
-    }
-    const attempt = {
-      scope: JSON.stringify([authority.jobID, authority.generation, pending.waitingAttempt, pending.question]),
-      action: "feedback", content: JSON.stringify(feedback),
-    };
-    const operationID = this.operations.acquire(attempt);
-    const response = await fetch(`/v1/jobs/${authority.jobID}/feedback`, jsonRequest({
-      operation_id: operationID, feedback, workspace_root: authority.workspaceRoot,
-      workspace_identity: authority.workspaceIdentity, expected_generation: authority.generation,
-      expected_waiting_attempt: pending.waitingAttempt,
-    }));
-    const receipt = await readJSON<Record<string, unknown>>(response);
-    if (response.status !== 200) throw new Error("Agent answer was not accepted.");
-    authoritativeControlJobID(receipt, String(authority.jobID), operationID);
-    if (receipt.status !== "running") throw new Error("Agent answer did not resume the same job.");
-    this.operations.confirm(attempt, operationID);
-    this.update(channelID, { authority, status: "running" });
-    return authority.jobID;
   }
 
   disconnect(): void {

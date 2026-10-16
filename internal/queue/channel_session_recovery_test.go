@@ -23,7 +23,7 @@ func TestActiveChannelRecoveryRequiresLaterMatchingStep(t *testing.T) {
 }
 
 func TestRecoveredActiveTurnAllowsLaterTerminalTaskHistory(t *testing.T) {
-	job := model.Job{ID: 19, Status: model.JobStatusRunning, Instruction: "Continue the frozen ledger."}
+	job := model.Job{ID: 19, Status: model.JobStatusRunning, Instruction: "Continue the frozen ledger.", Metadata: []byte(`{}`)}
 	messages := []model.ChannelMessage{
 		{ID: 24, Role: model.ChannelMessageRoleUser, Content: job.Instruction, Turn: &model.ChannelMessageTurnState{JobID: job.ID, Status: job.Status}},
 		{ID: 25, Role: model.ChannelMessageRoleUser, Content: "Accidental later task.", Turn: &model.ChannelMessageTurnState{JobID: 20, Status: model.JobStatusCanceled}},

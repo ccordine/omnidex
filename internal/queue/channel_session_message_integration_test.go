@@ -10,7 +10,7 @@ import (
 	"github.com/gryph/omnidex/internal/model"
 )
 
-func TestAgentsActiveSessionMessageCannotOpenAClassifierBesideTheLedger(t *testing.T) {
+func TestAgentsActivePlanningMessageQueuesWithoutSupersedingTheLedger(t *testing.T) {
 	pool, repository := freshCodingPlanRepository(t)
 	repository.WithCodingAgents(codingAgentTestConfiguration())
 	ctx := context.Background()
@@ -25,8 +25,8 @@ func TestAgentsActiveSessionMessageCannotOpenAClassifierBesideTheLedger(t *testi
 		t.Fatalf("claim active objective: %v %v", claim, err)
 	}
 	question := observedSessionQuestion(t, command, initial.Job.ID, initial.Job.CurrentGeneration)
-	if _, err := repository.SubmitChannelSessionTurn(ctx, question); !errors.Is(err, ErrChannelSessionTurnInvalid) {
-		t.Fatalf("Agents mode admitted work outside its planning ledger: %v", err)
+	if result, err := repository.SubmitChannelSessionTurn(ctx, question); err != nil || result.Disposition != model.ChannelSessionTurnQueued {
+		t.Fatalf("planning message was not queued: %+v %v", result, err)
 	}
 	current, err := repository.CurrentJobDetails(ctx, initial.Job.ID)
 	if err != nil || current.Steps[0].ID != claim.Authority.StepID ||
@@ -39,8 +39,8 @@ func TestAgentsActiveSessionMessageCannotOpenAClassifierBesideTheLedger(t *testi
 	}
 	snapshot, err := repository.ChannelSessionSnapshot(ctx, command.ChannelID, MaxChannelSessionMessages, command.WorkspaceIdentity)
 	if err != nil || snapshot.ActiveJob == nil || snapshot.ActiveJob.Job.ID != initial.Job.ID ||
-		len(snapshot.Turns) != 1 {
-		t.Fatalf("rejected message entered durable session history: %#v %v", snapshot, err)
+		len(snapshot.Turns) != 2 || snapshot.Turns[1].MessageState != model.ChannelSessionMessagePending {
+		t.Fatalf("queued planning message missing from durable history: %#v %v", snapshot, err)
 	}
 }
 

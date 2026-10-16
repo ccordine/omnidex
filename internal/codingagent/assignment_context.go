@@ -1,15 +1,35 @@
 package codingagent
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/gryph/omnidex/internal/model"
+)
 
 // Narrow roles receive one finalized step. Parent objectives and aggregate
 // workloads remain with their code-owned consumers, never the executor.
 func (call Assignment) ValidateTaskContext() error {
+	if !call.Role.IsPlanning() && (call.Continuation != nil || len(call.CompletedTaskIDs) != 0) {
+		return fmt.Errorf("task-local context excludes continuation planning and completed task inventory")
+	}
+	if call.Role == ReviewResponse || call.Role == ExecutionResponse {
+		if (call.Task != nil) != (call.Role == ReviewResponse) || call.Response == "" || call.Objective != nil || len(call.Requirements) != 0 ||
+			len(call.ConstructionFacts) != 0 ||
+			call.PlanningLedger != nil || len(call.PlanningConversation) != 0 || call.PlanningResponse != "" ||
+			len(call.ReadFiles) != 0 || len(call.WriteFiles) != 0 || len(call.DeleteFiles) != 0 ||
+			len(call.Findings) != 0 || len(call.Checks) != 0 || call.Session != nil || call.Reply != "" || len(call.Clarifications) != 0 {
+			return fmt.Errorf("response parser requires only its source response and review criteria when applicable")
+		}
+		return nil
+	}
 	if call.Role != Execute && call.Role != Review {
 		return nil
 	}
-	if call.Task == nil || call.Objective != nil || len(call.Requirements) != 0 || len(call.ArtifactBindings) != 0 || call.PlanningEnvironment != nil || len(call.ConstructionFacts) != 0 || len(call.QuestionContext) != 0 {
+	if call.Task == nil || call.Objective != nil || len(call.Requirements) != 0 || len(call.ConstructionFacts) != 0 || call.PlanningLedger != nil || len(call.PlanningConversation) != 0 || call.PlanningResponse != "" {
 		return fmt.Errorf("narrow agent context requires one task and excludes parent context")
+	}
+	if call.Role == Execute && call.Response != "" || call.Role == Review && (call.Session != nil || (call.Response == "") != (call.Reply == "")) {
+		return fmt.Errorf("task assignment includes unrelated response context")
 	}
 	allowed := uniqueFiles(append(append([]string{}, call.Task.ReadFiles...), call.Task.WriteFiles...))
 	if call.Role == Execute {
@@ -28,11 +48,8 @@ func (call Assignment) ValidateTaskContext() error {
 			return fmt.Errorf("narrow agent context includes an unrelated finding")
 		}
 		if finding.File != "" {
-			if err := ValidatePath(finding.File); err != nil {
+			if err := model.ValidateTaskFileReference(finding.File); err != nil {
 				return fmt.Errorf("narrow agent context finding file: %w", err)
-			}
-			if !contains(allowed, finding.File) {
-				return fmt.Errorf("narrow agent context finding escaped its task packet")
 			}
 		}
 	}

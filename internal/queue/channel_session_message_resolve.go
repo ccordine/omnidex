@@ -25,6 +25,14 @@ func (r *Repository) FailChannelSessionMessage(ctx context.Context, command Fail
 		OperationID: command.OperationID, Response: "Message could not be answered: " + command.Error}, "failed")
 }
 
+// Planning already has a durable ordinary response and a persisted ledger. It
+// needs neither a second assistant reply nor a generic intent classification.
+func (r *Repository) ResolvePlanningSessionMessage(ctx context.Context, authority model.StepAttemptAuthority, operationID model.LifecycleOperationID) (ChannelSessionMessageResult, error) {
+	return r.resolveChannelSessionMessage(ctx, ResolveChannelSessionMessageCommand{
+		Authority: authority, OperationID: operationID,
+	}, string(model.ChannelSessionMessagePlanning))
+}
+
 func (r *Repository) resolveChannelSessionMessage(ctx context.Context, command ResolveChannelSessionMessageCommand, meaning string) (ChannelSessionMessageResult, error) {
 	if err := validateStepAttemptAuthority(command.Authority); err != nil {
 		return ChannelSessionMessageResult{}, err
@@ -32,7 +40,7 @@ func (r *Repository) resolveChannelSessionMessage(ctx context.Context, command R
 	if command.Kind == assemblyline.ObjectiveKindWorkspaceMutation && command.Response != "" {
 		return ChannelSessionMessageResult{}, fmt.Errorf("redirect message cannot contain an answer")
 	}
-	if command.Kind != assemblyline.ObjectiveKindWorkspaceMutation {
+	if command.Kind != assemblyline.ObjectiveKindWorkspaceMutation && meaning != string(model.ChannelSessionMessagePlanning) {
 		if err := model.ValidateChannelMessage(model.ChannelMessageRoleAssistant, command.Response); err != nil {
 			return ChannelSessionMessageResult{}, err
 		}
@@ -101,7 +109,7 @@ func (r *Repository) resolveChannelSessionMessage(ctx context.Context, command R
 		}
 		resolution.Job, resolution.ControlOperationID = replanned.Job, child.OperationID
 		result.Job, result.Replanned = replanned.Job, true
-	} else {
+	} else if meaning != string(model.ChannelSessionMessagePlanning) {
 		var reply model.ChannelMessage
 		if err := tx.QueryRow(ctx, `INSERT INTO ai_channel_messages(channel_id,role,content) VALUES($1,'assistant',$2) RETURNING id,channel_id,role,content,created_at`, message.Command.ChannelID, command.Response).Scan(&reply.ID, &reply.ChannelID, &reply.Role, &reply.Content, &reply.CreatedAt); err != nil {
 			return ChannelSessionMessageResult{}, err

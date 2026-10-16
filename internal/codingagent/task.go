@@ -6,11 +6,19 @@ import (
 )
 
 type taskState struct {
-	accepted map[string]bool
-	findings map[string][]Finding
-	tasks    map[string]Task
-	started  map[string]bool
-	round    int64
+	accepted        map[string]bool
+	findings        map[string][]Finding
+	tasks           map[string]Task
+	started         map[string]bool
+	round           int64
+	session         *ExecutionSession
+	reply           string
+	inputRequired   *ExecutionInputRequired
+	pendingResponse *Result
+	pendingReview   *Result
+	reviewQuestion  string
+	reviewReply     string
+	incomplete      *IncompleteTaskError
 }
 
 func projectTaskState(task Task, entries []Entry) *taskState {
@@ -28,32 +36,71 @@ func projectTaskState(task Task, entries []Entry) *taskState {
 		if entry.TaskID != task.ID {
 			continue
 		}
-		if entry.Round > state.round {
+		state.projectReviewEntry(entry)
+		if entry.Round > state.round && (entry.Phase == "call_completed" && entry.Role == Execute ||
+			entry.Phase == "execution_response" || entry.Phase == "task_reviewed" || entry.Phase == "task_accepted") {
 			state.round = entry.Round
 		}
 		switch entry.Phase {
-		case "task_executing", "task_reviewed":
-			// These entries record work that still requires a successful fresh
-			// executor result. A provider session ending after task_executing must
-			// not make recovery skip execution and advance directly to review.
-			state.started[entry.TaskID] = false
-		case "call_completed":
-			if entry.Role == Execute {
-				state.started[entry.TaskID] = true
+		case "task_interrupted":
+			if entry.Continuation != nil {
+				state.incomplete = &IncompleteTaskError{Reason: entry.Continuation.Reason, ThreadID: entry.Continuation.ThreadID, TurnID: entry.Continuation.TurnID}
 			}
+		case "task_executing":
+			state.round = entry.Round - 1
+			state.started[entry.TaskID] = false
+		case "task_reviewed":
+			state.started[entry.TaskID] = false
+			state.reply = ""
+		case "execution_session":
+			state.session = entry.Session
+		case "call_completed":
+			if entry.Role == Execute && entry.Result != nil {
+				state.pendingResponse = entry.Result
+				state.session = &ExecutionSession{ThreadID: entry.Result.ThreadID, TurnID: entry.Result.TurnID, State: "idle"}
+			}
+		case "execution_response":
+			state.pendingResponse = nil
+			if len(entry.Notes) != 1 {
+				continue
+			}
+			state.reply = ""
+			state.started[task.ID] = entry.ResponseKind == ExecutionDone
+			if entry.ResponseKind == ExecutionQuestion || entry.ResponseKind == ExecutionPermission {
+				state.round = entry.Round - 1
+				state.inputRequired = &ExecutionInputRequired{TaskID: task.ID, Kind: entry.ResponseKind, Text: entry.Notes[0]}
+			}
+		case "task_incomplete":
+			if len(entry.Notes) == 1 {
+				state.inputRequired = &ExecutionInputRequired{TaskID: task.ID, Role: Plan, Kind: ExecutionQuestion, Text: entry.Notes[0]}
+			}
+		case "execution_reply":
+			if len(entry.Notes) != 2 {
+				continue
+			}
+			// Native tool input resumes its still-live turn, not a new turn.
+			if entry.NativeInput != nil {
+				continue
+			}
+			if entry.Role == Review {
+				continue
+			}
+			state.reply = entry.Notes[1]
+			state.inputRequired = nil
+			state.started[task.ID] = false
 		}
 	}
 	return state
 }
 
 func (controller *Controller) runTask(ctx context.Context, task Task, state *taskState) error {
+	if state.inputRequired != nil {
+		return state.inputRequired
+	}
 	for _, dependency := range task.Dependencies {
 		if !state.accepted[dependency] {
 			return fmt.Errorf("task %s dependency %s is not accepted", task.ID, dependency)
 		}
-	}
-	if err := controller.Environment.PrepareFiles(ctx, task); err != nil {
-		return err
 	}
 	if !state.started[task.ID] {
 		state.started[task.ID] = true
@@ -61,12 +108,18 @@ func (controller *Controller) runTask(ctx context.Context, task Task, state *tas
 			return err
 		}
 	}
-	for state.round < 3 && ctx.Err() == nil {
+	for ctx.Err() == nil {
 		if err := controller.Environment.Attest(ctx); err != nil {
 			return err
 		}
 		scope := controller.assignment(Review, &task, controller.Configuration.Reviewer)
 		scope.Findings = state.findings[task.ID]
+		scope.Response, scope.Reply = state.reviewQuestion, state.reviewReply
+		var err error
+		scope.Clarifications, err = controller.taskClarifications(ctx, task.ID)
+		if err != nil {
+			return err
+		}
 		checks := []CheckResult{}
 		if len(task.Checks) > 0 {
 			var err error
@@ -86,20 +139,17 @@ func (controller *Controller) runTask(ctx context.Context, task Task, state *tas
 			continue
 		}
 		scope.Checks = checks
-		review, reviewResult, err := controller.review(ctx, scope, map[string]Task{task.ID: task}, state.round+1)
+		review, reviewResult, err := controller.review(ctx, scope, map[string]Task{task.ID: task}, state.round, state.pendingReview)
 		if err != nil {
 			return err
 		}
-		if len(review.Questions) > 0 {
-			return fmt.Errorf("frozen task review cannot request new owner decisions")
-		}
 		if len(review.Findings) == 0 {
 			state.accepted[task.ID] = true
-			_, err := controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "task_accepted", TaskID: task.ID, CallID: reviewResult.CallID, Round: state.round + 1, Checks: checks})
+			_, err := controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "task_accepted", TaskID: task.ID, CallID: reviewResult.CallID, Round: state.round, Checks: checks})
 			return err
 		}
 		state.findings[task.ID] = review.Findings
-		if _, err := controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "task_reviewed", TaskID: task.ID, Findings: review.Findings, Checks: checks}); err != nil {
+		if _, err := controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "task_reviewed", TaskID: task.ID, Round: state.round, Findings: review.Findings, Checks: checks}); err != nil {
 			return err
 		}
 		if err := controller.executeTask(ctx, task, state, checks); err != nil {
@@ -109,7 +159,7 @@ func (controller *Controller) runTask(ctx context.Context, task Task, state *tas
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return fmt.Errorf("task %s was not fulfilled after three bounded execution-review rounds", task.ID)
+	return ctx.Err()
 }
 
 func (controller *Controller) executeTask(ctx context.Context, task Task, state *taskState, checks []CheckResult) error {
@@ -117,24 +167,24 @@ func (controller *Controller) executeTask(ctx context.Context, task Task, state 
 		return err
 	}
 	execution := controller.assignment(Execute, &task, controller.Configuration.Executor)
+	var err error
+	execution.Clarifications, err = controller.taskClarifications(ctx, task.ID)
+	if err != nil {
+		return err
+	}
+	execution.Session, execution.Reply = state.session, state.reply
 	execution.Findings, execution.Checks = state.findings[task.ID], checks
 	result, err := controller.invoke(ctx, execution, state.round+1)
 	if err != nil {
 		return err
 	}
-	var response ExecutionResult
-	if err := decodeContract(result.Content, &response); err != nil {
+	if err := controller.handleExecutionResponse(ctx, task, result, state.round+1); err != nil {
 		return err
 	}
-	if response.Questions == nil {
-		return fmt.Errorf("execution agent omitted its questions array")
-	}
-	if err := validateTextList(response.Questions, "questions"); err != nil {
-		return err
-	}
-	if len(response.Questions) > 0 {
-		return fmt.Errorf("frozen task execution cannot request new owner decisions")
-	}
+	state.session = &ExecutionSession{ThreadID: result.ThreadID, TurnID: result.TurnID, State: "idle"}
+	state.reply = ""
+	state.pendingReview = nil
+	state.reviewQuestion, state.reviewReply = "", ""
 	state.round++
 	return nil
 }

@@ -49,16 +49,13 @@ func TestAgentsCompletionAcceptsUntouchedCarriedTask(t *testing.T) {
 		LedgerID: firstFrozen.LedgerID, OwnerTurnText: "Keep the exact accepted task.",
 		Mutation: model.LedgerMutation{
 			OperationID: "carried-completion-confirm", BaseRevision: firstFrozen.Revision,
-			OwnerTurnID: "carried-completion-confirm-turn",
-			OwnerTurnDisposition: model.OwnerTurnDisposition{
-				Kind: model.OwnerTurnRepresented, ItemIDs: []model.LedgerItemID{model.LedgerItemID(task.ID)},
-			},
+			OwnerTurnID:          "carried-completion-confirm-turn",
+			OwnerTurnDisposition: model.RepresentedOwnerTurn([]model.LedgerItemID{model.LedgerItemID(task.ID)}),
 			Operations: []model.LedgerMutationOperation{{
 				Kind: model.LedgerMutationReview, TargetID: model.LedgerItemID(task.ID),
 				ReviewState: model.LedgerReviewAgreed, Rationale: "the exact task remains approved",
 			}},
 		},
-		CoveragePassed: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -66,11 +63,10 @@ func TestAgentsCompletionAcceptsUntouchedCarriedTask(t *testing.T) {
 	if err := repository.MarkCodingLedgerReviewReady(ctx, planner.Authority, proposal.LedgerID, proposal.Revision); err != nil {
 		t.Fatal(err)
 	}
-	auditID := repositoryReadyPlanningAudit(t, repository, proposal.LedgerID, proposal.Revision, "carried-completion-freeze")
 	frozen, err := repository.FreezeCodingLedger(ctx, FreezeCodingLedgerCommand{
 		LedgerID: proposal.LedgerID, Revision: proposal.Revision,
 		OperationID: "carried-completion-freeze", OwnerTurnID: "carried-completion-freeze-turn",
-		OwnerTurnText: "Freeze the exact carried task.", AuditID: auditID,
+		OwnerTurnText: "Freeze the exact carried task.",
 	})
 	if err != nil {
 		t.Fatal(err)

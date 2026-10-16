@@ -6,12 +6,9 @@ import type { RoleplayTurnInput } from "../lib/roleplay_turn_input";
 import { ChatRoleplayTurnController } from "./chat_roleplay_turn_controller";
 
 export default class ChatController extends ChatRoleplayTurnController {
-  static targets = ["codingMode", "agentQuestions", "agentQuestionText"];
+  static targets = ["codingMode"];
   declare readonly codingModeTarget: HTMLSelectElement;
   declare readonly hasCodingModeTarget: boolean;
-  declare readonly agentQuestionsTarget: HTMLElement;
-  declare readonly hasAgentQuestionsTarget: boolean;
-  declare readonly agentQuestionTextTarget: HTMLElement;
   private codingPreferenceBeforeActive?: CodingMode;
   private agentTurnWasActive = false;
 
@@ -193,7 +190,7 @@ export default class ChatController extends ChatRoleplayTurnController {
       this.codingModeTarget.disabled = true;
       this.agentTurnWasActive = true;
       this.setTurnActive(state.status !== "waiting_input");
-      if (state.status === "waiting_input") this.setStatus("Answer required", "ready");
+      if (state.status === "waiting_input") this.setStatus(state.waitingFor === "planning" ? "Continue planning" : "Reply to Codex", "ready");
       else this.renderProgressActivity("Working…");
     } else {
       this.codingModeTarget.disabled = false;
@@ -201,10 +198,6 @@ export default class ChatController extends ChatRoleplayTurnController {
       this.codingPreferenceBeforeActive = undefined;
       if (this.agentTurnWasActive) this.setTurnActive(false);
       this.agentTurnWasActive = false;
-    }
-    if (this.hasAgentQuestionsTarget) {
-      this.agentQuestionsTarget.classList.toggle("hidden", state?.status !== "waiting_input");
-      this.agentQuestionTextTarget.textContent = state?.question ?? "";
     }
   }
 

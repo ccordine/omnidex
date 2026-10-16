@@ -6,7 +6,8 @@ import (
 	"path/filepath"
 )
 
-// Disposable tool output has its own grant; verification never writes source.
+// Disposable command caches have their own bounded lifecycle. Source remains
+// in the authoritative workspace; this directory is never a staged source tree.
 func (client *Client) agentScratch() (string, func(), error) {
 	root, err := filepath.Abs(client.directory)
 	if err != nil {

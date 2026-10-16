@@ -24,10 +24,6 @@ func validateCodingLedgerExternalOwnerTurnID(turnID string) error {
 	return nil
 }
 
-func codingLedgerAnswerTurnID(ownerTurnID string, questionID model.LedgerItemID) string {
-	return codingLedgerInternalDerivedID("answer", ownerTurnID+"\x00"+string(questionID))
-}
-
 func codingLedgerSignOffTurnID(ownerTurnID string) string {
 	return codingLedgerInternalDerivedID("sign-off", ownerTurnID)
 }
@@ -47,8 +43,7 @@ type ledgerRepositoryRecord struct {
 func ledgerRepositoryRecords(ledger model.EngineeringLedger) []ledgerRepositoryRecord {
 	records := make([]ledgerRepositoryRecord, 0,
 		len(ledger.Objectives)+len(ledger.Requirements)+len(ledger.Constraints)+len(ledger.Groups)+
-			len(ledger.Tasks)+len(ledger.AcceptanceCriteria)+len(ledger.Checks)+
-			len(ledger.DecisionsAndQuestions)+len(ledger.Findings))
+			len(ledger.Tasks)+len(ledger.AcceptanceCriteria)+len(ledger.Checks))
 	for index := range ledger.Objectives {
 		value := &ledger.Objectives[index]
 		records = append(records, ledgerRepositoryRecord{"objective", value.LedgerItem, value})
@@ -76,18 +71,6 @@ func ledgerRepositoryRecords(ledger model.EngineeringLedger) []ledgerRepositoryR
 	for index := range ledger.Checks {
 		value := &ledger.Checks[index]
 		records = append(records, ledgerRepositoryRecord{"check", value.LedgerItem, value})
-	}
-	for index := range ledger.DecisionsAndQuestions {
-		value := &ledger.DecisionsAndQuestions[index]
-		kind := "decision"
-		if value.Kind == model.LedgerQuestion {
-			kind = "question"
-		}
-		records = append(records, ledgerRepositoryRecord{kind, value.LedgerItem, value})
-	}
-	for index := range ledger.Findings {
-		value := &ledger.Findings[index]
-		records = append(records, ledgerRepositoryRecord{"finding", value.LedgerItem, value})
 	}
 	return records
 }
@@ -117,14 +100,8 @@ func sortCodingLedgerProjection(ledger *model.EngineeringLedger) {
 	sort.SliceStable(ledger.Checks, func(i, j int) bool {
 		return less(ledger.Checks[i].Rank, ledger.Checks[i].ID, ledger.Checks[j].Rank, ledger.Checks[j].ID)
 	})
-	sort.SliceStable(ledger.DecisionsAndQuestions, func(i, j int) bool {
-		return less(ledger.DecisionsAndQuestions[i].Rank, ledger.DecisionsAndQuestions[i].ID, ledger.DecisionsAndQuestions[j].Rank, ledger.DecisionsAndQuestions[j].ID)
-	})
 	sort.SliceStable(ledger.Dependencies, func(i, j int) bool {
 		return less(ledger.Dependencies[i].Rank, ledger.Dependencies[i].ID, ledger.Dependencies[j].Rank, ledger.Dependencies[j].ID)
-	})
-	sort.SliceStable(ledger.Findings, func(i, j int) bool {
-		return less(ledger.Findings[i].Rank, ledger.Findings[i].ID, ledger.Findings[j].Rank, ledger.Findings[j].ID)
 	})
 }
 
@@ -143,7 +120,7 @@ func (r *Repository) CreateCodingLedger(ctx context.Context, command CreateCodin
 		return CodingLedgerRevision{}, err
 	}
 	command.Ledger.Revision = 1
-	if err := validateLedgerForRepository(command.Ledger); err != nil {
+	if err := validateDraftLedgerForRepository(command.Ledger); err != nil {
 		return CodingLedgerRevision{}, err
 	}
 	if err := validateInitialCodingLedgerReviewStates(command.Ledger); err != nil {
@@ -169,18 +146,16 @@ func (r *Repository) CreateCodingLedger(ctx context.Context, command CreateCodin
 
 	var existingLedgerID int64
 	var replayOwner, replayText string
-	var replayCoverage bool
 	err = tx.QueryRow(ctx, `
-		SELECT ledger.id,revision.owner_turn_id,turn_record.exact_text,revision.coverage_passed
+		SELECT ledger.id,revision.owner_turn_id,turn_record.exact_text
 		FROM coding_ledger_revisions revision
 		JOIN coding_ledgers ledger ON ledger.id=revision.ledger_id
 		JOIN coding_ledger_owner_turns turn_record
 		  ON turn_record.ledger_id=revision.ledger_id AND turn_record.owner_turn_id=revision.owner_turn_id
 		WHERE ledger.job_id=$1 AND revision.operation_id=$2
-	`, command.JobID, command.OperationID).Scan(&existingLedgerID, &replayOwner, &replayText, &replayCoverage)
+	`, command.JobID, command.OperationID).Scan(&existingLedgerID, &replayOwner, &replayText)
 	if err == nil {
-		if replayOwner != command.OwnerTurnID || replayText != command.OwnerTurnText ||
-			replayCoverage != command.CoveragePassed {
+		if replayOwner != command.OwnerTurnID || replayText != command.OwnerTurnText {
 			return CodingLedgerRevision{}, fmt.Errorf("coding ledger operation %q was already used by a different proposal", command.OperationID)
 		}
 		result, readErr := readCodingLedgerRevisionTx(ctx, tx, existingLedgerID, 1, CodingLedgerReadOptions{Limit: -1})
@@ -230,9 +205,9 @@ func (r *Repository) CreateCodingLedger(ctx context.Context, command CreateCodin
 		return CodingLedgerRevision{}, err
 	}
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO coding_ledger_revisions(ledger_id,revision,base_revision,operation_id,owner_turn_id,state,coverage_passed)
-		VALUES($1,1,0,$2,$3,'proposed',$4)
-	`, ledgerID, command.OperationID, command.OwnerTurnID, command.CoveragePassed); err != nil {
+		INSERT INTO coding_ledger_revisions(ledger_id,revision,base_revision,operation_id,owner_turn_id,state)
+		VALUES($1,1,0,$2,$3,'proposed')
+	`, ledgerID, command.OperationID, command.OwnerTurnID); err != nil {
 		return CodingLedgerRevision{}, fmt.Errorf("create initial coding ledger revision: %w", err)
 	}
 	if err := persistCodingLedgerSnapshotTx(ctx, tx, ledgerID, 1, 0, command.OwnerTurnID, command.Ledger, command.Routes); err != nil {
@@ -274,14 +249,8 @@ func normalizeCodingLedgerProjectionSlices(ledger *model.EngineeringLedger) {
 	if ledger.Checks == nil {
 		ledger.Checks = []model.LedgerCheck{}
 	}
-	if ledger.DecisionsAndQuestions == nil {
-		ledger.DecisionsAndQuestions = []model.LedgerDecisionQuestion{}
-	}
 	if ledger.Dependencies == nil {
 		ledger.Dependencies = []model.LedgerDependency{}
-	}
-	if ledger.Findings == nil {
-		ledger.Findings = []model.LedgerFinding{}
 	}
 }
 
@@ -323,32 +292,22 @@ func insertCodingLedgerDispositionTx(
 	authorityLedgers ...model.EngineeringLedger,
 ) error {
 	statements := disposition.StatementDispositions()
-	if len(statements) == 0 {
-		return fmt.Errorf("record coding ledger owner-turn disposition: no statements")
-	}
-	persistedKind := statements[0].Kind
-	if len(statements) > 1 {
-		persistedKind = model.OwnerTurnDispositionKind("mixed")
-	}
-	var reason *string
-	if len(statements) == 1 && statements[0].Kind == model.OwnerTurnOutOfScope {
-		value := statements[0].Reason
-		reason = &value
+	if statements == nil {
+		statements = []model.OwnerStatementDisposition{}
 	}
 	rawStatements, err := json.Marshal(statements)
 	if err != nil {
 		return fmt.Errorf("encode coding ledger owner-turn dispositions: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO coding_ledger_owner_turn_dispositions(ledger_id,owner_turn_id,revision,disposition,reason,statements)
-		VALUES($1,$2,$3,$4,$5,$6::jsonb)
-	`, ledgerID, turnID, revision, persistedKind, reason, string(rawStatements)); err != nil {
+		INSERT INTO coding_ledger_owner_turn_dispositions(ledger_id,owner_turn_id,revision,statements)
+		VALUES($1,$2,$3,$4::jsonb)
+	`, ledgerID, turnID, revision, string(rawStatements)); err != nil {
 		return fmt.Errorf("record coding ledger owner-turn disposition: %w", err)
 	}
 	ids := make([]model.LedgerItemID, 0)
 	for _, statement := range statements {
 		ids = append(ids, statement.ItemIDs...)
-		ids = append(ids, statement.QuestionIDs...)
 	}
 	dependencies := make(map[model.LedgerItemID][]model.LedgerDependency)
 	ledgers := append([]model.EngineeringLedger{ledger}, authorityLedgers...)
@@ -524,7 +483,7 @@ func persistCodingLedgerSnapshotTx(ctx context.Context, tx pgx.Tx, ledgerID, rev
 			return fmt.Errorf("record coding ledger %s route: %w", route.Role, err)
 		}
 	}
-	return syncCodingLedgerQuestionsAndFindingsTx(ctx, tx, ledgerID, revision, ownerTurnID, ledger)
+	return nil
 }
 
 const (
@@ -597,7 +556,7 @@ func persistCodingLedgerDependenciesTx(
 		if !known {
 			if _, err := tx.Exec(ctx, `
 				INSERT INTO coding_ledger_items(ledger_id,item_id,item_kind,created_revision)
-				VALUES($1,$2,'decision',$3)
+				VALUES($1,$2,'dependency',$3)
 			`, ledgerID, recordID, revision); err != nil {
 				return fmt.Errorf("create coding ledger dependency record %s: %w", dependency.ID, err)
 			}
@@ -692,22 +651,6 @@ func persistCodingLedgerEdgesTx(ctx context.Context, tx pgx.Tx, ledgerID, revisi
 			appendEdge(codingLedgerDerivedEdgePrefix+fmt.Sprintf("%s:verify:%d", check.ID, index), "verifies", check.ID, id, check.Rationale)
 		}
 	}
-	for _, value := range ledger.DecisionsAndQuestions {
-		if value.Disposition != model.LedgerDispositionActive {
-			continue
-		}
-		for index, id := range value.Affects {
-			appendEdge(codingLedgerDerivedEdgePrefix+fmt.Sprintf("%s:affect:%d", value.ID, index), "affects", value.ID, id, value.Rationale)
-		}
-	}
-	for _, value := range ledger.Findings {
-		if value.Disposition != model.LedgerDispositionActive {
-			continue
-		}
-		for index, id := range value.ResolvedBy {
-			appendEdge(codingLedgerDerivedEdgePrefix+fmt.Sprintf("%s:resolve:%d", value.ID, index), "resolves", value.ID, id, value.Rationale)
-		}
-	}
 	activeTasks := make(map[model.LedgerItemID]bool, len(ledger.Tasks))
 	for _, task := range ledger.Tasks {
 		activeTasks[task.ID] = task.Disposition == model.LedgerDispositionActive
@@ -731,155 +674,6 @@ func persistCodingLedgerEdgesTx(ctx context.Context, tx pgx.Tx, ledgerID, revisi
 		}
 	}
 	return nil
-}
-
-func closeCodingLedgerQuestionsTx(
-	ctx context.Context,
-	tx pgx.Tx,
-	ledgerID int64,
-	ownerTurnID string,
-	ledger model.EngineeringLedger,
-) error {
-	for _, value := range ledger.DecisionsAndQuestions {
-		if value.Kind != model.LedgerQuestion {
-			continue
-		}
-		status := ""
-		var answer any
-		if value.Disposition == model.LedgerDispositionTombstoned {
-			status = "withdrawn"
-		} else if strings.TrimSpace(value.Answer) != "" {
-			status = "answered"
-			answer = value.Answer
-		}
-		if status == "" {
-			continue
-		}
-		var answeredBy any
-		if status == "answered" {
-			answeredBy = ownerTurnID
-		}
-		if _, err := tx.Exec(ctx, `
-			UPDATE coding_ledger_questions
-			SET status=$3,answer=$4,answered_by_turn_id=$5,answered_at=clock_timestamp()
-			WHERE ledger_id=$1 AND question_id=$2 AND status='open'
-		`, ledgerID, value.ID, status, answer, answeredBy); err != nil {
-			return fmt.Errorf("close coding ledger question %s: %w", value.ID, err)
-		}
-	}
-	return nil
-}
-
-func syncCodingLedgerQuestionsAndFindingsTx(ctx context.Context, tx pgx.Tx, ledgerID, revision int64, ownerTurnID string, ledger model.EngineeringLedger) error {
-	for _, value := range ledger.DecisionsAndQuestions {
-		if value.Kind != model.LedgerQuestion {
-			continue
-		}
-		status := "open"
-		var answer, answeredBy, answeredAt any
-		if value.Disposition == model.LedgerDispositionTombstoned {
-			status = "withdrawn"
-			answeredAt = "now"
-		} else if strings.TrimSpace(value.Answer) != "" {
-			status = "answered"
-			answer = value.Answer
-			answeredBy = ownerTurnID
-			answeredAt = "now"
-		}
-		var exists bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM coding_ledger_questions WHERE ledger_id=$1 AND question_id=$2)`, ledgerID, value.ID).Scan(&exists); err != nil {
-			return err
-		}
-		if !exists {
-			if status == "answered" {
-				// The revision owner observes the prior revision, while an answer is
-				// valid only from authority observing the newly projected question.
-				// Derive a stable, separately disposed answer turn from the exact
-				// owner-supplied answer rather than weakening that schema invariant.
-				answerTurnID := codingLedgerAnswerTurnID(ownerTurnID, value.ID)
-				answerText := fmt.Sprintf("Answer %s: %s", value.ID, value.Answer)
-				if err := insertCodingLedgerOwnerTurnTx(ctx, tx, ledgerID, answerTurnID, revision, "planning", answerText); err != nil {
-					return err
-				}
-				if err := insertCodingLedgerDispositionTx(ctx, tx, ledgerID, revision, answerTurnID,
-					model.OwnerTurnDisposition{Kind: model.OwnerTurnRepresented, ItemIDs: []model.LedgerItemID{value.ID}}, ledger); err != nil {
-					return err
-				}
-				answeredBy = answerTurnID
-			}
-			if _, err := tx.Exec(ctx, `
-				INSERT INTO coding_ledger_questions(
-					ledger_id,question_id,item_id,revision,prompt,status,answer,answered_by_turn_id,answered_at
-				) VALUES($1,$2,$2,$3,$4,$5,$6,$7,CASE WHEN $8::text='now' THEN clock_timestamp() END)
-			`, ledgerID, value.ID, revision, value.Prompt, status, answer, answeredBy, answeredAt); err != nil {
-				return fmt.Errorf("record coding ledger question %s: %w", value.ID, err)
-			}
-		} else {
-			// Question closure is applied before the revision insert while the
-			// answering turn's base is still the exact current revision. Terminal
-			// question events are immutable; restoring the ledger item therefore
-			// preserves that event while the revisioned item again carries the
-			// active/open state.
-			continue
-		}
-	}
-	for _, value := range ledger.Findings {
-		status := "open"
-		var resolvedAt any
-		if value.Disposition == model.LedgerDispositionTombstoned || len(value.ResolvedBy) > 0 {
-			status = "resolved"
-			resolvedAt = "now"
-		}
-		var exists bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM coding_ledger_findings WHERE ledger_id=$1 AND finding_id=$2)`, ledgerID, value.ID).Scan(&exists); err != nil {
-			return err
-		}
-		if !exists {
-			if _, err := tx.Exec(ctx, `
-				INSERT INTO coding_ledger_findings(
-					ledger_id,finding_id,item_id,revision,finding_kind,status,observation,resolution_item_id,resolved_at
-				) VALUES($1,$2,$2,$3,$4,$5,$6,$7,CASE WHEN $8::text='now' THEN clock_timestamp() END)
-			`, ledgerID, value.ID, revision, value.Kind, status, value.Observation, firstLedgerID(value.ResolvedBy), resolvedAt); err != nil {
-				return fmt.Errorf("record coding ledger finding %s: %w", value.ID, err)
-			}
-		} else {
-			var currentStatus string
-			var currentResolution *string
-			if err := tx.QueryRow(ctx, `
-				SELECT status,resolution_item_id FROM coding_ledger_findings WHERE ledger_id=$1 AND finding_id=$2
-			`, ledgerID, value.ID).Scan(&currentStatus, &currentResolution); err != nil {
-				return err
-			}
-			desiredResolution := ""
-			if len(value.ResolvedBy) > 0 {
-				desiredResolution = string(value.ResolvedBy[0])
-			}
-			// Finding rows are immutable terminal audit events. Restoring the
-			// revisioned item reopens only that item projection; it must not attempt
-			// the forbidden resolved-to-open rewrite of the historical event.
-			if currentStatus != "open" && status == "open" {
-				continue
-			}
-			if currentStatus != status || (currentResolution == nil) != (desiredResolution == "") ||
-				(currentResolution != nil && *currentResolution != desiredResolution) {
-				if _, err := tx.Exec(ctx, `
-					UPDATE coding_ledger_findings SET status=$3,resolution_item_id=$4,
-						resolved_at=CASE WHEN $5::text='now' THEN clock_timestamp() END
-					WHERE ledger_id=$1 AND finding_id=$2
-				`, ledgerID, value.ID, status, firstLedgerID(value.ResolvedBy), resolvedAt); err != nil {
-					return fmt.Errorf("update coding ledger finding %s: %w", value.ID, err)
-				}
-			}
-		}
-	}
-	return nil
-}
-
-func firstLedgerID(ids []model.LedgerItemID) any {
-	if len(ids) == 0 {
-		return nil
-	}
-	return ids[0]
 }
 
 func codingLedgerExternalID(ledgerID int64) string { return strconv.FormatInt(ledgerID, 10) }

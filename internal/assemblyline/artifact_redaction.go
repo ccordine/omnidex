@@ -21,6 +21,10 @@ func RedactArtifactIdentities(
 	input string,
 	provenance modelcontext.ArtifactIdentityProvenance,
 ) (string, []ArtifactIdentity, error) {
+	return redactArtifactIdentities(input, provenance, maxArtifactIdentities)
+}
+
+func redactArtifactIdentities(input string, provenance modelcontext.ArtifactIdentityProvenance, maximum int) (string, []ArtifactIdentity, error) {
 	matches := modelcontext.PathIdentities(input, provenance)
 	if len(matches) == 0 {
 		return input, nil, nil
@@ -32,7 +36,7 @@ func RedactArtifactIdentities(
 	for _, match := range matches {
 		token, exists := tokens[match.Value]
 		if !exists {
-			if len(identities) >= maxArtifactIdentities {
+			if maximum > 0 && len(identities) >= maximum {
 				return "", nil, fmt.Errorf("request exceeds the %d-artifact identity limit", maxArtifactIdentities)
 			}
 			token = fmt.Sprintf("ARTIFACT_%d", len(identities)+1)

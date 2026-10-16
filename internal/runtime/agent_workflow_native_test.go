@@ -111,7 +111,7 @@ func TestInstalledAgentWorkflowOrdinaryRequest(t *testing.T) {
 		if details.Job.Status == model.JobStatusCompleted {
 			break
 		}
-		if details.Job.Status == model.JobStatusWaiting && !approvedPlan && details.AgentPause == nil {
+		if details.Job.Status == model.JobStatusWaiting && !approvedPlan {
 			approveAndFreezeGeneratedLedger(t, ctx, server.URL, root, workspaceIdentity, receipt.Job.ID)
 			approvedPlan = true
 			continue
@@ -272,13 +272,7 @@ func agentGauntletLedgerItems(ledger model.EngineeringLedger) []model.LedgerItem
 	for _, value := range ledger.Checks {
 		items = append(items, value.LedgerItem)
 	}
-	for _, value := range ledger.DecisionsAndQuestions {
-		items = append(items, value.LedgerItem)
-	}
 	for _, value := range ledger.Dependencies {
-		items = append(items, value.LedgerItem)
-	}
-	for _, value := range ledger.Findings {
 		items = append(items, value.LedgerItem)
 	}
 	return items

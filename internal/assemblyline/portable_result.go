@@ -16,17 +16,17 @@ func (result PortableResult) ValidateFor(job PortableJob) error {
 	if strings.TrimSpace(result.Candidate) == "" {
 		return fmt.Errorf("portable result candidate is empty")
 	}
-	if len(result.Candidate) > maxPortableRawCandidateBytes {
+	maximum, err := PortableResponseMaximumBytesForJob(job)
+	if err != nil {
+		return err
+	}
+	if maximum > 0 && len(result.Candidate) > maxPortableRawCandidateBytes {
 		return fmt.Errorf(
 			"portable result candidate exceeds gross resource ceiling of %d bytes",
 			maxPortableRawCandidateBytes,
 		)
 	}
-	maximum, err := PortableResponseMaximumBytesForJob(job)
-	if err != nil {
-		return err
-	}
-	if len(result.Candidate) > maximum {
+	if maximum > 0 && len(result.Candidate) > maximum {
 		return fmt.Errorf(
 			"portable result candidate exceeds %s response ceiling of %d bytes",
 			job.Kind, maximum,

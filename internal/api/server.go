@@ -74,6 +74,7 @@ type feedbackRequest struct {
 	WorkspaceIdentity      lifecycleWorkspaceValue    `json:"workspace_identity,omitempty"`
 	ExpectedGeneration     *int64                     `json:"expected_generation,omitempty"`
 	ExpectedWaitingAttempt *int64                     `json:"expected_waiting_attempt,omitempty"`
+	ExpectedInputID        *int64                     `json:"expected_input_id,omitempty"`
 	ObservedLedgerRevision int64                      `json:"observed_ledger_revision,omitempty"`
 }
 

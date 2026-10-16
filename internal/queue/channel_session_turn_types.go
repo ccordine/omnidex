@@ -17,6 +17,7 @@ type ChannelSessionTurnCommand struct {
 	CodingMode         codingagent.Mode           `json:"coding_mode,omitempty"`
 	ExpectedJobID      *int64                     `json:"expected_job_id,omitempty"`
 	ExpectedGeneration *int64                     `json:"expected_generation,omitempty"`
+	ExpectedInputID    *int64                     `json:"expected_input_id,omitempty"`
 }
 
 type ChannelSessionTurnResult struct {
@@ -59,6 +60,9 @@ func normalizeChannelSessionTurnCommand(
 		)
 	}
 	command.OperationID = operationID
+	if command.ExpectedInputID != nil && (*command.ExpectedInputID < 1 || command.ExpectedJobID != nil) {
+		return ChannelSessionTurnCommand{}, fmt.Errorf("%w: native reply requires one positive observed input identity", ErrChannelSessionTurnInvalid)
+	}
 	if (command.ExpectedJobID == nil) != (command.ExpectedGeneration == nil) ||
 		command.ExpectedJobID != nil && (*command.ExpectedJobID < 1 || *command.ExpectedGeneration < 1) {
 		return ChannelSessionTurnCommand{}, fmt.Errorf("%w: active message requires positive observed job and generation", ErrChannelSessionTurnInvalid)

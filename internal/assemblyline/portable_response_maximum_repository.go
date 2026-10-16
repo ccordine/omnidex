@@ -10,7 +10,7 @@ func portableRepositoryConversationResponseMaximum(job PortableJob) (portableRes
 		)
 		return maximum, true, err
 	case WorkContextMinification:
-		return portableResponseContract{maximum: MaxContextMinifiedBytes}, true, nil
+		return portableResponseContract{openText: true}, true, nil
 	case WorkConversationObjectiveKind:
 		var input ConversationObjectiveKindInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {

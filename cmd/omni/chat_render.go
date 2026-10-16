@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"reflect"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/client"
@@ -100,18 +99,10 @@ func (renderer chatRenderer) sessionControl(control model.ChannelSessionControl)
 func (renderer chatRenderer) prompt(details *model.JobDetails) error {
 	label := "you> "
 	activity := chatActivity{}
-	jobID := int64(0)
-	var question *model.CodingAgentPause
 	if details != nil {
-		jobID = details.Job.ID
 		label = fmt.Sprintf("you #%d> ", details.Job.ID)
 		activity = activityForJob(*details)
-		if details.AgentPause != nil {
-			question = details.AgentPause
-			label = fmt.Sprintf("answer #%d> ", details.Job.ID)
-		}
 	}
-	renderer.console.SetQuestionAuthority(jobID, question)
 	renderer.retainPlanningScope(activity)
 	if err := renderer.console.SetActivity(activity); err != nil {
 		return err
@@ -131,9 +122,6 @@ func (renderer chatRenderer) job(details model.JobDetails, previous *model.JobDe
 		renderJobActivity(&rendered, details, previous)
 	}
 	renderJobErrors(&rendered, details, previous)
-	if details.AgentPause != nil && (previous == nil || !reflect.DeepEqual(previous.AgentPause, details.AgentPause)) {
-		renderAgentQuestions(&rendered, details.AgentPause)
-	}
 	if rendered.Len() == 0 {
 		return nil
 	}
@@ -151,15 +139,7 @@ func (renderer chatRenderer) status(details model.JobDetails) error {
 		renderBlock(&rendered, "task>", details.Job.Instruction)
 	}
 	renderJobErrors(&rendered, details, nil)
-	if details.AgentPause != nil {
-		renderAgentQuestions(&rendered, details.AgentPause)
-	}
 	return renderer.console.WriteError(rendered.String())
-}
-
-func renderAgentQuestions(destination *strings.Builder, pause *model.CodingAgentPause) {
-	renderBlock(destination, "question>", strings.Join(pause.Questions, "\n\n"))
-	fmt.Fprintln(destination, "[omni] Waiting for your answer.")
 }
 
 func (renderer *chatRenderer) realtime(event client.RealtimeEvent) error {

@@ -24,16 +24,14 @@ type CreateCodingLedgerCommand struct {
 	OwnerTurnText        string                     `json:"owner_turn_text"`
 	OwnerTurnDisposition model.OwnerTurnDisposition `json:"owner_turn_disposition"`
 	Ledger               model.EngineeringLedger    `json:"ledger"`
-	CoveragePassed       bool                       `json:"coverage_passed"`
 	Routes               []CodingLedgerRoute        `json:"routes"`
 }
 
 type ApplyCodingLedgerMutationCommand struct {
-	LedgerID       int64                `json:"ledger_id"`
-	OwnerTurnText  string               `json:"owner_turn_text"`
-	Mutation       model.LedgerMutation `json:"mutation"`
-	CoveragePassed bool                 `json:"coverage_passed"`
-	Routes         []CodingLedgerRoute  `json:"routes,omitempty"`
+	LedgerID      int64                `json:"ledger_id"`
+	OwnerTurnText string               `json:"owner_turn_text"`
+	Mutation      model.LedgerMutation `json:"mutation"`
+	Routes        []CodingLedgerRoute  `json:"routes,omitempty"`
 }
 
 type FreezeCodingLedgerCommand struct {
@@ -42,23 +40,6 @@ type FreezeCodingLedgerCommand struct {
 	OperationID   string `json:"operation_id"`
 	OwnerTurnID   string `json:"owner_turn_id"`
 	OwnerTurnText string `json:"owner_turn_text"`
-	AuditID       string `json:"audit_id"`
-}
-
-type RecordCodingLedgerPlanningAuditCommand struct {
-	LedgerID    int64  `json:"ledger_id"`
-	AuditID     string `json:"audit_id"`
-	Revision    int64  `json:"revision"`
-	Ready       bool   `json:"ready"`
-	Explanation string `json:"explanation"`
-}
-
-type CodingLedgerPlanningAudit struct {
-	LedgerID    int64  `json:"ledger_id"`
-	AuditID     string `json:"audit_id"`
-	Revision    int64  `json:"revision"`
-	Ready       bool   `json:"ready"`
-	Explanation string `json:"explanation"`
 }
 
 type CodingLedgerRevision struct {
@@ -69,8 +50,6 @@ type CodingLedgerRevision struct {
 	BaseRevision          int64                             `json:"base_revision"`
 	OperationID           string                            `json:"operation_id"`
 	State                 string                            `json:"state"`
-	CoveragePassed        bool                              `json:"coverage_passed"`
-	AuditID               string                            `json:"audit_id,omitempty"`
 	OwnerTurnID           string                            `json:"owner_turn_id,omitempty"`
 	OwnerTurnDispositions []model.OwnerStatementDisposition `json:"owner_turn_dispositions,omitempty"`
 	LatestDelta           CodingLedgerDiff                  `json:"latest_delta"`

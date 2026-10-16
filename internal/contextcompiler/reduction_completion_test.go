@@ -53,7 +53,7 @@ func TestContextReductionStopsWhenRemainingExactContentFits(t *testing.T) {
 	}
 }
 
-func TestContextReductionContinuesOnlyWhileTheCombinedContentExceedsItsBound(t *testing.T) {
+func TestContextReductionMinifiesRemainingLargeGroupsWithoutAResultCeiling(t *testing.T) {
 	selected := reductionCompletionAuthorities(t, 12, strings.Repeat("An observed value is retained. ", 22))
 	station := &boundedReductionFixture{responses: []string{strings.Repeat("Retained detail. ", 70) + "End.", "The remaining value is settled."}}
 	result, err := Compile(context.Background(), pairwiseContextRequest(), pairwiseContextProvider{set: CandidateSet{Required: selected}}, Stations{Minification: station})

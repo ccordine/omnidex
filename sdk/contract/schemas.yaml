@@ -175,6 +175,7 @@ components:
       properties:
         job: {$ref: "#/components/schemas/Job"}
         steps: {type: array, items: {$ref: "#/components/schemas/JobStep"}}
+        execution_input_id: {type: integer, minimum: 1}
         contexts: {type: array, items: {$ref: "#/components/schemas/JobContext"}}
     Error:
       type: object

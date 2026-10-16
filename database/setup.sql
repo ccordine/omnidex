@@ -46,7 +46,7 @@ CREATE TABLE llm_call_evidence (
     model_input text NOT NULL CHECK (btrim(model_input) <> ''),
     model_input_bytes integer NOT NULL CHECK (
         model_input_bytes=octet_length(model_input)
-        AND model_input_bytes BETWEEN 1 AND 131072
+        AND model_input_bytes > 0
     ),
     provider_request bytea NOT NULL,
     provider_request_bytes integer NOT NULL CHECK (
@@ -817,7 +817,9 @@ BEGIN
     IF NOT FOUND OR NEW.kind<>'channel_session_turn' OR
        jsonb_typeof(payload)<>'object' OR
        NOT (payload ?& ARRAY['operation_id','channel_id','workspace_root','workspace_identity','text']) OR
-       (payload - ARRAY['operation_id','channel_id','workspace_root','workspace_identity','text','coding_mode'])<>'{}'::jsonb OR
+       (payload - ARRAY['operation_id','channel_id','workspace_root','workspace_identity','text','coding_mode','expected_input_id'])<>'{}'::jsonb OR
+       (payload ? 'expected_input_id' AND (jsonb_typeof(payload->'expected_input_id') IS DISTINCT FROM 'number' OR
+         (payload->>'expected_input_id') !~ '^[1-9][0-9]{0,18}$')) OR
        (payload ? 'coding_mode' AND payload->'coding_mode' IS DISTINCT FROM '"agents"'::jsonb) OR
        payload->>'operation_id'<>NEW.operation_id OR
        payload->>'channel_id'<>NEW.channel_id OR
@@ -865,30 +867,18 @@ BEGIN
     ELSIF NEW.disposition='feedback_submitted' THEN
         IF NEW.result_job->>'status' NOT IN ('running','completed') OR
            NEW.user_message_id IS NOT NULL OR NEW.result_step_id IS NULL OR
-           NOT (EXISTS(SELECT 1 FROM job_steps
+           NOT EXISTS(SELECT 1 FROM job_steps
              WHERE id=NEW.result_step_id AND job_id=NEW.job_id
-               AND generation=NEW.result_generation AND status='completed'
-               AND output=payload->>'text') OR
-             EXISTS(SELECT 1 FROM job_steps AS step
-               JOIN jobs AS job ON job.id=step.job_id
-               JOIN evidence AS answer ON answer.job_id=step.job_id AND answer.step_id=step.id
-               JOIN evidence AS question ON question.id=(answer.payload_json->>'question_id')::bigint
-                 AND question.job_id=answer.job_id AND question.step_id=answer.step_id
-               JOIN job_step_attempts AS waiting ON waiting.job_id=step.job_id
-                 AND waiting.step_id=step.id AND waiting.generation=step.generation
-                 AND waiting.attempt=(answer.payload_json->>'waiting_attempt')::bigint
-                 AND waiting.status='waiting_input'
-               WHERE step.id=NEW.result_step_id AND step.job_id=NEW.job_id
-                 AND step.generation=NEW.result_generation AND step.action IN ('v3_coding_plan','v3_coding')
-                 AND step.status='running' AND job.metadata->'coding_execution'->>'mode'='agents'
-                 AND answer.kind='coding_agent' AND question.kind='coding_agent'
-                 AND answer.payload_json->>'generation'=NEW.result_generation::TEXT
-                 AND question.payload_json->>'generation'=NEW.result_generation::TEXT
-                 AND answer.payload_json->>'phase'='answers' AND question.payload_json->>'phase'='questions'
-                 AND answer.payload_json->>'operation_id'=NEW.operation_id
-                 AND answer.payload_json->'answers'=jsonb_build_array(payload->>'text')
-                 AND question.id<answer.id)) THEN
-            RAISE EXCEPTION 'Channel session feedback lacks its exact completed input or scoped-agent answer receipt';
+               AND generation=NEW.result_generation AND (
+                 (status='completed' AND output=payload->>'text') OR
+                 (action IN ('v3_coding','v3_coding_plan') AND status='running' AND EXISTS (
+                   SELECT 1 FROM evidence reply
+                   WHERE reply.job_id=NEW.job_id AND reply.step_id=NEW.result_step_id AND reply.kind='coding_agent'
+                     AND reply.payload_json->>'generation'=NEW.result_generation::text
+                     AND reply.payload_json->>'phase'='execution_reply'
+                     AND reply.payload_json->'notes'->>0=NEW.operation_id
+                     AND reply.payload_json->'notes'->>1=payload->>'text')))) THEN
+            RAISE EXCEPTION 'Channel session feedback lacks its exact completed input';
         END IF;
     ELSE
         RAISE EXCEPTION 'Channel session operation has unregistered disposition';
@@ -1233,6 +1223,31 @@ BEGIN
     END IF;
     IF OLD.status <> 'pending' AND NEW.status = 'pending' THEN
         RAISE EXCEPTION 'job step execution identity cannot return to pending';
+    END IF;
+    IF NEW.action='v3_coding' AND NEW.status='waiting_input' AND NOT EXISTS (
+        SELECT 1 FROM evidence response
+        WHERE response.job_id=NEW.job_id AND response.step_id=NEW.id AND response.kind='coding_agent'
+          AND response.payload_json->>'generation'=NEW.generation::text
+          AND ((response.payload_json->>'phase' IN ('execution_response','review_response','task_incomplete')
+                AND response.payload_json->>'response_kind' IN ('question','permission')) OR
+               (response.payload_json->>'phase'='execution_native_input'
+                AND jsonb_typeof(response.payload_json->'native_input')='object'))
+          AND NOT EXISTS (SELECT 1 FROM evidence later
+              WHERE later.job_id=NEW.job_id AND later.step_id=NEW.id AND later.id>response.id
+                AND later.kind='coding_agent' AND later.payload_json->>'phase' IN ('execution_response','review_response','execution_native_input','execution_reply','task_incomplete'))
+    ) THEN
+        RAISE EXCEPTION 'coding execution input requires a parsed final response or bound native request';
+    END IF;
+    IF NEW.action='v3_coding' AND OLD.status='waiting_input' AND NEW.status='running' AND NOT EXISTS (
+        SELECT 1 FROM evidence reply
+        WHERE reply.job_id=NEW.job_id AND reply.step_id=NEW.id AND reply.kind='coding_agent'
+          AND reply.payload_json->>'generation'=NEW.generation::text
+          AND reply.payload_json->>'phase'='execution_reply'
+          AND NOT EXISTS (SELECT 1 FROM evidence later
+              WHERE later.job_id=NEW.job_id AND later.step_id=NEW.id AND later.id>reply.id
+                AND later.kind='coding_agent' AND later.payload_json->>'phase' IN ('execution_response','review_response','execution_native_input','task_incomplete'))
+    ) THEN
+        RAISE EXCEPTION 'coding execution resume requires an owner reply';
     END IF;
     IF OLD.superseded_at_generation IS NOT NULL AND NEW IS DISTINCT FROM OLD THEN
         RAISE EXCEPTION 'superseded job step history is immutable';
@@ -1733,6 +1748,32 @@ DECLARE
     expected_transition_purpose TEXT;
 BEGIN
     IF NEW.kind NOT IN ('interrupt_job', 'replan_job', 'submit_feedback') THEN
+        RETURN NULL;
+    END IF;
+    IF NEW.kind='submit_feedback' AND NEW.result_generation<>NEW.observed_generation THEN
+        IF NEW.result_generation<>NEW.observed_generation+1 OR NOT EXISTS (
+          SELECT 1 FROM job_generations generation
+          JOIN job_steps planning ON planning.job_id=generation.job_id AND planning.generation=generation.generation
+          WHERE generation.job_id=NEW.job_id AND generation.generation=NEW.result_generation
+            AND generation.purpose='replan' AND generation.predecessor_generation=NEW.observed_generation
+            AND generation.feedback=NEW.command_payload->>'feedback'
+            AND planning.action='v3_coding_plan' AND planning.status='pending'
+        ) OR NOT EXISTS (
+          SELECT 1 FROM evidence reply
+          JOIN evidence source ON source.job_id=reply.job_id AND source.step_id=reply.step_id AND source.kind='coding_agent'
+            AND source.payload_json->>'phase' IN ('task_incomplete','planning_incomplete')
+            AND source.payload_json->>'call_id'=reply.payload_json->>'call_id'
+          JOIN job_steps original ON original.id=reply.step_id AND original.job_id=reply.job_id
+          WHERE reply.job_id=NEW.job_id AND reply.kind='coding_agent'
+            AND reply.payload_json->>'generation'=NEW.observed_generation::text
+            AND reply.payload_json->>'phase'='execution_reply'
+            AND reply.payload_json->'notes'->>0=NEW.operation_id
+            AND reply.payload_json->'notes'->>1=NEW.command_payload->>'feedback'
+            AND original.generation=NEW.observed_generation
+            AND original.id=NEW.step_id AND original.status='canceled'
+            AND original.superseded_at_generation=NEW.result_generation
+            AND original.current_attempt=(NEW.command_payload->>'expected_waiting_attempt')::bigint
+        ) THEN RAISE EXCEPTION 'continuation feedback lacks its exact owner reply and replanning boundary'; END IF;
         RETURN NULL;
     END IF;
     transition_generation := CASE
@@ -4380,7 +4421,17 @@ CREATE TABLE job_lifecycle_operations (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT job_lifecycle_operations_check CHECK (((jsonb_typeof(command_payload) = 'object'::text) AND (command_payload ? 'operation_id'::text) AND ((command_payload ->> 'operation_id'::text) = operation_id))),
     CONSTRAINT job_lifecycle_operations_check2 CHECK (((jsonb_typeof(result_job) = 'object'::text) AND (result_job ? 'id'::text) AND (result_job ? 'current_generation'::text) AND (result_job ? 'status'::text) AND (((result_job ->> 'id'::text))::bigint = job_id) AND (((result_job ->> 'current_generation'::text))::bigint = result_generation) AND ((result_job ->> 'status'::text) = result_job_status))),
-    CONSTRAINT job_lifecycle_operations_check3 CHECK ((((kind = 'complete_step'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'completed'::text)) OR ((kind = 'fail_step'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'failed'::text) AND (result_job_status = 'failed'::text)) OR ((kind = 'submit_feedback'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND ((result_step_status = 'completed'::text) OR ((result_step_status = 'running'::text) AND (result_job_status = 'running'::text) AND COALESCE(result_job->'metadata'->'coding_execution'->>'mode' = 'agents', false)))) OR ((kind = 'interrupt_job'::text) AND (step_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = (observed_generation + 1)) AND (result_job_status = 'waiting_input'::text)) OR ((kind = 'replan_job'::text) AND (step_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = (observed_generation + 1)) AND (result_job_status = 'running'::text)) OR ((kind = 'cancel_job'::text) AND (step_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = observed_generation) AND (result_job_status = 'canceled'::text)))),
+    CONSTRAINT job_lifecycle_operations_check3 CHECK (
+      (kind='complete_step' AND step_id IS NOT NULL AND result_generation=observed_generation AND result_step_status='completed') OR
+      (kind='fail_step' AND step_id IS NOT NULL AND result_generation=observed_generation AND result_step_status='failed' AND result_job_status='failed') OR
+      (kind='submit_feedback' AND step_id IS NOT NULL AND (
+        (result_generation=observed_generation AND (result_step_status='completed' OR
+          (result_step_status='running' AND result_job_status='running' AND COALESCE(result_job->'metadata'->'coding_execution'->>'mode'='agents',false)))) OR
+        (result_generation=observed_generation+1 AND result_step_status='canceled' AND result_job_status='running' AND
+          COALESCE(result_job->'metadata'->'coding_execution'->>'mode'='agents',false)))) OR
+      (kind='interrupt_job' AND step_id IS NULL AND result_step_status IS NULL AND result_generation=observed_generation+1 AND result_job_status='waiting_input') OR
+      (kind='replan_job' AND step_id IS NULL AND result_step_status IS NULL AND result_generation=observed_generation+1 AND result_job_status='running') OR
+      (kind='cancel_job' AND step_id IS NULL AND result_step_status IS NULL AND result_generation=observed_generation AND result_job_status='canceled')),
     CONSTRAINT job_lifecycle_operations_check4 CHECK (
 CASE
     WHEN (kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text])) THEN ((command_payload ? 'step_id'::text) AND (((command_payload ->> 'step_id'::text))::bigint = step_id))
@@ -4391,7 +4442,7 @@ END),
     CONSTRAINT job_lifecycle_operations_operation_id_check CHECK ((operation_id ~ '^lifecycle_operation_[a-z0-9_]{1,128}$'::text)),
     CONSTRAINT job_lifecycle_operations_result_generation_check CHECK ((result_generation > 0)),
     CONSTRAINT job_lifecycle_operations_result_job_status_check CHECK ((result_job_status = ANY (ARRAY['pending'::text, 'running'::text, 'completed'::text, 'failed'::text, 'canceled'::text, 'waiting_input'::text]))),
-    CONSTRAINT job_lifecycle_operations_result_step_status_check CHECK (((result_step_status IS NULL) OR (result_step_status = ANY (ARRAY['completed'::text, 'failed'::text, 'waiting_input'::text, 'running'::text]))))
+    CONSTRAINT job_lifecycle_operations_result_step_status_check CHECK (((result_step_status IS NULL) OR (result_step_status = ANY (ARRAY['completed'::text, 'failed'::text, 'waiting_input'::text, 'running'::text, 'canceled'::text]))))
 );
 
 
@@ -5620,6 +5671,12 @@ CREATE VIEW channel_conversation_followup_events AS
    FROM (channel_session_turn_operations turn
      JOIN lifecycle_operation_registry registry ON (((registry.operation_id = turn.operation_id) AND (registry.kind = turn.kind))))
   WHERE (turn.disposition = ANY (ARRAY['replanned'::text, 'feedback_submitted'::text]))
+    -- A continuation reply wraps a durable replan of the same generation.
+    -- Publish that canonical replan once, not the channel wrapper as well.
+    AND NOT (turn.disposition='replanned' AND EXISTS (
+      SELECT 1 FROM job_lifecycle_operations replan
+      WHERE replan.job_id=turn.job_id AND replan.result_generation=turn.result_generation
+        AND replan.kind='replan_job'))
 UNION ALL
  SELECT (job.metadata ->> 'channel_id'::text) AS channel_id,
     operation.job_id,
@@ -5653,7 +5710,8 @@ UNION ALL
     operation.operation_id
    FROM (job_lifecycle_operations operation
      JOIN jobs job ON ((job.id = operation.job_id)))
-  WHERE ((job.pipeline = 'chat'::text) AND (job.metadata ? 'channel_id'::text) AND (operation.kind = ANY (ARRAY['submit_feedback'::text, 'interrupt_job'::text, 'replan_job'::text, 'cancel_job'::text])));
+  WHERE ((job.pipeline = 'chat'::text) AND (job.metadata ? 'channel_id'::text) AND (operation.kind = ANY (ARRAY['submit_feedback'::text, 'interrupt_job'::text, 'replan_job'::text, 'cancel_job'::text])))
+    AND NOT (operation.kind='submit_feedback' AND operation.result_generation<>operation.observed_generation);
 
 
 --
@@ -6002,7 +6060,7 @@ ALTER TABLE job_lifecycle_operations
        ((command_payload - ARRAY['operation_id'::text, 'step_id'::text, 'error'::text]) = '{}'::jsonb)) OR
       ((kind = 'submit_feedback'::text) AND
        (command_payload ?& ARRAY['operation_id'::text, 'job_id'::text, 'feedback'::text]) AND
-       ((command_payload - ARRAY['operation_id'::text, 'job_id'::text, 'feedback'::text, 'workspace_root'::text, 'workspace_identity'::text, 'expected_generation'::text, 'expected_waiting_attempt'::text]) = '{}'::jsonb) AND
+       ((command_payload - ARRAY['operation_id'::text, 'job_id'::text, 'feedback'::text, 'workspace_root'::text, 'workspace_identity'::text, 'expected_generation'::text, 'expected_waiting_attempt'::text, 'expected_input_id'::text]) = '{}'::jsonb) AND
        lifecycle_workspace_payload_is_valid(command_payload)) OR
       ((kind = ANY (ARRAY['interrupt_job'::text, 'replan_job'::text])) AND
        (command_payload ?& ARRAY['operation_id'::text, 'job_id'::text, 'feedback'::text]) AND
@@ -9580,7 +9638,6 @@ CREATE TABLE coding_ledger_revisions (
     operation_id text NOT NULL,
     owner_turn_id text,
     state text NOT NULL CHECK (state IN ('proposed','frozen')),
-    coverage_passed boolean NOT NULL DEFAULT false,
     mutation_payload jsonb,
     creation_transaction bigint NOT NULL DEFAULT txid_current(),
     created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
@@ -9597,7 +9654,7 @@ ALTER TABLE coding_ledgers
 CREATE TABLE coding_ledger_items (
     ledger_id bigint NOT NULL REFERENCES coding_ledgers(id) ON DELETE RESTRICT,
     item_id text NOT NULL,
-    item_kind text NOT NULL CHECK (item_kind IN ('objective','requirement','constraint','group','task','acceptance_criterion','check','decision','question','finding')),
+    item_kind text NOT NULL CHECK (item_kind IN ('objective','requirement','constraint','group','task','acceptance_criterion','check','dependency')),
     created_revision bigint NOT NULL,
     created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     PRIMARY KEY (ledger_id,item_id),
@@ -9613,7 +9670,7 @@ CREATE TABLE coding_ledger_item_versions (
     review_state text CHECK (review_state IN ('proposed','agreed','needs_discussion')),
     rank bigint NOT NULL CHECK (rank>=0),
     payload jsonb NOT NULL CHECK (jsonb_typeof(payload)='object' AND payload<>'{}'::jsonb),
-    rationale text NOT NULL CHECK (octet_length(btrim(rationale)) BETWEEN 1 AND 8192),
+    rationale text NOT NULL CHECK (octet_length(rationale)<=8192),
     removed_by_turn_id text,
     created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     PRIMARY KEY (ledger_id,item_id,revision),
@@ -9653,10 +9710,10 @@ CREATE TABLE coding_ledger_edges (
     ledger_id bigint NOT NULL,
     revision bigint NOT NULL,
     edge_id text NOT NULL,
-    edge_kind text NOT NULL CHECK (edge_kind IN ('requires','blocks','covers','verifies','contains','affects','resolves')),
+    edge_kind text NOT NULL CHECK (edge_kind IN ('requires','blocks','covers','verifies','contains','affects')),
     from_item_id text NOT NULL,
     to_item_id text NOT NULL,
-    rationale text NOT NULL CHECK (octet_length(btrim(rationale)) BETWEEN 1 AND 8192),
+    rationale text NOT NULL CHECK (octet_length(rationale)<=8192),
     created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     PRIMARY KEY (ledger_id,revision,edge_id),
     UNIQUE (ledger_id,revision,edge_kind,from_item_id,to_item_id),
@@ -9688,18 +9745,55 @@ ALTER TABLE coding_ledger_origins
     ADD CONSTRAINT coding_ledger_origins_owner_turn_fkey
     FOREIGN KEY (ledger_id,owner_turn_id) REFERENCES coding_ledger_owner_turns(ledger_id,owner_turn_id) ON DELETE RESTRICT;
 
+CREATE FUNCTION coding_ledger_owner_turn_statements_valid(statements jsonb) RETURNS boolean
+    LANGUAGE plpgsql IMMUTABLE STRICT AS $$
+DECLARE entry jsonb; item jsonb; reason_text text;
+BEGIN
+    IF jsonb_typeof(statements)<>'array' THEN
+        RETURN false;
+    END IF;
+    FOR entry IN SELECT value FROM jsonb_array_elements(statements) LOOP
+        IF jsonb_typeof(entry)<>'object' OR EXISTS (
+            SELECT 1 FROM jsonb_object_keys(entry) key
+            WHERE key NOT IN ('kind','item_ids','reason')
+        ) THEN
+            RETURN false;
+        END IF;
+        IF entry->>'kind'='represented' THEN
+            IF jsonb_typeof(entry->'item_ids') IS DISTINCT FROM 'array' OR
+               jsonb_array_length(entry->'item_ids')=0 OR entry ? 'reason' THEN
+                RETURN false;
+            END IF;
+            FOR item IN SELECT value FROM jsonb_array_elements(entry->'item_ids') LOOP
+                IF jsonb_typeof(item)<>'string' OR
+                   (item #>> '{}') !~ '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$' THEN
+                    RETURN false;
+                END IF;
+            END LOOP;
+        ELSIF entry->>'kind'='out_of_scope' THEN
+            reason_text:=entry->>'reason';
+            IF entry ? 'item_ids' OR jsonb_typeof(entry->'reason') IS DISTINCT FROM 'string' OR
+               reason_text IS NULL OR reason_text<>btrim(reason_text) OR
+               octet_length(reason_text) NOT BETWEEN 1 AND 8192 THEN
+                RETURN false;
+            END IF;
+        ELSE
+            RETURN false;
+        END IF;
+    END LOOP;
+    RETURN true;
+END;
+$$;
+
 CREATE TABLE coding_ledger_owner_turn_dispositions (
     ledger_id bigint NOT NULL,
     owner_turn_id text NOT NULL,
     revision bigint NOT NULL,
-    disposition text NOT NULL CHECK (disposition IN ('represented','out_of_scope','unresolved','mixed')),
-    reason text,
-    statements jsonb NOT NULL CHECK (jsonb_typeof(statements)='array' AND jsonb_array_length(statements)>0),
+    statements jsonb NOT NULL CHECK (coding_ledger_owner_turn_statements_valid(statements)),
     created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     PRIMARY KEY (ledger_id,owner_turn_id),
     FOREIGN KEY (ledger_id,owner_turn_id) REFERENCES coding_ledger_owner_turns(ledger_id,owner_turn_id) ON DELETE RESTRICT,
-    FOREIGN KEY (ledger_id,revision) REFERENCES coding_ledger_revisions(ledger_id,revision) ON DELETE RESTRICT,
-    CHECK ((disposition='out_of_scope')=(reason IS NOT NULL AND octet_length(btrim(reason))>0) OR disposition='mixed')
+    FOREIGN KEY (ledger_id,revision) REFERENCES coding_ledger_revisions(ledger_id,revision) ON DELETE RESTRICT
 );
 
 CREATE TABLE coding_ledger_owner_turn_items (
@@ -9709,62 +9803,6 @@ CREATE TABLE coding_ledger_owner_turn_items (
     PRIMARY KEY (ledger_id,owner_turn_id,item_id),
     FOREIGN KEY (ledger_id,owner_turn_id) REFERENCES coding_ledger_owner_turn_dispositions(ledger_id,owner_turn_id) ON DELETE RESTRICT,
     FOREIGN KEY (ledger_id,item_id) REFERENCES coding_ledger_items(ledger_id,item_id) ON DELETE RESTRICT
-);
-
-CREATE TABLE coding_ledger_planning_audits (
-    ledger_id bigint NOT NULL REFERENCES coding_ledgers(id) ON DELETE RESTRICT,
-    audit_id text NOT NULL,
-    revision bigint NOT NULL,
-    ready boolean NOT NULL,
-    explanation text NOT NULL CHECK (octet_length(btrim(explanation)) BETWEEN 1 AND 8192),
-    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
-    PRIMARY KEY (ledger_id,audit_id),
-    FOREIGN KEY (ledger_id,revision) REFERENCES coding_ledger_revisions(ledger_id,revision) ON DELETE RESTRICT,
-    CHECK (octet_length(btrim(audit_id)) BETWEEN 1 AND 256)
-);
-
-ALTER TABLE coding_ledger_revisions
-    ADD COLUMN planning_audit_id text,
-    ADD CONSTRAINT coding_ledger_revisions_planning_audit_fkey
-        FOREIGN KEY (ledger_id,planning_audit_id) REFERENCES coding_ledger_planning_audits(ledger_id,audit_id) ON DELETE RESTRICT,
-    ADD CONSTRAINT coding_ledger_revisions_planning_audit_shape_check
-        CHECK ((planning_audit_id IS NULL OR state='frozen') AND
-               (state<>'frozen' OR owner_turn_id IS NULL OR planning_audit_id IS NOT NULL));
-
-CREATE TABLE coding_ledger_questions (
-    ledger_id bigint NOT NULL,
-    question_id text NOT NULL,
-    item_id text NOT NULL,
-    revision bigint NOT NULL,
-    prompt text NOT NULL CHECK (octet_length(btrim(prompt)) BETWEEN 1 AND 8192),
-    status text NOT NULL CHECK (status IN ('open','answered','withdrawn')),
-    answer text,
-    answered_by_turn_id text,
-    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
-    answered_at timestamptz,
-    PRIMARY KEY (ledger_id,question_id),
-    FOREIGN KEY (ledger_id,item_id,revision) REFERENCES coding_ledger_item_versions(ledger_id,item_id,revision) ON DELETE RESTRICT,
-    FOREIGN KEY (ledger_id,answered_by_turn_id) REFERENCES coding_ledger_owner_turns(ledger_id,owner_turn_id) ON DELETE RESTRICT,
-    CHECK ((status='open' AND answer IS NULL AND answered_by_turn_id IS NULL AND answered_at IS NULL) OR
-           (status='answered' AND answer IS NOT NULL AND answered_by_turn_id IS NOT NULL AND answered_at IS NOT NULL) OR
-           (status='withdrawn' AND answer IS NULL AND answered_by_turn_id IS NULL AND answered_at IS NOT NULL))
-);
-
-CREATE TABLE coding_ledger_findings (
-    ledger_id bigint NOT NULL,
-    finding_id text NOT NULL,
-    item_id text NOT NULL,
-    revision bigint NOT NULL,
-    finding_kind text NOT NULL CHECK (finding_kind='planning'),
-    status text NOT NULL CHECK (status IN ('open','resolved','disposed')),
-    observation text NOT NULL CHECK (octet_length(btrim(observation)) BETWEEN 1 AND 16384),
-    resolution_item_id text,
-    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
-    resolved_at timestamptz,
-    PRIMARY KEY (ledger_id,finding_id),
-    FOREIGN KEY (ledger_id,revision,item_id) REFERENCES coding_ledger_revision_items(ledger_id,revision,item_id) ON DELETE RESTRICT,
-    FOREIGN KEY (ledger_id,resolution_item_id) REFERENCES coding_ledger_items(ledger_id,item_id) ON DELETE RESTRICT,
-    CHECK ((status='open' AND resolved_at IS NULL) OR (status<>'open' AND resolved_at IS NOT NULL))
 );
 
 CREATE TABLE coding_ledger_routes (
@@ -9807,6 +9845,7 @@ CREATE TABLE coding_agent_tasks (
     task_item_id text NOT NULL,
     state text NOT NULL CHECK (state IN ('blocked','ready','accepted','cancelled')),
     priority integer NOT NULL DEFAULT 0,
+    continuation_priority boolean NOT NULL DEFAULT false,
     fairness_key bigint GENERATED ALWAYS AS IDENTITY,
     state_version bigint NOT NULL DEFAULT 1 CHECK (state_version>0),
     updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
@@ -9923,7 +9962,7 @@ BEGIN
     IF NEW.state='frozen' AND OLD.state<>'frozen' THEN
         IF NEW.frozen_revision<>NEW.current_revision OR NOT EXISTS (
             SELECT 1 FROM coding_ledger_revisions r WHERE r.ledger_id=NEW.id
-              AND r.revision=NEW.current_revision AND r.state='frozen' AND r.coverage_passed
+              AND r.revision=NEW.current_revision AND r.state='frozen'
         ) OR NOT EXISTS (
             SELECT 1
             FROM coding_ledger_owner_turns signoff
@@ -10195,7 +10234,7 @@ BEGIN
                     AND authorized_item.item_id=current_projection.item_id
                     AND authorized_turn.revision BETWEEN changed_agreement.changed_revision
                                                      AND frozen_revision.base_revision
-                    AND authorized_turn.disposition='represented'
+                    AND authorized_turn.statements @> '[{"kind":"represented"}]'::jsonb
               )
         ) OR EXISTS (
             SELECT 1
@@ -10250,14 +10289,8 @@ BEGIN
                     AND authorized_item.item_id=check_projection.item_id
                     AND authorized_turn.revision BETWEEN changed_check.changed_revision
                                                      AND frozen_revision.base_revision
-                    AND authorized_turn.disposition='represented'
+                    AND authorized_turn.statements @> '[{"kind":"represented"}]'::jsonb
               )
-        ) OR EXISTS (
-            SELECT 1 FROM coding_ledger_questions q WHERE q.ledger_id=NEW.id AND q.status='open'
-        ) OR EXISTS (
-            SELECT 1 FROM coding_ledger_findings finding
-            WHERE finding.ledger_id=NEW.id AND finding.finding_kind='planning'
-              AND finding.status='open'
         ) OR EXISTS (
             SELECT 1 FROM coding_ledger_owner_turns turn_record
             LEFT JOIN coding_ledger_owner_turn_dispositions disposition
@@ -10268,7 +10301,7 @@ BEGIN
               AND turn_record.action<>'sign_off'
               AND (
                 disposition.owner_turn_id IS NULL OR
-                (disposition.disposition='represented' AND (
+                (disposition.statements @> '[{"kind":"represented"}]'::jsonb AND (
                     NOT EXISTS (
                         SELECT 1 FROM coding_ledger_owner_turn_items represented_item
                         WHERE represented_item.ledger_id=turn_record.ledger_id
@@ -10286,23 +10319,12 @@ BEGIN
                                 AND represented_projection.item_id=represented_item.item_id
                           )
                     )
-                )) OR (
-                    disposition.disposition='unresolved' AND (
-                        NOT EXISTS (
-                            SELECT 1 FROM coding_ledger_owner_turn_items turn_item
-                            WHERE turn_item.ledger_id=turn_record.ledger_id
-                              AND turn_item.owner_turn_id=turn_record.owner_turn_id
-                        ) OR EXISTS (
-                            SELECT 1
-                            FROM coding_ledger_owner_turn_items turn_item
-                            LEFT JOIN coding_ledger_questions question
-                              ON question.ledger_id=turn_item.ledger_id AND question.item_id=turn_item.item_id
-                            WHERE turn_item.ledger_id=turn_record.ledger_id
-                              AND turn_item.owner_turn_id=turn_record.owner_turn_id
-                              AND (question.question_id IS NULL OR question.status='open')
-                        )
-                    )
-                )
+                )) OR
+                (NOT (disposition.statements @> '[{"kind":"represented"}]'::jsonb) AND EXISTS (
+                    SELECT 1 FROM coding_ledger_owner_turn_items unexpected_item
+                    WHERE unexpected_item.ledger_id=turn_record.ledger_id
+                      AND unexpected_item.owner_turn_id=turn_record.owner_turn_id
+                ))
             )
         ) OR (SELECT count(*) FROM coding_ledger_routes r WHERE r.ledger_id=NEW.id AND r.revision=NEW.current_revision)<>3
           OR (SELECT count(DISTINCT r.configuration_revision) FROM coding_ledger_routes r
@@ -10335,7 +10357,7 @@ BEGIN
               ON route_approval.ledger_id=current_revision.ledger_id
              AND route_approval.owner_turn_id=configuration_approval.owner_turn_id
              AND route_approval.revision=current_revision.revision
-             AND route_approval.disposition='represented'
+             AND route_approval.statements @> '[{"kind":"represented"}]'::jsonb
             WHERE current_route.ledger_id=NEW.id
               AND current_route.revision=NEW.current_revision
               AND ROW(current_route.provider,current_route.model,current_route.reasoning_effort,current_route.service_tier)
@@ -10344,10 +10366,6 @@ BEGIN
               AND (current_route.configuration_revision<>current_revision.base_revision
                    OR current_route.configuration_revision<=prior_route.configuration_revision
                    OR route_approval.owner_turn_id IS NULL)
-        ) OR NOT EXISTS (
-            SELECT 1 FROM coding_ledger_revision_items ri JOIN coding_ledger_items i USING (ledger_id,item_id)
-            JOIN coding_ledger_item_versions v ON (v.ledger_id,v.item_id,v.revision)=(ri.ledger_id,ri.item_id,ri.item_revision)
-            WHERE ri.ledger_id=NEW.id AND ri.revision=NEW.current_revision AND i.item_kind='objective' AND v.disposition='active'
         ) OR NOT EXISTS (
             SELECT 1 FROM coding_ledger_revision_items ri JOIN coding_ledger_items i USING (ledger_id,item_id)
             JOIN coding_ledger_item_versions v ON (v.ledger_id,v.item_id,v.revision)=(ri.ledger_id,ri.item_id,ri.item_revision)
@@ -10543,7 +10561,7 @@ BEGIN
                     AND authorized_item.item_id=affected_projection.item_id
                     AND authorized_turn.revision BETWEEN changed_dependency.changed_revision
                                                      AND frozen_revision.base_revision
-                    AND authorized_turn.disposition='represented'
+                    AND authorized_turn.statements @> '[{"kind":"represented"}]'::jsonb
               )
         ) THEN RAISE EXCEPTION 'ledger freeze requires one exact covered, agreed, resolved revision with frozen routes and tasks'; END IF;
     END IF;
@@ -10760,11 +10778,8 @@ BEGIN
            (from_kind='acceptance_criterion' AND to_kind IN ('objective','requirement'))
        )) OR
        (NEW.edge_kind='affects' AND (
-           from_kind NOT IN ('constraint','decision','question','finding') OR
-           to_kind NOT IN ('objective','requirement','constraint','group','task','acceptance_criterion','check','decision','question','finding')
-       )) OR
-       (NEW.edge_kind='resolves' AND (
-           from_kind<>'finding' OR to_kind NOT IN ('finding','question','decision')
+           from_kind<>'constraint' OR
+           to_kind NOT IN ('objective','requirement','constraint','group','task','acceptance_criterion','check')
        )) THEN
         RAISE EXCEPTION 'ledger edge kind % is incompatible with % -> %',NEW.edge_kind,from_kind,to_kind;
     END IF;
@@ -11570,8 +11585,8 @@ BEGIN
         RETURN NEW;
     END IF;
 
-    IF ROW(OLD.ledger_id,OLD.frozen_revision,OLD.task_item_id,OLD.priority,OLD.fairness_key)
-       IS DISTINCT FROM ROW(NEW.ledger_id,NEW.frozen_revision,NEW.task_item_id,NEW.priority,NEW.fairness_key) THEN
+    IF ROW(OLD.ledger_id,OLD.frozen_revision,OLD.task_item_id,OLD.priority,OLD.fairness_key,OLD.continuation_priority)
+       IS DISTINCT FROM ROW(NEW.ledger_id,NEW.frozen_revision,NEW.task_item_id,NEW.priority,NEW.fairness_key,NEW.continuation_priority) THEN
         RAISE EXCEPTION 'queued task identity is immutable';
     END IF;
     IF NEW.state_version<>OLD.state_version+1 OR
@@ -11596,7 +11611,6 @@ BEGIN
           AND approved_revision.revision=ledger_current_revision
           AND approved_revision.revision>OLD.frozen_revision
           AND approved_revision.state='frozen'
-          AND approved_revision.coverage_passed
           AND version.disposition='removed'
     ) INTO removal_authorized;
 
@@ -11865,72 +11879,6 @@ CREATE TRIGGER coding_ledger_routes_insert_mutable BEFORE INSERT ON coding_ledge
     FOR EACH ROW EXECUTE FUNCTION validate_coding_ledger_content_insert();
 CREATE TRIGGER coding_ledger_checks_insert_mutable BEFORE INSERT ON coding_ledger_checks
     FOR EACH ROW EXECUTE FUNCTION validate_coding_ledger_content_insert();
-CREATE TRIGGER coding_ledger_questions_insert_mutable BEFORE INSERT ON coding_ledger_questions
-    FOR EACH ROW EXECUTE FUNCTION validate_coding_ledger_content_insert();
-
-CREATE FUNCTION validate_coding_ledger_question_change() RETURNS trigger
-    LANGUAGE plpgsql AS $$
-DECLARE ledger_state text; ledger_revision bigint; answering_turn_base bigint;
-BEGIN
-    IF TG_OP='DELETE' THEN
-        RAISE EXCEPTION 'coding ledger question history is durable';
-    END IF;
-    SELECT state,current_revision INTO ledger_state,ledger_revision
-      FROM coding_ledgers WHERE id=NEW.ledger_id FOR SHARE;
-    IF ledger_state NOT IN ('proposed','revising') OR NOT EXISTS (
-        SELECT 1 FROM coding_ledger_revision_items projection
-        WHERE projection.ledger_id=NEW.ledger_id
-          AND projection.revision=ledger_revision
-          AND projection.item_id=NEW.item_id
-    ) THEN
-        RAISE EXCEPTION 'frozen or uncarried ledger questions are immutable';
-    END IF;
-    IF TG_OP='UPDATE' AND (
-       ROW(OLD.ledger_id,OLD.question_id,OLD.item_id,OLD.revision,OLD.prompt,OLD.created_at)
-       IS DISTINCT FROM
-       ROW(NEW.ledger_id,NEW.question_id,NEW.item_id,NEW.revision,NEW.prompt,NEW.created_at) OR
-       OLD.status<>'open' OR NEW.status NOT IN ('answered','withdrawn')
-    ) THEN
-        RAISE EXCEPTION 'coding ledger question identity and disposition are monotonic';
-    END IF;
-    IF NEW.status='answered' THEN
-        SELECT base_revision INTO answering_turn_base
-        FROM coding_ledger_owner_turns
-        WHERE ledger_id=NEW.ledger_id AND owner_turn_id=NEW.answered_by_turn_id;
-        IF answering_turn_base IS DISTINCT FROM ledger_revision THEN
-            RAISE EXCEPTION 'question answer requires an owner turn at the exact current ledger revision';
-        END IF;
-    END IF;
-    RETURN NEW;
-END;
-$$;
-CREATE TRIGGER coding_ledger_questions_change_validate
-    BEFORE INSERT OR UPDATE OR DELETE ON coding_ledger_questions
-    FOR EACH ROW EXECUTE FUNCTION validate_coding_ledger_question_change();
-CREATE TRIGGER coding_ledger_questions_truncate_immutable
-    BEFORE TRUNCATE ON coding_ledger_questions
-    FOR EACH STATEMENT EXECUTE FUNCTION reject_agent_execution_history_mutation();
-
-CREATE FUNCTION validate_coding_ledger_finding_change() RETURNS trigger
-    LANGUAGE plpgsql AS $finding_change$
-BEGIN
-    IF ROW(OLD.ledger_id,OLD.finding_id,OLD.item_id,OLD.revision,OLD.finding_kind,
-           OLD.observation,OLD.created_at)
-       IS DISTINCT FROM
-       ROW(NEW.ledger_id,NEW.finding_id,NEW.item_id,NEW.revision,NEW.finding_kind,
-           NEW.observation,NEW.created_at) OR
-       OLD.status<>'open' OR NEW.status NOT IN ('resolved','disposed') THEN
-        RAISE EXCEPTION 'coding ledger finding identity and disposition are monotonic';
-    END IF;
-    RETURN NEW;
-END;
-$finding_change$;
-CREATE TRIGGER coding_ledger_findings_change_validate
-    BEFORE UPDATE ON coding_ledger_findings
-    FOR EACH ROW EXECUTE FUNCTION validate_coding_ledger_finding_change();
-CREATE TRIGGER coding_ledger_findings_history_immutable
-    BEFORE DELETE OR TRUNCATE ON coding_ledger_findings
-    FOR EACH STATEMENT EXECUTE FUNCTION reject_agent_execution_history_mutation();
 
 CREATE TRIGGER coding_agent_tasks_history_immutable
     BEFORE DELETE OR TRUNCATE ON coding_agent_tasks
@@ -11941,8 +11889,6 @@ CREATE TRIGGER coding_ledger_items_immutable BEFORE UPDATE OR DELETE OR TRUNCATE
 CREATE TRIGGER coding_ledger_turn_items_immutable BEFORE UPDATE OR DELETE OR TRUNCATE ON coding_ledger_owner_turn_items
     FOR EACH STATEMENT EXECUTE FUNCTION reject_agent_execution_history_mutation();
 CREATE TRIGGER coding_ledger_revisions_immutable BEFORE UPDATE OR DELETE OR TRUNCATE ON coding_ledger_revisions
-    FOR EACH STATEMENT EXECUTE FUNCTION reject_agent_execution_history_mutation();
-CREATE TRIGGER coding_ledger_planning_audits_immutable BEFORE UPDATE OR DELETE OR TRUNCATE ON coding_ledger_planning_audits
     FOR EACH STATEMENT EXECUTE FUNCTION reject_agent_execution_history_mutation();
 CREATE TRIGGER coding_ledger_item_versions_immutable BEFORE UPDATE OR DELETE OR TRUNCATE ON coding_ledger_item_versions
     FOR EACH STATEMENT EXECUTE FUNCTION reject_agent_execution_history_mutation();
@@ -12010,9 +11956,10 @@ CREATE TABLE coding_agent_settings (
     schema text NOT NULL CHECK (schema='omnidex.coding-agent-settings.v1'),
     configuration jsonb NOT NULL CHECK (
       jsonb_typeof(configuration)='object' AND configuration->>'mode' IS NOT DISTINCT FROM 'agents' AND
-      configuration ?& ARRAY['mode','planner','executor','reviewer'] AND
-      (configuration-ARRAY['mode','planner','executor','reviewer'])='{}'::jsonb AND
+      configuration ?& ARRAY['mode','planner','ledger_parser','executor','reviewer'] AND
+      (configuration-ARRAY['mode','planner','ledger_parser','executor','reviewer'])='{}'::jsonb AND
       jsonb_typeof(configuration->'planner')='object' AND
+      jsonb_typeof(configuration->'ledger_parser')='object' AND
       jsonb_typeof(configuration->'executor')='object' AND
       jsonb_typeof(configuration->'reviewer')='object'
     ),
@@ -12117,8 +12064,8 @@ BEGIN
      AND generation=(intake->'command'->>'expected_generation')::bigint) THEN
    RAISE EXCEPTION 'Message resolution lacks exact intake owner';
  END IF;
- IF meaning IN ('answer','story','failed') THEN
-   IF NOT (NEW.payload_json ?& ARRAY['authority','response_message_id']) OR
+ IF meaning IN ('answer','story','failed','planning') THEN
+   IF NOT (NEW.payload_json ? 'authority') OR
      jsonb_typeof(authority) IS DISTINCT FROM 'object' OR
      NOT (authority ?& ARRAY['job_id','generation','step_id','attempt','worker_id']) OR
      (authority-ARRAY['job_id','generation','step_id','attempt','worker_id'])<>'{}'::jsonb OR
@@ -12126,11 +12073,9 @@ BEGIN
      jsonb_typeof(authority->'generation') IS DISTINCT FROM 'number' OR
      jsonb_typeof(authority->'step_id') IS DISTINCT FROM 'number' OR
      jsonb_typeof(authority->'attempt') IS DISTINCT FROM 'number' OR
-     jsonb_typeof(authority->'worker_id') IS DISTINCT FROM 'string' OR
-     jsonb_typeof(NEW.payload_json->'response_message_id') IS DISTINCT FROM 'number' THEN
+     jsonb_typeof(authority->'worker_id') IS DISTINCT FROM 'string' THEN
      RAISE EXCEPTION 'Message answer requires an exact typed attempt and reply';
    END IF;
-   reply:=(NEW.payload_json->>'response_message_id')::bigint;
    IF authority IS NULL OR (authority->>'job_id')::bigint<>NEW.job_id OR
      (authority->>'generation')::bigint<>(intake->'command'->>'expected_generation')::bigint OR
      (authority->>'step_id')::bigint<>NEW.step_id OR NEW.payload_json ? 'control_operation_id' OR
@@ -12144,10 +12089,31 @@ BEGIN
          AND (NEW.payload_json->'job'->>'current_generation')::bigint=job.current_generation
          AND NEW.payload_json->'job'->>'status'=job.status
          AND NEW.payload_json->'job'->>'instruction'=job.instruction
-         AND NEW.payload_json->'job'->'metadata'=job.metadata) OR
-     NOT EXISTS(SELECT 1 FROM ai_channel_messages WHERE id=reply
-       AND channel_id=intake->'command'->>'channel_id' AND role='assistant') THEN
+         AND NEW.payload_json->'job'->'metadata'=job.metadata) THEN
      RAISE EXCEPTION 'Message answer lacks its active attempt or durable reply';
+   END IF;
+   IF meaning='planning' THEN
+     IF NEW.payload_json ? 'response_message_id' OR
+       NOT EXISTS(SELECT 1 FROM job_steps step JOIN jobs job ON job.id=step.job_id
+         JOIN coding_ledgers ledger ON ledger.job_id=job.id
+         WHERE step.id=NEW.step_id AND step.action='v3_coding_plan'
+           AND job.metadata->'coding_execution'->>'mode'='agents'
+           AND ledger.state='proposed') OR
+       NOT EXISTS(SELECT 1 FROM evidence response WHERE response.job_id=NEW.job_id
+         AND response.kind='coding_agent' AND response.payload_json->>'phase'='planning_response'
+         AND response.payload_json->'notes'->>0=NEW.source_ref
+         AND response.payload_json->'notes'->>1=intake->'command'->>'text') THEN
+       RAISE EXCEPTION 'Planning message requires its exact durable response and proposed ledger';
+     END IF;
+   ELSE
+     IF jsonb_typeof(NEW.payload_json->'response_message_id') IS DISTINCT FROM 'number' THEN
+       RAISE EXCEPTION 'Message answer requires an exact typed attempt and reply';
+     END IF;
+     reply:=(NEW.payload_json->>'response_message_id')::bigint;
+     IF NOT EXISTS(SELECT 1 FROM ai_channel_messages WHERE id=reply
+       AND channel_id=intake->'command'->>'channel_id' AND role='assistant') THEN
+       RAISE EXCEPTION 'Message answer lacks its active attempt or durable reply';
+     END IF;
    END IF;
  ELSIF meaning='workspace_mutation' THEN
    IF NOT (NEW.payload_json ? 'control_operation_id') OR

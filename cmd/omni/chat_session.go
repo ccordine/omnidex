@@ -54,11 +54,11 @@ type chatSession struct {
 }
 
 type pendingSessionTurn struct {
-	exactText   string
-	operationID model.LifecycleOperationID
-	codingMode  codingagent.Mode
-	answer      *pendingAgentAnswer
-	activeJob   *pendingChatJob
+	exactText        string
+	operationID      model.LifecycleOperationID
+	codingMode       codingagent.Mode
+	activeJob        *pendingChatJob
+	executionInputID *int64
 }
 
 func runChatSession(config chatSessionConfig) (resultErr error) {
@@ -251,8 +251,15 @@ func runChatSession(config chatSessionConfig) (resultErr error) {
 }
 
 func (session *chatSession) acceptInput(line string, pasted bool) (bool, error) {
+	name, text, command := parseChatCommand(line)
 	if session.planNoteEditing {
-		return false, session.acceptPlanReviewNote(line)
+		if pasted || !command {
+			return false, session.acceptPlanReviewNote(line)
+		}
+		switch name {
+		case "stop", "cancel", "interrupt", "redirect":
+			return session.acceptPlanReviewControl(line)
+		}
 	}
 	if pasted {
 		if strings.TrimSpace(line) == "" {
@@ -260,7 +267,6 @@ func (session *chatSession) acceptInput(line string, pasted bool) (bool, error) 
 		}
 		return false, session.acceptText(line)
 	}
-	name, text, command := parseChatCommand(line)
 	if !command {
 		if strings.TrimSpace(text) == "" {
 			return false, nil
@@ -384,14 +390,14 @@ func (session *chatSession) sessionTurnOperationID(
 	if err != nil {
 		return "", err
 	}
-	answer, err := observedAgentPause(session.active)
-	if err != nil {
-		return "", err
-	}
 	session.pendingTurn = &pendingSessionTurn{
-		exactText: exactText, operationID: operationID, codingMode: codingagent.Agents, answer: answer,
+		exactText: exactText, operationID: operationID, codingMode: codingagent.Agents,
 	}
-	if answer == nil && session.active != nil && (session.active.Job.Status == model.JobStatusPending || session.active.Job.Status == model.JobStatusRunning) {
+	if session.active != nil && session.active.ExecutionInputID != nil {
+		id := *session.active.ExecutionInputID
+		session.pendingTurn.executionInputID = &id
+	}
+	if session.active != nil && (session.active.Job.Status == model.JobStatusPending || session.active.Job.Status == model.JobStatusRunning) {
 		session.pendingTurn.activeJob = &pendingChatJob{jobID: session.active.Job.ID, generation: session.active.Job.CurrentGeneration}
 	}
 	return operationID, nil

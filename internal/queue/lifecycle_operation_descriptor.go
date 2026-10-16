@@ -201,6 +201,9 @@ func normalizeSubmitFeedbackCommand(command SubmitJobFeedbackCommand) (SubmitJob
 	if command.ExpectedWaitingAttempt != nil && *command.ExpectedWaitingAttempt <= 0 {
 		return SubmitJobFeedbackCommand{}, fmt.Errorf("expected waiting attempt must be positive")
 	}
+	if command.ExpectedInputID != nil && *command.ExpectedInputID <= 0 {
+		return SubmitJobFeedbackCommand{}, fmt.Errorf("expected native input identity must be positive")
+	}
 	feedback, err := validateJobFeedback(command.Feedback)
 	if err != nil {
 		return SubmitJobFeedbackCommand{}, err

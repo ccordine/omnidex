@@ -3,6 +3,8 @@ package assemblyline
 import (
 	"fmt"
 	"strings"
+
+	"github.com/gryph/omnidex/internal/modelcontext"
 )
 
 const ContextMinificationSchemaV1 = "omnidex.context-minification.v1"
@@ -50,36 +52,33 @@ func (decision ContextMinificationDecision) ValidateFor(input ContextMinificatio
 	if decision.Schema != ContextMinificationSchemaV1 {
 		return fmt.Errorf("context minification schema must be %q", ContextMinificationSchemaV1)
 	}
-	if err := validateContextText("minimal context", decision.MinimalContext, MaxContextMinifiedBytes); err != nil {
-		return err
-	}
 	provenance, err := validateContextArtifactProvenance(
 		"context minification", input.KnownArtifactPaths,
 	)
 	if err != nil {
 		return err
 	}
-	return validateContextRawModelOutput(
-		"context minification decision", decision.MinimalContext, provenance,
-	)
+	return ValidateMinifiedContextText(decision.MinimalContext, provenance)
+}
+
+// Minification returns ordinary prose, not filesystem authority. Slash-bearing
+// phrases are valid text. Code still protects proven artifact identities and
+// restores its own opaque file-reference bindings after this boundary.
+func ValidateMinifiedContextText(text string, provenance ArtifactIdentityProvenance) error {
+	if err := validateContextText("minimal context", text, 0); err != nil {
+		return err
+	}
+	if matches := modelcontext.ProvenArtifactIdentities(text, provenance); len(matches) > 0 {
+		return fmt.Errorf("minimal context exposes known artifact identity %q", text[matches[0].Start:matches[0].End])
+	}
+	return nil
 }
 
 func DecodeContextMinificationDecision(
 	input ContextMinificationInput,
 	raw string,
 ) (ContextMinificationDecision, error) {
-	provenance, err := validateContextArtifactProvenance(
-		"context minification", input.KnownArtifactPaths,
-	)
-	if err != nil {
-		return ContextMinificationDecision{}, err
-	}
-	if err := validateContextRawModelOutput(
-		"context minification raw result", raw, provenance,
-	); err != nil {
-		return ContextMinificationDecision{}, err
-	}
-	leaf, err := decodeOrdinarySemanticText("context minification", raw, MaxContextMinifiedBytes)
+	leaf, err := decodeOrdinarySemanticText("context minification", raw, 0)
 	if err != nil {
 		return ContextMinificationDecision{}, err
 	}

@@ -114,7 +114,7 @@ func validateCodingAgentModelOptions(configuration codingagent.Configuration, mo
 	for _, model := range models {
 		byID[model.ID] = model
 	}
-	for _, route := range []codingagent.Route{configuration.Planner, configuration.Executor, configuration.Reviewer} {
+	for _, route := range []codingagent.Route{configuration.Planner, configuration.LedgerParser, configuration.Executor, configuration.Reviewer} {
 		model, known := byID[route.Model]
 		if route.Provider != "codex" || !known {
 			return fmt.Errorf("model %q is absent from the installed Codex catalog", route.Model)
