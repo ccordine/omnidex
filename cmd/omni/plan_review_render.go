@@ -14,7 +14,7 @@ func renderPlanReview(state planReviewState) (string, error) {
 	}
 
 	var rendered strings.Builder
-	fmt.Fprintln(&rendered, "PLAN REVIEW")
+	fmt.Fprintln(&rendered, "PLAN APPROVAL")
 	fmt.Fprintf(
 		&rendered,
 		"job %d · generation %d · state %s · revision %d\n\n",

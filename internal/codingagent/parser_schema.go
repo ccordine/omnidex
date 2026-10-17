@@ -21,19 +21,6 @@ func ParserOutputSchema(call Assignment) map[string]any {
 	if call.Role == ExecutionResponse {
 		return object(map[string]any{"kind": planningEnum("done", "question", "permission", "error")}, "kind")
 	}
-	variants := []map[string]any{}
-	for _, task := range ReviewReferences(call) {
-		criteria := make([]string, len(task.Criteria))
-		for index, criterion := range task.Criteria {
-			criteria[index] = criterion.Reference
-		}
-		variants = append(variants, object(map[string]any{
-			"file": text, "requirement": map[string]any{"type": "string", "enum": criteria}, "observation": text,
-		}, "file", "requirement", "observation"))
-	}
-	finding := map[string]any{"anyOf": variants}
-	if call.Role == ReviewResponse && len(variants) == 1 {
-		finding = variants[0]
-	}
+	finding := object(map[string]any{"file": text, "observation": text}, "file", "observation")
 	return object(map[string]any{"kind": planningEnum("done", "question", "permission", "error"), "findings": map[string]any{"type": "array", "items": finding}, "verification": text}, "kind", "findings", "verification")
 }

@@ -18,31 +18,31 @@ import (
 func (repository *Repository) CodingLedgerCompletionCounts(
 	ctx context.Context,
 	authority model.StepAttemptAuthority,
-) (int, int, error) {
+) (int, error) {
 	if repository == nil || repository.pool == nil {
-		return 0, 0, fmt.Errorf("coding ledger completion counts require repository authority")
+		return 0, fmt.Errorf("coding ledger completion counts require repository authority")
 	}
 	tx, err := repository.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return 0, 0, err
+		return 0, err
 	}
 	defer tx.Rollback(ctx)
 	jobStatus, stepStatus, _, err := requireActiveStepAttemptTx(ctx, tx, authority)
 	if err != nil {
-		return 0, 0, err
+		return 0, err
 	}
 	if jobStatus != model.JobStatusRunning || stepStatus != model.StepStatusRunning {
-		return 0, 0, staleStepAttemptError(authority, "coding ledger completion counts require current execution", nil)
+		return 0, staleStepAttemptError(authority, "coding ledger completion counts require current execution", nil)
 	}
 	var action string
 	if err := tx.QueryRow(ctx, `
 		SELECT action FROM job_steps
 		WHERE id=$1 AND job_id=$2 AND generation=$3
 	`, authority.StepID, authority.JobID, authority.Generation).Scan(&action); err != nil {
-		return 0, 0, err
+		return 0, err
 	}
 	if action != "v3_coding" {
-		return 0, 0, fmt.Errorf("coding ledger completion counts require the execution step")
+		return 0, fmt.Errorf("coding ledger completion counts require the execution step")
 	}
 	var ledgerID, revision int64
 	if err := tx.QueryRow(ctx, `
@@ -50,7 +50,7 @@ func (repository *Repository) CodingLedgerCompletionCounts(
 		FROM coding_ledgers
 		WHERE job_id=$1 AND state='frozen' AND frozen_revision IS NOT NULL
 	`, authority.JobID).Scan(&ledgerID, &revision); err != nil {
-		return 0, 0, err
+		return 0, err
 	}
 	var taskCount, acceptedCount int
 	if err := tx.QueryRow(ctx, `
@@ -58,30 +58,15 @@ func (repository *Repository) CodingLedgerCompletionCounts(
 		FROM coding_agent_tasks
 		WHERE ledger_id=$1 AND frozen_revision=$2
 	`, ledgerID, revision).Scan(&taskCount, &acceptedCount); err != nil {
-		return 0, 0, err
+		return 0, err
 	}
 	if taskCount < 1 || acceptedCount != taskCount {
-		return 0, 0, fmt.Errorf("coding ledger completion counts require every frozen task accepted")
-	}
-	projection, err := readCodingLedgerRevisionTx(ctx, tx, ledgerID, revision, CodingLedgerReadOptions{Limit: -1})
-	if err != nil {
-		return 0, 0, err
-	}
-	checkCount := 0
-	for _, ledgerTask := range projection.Ledger.Tasks {
-		if ledgerTask.Disposition != model.LedgerDispositionActive {
-			continue
-		}
-		task, err := codingAgentTaskFromLedger(projection.Ledger, ledgerTask.ID)
-		if err != nil {
-			return 0, 0, err
-		}
-		checkCount += len(task.Checks)
+		return 0, fmt.Errorf("coding ledger completion counts require every frozen task accepted")
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return 0, 0, err
+		return 0, err
 	}
-	return taskCount, checkCount, nil
+	return taskCount, nil
 }
 
 // Completion validates the durable journal inside the same transaction that
@@ -294,14 +279,6 @@ func validateCodingTaskLedgerCompletionJournal(
 				reviewCompletion.Result.ThreadID == executionThread {
 				return fmt.Errorf("agent task execution and review must use isolated channels")
 			}
-			if !codingAgentChecksMatch(task.Checks, entry.Checks) {
-				return fmt.Errorf("agent task acceptance lacks successful frozen checks")
-			}
-			for _, dependency := range task.Dependencies {
-				if !accepted[dependency] {
-					return fmt.Errorf("agent task acceptance precedes its dependency")
-				}
-			}
 			accepted[entry.TaskID] = true
 		case "task_reviewed":
 			if _, known := tasks[entry.TaskID]; !known {
@@ -377,9 +354,6 @@ func validateCodingTaskAcceptanceJournal(
 		reviewCompletion.Result.ThreadID == executionThread {
 		return fmt.Errorf("agent task execution and review must use isolated channels")
 	}
-	if !codingAgentChecksMatch(task.Checks, accepted.Checks) {
-		return fmt.Errorf("agent task acceptance lacks successful frozen checks")
-	}
 	return nil
 }
 
@@ -421,23 +395,6 @@ func codingAgentCompletedTaskExecutionBefore(
 		selected, thread = callID, result.ThreadID
 	}
 	return thread, selected != 0
-}
-
-func codingAgentChecksMatch(checks []codingagent.Check, results []codingagent.CheckResult) bool {
-	if len(checks) != len(results) {
-		return false
-	}
-	expected := map[string]bool{}
-	for _, check := range checks {
-		expected[check.ID] = true
-	}
-	for _, result := range results {
-		if !expected[result.ID] || result.ExitCode != 0 {
-			return false
-		}
-		delete(expected, result.ID)
-	}
-	return len(expected) == 0
 }
 
 func codingAgentAcceptedCall(entry codingagent.Entry, role codingagent.Role, route codingagent.Route, opened, completed map[int64]codingagent.Entry, native map[int64]bool) error {

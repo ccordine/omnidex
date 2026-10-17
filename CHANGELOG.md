@@ -6,6 +6,20 @@ Release codenames follow Omnidex pride versioning based on National Dex order: B
 
 Charmeleon is the **repository-intelligence and software-defined context release**. It keeps the bounded assembly-line authority split while moving repository knowledge, job continuity, attention, and exact per-call context into separate code-owned primitives. Implementation is in progress; existing-repository mutation and large-codebase autonomy remain explicitly unclaimed until production vertical evidence passes.
 
+### Stateless integration inference
+
+- Added a bounded, authenticated inference API and Go SDK method for applications
+  that must not retain channel messages or job history. The standalone command
+  uses the exact Ollama transport, enforces input/output/time/concurrency bounds,
+  and exposes no tools or model-selected actions.
+- Allowed explicit private listeners behind trusted TLS/DNS gateways; wildcard
+  and public listeners remain rejected. Provider failures do not expose request
+  or response content.
+- Added explicit native HTTP model transport for bounded semantic models. It
+  forwards primary input and context unchanged, validates decoder completion,
+  token counts and model identity, and rejects redirects and provider fallback.
+  Model-specific behavior remains outside the framework.
+
 ### Context and repository control plane
 
 - Planning now has normal native Codex tools like execution and review. All coding

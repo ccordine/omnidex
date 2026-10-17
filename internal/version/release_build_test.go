@@ -91,6 +91,25 @@ validate_dist_dir
 	}
 }
 
+func TestReleaseRejectsRepositoryDestinationWithRootParent(t *testing.T) {
+	t.Parallel()
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Validation only: /tmp represents a repository directly below the filesystem
+	// root. No publication, directory creation, or cleanup is invoked.
+	output, err := exec.Command("bash", "-eu", "-c", `
+source "$1/scripts/build-release.sh"
+REPO_ROOT=/tmp
+DIST_DIR=/tmp
+validate_dist_dir
+`, "release-test", root).CombinedOutput()
+	if err == nil || !strings.Contains(string(output), "repository root") {
+		t.Fatalf("root-parent repository destination = %v, %s; want rejection", err, output)
+	}
+}
+
 func TestReleaseRefusesExistingPublicationBeforeBuilding(t *testing.T) {
 	t.Parallel()
 	dist := t.TempDir()

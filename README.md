@@ -658,6 +658,26 @@ through the ordinary production request boundary.
 
 ## Configuration
 
+Installation defaults live in `~/.omni/manifest.json`; [manifest.example.json](manifest.example.json)
+contains the requested defaults. Both the CLI and core read that file. Its URL and
+model defaults take precedence over the corresponding environment settings. Use
+`https://core.omni.worknet` for the core's WorkNet publication.
+Database credentials, listener addresses, and service secrets remain in the existing
+deployment environment.
+
+All models default to `gpt-6.1-sol`. Planning and review use `xhigh`; execution and
+response parsers use `low`. Other narrow semantic stations use the default model
+at low reasoning. Restart the core after changing installation defaults: startup
+persists them through the existing settings store, and new jobs capture their own
+immutable routes. Existing jobs retain their captured configuration.
+
+The frozen task grants execution full host access without routine command approval.
+The executor receives only its task, persisted answers and current findings; it asks
+only for essential missing owner information. Fresh calls reconstruct that context
+from durable state. Native turn identity supports interrupted-call recovery, rather
+than serving as the task ledger. Planning is explicitly assigned before ledger
+freeze, and each independent review receives only the same task.
+
 Start with [.env.example](.env.example). Important groups are:
 
 - fresh-database setup, Redis, and listener settings;

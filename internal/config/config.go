@@ -6,10 +6,12 @@ import (
 	"os"
 
 	"github.com/gryph/omnidex/internal/db"
+	"github.com/gryph/omnidex/internal/manifest"
 	"github.com/gryph/omnidex/internal/modelconfig"
 )
 
 type Config struct {
+	ManifestConfigured        bool
 	ListenAddr                string
 	CoreURL                   string
 	HostAgentURL              string
@@ -100,5 +102,19 @@ func Load() (Config, error) {
 		Executor:     codingagent.Route{Provider: getenv("CODING_EXECUTOR_PROVIDER", "codex"), Model: getenv("CODING_EXECUTOR_MODEL", modelAuthority.Config().Get("coding_fragment_model")), Effort: getenv("CODING_EXECUTOR_EFFORT", "low"), ServiceTier: getenv("CODING_EXECUTOR_SERVICE_TIER", "default")},
 		Reviewer:     codingagent.Route{Provider: getenv("CODING_REVIEWER_PROVIDER", "codex"), Model: getenv("CODING_REVIEWER_MODEL", modelAuthority.Config().Get("conversation_response_model")), Effort: getenv("CODING_REVIEWER_EFFORT", "low"), ServiceTier: getenv("CODING_REVIEWER_SERVICE_TIER", "default")}}
 
+	defaults, configured, err := manifest.LoadHome()
+	if err != nil {
+		return Config{}, err
+	}
+	if configured {
+		cfg.ManifestConfigured = true
+		cfg.CoreURL = defaults.CoreURL
+		cfg.CodingAgents = defaults.Coding()
+		cfg.LLMProvider = "codex"
+		cfg.ModelAuthority, err = defaults.ModelAuthority()
+		if err != nil {
+			return Config{}, err
+		}
+	}
 	return cfg, nil
 }

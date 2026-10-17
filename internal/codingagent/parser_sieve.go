@@ -20,7 +20,6 @@ type ParserStep struct {
 	Before    string             `json:"before,omitempty"`
 	After     string             `json:"after,omitempty"`
 	Category  string             `json:"category,omitempty"`
-	Criterion string             `json:"criterion,omitempty"`
 	Ledger    *EngineeringLedger `json:"ledger,omitempty"`
 	NewIDs    map[string]string  `json:"new_ids,omitempty"`
 	OwnerTurn string             `json:"owner_turn,omitempty"`
@@ -139,22 +138,6 @@ func RunParserSieve(ctx context.Context, call Assignment, event func(NativeEvent
 
 func (s *parserSieve) step(index int, stage string) ParserStep {
 	step := ParserStep{Stage: stage, BlockID: s.blocks[index].ID, Source: s.blocks[index].Text}
-	for _, fact := range s.call.ConstructionFacts {
-		if fact.Kind == "bounded_planning_context" {
-			var payload struct {
-				OwnerTurn PlanningTurn `json:"owner_turn"`
-			}
-			if json.Unmarshal([]byte(fact.Quote), &payload) == nil {
-				step.OwnerTurn = payload.OwnerTurn.Text
-			}
-		}
-	}
-	if index > 0 {
-		step.Before = s.blocks[index-1].Text
-	}
-	if index+1 < len(s.blocks) {
-		step.After = s.blocks[index+1].Text
-	}
 	return step
 }
 
@@ -163,8 +146,7 @@ func (s *parserSieve) leaf(ctx context.Context, step ParserStep, target any) err
 		return err
 	}
 	call := s.call
-	call.Context, call.ParserStep = "", &step
-	call.PlanningResponse, call.Response = "", ""
+	call = parserLeafAssignment(call, step)
 	if call.Role.IsPlanning() {
 		call.PlanningResponse = step.Source
 	} else {
@@ -204,12 +186,12 @@ func ValidateParserLeafResponse(call Assignment, content json.RawMessage) error 
 	case "scan":
 		_, err := decodeParserScan(call, content)
 		return err
-	case "review_criterion":
-		var criterion parserCriterionResult
-		if err := decodeContract(content, &criterion); err != nil {
+	case "review_findings":
+		var parsed parserReviewFindings
+		if err := decodeContract(content, &parsed); err != nil {
 			return err
 		}
-		return validateParserCriterion(call.ParserStep.Source, criterion)
+		return validateParserReviewFindings(call.ParserStep.Source, parsed)
 	case "planning_unit":
 		var parsed parserPlanningProjection
 		if err := decodeContract(content, &parsed); err != nil {
@@ -217,9 +199,6 @@ func ValidateParserLeafResponse(call Assignment, content json.RawMessage) error 
 		}
 		if parsed.Operations == nil {
 			return fmt.Errorf("planning projection requires an operations array")
-		}
-		if len(parsed.ExistingConstraintIDs) > 0 && call.ParserStep.Category != "project_constraint" {
-			return fmt.Errorf("existing global policy references crossed a different semantic leaf")
 		}
 		return nil
 	default:
@@ -259,4 +238,30 @@ func validateParserParts(role Role, source string, parts []ParserPart) error {
 		return fmt.Errorf("source dispositions dropped, duplicated, reordered or rewrote text")
 	}
 	return nil
+}
+
+// parserLeafAssignment gives a parser only the preceding agent response and
+// the code-selected station assignment. Parser leaves cannot receive the
+// planner's ledger, owner turn, conversation, workspace, findings, or other
+// workflow state as authority.
+func parserLeafAssignment(call Assignment, step ParserStep) Assignment {
+	call.Context = ""
+	call.Objective = nil
+	call.ReadFiles = nil
+	call.WriteFiles = nil
+	call.DeleteFiles = nil
+	call.ConstructionFacts = nil
+	call.ValidationNotes = nil
+	call.PlanningLedger = nil
+	call.PlanningConversation = nil
+	call.Continuation = nil
+	call.Clarifications = nil
+	call.CompletedTaskIDs = nil
+	call.Session = nil
+	call.Reply = ""
+	call.Findings = nil
+	call.PlanningResponse = ""
+	call.Response = ""
+	call.ParserStep = &step
+	return call
 }

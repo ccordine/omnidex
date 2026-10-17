@@ -33,3 +33,14 @@ func TestParserSharedContextExcludesCurrentSourceResponse(t *testing.T) {
 		}
 	}
 }
+
+func TestNativeSharedContextDoesNotDuplicateFrozenInstruction(t *testing.T) {
+	for _, role := range []Role{Execute, Review} {
+		call := Assignment{Role: role, Task: &Task{Goal: "Exact frozen user instruction.", ReadFiles: []string{"input.txt"}},
+			Clarifications: []TaskClarification{{Question: "Which format?", Answer: "CSV"}}}
+		raw, err := json.Marshal(PromptContext(call))
+		if err != nil || strings.Contains(string(raw), call.Task.Goal) || !strings.Contains(string(raw), "input.txt") || !strings.Contains(string(raw), "CSV") {
+			t.Fatalf("%s duplicated the current task or lost its durable context: %s %v", role, raw, err)
+		}
+	}
+}

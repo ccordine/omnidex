@@ -199,7 +199,8 @@ func (connection *connection) startAgentThread(call codingagent.Assignment, scra
 		sandbox, approval, _ := agentPermissions(call)
 		parameters := map[string]any{"model": call.Route.Model, "allowProviderModelFallback": false,
 			"cwd": call.Root, "sandbox": sandbox, "approvalPolicy": approval, "ephemeral": call.Role != codingagent.Execute,
-			"config": map[string]any{"approvals_reviewer": "user"}}
+			"developerInstructions": agentRoleInstructions(call.Role),
+			"config":                map[string]any{"approvals_reviewer": "user"}}
 		applyAgentInferenceOptions(parameters, call.Route)
 		method := "thread/start"
 		if call.Role == codingagent.Execute && call.Session != nil {

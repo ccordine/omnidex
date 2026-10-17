@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
+	"sort"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/model"
@@ -157,79 +159,22 @@ func readCodingLedgerRevisionTx(ctx context.Context, tx pgx.Tx, ledgerID, revisi
 		relatedTask = string(options.RelatedTaskID)
 	}
 	rows, err := tx.Query(ctx, `
-		WITH records AS (
-			SELECT item.item_kind AS kind,projection.item_id AS id,
-			       version.rank,version.payload
-			FROM coding_ledger_revision_items projection
-			JOIN coding_ledger_items item USING(ledger_id,item_id)
-			JOIN coding_ledger_item_versions version
-			  ON (version.ledger_id,version.item_id,version.revision)=
-			     (projection.ledger_id,projection.item_id,projection.item_revision)
-			WHERE projection.ledger_id=$1 AND projection.revision=$2
-			  AND item.item_id NOT LIKE 'dependency.record.%'
-			UNION ALL
-			SELECT 'dependency',version.payload->>'id',
-			       COALESCE((version.payload->>'rank')::bigint,0),version.payload
-			FROM coding_ledger_revision_items projection
-			JOIN coding_ledger_items item USING(ledger_id,item_id)
-			JOIN coding_ledger_item_versions version
-			  ON (version.ledger_id,version.item_id,version.revision)=
-			     (projection.ledger_id,projection.item_id,projection.item_revision)
-			WHERE projection.ledger_id=$1 AND projection.revision=$2
-			  AND item.item_id LIKE 'dependency.record.%'
-		),
-		selected_task AS (
-			SELECT payload FROM records WHERE kind='task' AND id=$8
-		)
-		SELECT kind,payload
-		FROM records
-		WHERE ($3::text[] IS NULL OR kind=ANY($3))
-		  AND ($4::text IS NULL OR payload->>'disposition'=$4)
-		  AND ($5::text IS NULL OR payload->>'review_state'=$5)
-		  AND ($6::text IS NULL OR lower(payload::text) LIKE $6 ESCAPE E'\\')
-		  AND ($7::text[] IS NULL OR id=ANY($7))
-		  AND ($8::text IS NULL OR
-		       (kind='task' AND id=$8) OR
-		       (kind='dependency' AND
-		        (payload->>'task_id'=$8 OR payload->>'prerequisite_id'=$8)) OR
-		       (kind='constraint' AND id IN (
-		         SELECT jsonb_array_elements_text(payload->'constraint_ids') FROM selected_task
-		       )) OR
-		       (kind='group' AND id=(SELECT payload->>'group_id' FROM selected_task)) OR
-		       (kind='requirement' AND id IN (
-		         SELECT jsonb_array_elements_text(payload->'requirement_ids') FROM selected_task
-		       )) OR
-		       (kind='acceptance_criterion' AND (
-		         id IN (SELECT jsonb_array_elements_text(payload->'acceptance_criterion_ids') FROM selected_task)
-		         OR payload->'task_ids' ? $8
-		       )) OR
-		       (kind='check' AND EXISTS (
-		         SELECT 1
-		         FROM selected_task
-		         WHERE (
-		           (
-		             jsonb_array_length(COALESCE(selected_task.payload->'requirement_ids','[]'::jsonb))=0
-		             AND btrim(COALESCE(selected_task.payload->>'delivery_obligation',''))<>''
-		           )
-		           OR EXISTS (
-		             SELECT 1
-		             FROM jsonb_array_elements_text(
-		               COALESCE(selected_task.payload->'requirement_ids','[]'::jsonb)
-		             ) AS linked_requirement(id)
-		             WHERE records.payload->'requirement_ids' ? linked_requirement.id
-		           )
-		         )
-		         AND EXISTS (
-		           SELECT 1
-		           FROM jsonb_array_elements_text(
-		             COALESCE(selected_task.payload->'acceptance_criterion_ids','[]'::jsonb)
-		           ) AS linked_acceptance(id)
-		           WHERE records.payload->'acceptance_criterion_ids' ? linked_acceptance.id
-		         )
-		       )))
-		ORDER BY CASE WHEN $8::text IS NOT NULL AND kind='task' THEN 0 ELSE 1 END,rank,id
-		LIMIT $9 OFFSET $10
-	`, ledgerID, revision, kinds, disposition, reviewState, search, itemIDs, relatedTask, sqlLimit, offset)
+ WITH records AS (
+ SELECT item.item_kind AS kind,projection.item_id AS id,version.rank,version.payload
+ FROM coding_ledger_revision_items projection
+ JOIN coding_ledger_items item USING(ledger_id,item_id)
+ JOIN coding_ledger_item_versions version ON (version.ledger_id,version.item_id,version.revision)=(projection.ledger_id,projection.item_id,projection.item_revision)
+ WHERE projection.ledger_id=$1 AND projection.revision=$2
+ )
+ SELECT kind,payload FROM records
+ WHERE ($3::text[] IS NULL OR kind=ANY($3))
+ AND ($4::text IS NULL OR payload->>'disposition'=$4)
+ AND ($5::text IS NULL OR payload->>'review_state'=$5)
+ AND ($6::text IS NULL OR lower(payload::text) LIKE $6 ESCAPE E'\\\\')
+ AND ($7::text[] IS NULL OR id=ANY($7))
+ AND ($8::text IS NULL OR id=$8)
+ ORDER BY rank,id LIMIT $9 OFFSET $10
+ `, ledgerID, revision, kinds, disposition, reviewState, search, itemIDs, relatedTask, sqlLimit, offset)
 	if err != nil {
 		return CodingLedgerRevision{}, err
 	}
@@ -240,58 +185,15 @@ func readCodingLedgerRevisionTx(ctx context.Context, tx pgx.Tx, ledgerID, revisi
 		if err := rows.Scan(&kind, &raw); err != nil {
 			return CodingLedgerRevision{}, err
 		}
-		switch kind {
-		case "objective":
-			var value model.LedgerObjective
-			if err := json.Unmarshal(raw, &value); err != nil {
-				return CodingLedgerRevision{}, err
-			}
-			result.Ledger.Objectives = append(result.Ledger.Objectives, value)
-		case "requirement":
-			var value model.LedgerRequirement
-			if err := json.Unmarshal(raw, &value); err != nil {
-				return CodingLedgerRevision{}, err
-			}
-			result.Ledger.Requirements = append(result.Ledger.Requirements, value)
-		case "constraint":
-			var value model.LedgerConstraint
-			if err := json.Unmarshal(raw, &value); err != nil {
-				return CodingLedgerRevision{}, err
-			}
-			result.Ledger.Constraints = append(result.Ledger.Constraints, value)
-		case "group":
-			var value model.LedgerGroup
-			if err := json.Unmarshal(raw, &value); err != nil {
-				return CodingLedgerRevision{}, err
-			}
-			result.Ledger.Groups = append(result.Ledger.Groups, value)
-		case "task":
-			var value model.LedgerTask
-			if err := json.Unmarshal(raw, &value); err != nil {
-				return CodingLedgerRevision{}, err
-			}
-			result.Ledger.Tasks = append(result.Ledger.Tasks, value)
-		case "acceptance_criterion":
-			var value model.LedgerAcceptanceCriterion
-			if err := json.Unmarshal(raw, &value); err != nil {
-				return CodingLedgerRevision{}, err
-			}
-			result.Ledger.AcceptanceCriteria = append(result.Ledger.AcceptanceCriteria, value)
-		case "check":
-			var value model.LedgerCheck
-			if err := json.Unmarshal(raw, &value); err != nil {
-				return CodingLedgerRevision{}, err
-			}
-			result.Ledger.Checks = append(result.Ledger.Checks, value)
-		case "dependency":
-			var value model.LedgerDependency
-			if err := json.Unmarshal(raw, &value); err != nil {
-				return CodingLedgerRevision{}, err
-			}
-			result.Ledger.Dependencies = append(result.Ledger.Dependencies, value)
-		default:
-			return CodingLedgerRevision{}, fmt.Errorf("persisted coding ledger has unsupported item kind %q", kind)
+		if kind != "task" {
+			return CodingLedgerRevision{}, fmt.Errorf("unsupported ledger item kind %q", kind)
 		}
+		var task model.LedgerTask
+		if err := json.Unmarshal(raw, &task); err != nil {
+			return CodingLedgerRevision{}, err
+		}
+		result.Ledger.Tasks = append(result.Ledger.Tasks, task)
+
 	}
 	if err := rows.Err(); err != nil {
 		return CodingLedgerRevision{}, err
@@ -356,26 +258,10 @@ func codingLedgerLatestDelta(revision CodingLedgerRevision, rawMutation []byte) 
 }
 
 func codingLedgerMutationItemID(item model.LedgerMutationItem) model.LedgerItemID {
-	switch {
-	case item.Objective != nil:
-		return item.Objective.ID
-	case item.Requirement != nil:
-		return item.Requirement.ID
-	case item.Constraint != nil:
-		return item.Constraint.ID
-	case item.Group != nil:
-		return item.Group.ID
-	case item.Task != nil:
+	if item.Task != nil {
 		return item.Task.ID
-	case item.AcceptanceCriterion != nil:
-		return item.AcceptanceCriterion.ID
-	case item.Check != nil:
-		return item.Check.ID
-	case item.Dependency != nil:
-		return item.Dependency.ID
-	default:
-		return ""
 	}
+	return ""
 }
 
 func planningLedgerItemsForDelta(ledger model.EngineeringLedger) []model.LedgerItemID {
@@ -383,9 +269,7 @@ func planningLedgerItemsForDelta(ledger model.EngineeringLedger) []model.LedgerI
 	for _, record := range ledgerRepositoryRecords(ledger) {
 		result = append(result, record.item.ID)
 	}
-	for _, dependency := range ledger.Dependencies {
-		result = append(result, dependency.ID)
-	}
+
 	return result
 }
 
@@ -439,49 +323,17 @@ func (r *Repository) CodingLedgerItemHistory(ctx context.Context, ledgerID int64
 	if len(result) != 0 {
 		return result, nil
 	}
-	dependencyRows, err := r.pool.Query(ctx, `
-		SELECT version.revision,version.payload
-		FROM coding_ledger_items item
-		JOIN coding_ledger_item_versions version USING(ledger_id,item_id)
-		WHERE item.ledger_id=$1 AND item.item_id LIKE 'dependency.record.%'
-		  AND version.payload->>'id'=$2
-		ORDER BY version.revision DESC LIMIT $3 OFFSET $4
-	`, ledgerID, itemID, limit, offset)
-	if err != nil {
-		return nil, err
-	}
-	defer dependencyRows.Close()
-	for dependencyRows.Next() {
-		var revision int64
-		var raw []byte
-		if err := dependencyRows.Scan(&revision, &raw); err != nil {
-			return nil, err
-		}
-		var dependency model.LedgerDependency
-		if err := json.Unmarshal(raw, &dependency); err != nil {
-			return nil, fmt.Errorf("decode coding ledger dependency %s history: %w", itemID, err)
-		}
-		result = append(result, CodingLedgerItemVersion{
-			ItemID: dependency.ID, Kind: "dependency", Revision: revision,
-			Disposition: dependency.Disposition, ReviewState: dependency.ReviewState,
-			Rank: dependency.Rank, Payload: raw, Rationale: dependency.Rationale,
-		})
-	}
-	return result, dependencyRows.Err()
+	return result, nil
 }
 
-func (r *Repository) CodingLedgerDiff(
-	ctx context.Context,
-	ledgerID, fromRevision, toRevision int64,
-	pages ...CodingLedgerPage,
-) (CodingLedgerDiff, error) {
+func (r *Repository) CodingLedgerDiff(ctx context.Context, ledgerID, fromRevision, toRevision int64, pages ...CodingLedgerPage) (CodingLedgerDiff, error) {
 	if r == nil || r.pool == nil || ledgerID <= 0 || fromRevision <= 0 || toRevision <= 0 {
-		return CodingLedgerDiff{}, fmt.Errorf("coding ledger diff requires positive ledger and revision identities")
-	}
-	if len(pages) > 1 {
-		return CodingLedgerDiff{}, fmt.Errorf("coding ledger diff accepts at most one page")
+		return CodingLedgerDiff{}, fmt.Errorf("ledger diff requires exact revisions")
 	}
 	page := CodingLedgerPage{Limit: 200}
+	if len(pages) > 1 {
+		return CodingLedgerDiff{}, fmt.Errorf("ledger diff accepts one page")
+	}
 	if len(pages) == 1 {
 		page = pages[0]
 	}
@@ -489,7 +341,7 @@ func (r *Repository) CodingLedgerDiff(
 		page.Limit = 200
 	}
 	if page.Limit < 0 || page.Offset < 0 {
-		return CodingLedgerDiff{}, fmt.Errorf("coding ledger diff page cannot be negative")
+		return CodingLedgerDiff{}, fmt.Errorf("ledger diff page cannot be negative")
 	}
 	if page.Limit > 1000 {
 		page.Limit = 1000
@@ -499,115 +351,57 @@ func (r *Repository) CodingLedgerDiff(
 		return CodingLedgerDiff{}, err
 	}
 	defer tx.Rollback(ctx)
-	var revisionCount int
-	if err := tx.QueryRow(ctx, `
-		SELECT count(*) FROM coding_ledger_revisions
-		WHERE ledger_id=$1 AND revision=ANY($2::bigint[])
-	`, ledgerID, []int64{fromRevision, toRevision}).Scan(&revisionCount); err != nil {
-		return CodingLedgerDiff{}, err
-	}
-	expectedRevisions := 2
-	if fromRevision == toRevision {
-		expectedRevisions = 1
-	}
-	if revisionCount != expectedRevisions {
-		return CodingLedgerDiff{}, fmt.Errorf("%w: diff revision does not exist", ErrCodingLedgerRevision)
-	}
-	rows, err := tx.Query(ctx, `
-		WITH requested(revision) AS (VALUES ($2::bigint),($3::bigint)),
-		item_records AS (
-			SELECT requested.revision,projection.item_id AS id,version.payload
-			FROM requested
-			JOIN coding_ledger_revision_items projection
-			  ON projection.ledger_id=$1 AND projection.revision=requested.revision
-			JOIN coding_ledger_items item
-			  ON item.ledger_id=projection.ledger_id AND item.item_id=projection.item_id
-			JOIN coding_ledger_item_versions version
-			  ON (version.ledger_id,version.item_id,version.revision)=
-			     (projection.ledger_id,projection.item_id,projection.item_revision)
-			WHERE item.item_id NOT LIKE 'dependency.record.%'
-		),
-		dependency_records AS (
-			SELECT requested.revision,version.payload->>'id' AS id,version.payload
-			FROM requested
-			JOIN coding_ledger_revision_items projection
-			  ON projection.ledger_id=$1 AND projection.revision=requested.revision
-			JOIN coding_ledger_items item
-			  ON item.ledger_id=projection.ledger_id AND item.item_id=projection.item_id
-			JOIN coding_ledger_item_versions version
-			  ON (version.ledger_id,version.item_id,version.revision)=
-			     (projection.ledger_id,projection.item_id,projection.item_revision)
-			WHERE item.item_id LIKE 'dependency.record.%'
-		),
-		records AS (
-			SELECT * FROM item_records
-			UNION ALL
-			SELECT * FROM dependency_records
-		),
-		before_records AS (
-			SELECT id,payload FROM records WHERE revision=$2
-		),
-		after_records AS (
-			SELECT id,payload FROM records WHERE revision=$3
-		)
-		SELECT COALESCE(before_records.id,after_records.id),
-		       before_records.id IS NOT NULL,after_records.id IS NOT NULL,
-		       COALESCE(before_records.payload->>'disposition',''),
-		       COALESCE(after_records.payload->>'disposition','')
-		FROM before_records
-		FULL OUTER JOIN after_records USING(id)
-		WHERE before_records.payload IS DISTINCT FROM after_records.payload
-		ORDER BY COALESCE(before_records.id,after_records.id)
-		LIMIT $4 OFFSET $5
-	`, ledgerID, fromRevision, toRevision, page.Limit+1, page.Offset)
+	before, err := readCodingLedgerRevisionTx(ctx, tx, ledgerID, fromRevision, CodingLedgerReadOptions{Limit: -1})
 	if err != nil {
 		return CodingLedgerDiff{}, err
 	}
-	defer rows.Close()
-	type changedRecord struct {
-		id              model.LedgerItemID
-		existed, exists bool
-		oldDisposition  model.LedgerDisposition
-		newDisposition  model.LedgerDisposition
-	}
-	changed := make([]changedRecord, 0, page.Limit+1)
-	for rows.Next() {
-		var record changedRecord
-		if err := rows.Scan(&record.id, &record.existed, &record.exists,
-			&record.oldDisposition, &record.newDisposition); err != nil {
-			return CodingLedgerDiff{}, err
-		}
-		changed = append(changed, record)
-	}
-	if err := rows.Err(); err != nil {
+	after, err := readCodingLedgerRevisionTx(ctx, tx, ledgerID, toRevision, CodingLedgerReadOptions{Limit: -1})
+	if err != nil {
 		return CodingLedgerDiff{}, err
+	}
+	old := map[model.LedgerItemID]model.LedgerTask{}
+	next := map[model.LedgerItemID]model.LedgerTask{}
+	ids := []model.LedgerItemID{}
+	for _, task := range before.Ledger.Tasks {
+		old[task.ID] = task
+		ids = append(ids, task.ID)
+	}
+	for _, task := range after.Ledger.Tasks {
+		next[task.ID] = task
+		if _, exists := old[task.ID]; !exists {
+			ids = append(ids, task.ID)
+		}
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	result := CodingLedgerDiff{LedgerID: ledgerID, FromRevision: fromRevision, ToRevision: toRevision, Limit: page.Limit, Offset: page.Offset}
+	count := 0
+	for _, id := range ids {
+		a, was := old[id]
+		b, is := next[id]
+		if was && is && reflect.DeepEqual(a, b) {
+			continue
+		}
+		count++
+		if count <= page.Offset {
+			continue
+		}
+		if count > page.Offset+page.Limit {
+			result.HasMore = true
+			break
+		}
+		switch {
+		case !was:
+			result.Added = append(result.Added, id)
+		case !is || b.Disposition == model.LedgerDispositionTombstoned:
+			result.Removed = append(result.Removed, id)
+		case a.Disposition == model.LedgerDispositionTombstoned:
+			result.Restored = append(result.Restored, id)
+		default:
+			result.Amended = append(result.Amended, id)
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return CodingLedgerDiff{}, err
-	}
-	result := CodingLedgerDiff{
-		LedgerID: ledgerID, FromRevision: fromRevision, ToRevision: toRevision,
-		Limit: page.Limit, Offset: page.Offset,
-	}
-	if len(changed) > page.Limit {
-		result.HasMore = true
-		changed = changed[:page.Limit]
-	}
-	for _, record := range changed {
-		switch {
-		case !record.existed:
-			result.Added = append(result.Added, record.id)
-		case !record.exists:
-			result.Removed = append(result.Removed, record.id)
-		case record.oldDisposition == model.LedgerDispositionActive &&
-			record.newDisposition == model.LedgerDispositionTombstoned:
-			result.Removed = append(result.Removed, record.id)
-		case record.oldDisposition == model.LedgerDispositionTombstoned &&
-			record.newDisposition == model.LedgerDispositionActive:
-			result.Restored = append(result.Restored, record.id)
-		default:
-			result.Amended = append(result.Amended, record.id)
-		}
 	}
 	return result, nil
 }
@@ -645,63 +439,7 @@ func (r *Repository) CodingLedgerTaskDetail(
 	if len(task.Ledger.Tasks) != 1 || task.Ledger.Tasks[0].ID != taskID {
 		return CodingLedgerRevision{}, pgx.ErrNoRows
 	}
-	related, err := r.ReadCodingLedger(ctx, ledgerID, CodingLedgerReadOptions{
-		Revision: task.Revision, Limit: page.Limit, Offset: page.Offset,
-		Kinds: []string{
-			"requirement", "constraint", "group", "acceptance_criterion", "check",
-			"dependency",
-		},
-		Removed: &active, RelatedTaskID: taskID,
-	})
-	if err != nil {
-		return CodingLedgerRevision{}, err
-	}
-	task.Ledger.Requirements = related.Ledger.Requirements
-	task.Ledger.Constraints = related.Ledger.Constraints
-	task.Ledger.Groups = related.Ledger.Groups
-	task.Ledger.AcceptanceCriteria = related.Ledger.AcceptanceCriteria
-	task.Ledger.Checks = related.Ledger.Checks
-	task.Ledger.Dependencies = related.Ledger.Dependencies
 	return task, nil
-}
-
-func (r *Repository) CodingLedgerGraph(
-	ctx context.Context,
-	ledgerID, revision int64,
-	includeRemoved bool,
-	pages ...CodingLedgerPage,
-) ([]model.LedgerDependency, error) {
-	page := CodingLedgerPage{Limit: 200}
-	if len(pages) > 1 {
-		return nil, fmt.Errorf("coding ledger graph accepts at most one page")
-	}
-	if len(pages) == 1 {
-		page = pages[0]
-	}
-	if page.Limit == 0 {
-		page.Limit = 200
-	}
-	if page.Limit < 0 {
-		return nil, fmt.Errorf("coding ledger graph limit cannot be negative")
-	}
-	if page.Limit > 1000 {
-		page.Limit = 1000
-	}
-	if page.Offset < 0 {
-		return nil, fmt.Errorf("coding ledger graph offset cannot be negative")
-	}
-	removed := false
-	options := CodingLedgerReadOptions{
-		Revision: revision, Limit: page.Limit, Offset: page.Offset, Kinds: []string{"dependency"},
-	}
-	if !includeRemoved {
-		options.Removed = &removed
-	}
-	projection, err := r.ReadCodingLedger(ctx, ledgerID, options)
-	if err != nil {
-		return nil, err
-	}
-	return projection.Ledger.Dependencies, nil
 }
 
 func (r *Repository) CodingLedgerRevisionHistory(ctx context.Context, ledgerID int64, limit int, offsets ...int) ([]CodingLedgerRevision, error) {

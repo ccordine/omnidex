@@ -1,0 +1,59 @@
+openapi: 3.0.3
+info:
+  title: Omnidex stateless integration inference
+  version: 1.0.0
+  description: Bounded inference with no channels, jobs, tools, or retained messages.
+servers:
+  - url: https://inference.omni.worknet
+paths:
+  /healthz:
+    get:
+      operationId: inferenceHealth
+      responses:
+        '200':
+          description: Process is ready; identifies its model and retains_history=false.
+  /v1/integrations/infer:
+    post:
+      operationId: infer
+      security:
+        - integrationToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [question, context, max_output_tokens]
+              properties:
+                question:
+                  type: string
+                  description: Primary semantic input; 1–4096 UTF-8 bytes. Native providers define their model-specific input contract.
+                context:
+                  type: string
+                  description: Minimal supporting data; at most 12000 UTF-8 bytes.
+                max_output_tokens:
+                  type: integer
+                  minimum: 1
+                  maximum: 1024
+      responses:
+        '200':
+          description: Complete validated inference output.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [text, model, duration_ms]
+                properties:
+                  text: {type: string}
+                  model: {type: string}
+                  duration_ms: {type: integer, minimum: 0}
+        '400': {description: Invalid or excessive request.}
+        '401': {description: Integration key required.}
+        '429': {description: Two requests are already in flight.}
+        '502': {description: Provider failure or incomplete/invalid output.}
+components:
+  securitySchemes:
+    integrationToken:
+      type: http
+      scheme: bearer

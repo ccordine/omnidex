@@ -2,71 +2,61 @@ package codingagent
 
 func PromptContext(call Assignment) any {
 	if call.Role == Plan {
-		// The current owner message is sent verbatim as the new native turn,
-		// not minified or duplicated inside the shared-history projection.
-		call.Objective = nil
-	}
-	if call.Role == ReviewResponse {
+		tasks := []string{}
+		if call.PlanningLedger != nil {
+			for _, task := range call.PlanningLedger.Tasks {
+				if task.Disposition == "active" && !contains(call.CompletedTaskIDs, string(task.ID)) {
+					tasks = append(tasks, task.Goal)
+				}
+			}
+		}
+		failure := ""
+		if call.Continuation != nil {
+			failure = call.Continuation.Reason
+		}
 		return struct {
-			ValidationNotes []string `json:"validation_notes,omitempty"`
-		}{call.ValidationNotes}
+			Tasks            []string            `json:"tasks"`
+			Conversation     []PlanningMessage   `json:"conversation,omitempty"`
+			IncompleteReason string              `json:"incomplete_reason,omitempty"`
+			Clarifications   []TaskClarification `json:"clarifications,omitempty"`
+		}{tasks, call.PlanningConversation, failure, call.Clarifications}
 	}
-	if call.Role == ExecutionResponse {
+	if call.Role == ReviewResponse || call.Role == ExecutionResponse {
 		return struct{}{}
 	}
-	if call.Role == PlanningInitial || call.Role == PlanningMutation {
-		// The new response is the parser's exact current input. Only its
-		// existing ledger and owner-turn background belong in shared context.
-		call.PlanningResponse = ""
-	}
 	if call.Role == Execute || call.Role == Review {
-		var task *struct {
-			ID                   string         `json:"id"`
-			Goal                 string         `json:"goal"`
-			Guidance             []TaskGuidance `json:"guidance"`
-			KnownAffectedSystems []string       `json:"known_affected_systems"`
-			Acceptance           []string       `json:"acceptance"`
-			ReadFiles            []string       `json:"read_files"`
-			WriteFiles           []string       `json:"write_files"`
-			DeleteFiles          []string       `json:"delete_files"`
-			Checks               []Check        `json:"checks"`
+		type findingText struct {
+			File        string `json:"file,omitempty"`
+			Observation string `json:"observation"`
 		}
+		findings := make([]findingText, 0, len(call.Findings))
+		for _, finding := range call.Findings {
+			findings = append(findings, findingText{finding.File, finding.Observation})
+		}
+		var task any
 		if call.Task != nil {
-			task = &struct {
-				ID                   string         `json:"id"`
-				Goal                 string         `json:"goal"`
-				Guidance             []TaskGuidance `json:"guidance"`
-				KnownAffectedSystems []string       `json:"known_affected_systems"`
-				Acceptance           []string       `json:"acceptance"`
-				ReadFiles            []string       `json:"read_files"`
-				WriteFiles           []string       `json:"write_files"`
-				DeleteFiles          []string       `json:"delete_files"`
-				Checks               []Check        `json:"checks"`
-			}{call.Task.ID, call.Task.Goal, call.Task.Guidance, call.Task.KnownAffectedSystems,
-				call.Task.Acceptance, call.Task.ReadFiles, call.Task.WriteFiles, call.Task.DeleteFiles, call.Task.Checks}
+			task = struct {
+				ReadFiles   []string `json:"read_files,omitempty"`
+				WriteFiles  []string `json:"write_files,omitempty"`
+				DeleteFiles []string `json:"delete_files,omitempty"`
+			}{call.Task.ReadFiles, call.Task.WriteFiles, call.Task.DeleteFiles}
 		}
 		return struct {
 			Task             any                 `json:"task"`
-			Findings         []Finding           `json:"findings,omitempty"`
-			Checks           []CheckResult       `json:"checks,omitempty"`
-			ValidationNotes  []string            `json:"validation_notes,omitempty"`
+			Findings         []findingText       `json:"findings,omitempty"`
 			PreviousResponse string              `json:"previous_response,omitempty"`
 			Reply            string              `json:"reply,omitempty"`
 			Clarifications   []TaskClarification `json:"clarifications,omitempty"`
-		}{task, call.Findings, call.Checks, call.ValidationNotes, call.Response, call.Reply, call.Clarifications}
+		}{task, findings, call.Response, call.Reply, call.Clarifications}
 	}
 	return struct {
-		Requirements         []Requirement          `json:"requirements,omitempty"`
 		Objective            *Objective             `json:"objective,omitempty"`
 		WorkspaceFiles       []string               `json:"workspace_files,omitempty"`
 		ConstructionFacts    []ConstructionFact     `json:"construction_facts,omitempty"`
 		ValidationNotes      []string               `json:"validation_notes,omitempty"`
 		PlanningLedger       *PlanningLedgerContext `json:"planning_ledger,omitempty"`
 		PlanningConversation []PlanningMessage      `json:"conversation,omitempty"`
-		PlanningResponse     string                 `json:"planning_response,omitempty"`
 		Continuation         *TaskContinuation      `json:"continuation,omitempty"`
 		Clarifications       []TaskClarification    `json:"clarifications,omitempty"`
-	}{call.Requirements, call.Objective,
-		call.ReadFiles, call.ConstructionFacts, call.ValidationNotes,
-		ActivePlanningLedgerContext(call.PlanningLedger, call.CompletedTaskIDs...), call.PlanningConversation, call.PlanningResponse, call.Continuation, call.Clarifications}
+	}{call.Objective, call.ReadFiles, call.ConstructionFacts, call.ValidationNotes, ActivePlanningLedgerContext(call.PlanningLedger, call.CompletedTaskIDs...), call.PlanningConversation, call.Continuation, call.Clarifications}
 }

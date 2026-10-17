@@ -11,8 +11,7 @@ import (
 )
 
 type parserPlanningProjection struct {
-	Operations            []planningParserOperation `json:"operations"`
-	ExistingConstraintIDs []model.LedgerItemID      `json:"existing_constraint_ids,omitempty"`
+	Operations []planningParserOperation `json:"operations"`
 }
 
 // Provider adapters return validated, materialized operations from the sieve.
@@ -27,8 +26,7 @@ func (s *parserSieve) planning(ctx context.Context) (json.RawMessage, error) {
 		return nil, err
 	}
 	operations := []model.LedgerMutationOperation{}
-	appliedTexts := []planningAppliedText{}
-	global := []model.LedgerItemID{}
+	instructions := []string{}
 	unit := 0
 	sourceHash := fmt.Sprintf("%x", sha256.Sum256([]byte(s.call.PlanningResponse)))[:12]
 	for index, parts := range s.parts {
@@ -36,44 +34,19 @@ func (s *parserSieve) planning(ctx context.Context) (json.RawMessage, error) {
 			if part.Kind == "ignore" {
 				continue
 			}
-			unit++
-			if part.Kind == "change" {
-				if id := representedPlanningStatement(part.Text, current, appliedTexts); id != "" {
-					if err := s.receipt("planning_restatement", map[string]any{
-						"block_id": s.blocks[index].ID, "text": part.Text, "item_id": id,
-					}); err != nil {
-						return nil, err
-					}
-					continue
-				}
+			if part.Kind == "project_instruction" {
+				instructions = append(instructions, strings.TrimSpace(part.Text))
+				continue
 			}
+			unit++
 			step := s.step(index, "planning_unit")
 			step.Source, step.Category, step.Ledger = part.Text, part.Kind, &current
-			step.NewIDs = map[string]string{}
-			for _, kind := range planningUnitItemKinds("change") {
-				step.NewIDs[kind] = fmt.Sprintf("p_%s_%d_%s", sourceHash, unit, kind)
-			}
-			var raw json.RawMessage
-			if err := s.leaf(ctx, step, &raw); err != nil {
-				return nil, err
-			}
+			step.NewIDs = map[string]string{"task": fmt.Sprintf("p_%s_%d_task", sourceHash, unit)}
 			var projection parserPlanningProjection
-			if err := decodeContract(raw, &projection); err != nil {
+			if err := s.leaf(ctx, step, &projection); err != nil {
 				return nil, err
 			}
-			for _, id := range projection.ExistingConstraintIDs {
-				found := false
-				for _, c := range current.Constraints {
-					found = found || c.ID == id && c.Disposition == model.LedgerDispositionActive
-				}
-				if !found {
-					return nil, fmt.Errorf("source policy references an unknown or inactive constraint")
-				}
-				global = append(global, id)
-			}
-			raw, _ = json.Marshal(struct {
-				Operations []planningParserOperation `json:"operations"`
-			}{projection.Operations})
+			raw, _ := json.Marshal(projection)
 			normalized, err := normalizeParserPlanningItems(raw, part, step, current)
 			if err != nil {
 				return nil, fmt.Errorf("%s planning statement: %w", step.BlockID, err)
@@ -82,17 +55,9 @@ func (s *parserSieve) planning(ctx context.Context) (json.RawMessage, error) {
 			if err != nil {
 				return nil, err
 			}
-			if len(parsed) == 0 && len(projection.ExistingConstraintIDs) == 0 {
-				return nil, fmt.Errorf("admitted planning statement produced no ledger effect")
-			}
-			for _, operation := range parsed {
-				changedTexts := changedPlanningTexts(current, operation)
-				if err := applyPlanningOperation(&current, operation); err != nil {
+			for _, op := range parsed {
+				if err := applyPlanningOperation(&current, op); err != nil {
 					return nil, err
-				}
-				appliedTexts = append(appliedTexts, changedTexts...)
-				if part.Kind == "project_constraint" && operation.Item != nil && operation.Item.Constraint != nil {
-					global = append(global, operation.Item.Constraint.ID)
 				}
 			}
 			if err := current.ValidateDraft(); err != nil {
@@ -101,36 +66,26 @@ func (s *parserSieve) planning(ctx context.Context) (json.RawMessage, error) {
 			operations = append(operations, parsed...)
 		}
 	}
-	// Project-wide policy has a deterministic consumer: every remaining task,
-	// including tasks described later in the same response. No model reauthors it.
+	// Shared user instructions are ordinary task text, not separately approved records.
 	for _, task := range append([]model.LedgerTask(nil), current.Tasks...) {
 		if task.Disposition != model.LedgerDispositionActive || contains(s.call.CompletedTaskIDs, string(task.ID)) {
 			continue
 		}
-		ids := append([]model.LedgerItemID{}, task.ConstraintIDs...)
-		for _, id := range global {
-			found := false
-			for _, old := range ids {
-				found = found || old == id
-			}
-			if !found {
-				ids = append(ids, id)
+		goal := task.Goal
+		for _, instruction := range instructions {
+			if !strings.Contains(goal, instruction) {
+				goal += "\n\n" + instruction
 			}
 		}
-		if len(ids) == len(task.ConstraintIDs) {
+		if goal == task.Goal {
 			continue
 		}
-		patch, _ := json.Marshal(map[string]any{"operations": []any{map[string]any{
-			"kind": "amend", "target_id": task.ID, "item": map[string]any{"task": map[string]any{"constraint_ids": ids}}, "rationale": "Bind the stated project-wide constraint to its remaining task consumer.",
-		}}})
-		bound, err := decodePlanningOperations(patch, current)
-		if err != nil {
+		task.Goal = goal
+		op := model.LedgerMutationOperation{Kind: model.LedgerMutationAmend, TargetID: task.ID, Item: &model.LedgerMutationItem{Task: &task}, Rationale: "Retain the stated shared instructions with this task."}
+		if err := applyPlanningOperation(&current, op); err != nil {
 			return nil, err
 		}
-		if err := applyPlanningOperation(&current, bound[0]); err != nil {
-			return nil, err
-		}
-		operations = append(operations, bound...)
+		operations = append(operations, op)
 	}
 	if err := current.ValidateDraft(); err != nil {
 		return nil, err
@@ -227,39 +182,20 @@ func normalizeParserPlanningItems(raw json.RawMessage, part ParserPart, step Par
 		rank++
 		base.Provenance = model.LedgerProvenance{Kind: "final_response_statement", Reference: step.BlockID + ":" + string(base.ID), Revision: ledger.Revision}
 		base.Rank, base.Disposition, base.ReviewState = rank, model.LedgerDispositionActive, model.LedgerReviewProposed
-		if base.Priority == "" {
-			base.Priority = model.LedgerPriorityNormal
-		}
 		// Every added obligation retains its entire admitted source span. The
 		// projection supplies relationships, never a lossy replacement summary.
-		switch {
-		case item.Task != nil:
-			item.Task.Goal = strings.TrimSpace(part.Text)
-			for _, list := range [][]string{item.Task.ReadFiles, item.Task.WriteFiles, item.Task.DeleteFiles} {
-				for _, file := range list {
-					if !strings.Contains(part.Text, file) {
-						return nil, fmt.Errorf("parser invented a file absent from its source statement: %s", file)
-					}
-				}
-			}
-		case item.Requirement != nil:
-			item.Requirement.Outcome = strings.TrimSpace(part.Text)
-		case item.AcceptanceCriterion != nil:
-			item.AcceptanceCriterion.Outcome = strings.TrimSpace(part.Text)
-		case item.Constraint != nil:
-			item.Constraint.Rule = strings.TrimSpace(part.Text)
-		case item.Objective != nil:
-			item.Objective.Outcome = strings.TrimSpace(part.Text)
-		case item.Check != nil:
-			if len(item.Check.Argv) == 0 {
-				item.Check.Observation = strings.TrimSpace(part.Text)
-			}
-			for _, arg := range item.Check.Argv {
-				if arg == "" || !strings.Contains(part.Text, arg) {
-					return nil, fmt.Errorf("parser invented an unstated verification command argument")
+		if item.Task == nil {
+			return nil, fmt.Errorf("planning may add only tasks")
+		}
+		item.Task.Goal = strings.TrimSpace(part.Text)
+		for _, list := range [][]string{item.Task.ReadFiles, item.Task.WriteFiles, item.Task.DeleteFiles} {
+			for _, file := range list {
+				if !strings.Contains(part.Text, file) {
+					return nil, fmt.Errorf("parser invented a file absent from its source statement: %s", file)
 				}
 			}
 		}
+
 		op.Item, _ = json.Marshal(item)
 	}
 	return json.Marshal(parsed)

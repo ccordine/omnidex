@@ -21,15 +21,6 @@ func renderAgentContext(call codingagent.Assignment) (string, error) {
 		encoded = string(raw)
 	}
 	context := "Shared context (background, not a new request):"
-	if call.Role == codingagent.Plan {
-		guidance := call
-		guidance.Objective = nil
-		instruction, err := renderAgentAssignment(guidance)
-		if err != nil {
-			return "", err
-		}
-		context += "\n" + instruction
-	}
 	return context + "\n\nAssignment:\n" + encoded, nil
 }
 
@@ -45,9 +36,6 @@ type agentHistoryMessage struct {
 }
 
 func (connection *connection) injectAgentContext(call codingagent.Assignment, threadID string) (json.RawMessage, error) {
-	if call.Role == codingagent.Execute && call.Session != nil {
-		return nil, nil // Resumed native history already contains this task.
-	}
 	context, err := renderAgentContext(call)
 	if err != nil {
 		return nil, err

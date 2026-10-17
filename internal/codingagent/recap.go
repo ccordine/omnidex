@@ -8,8 +8,8 @@ import (
 // TaskLedgerCompletionRecap reports the database-driven task loop. Completion
 // authority comes from NextIncompleteCodingLedgerTask returning no remaining
 // task; this function only renders the task acceptance evidence.
-func TaskLedgerCompletionRecap(entries []Entry, taskCount, checkCount, maxBytes int) (string, error) {
-	if taskCount < 1 || checkCount < 0 {
+func TaskLedgerCompletionRecap(entries []Entry, taskCount, maxBytes int) (string, error) {
+	if taskCount < 1 {
 		return "", fmt.Errorf("task ledger completion recap requires authoritative accepted task counts")
 	}
 	files := []string{}
@@ -19,7 +19,7 @@ func TaskLedgerCompletionRecap(entries []Entry, taskCount, checkCount, maxBytes 
 		}
 	}
 	files = uniqueFiles(files)
-	header := fmt.Sprintf("Tasks completed: %d. Checks passed: %d. Independent task reviews passed.\n", taskCount, checkCount)
+	header := fmt.Sprintf("Tasks completed: %d. Independent task reviews passed.\n", taskCount)
 	if maxBytes < len(header)+96 {
 		return "", fmt.Errorf("completion recap output boundary is too small")
 	}

@@ -55,7 +55,7 @@ validate_dist_dir() {
   [[ "$name" != "." && "$name" != ".." ]] || die "distribution directory name is unsafe"
   [[ -d "$parent" ]] || die "distribution directory parent is unavailable"
   parent="$(cd "$parent" && pwd -P)"
-  DIST_DIR="${parent}/${name}"
+  DIST_DIR="${parent%/}/${name}"
   [[ ! -L "$DIST_DIR" ]] || die "distribution directory must not be a symlink"
   [[ ! -e "$DIST_DIR" || -d "$DIST_DIR" ]] || die "distribution directory is not a directory"
   [[ "$DIST_DIR" != "$REPO_ROOT" ]] || die "distribution directory must not be the repository root"

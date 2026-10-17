@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gryph/omnidex/internal/ledgerapi"
@@ -64,33 +63,8 @@ func projectCodingLedgerForTerminal(revision ledgerapi.CodingLedgerRevision) (mo
 		}
 		plan.Leaves = append(plan.Leaves, model.CodingPlanLeaf{ID: model.CodingPlanLeafID(item.ID), Statement: "[" + kind + "] " + statement, Decision: decision})
 	}
-	for _, value := range revision.Ledger.Objectives {
-		add(value.LedgerItem, "objective", value.Outcome)
-	}
-	for _, value := range revision.Ledger.Requirements {
-		add(value.LedgerItem, "requirement", value.Outcome)
-	}
-	for _, value := range revision.Ledger.Constraints {
-		add(value.LedgerItem, "constraint", value.Rule)
-	}
-	for _, value := range revision.Ledger.Groups {
-		add(value.LedgerItem, "group", value.Title)
-	}
 	for _, value := range revision.Ledger.Tasks {
 		add(value.LedgerItem, "task", value.Goal)
-	}
-	for _, value := range revision.Ledger.AcceptanceCriteria {
-		add(value.LedgerItem, "acceptance", value.Outcome)
-	}
-	for _, value := range revision.Ledger.Checks {
-		statement := value.Observation
-		if statement == "" {
-			statement = strings.Join(value.Argv, " ")
-		}
-		add(value.LedgerItem, "check", statement)
-	}
-	for _, value := range revision.Ledger.Dependencies {
-		add(value.LedgerItem, "dependency", string(value.TaskID)+" "+string(value.Kind)+" "+string(value.PrerequisiteID))
 	}
 	if err := plan.Validate(); err != nil {
 		return model.CodingPlan{}, err

@@ -2,7 +2,6 @@ package codingagent
 
 import (
 	"context"
-	"fmt"
 )
 
 type taskState struct {
@@ -97,14 +96,9 @@ func (controller *Controller) runTask(ctx context.Context, task Task, state *tas
 	if state.inputRequired != nil {
 		return state.inputRequired
 	}
-	for _, dependency := range task.Dependencies {
-		if !state.accepted[dependency] {
-			return fmt.Errorf("task %s dependency %s is not accepted", task.ID, dependency)
-		}
-	}
 	if !state.started[task.ID] {
 		state.started[task.ID] = true
-		if err := controller.executeTask(ctx, task, state, nil); err != nil {
+		if err := controller.executeTask(ctx, task, state); err != nil {
 			return err
 		}
 	}
@@ -120,39 +114,20 @@ func (controller *Controller) runTask(ctx context.Context, task Task, state *tas
 		if err != nil {
 			return err
 		}
-		checks := []CheckResult{}
-		if len(task.Checks) > 0 {
-			var err error
-			checks, err = controller.executeChecks(ctx, scope, task.Checks)
-			if err != nil {
-				return err
-			}
-		}
-		if err := validateCheckResults(task.Checks, checks); err != nil {
-			return err
-		}
-		if len(checks) > 0 && !checksPass(checks) {
-			state.findings[task.ID] = nil
-			if err := controller.executeTask(ctx, task, state, checks); err != nil {
-				return err
-			}
-			continue
-		}
-		scope.Checks = checks
 		review, reviewResult, err := controller.review(ctx, scope, map[string]Task{task.ID: task}, state.round, state.pendingReview)
 		if err != nil {
 			return err
 		}
 		if len(review.Findings) == 0 {
 			state.accepted[task.ID] = true
-			_, err := controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "task_accepted", TaskID: task.ID, CallID: reviewResult.CallID, Round: state.round, Checks: checks})
+			_, err := controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "task_accepted", TaskID: task.ID, CallID: reviewResult.CallID, Round: state.round})
 			return err
 		}
 		state.findings[task.ID] = review.Findings
-		if _, err := controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "task_reviewed", TaskID: task.ID, Round: state.round, Findings: review.Findings, Checks: checks}); err != nil {
+		if _, err := controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "task_reviewed", TaskID: task.ID, Round: state.round, Findings: review.Findings}); err != nil {
 			return err
 		}
-		if err := controller.executeTask(ctx, task, state, checks); err != nil {
+		if err := controller.executeTask(ctx, task, state); err != nil {
 			return err
 		}
 	}
@@ -162,7 +137,7 @@ func (controller *Controller) runTask(ctx context.Context, task Task, state *tas
 	return ctx.Err()
 }
 
-func (controller *Controller) executeTask(ctx context.Context, task Task, state *taskState, checks []CheckResult) error {
+func (controller *Controller) executeTask(ctx context.Context, task Task, state *taskState) error {
 	if _, err := controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "task_executing", TaskID: task.ID, Round: state.round + 1}); err != nil {
 		return err
 	}
@@ -173,7 +148,13 @@ func (controller *Controller) executeTask(ctx context.Context, task Task, state 
 		return err
 	}
 	execution.Session, execution.Reply = state.session, state.reply
-	execution.Findings, execution.Checks = state.findings[task.ID], checks
+	// Completed turns supply no durable task state. Reconstruct a fresh,
+	// narrow execution from the database task, clarifications and findings.
+	// A still-running turn retains its identity solely for exact recovery.
+	if execution.Session != nil && execution.Session.State == "idle" {
+		execution.Session = nil
+	}
+	execution.Findings = state.findings[task.ID]
 	result, err := controller.invoke(ctx, execution, state.round+1)
 	if err != nil {
 		return err

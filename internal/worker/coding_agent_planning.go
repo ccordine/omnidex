@@ -10,8 +10,6 @@ import (
 	"github.com/gryph/omnidex/internal/queue"
 )
 
-const codingAgentObjectiveRequirementID = "objective"
-
 func (runtime *nativeRuntimeV3) runAgentPlanningAction(configuration codingagent.Configuration) error {
 	if runtime.svc.agentProviders == nil {
 		return fmt.Errorf("Agents mode has no registered planning environment")
@@ -36,7 +34,7 @@ func (runtime *nativeRuntimeV3) runAgentPlanningAction(configuration codingagent
 	if err != nil {
 		return err
 	}
-	providers, _, err := runtime.svc.agentProviders()
+	providers, err := runtime.svc.agentProviders()
 	if err != nil {
 		return err
 	}
@@ -44,11 +42,9 @@ func (runtime *nativeRuntimeV3) runAgentPlanningAction(configuration codingagent
 	controller := codingagent.Controller{
 		JobID: runtime.claim.Job.ID, Generation: runtime.claim.Authority.Generation,
 		Root: scope.Root, Configuration: configuration,
-		Requirements:  []codingagent.Requirement{{ID: codingAgentObjectiveRequirementID, Outcome: request.Instruction}},
 		Providers:     providers,
 		Environment:   &codingAgentEnvironment{runtime: runtime, root: scope.Root, identity: identity},
 		Evidence:      runtime.svc.repo.CodingAgentEvidence(runtime.claim.Authority),
-		MinifyContext: runtime.minifyCodingContext,
 		NativeInput:   runtime.waitForNativeCodingInput,
 		Activity: func(activity model.AgentActivity) {
 			runtime.svc.emitRuntimeEvent(RuntimeEvent{JobID: runtime.claim.Authority.JobID, StepID: runtime.claim.Authority.StepID, Attempt: runtime.claim.Authority.Attempt, Kind: "agent_activity", AgentActivity: &activity})
@@ -234,14 +230,7 @@ func readCompleteCodingLedger(
 		}
 		if offset == 0 {
 			complete = page
-			complete.Ledger.Objectives = nil
-			complete.Ledger.Requirements = nil
-			complete.Ledger.Constraints = nil
-			complete.Ledger.Groups = nil
 			complete.Ledger.Tasks = nil
-			complete.Ledger.AcceptanceCriteria = nil
-			complete.Ledger.Checks = nil
-			complete.Ledger.Dependencies = nil
 		} else if page.Revision != complete.Revision {
 			return queue.CodingLedgerRevision{}, fmt.Errorf("coding ledger changed while loading planning context")
 		}
@@ -257,19 +246,8 @@ func readCompleteCodingLedger(
 	return complete, nil
 }
 
-func codingLedgerPageItemCount(ledger model.EngineeringLedger) int {
-	return len(ledger.Objectives) + len(ledger.Requirements) + len(ledger.Constraints) +
-		len(ledger.Groups) + len(ledger.Tasks) + len(ledger.AcceptanceCriteria) +
-		len(ledger.Checks) + len(ledger.Dependencies)
-}
+func codingLedgerPageItemCount(ledger model.EngineeringLedger) int { return len(ledger.Tasks) }
 
 func appendCodingLedgerPage(target *model.EngineeringLedger, page model.EngineeringLedger) {
-	target.Objectives = append(target.Objectives, page.Objectives...)
-	target.Requirements = append(target.Requirements, page.Requirements...)
-	target.Constraints = append(target.Constraints, page.Constraints...)
-	target.Groups = append(target.Groups, page.Groups...)
 	target.Tasks = append(target.Tasks, page.Tasks...)
-	target.AcceptanceCriteria = append(target.AcceptanceCriteria, page.AcceptanceCriteria...)
-	target.Checks = append(target.Checks, page.Checks...)
-	target.Dependencies = append(target.Dependencies, page.Dependencies...)
 }

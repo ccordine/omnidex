@@ -38,7 +38,6 @@ func (controller *Controller) planningResponse(ctx context.Context, turn Plannin
 	}
 	call := controller.assignment(Plan, nil, controller.Configuration.Planner)
 	call.Objective = &Objective{Instruction: turn.Text}
-	call.Requirements = append([]Requirement{}, controller.Requirements...)
 	call.PlanningLedger, call.PlanningConversation = ledger, conversation
 	call.Continuation = continuation
 	call.CompletedTaskIDs = append([]string{}, controller.CompletedTaskIDs...)

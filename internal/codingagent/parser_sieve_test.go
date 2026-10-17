@@ -33,18 +33,30 @@ func TestParserPartitionsEveryByteWithinTheLeafBound(t *testing.T) {
 	}
 }
 
-func TestParserDispositionsRejectLossDuplicationAndUnknownMeaning(t *testing.T) {
+func TestParserDispositionsRejectLossDuplicationAndInvalidKinds(t *testing.T) {
 	for _, parts := range [][]ParserPart{
 		nil, {{Text: "first", Kind: "task", Reason: "one obligation"}},
 		{{Text: "first\nsecondfirst\nsecond", Kind: "task", Reason: "duplicated"}},
 		{{Text: "second\nfirst", Kind: "task", Reason: "reordered"}},
-		{{Text: "first\nsecond", Kind: "unknown", Reason: "unresolved"}},
 		{{Text: "first\nsecond", Kind: "task"}},
 		{{Text: "first\nsecond", Kind: "approve", Reason: "invented control"}},
 	} {
 		if err := validateParserParts(PlanningInitial, "first\nsecond", parts); err == nil {
 			t.Fatalf("unsafe dispositions accepted: %+v", parts)
 		}
+	}
+}
+
+func TestParserDispositionsIgnoreUnknownCommentary(t *testing.T) {
+	parts, err := parserScanParts(PlanningInitial, "first\nsecond", parserScanResult{Units: map[string]parserUnitDisposition{
+		"unit_1": {Kind: "unknown", Reason: "parser commentary", GroupStart: "unit_1"},
+		"unit_2": {Kind: "task", Reason: "second obligation", GroupStart: "unit_2"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parts) != 2 || parts[0].Kind != "ignore" || parts[0].Text != "first\n" {
+		t.Fatalf("unknown commentary was not ignored: %+v", parts)
 	}
 }
 
@@ -114,77 +126,6 @@ func TestExecutionSieveCannotHideInputOrFailureBehindProgress(t *testing.T) {
 		result, err := RunParserSieve(t.Context(), call, func(NativeEvent) error { return nil }, provider)
 		if err != nil || string(result.Content) != fmt.Sprintf(`{"kind":%q}`, kind) {
 			t.Fatalf("outstanding %s was hidden: %s %v", kind, result.Content, err)
-		}
-	}
-}
-
-func TestReviewSieveVisitsEveryCriterionAndRetainsEveryDefect(t *testing.T) {
-	call := Assignment{Role: ReviewResponse, Route: Route{Provider: "fixture", Model: "fixture"}, Task: &Task{ID: "task", Acceptance: []string{"Criterion A", "Criterion B"}}, Response: "Required review is complete.\n\nFailure A.\n\nFailure B."}
-	visits := map[string]int{}
-	provider := sieveTestProvider(t, func(leaf Assignment) any {
-		step := leaf.ParserStep
-		if step.Stage == "scan" {
-			return scanOracle(step.Source, "done")
-		}
-		visits[step.Criterion]++
-		result := parserCriterionResult{Status: "absent", Findings: []struct {
-			Quote string `json:"quote"`
-			File  string `json:"file"`
-		}{}}
-		if step.Criterion == "Criterion A" && step.BlockID == "block_2" || step.Criterion == "Criterion B" && step.BlockID == "block_3" {
-			result.Status, result.Quote = "defect", strings.TrimSpace(step.Source)
-			return map[string]any{"status": result.Status, "quote": result.Quote, "findings": []any{map[string]any{"quote": result.Quote, "file": ""}}}
-		}
-		return result
-	})
-	result, err := RunParserSieve(t.Context(), call, func(NativeEvent) error { return nil }, provider)
-	var review ReviewResponseResult
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal(result.Content, &review); err != nil {
-		t.Fatal(err)
-	}
-	if review.Kind != ExecutionDone || len(review.Findings) != 2 || visits["Criterion A"] != 3 || visits["Criterion B"] != 3 {
-		t.Fatalf("criterion or defect was omitted: %+v visits=%v", review, visits)
-	}
-	if review.Findings[0].Requirement != "Criterion A" || review.Findings[1].Requirement != "Criterion B" {
-		t.Fatal("code changed criterion identity")
-	}
-}
-
-func TestReviewSieveCannotAcceptAnUnmentionedCriterion(t *testing.T) {
-	call := Assignment{Role: ReviewResponse, Route: Route{Provider: "fixture", Model: "fixture"}, Task: &Task{ID: "task", Acceptance: []string{"Required behavior"}}, Response: "The review is finished."}
-	provider := sieveTestProvider(t, func(leaf Assignment) any {
-		if leaf.ParserStep.Stage == "scan" {
-			return scanOracle(leaf.ParserStep.Source, "done")
-		}
-		return map[string]any{"status": "absent", "quote": "", "findings": []any{}}
-	})
-	result, err := RunParserSieve(t.Context(), call, func(NativeEvent) error { return nil }, provider)
-	var review ReviewResponseResult
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal(result.Content, &review); err != nil || review.Kind != ExecutionError {
-		t.Fatalf("empty findings falsely accepted uncovered review: %s %v", result.Content, err)
-	}
-}
-
-func TestCriterionSieveRejectsInventedEvidenceAndFiles(t *testing.T) {
-	for _, raw := range []string{
-		`{"status":"pass","quote":"Everything passed.","findings":[]}`,
-		`{"status":"absent","quote":"Failure.","findings":[]}`,
-		`{"status":"defect","quote":"Failure.","findings":[]}`,
-		`{"status":"pass","quote":"Failure.","findings":[{"quote":"Failure.","file":""}]}`,
-		`{"status":"defect","quote":"Failure.","findings":[{"quote":"Failure.","file":"invented.go"}]}`,
-	} {
-		var result parserCriterionResult
-		if err := json.Unmarshal([]byte(raw), &result); err != nil {
-			t.Fatal(err)
-		}
-		if err := validateParserCriterion("Failure.", result); err == nil {
-			t.Fatalf("unsupported review interpretation accepted: %s", raw)
 		}
 	}
 }

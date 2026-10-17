@@ -31,7 +31,7 @@ type Options struct {
 	WorkspaceConnections    *workspacetransport.Hub
 	Logger                  *log.Logger
 	RuntimeEventSink        RuntimeEventSink
-	AgentProviders          func() (map[string]codingagent.Provider, codingagent.Verifier, error)
+	AgentProviders          func() (map[string]codingagent.Provider, error)
 }
 
 type Service struct {
@@ -48,7 +48,7 @@ type Service struct {
 	runtimeEventSink       RuntimeEventSink
 	runtimeEventMu         sync.RWMutex
 	runtimeEventChannels   map[int64]runtimeEventChannelBinding
-	agentProviders         func() (map[string]codingagent.Provider, codingagent.Verifier, error)
+	agentProviders         func() (map[string]codingagent.Provider, error)
 }
 
 func New(
