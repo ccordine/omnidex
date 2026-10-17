@@ -26,15 +26,32 @@ type parserScanResult struct {
 func parserSourceUnits(source string) []parserSourceUnit {
 	lines := strings.SplitAfter(source, "\n")
 	units := []parserSourceUnit{}
+	fence := ""
 	for _, line := range lines {
 		if line == "" {
 			continue
 		}
-		unit := parserSourceUnit{Text: line}
-		if strings.TrimSpace(line) != "" {
-			unit.ID = fmt.Sprintf("unit_%d", len(units)+1)
+		fragments := []string{line}
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case fence != "":
+			if strings.HasPrefix(trimmed, fence) {
+				fence = ""
+			}
+		case strings.HasPrefix(trimmed, "```"):
+			fence = "```"
+		case strings.HasPrefix(trimmed, "~~~"):
+			fence = "~~~"
+		default:
+			fragments = parserSentenceFragments(line)
 		}
-		units = append(units, unit)
+		for _, fragment := range fragments {
+			unit := parserSourceUnit{Text: fragment}
+			if strings.TrimSpace(fragment) != "" {
+				unit.ID = fmt.Sprintf("unit_%d", len(units)+1)
+			}
+			units = append(units, unit)
+		}
 	}
 	return units
 }

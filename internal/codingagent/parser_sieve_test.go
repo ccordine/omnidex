@@ -86,9 +86,16 @@ func sieveTestProvider(t *testing.T, resolve func(Assignment) any) func(context.
 
 func scanOracle(source, kind string) parserScanResult {
 	result := parserScanResult{Units: map[string]parserUnitDisposition{}}
+	group := ""
 	for _, unit := range parserSourceUnits(source) {
 		if unit.ID != "" {
-			result.Units[unit.ID] = parserUnitDisposition{Kind: kind, Reason: "fixed semantic oracle", GroupStart: unit.ID}
+			if group == "" {
+				group = unit.ID
+			}
+			result.Units[unit.ID] = parserUnitDisposition{Kind: kind, Reason: "fixed semantic oracle", GroupStart: group}
+		}
+		if strings.Contains(unit.Text, "\n") {
+			group = ""
 		}
 	}
 	return result

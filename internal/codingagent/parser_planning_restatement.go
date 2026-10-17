@@ -8,9 +8,9 @@ import (
 
 // A response can describe an edit and then quote the resulting wording. Code
 // accounts for that exact restatement without asking for the same edit again.
-// Only an earlier applied item in this response can supply this evidence, and
+// Only text changed by an earlier applied item can supply this evidence, and
 // the complete text must still be present in that item's current active state.
-func representedPlanningStatement(source string, current EngineeringLedger, operations []model.LedgerMutationOperation) model.LedgerItemID {
+func representedPlanningStatement(source string, current EngineeringLedger, applied []planningAppliedText) model.LedgerItemID {
 	lines := strings.Split(strings.TrimSpace(source), "\n")
 	for index, line := range lines {
 		lines[index] = strings.TrimPrefix(line, "> ")
@@ -19,22 +19,69 @@ func representedPlanningStatement(source string, current EngineeringLedger, oper
 	if text == "" {
 		return ""
 	}
-	for _, operation := range operations {
-		if operation.Item == nil || operation.Item.Base() == nil {
-			continue
-		}
-		id := operation.Item.Base().ID
-		retained := retainedPlanningItem(current, id)
+	for _, change := range applied {
+		retained := retainedPlanningItem(current, change.ItemID)
 		if retained == nil || retained.Base().Disposition != model.LedgerDispositionActive {
 			continue
 		}
-		for _, value := range planningItemStatements(operation.Item) {
-			if strings.TrimSpace(value) == text && contains(planningItemStatements(retained), value) {
-				return id
-			}
+		if contains(planningItemStatements(retained), change.Text) && planningTextRepresentsStatement(change.Text, text) {
+			return change.ItemID
 		}
 	}
 	return ""
+}
+
+type planningAppliedText struct {
+	ItemID model.LedgerItemID
+	Text   string
+}
+
+func changedPlanningTexts(before EngineeringLedger, operation model.LedgerMutationOperation) []planningAppliedText {
+	if operation.Item == nil || operation.Item.Base() == nil {
+		return nil
+	}
+	id := operation.Item.Base().ID
+	previous := []string{}
+	if retained := retainedPlanningItem(before, id); retained != nil {
+		previous = planningItemStatements(retained)
+	}
+	changes := []planningAppliedText{}
+	for _, text := range planningItemStatements(operation.Item) {
+		if strings.TrimSpace(text) != "" && !contains(previous, text) {
+			changes = append(changes, planningAppliedText{ItemID: id, Text: text})
+		}
+	}
+	return changes
+}
+
+// A scan may keep adjacent sentences together or classify them separately.
+// Match only complete code-selected sentence spans, never arbitrary substrings.
+func planningTextRepresentsStatement(value, text string) bool {
+	if strings.TrimSpace(value) == text {
+		return true
+	}
+	starts, ends := map[int]bool{}, map[int]bool{}
+	offset := 0
+	for _, fragment := range parserSentenceFragments(value) {
+		trimmed := strings.TrimSpace(fragment)
+		if trimmed != "" {
+			start := offset + strings.Index(fragment, trimmed)
+			starts[start], ends[start+len(trimmed)] = true, true
+		}
+		offset += len(fragment)
+	}
+	for offset = 0; offset < len(value); {
+		index := strings.Index(value[offset:], text)
+		if index < 0 {
+			return false
+		}
+		start := offset + index
+		if starts[start] && ends[start+len(text)] {
+			return true
+		}
+		offset = start + 1
+	}
+	return false
 }
 
 func planningItemStatements(item *model.LedgerMutationItem) []string {

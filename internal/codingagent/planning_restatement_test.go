@@ -117,11 +117,19 @@ func TestPlanningRestatementDoesNotHideUnrepresentedEdits(t *testing.T) {
 	}
 	operation := model.LedgerMutationOperation{Kind: model.LedgerMutationAmend,
 		Item: &model.LedgerMutationItem{Constraint: &ledger.Constraints[0]}}
-	if representedPlanningStatement(wanted, ledger, nil) != "" || representedPlanningStatement(wanted, ledger, []model.LedgerMutationOperation{operation}) != "" {
+	if representedPlanningStatement(wanted, ledger, nil) != "" || representedPlanningStatement(wanted, ledger, changedPlanningTexts(ledger, operation)) != "" {
 		t.Fatal("unapplied replacement was accepted as represented")
 	}
+	changed := ledger.Constraints[0]
+	changed.Rule = wanted
+	operation.Item.Constraint = &changed
+	proof := changedPlanningTexts(ledger, operation)
+	if len(proof) != 1 || representedPlanningStatement(wanted, ledger, proof) != "" {
+		t.Fatal("an earlier result that does not match current state supplied restatement evidence")
+	}
+	ledger.Constraints[0] = changed
 	ledger.Constraints[0].Disposition = model.LedgerDispositionTombstoned
-	if representedPlanningStatement(ledger.Constraints[0].Rule, ledger, []model.LedgerMutationOperation{operation}) != "" {
+	if representedPlanningStatement(wanted, ledger, proof) != "" {
 		t.Fatal("removed item supplied active restatement evidence")
 	}
 }
@@ -132,4 +140,18 @@ func constraintAmendment(id model.LedgerItemID, rule string) any {
 		"item":      map[string]any{"constraint": map[string]any{"rule": rule}},
 		"rationale": "Remove only the unwanted restriction.",
 	}}}
+}
+
+func TestPlanningRestatementAcceptsOnlyCompleteSentenceSpans(t *testing.T) {
+	value := "Keep files local. Preserve original bytes. Ask before deleting files."
+	for _, text := range []string{"Keep files local.", "Preserve original bytes.", "Preserve original bytes. Ask before deleting files.", value} {
+		if !planningTextRepresentsStatement(value, text) {
+			t.Fatalf("complete represented sentence span rejected: %q", text)
+		}
+	}
+	for _, text := range []string{"files local.", "Preserve original", "Preserve original bytes. Delete the originals."} {
+		if planningTextRepresentsStatement(value, text) {
+			t.Fatalf("partial or new obligation treated as represented: %q", text)
+		}
+	}
 }

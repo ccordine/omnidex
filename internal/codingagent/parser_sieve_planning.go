@@ -27,6 +27,7 @@ func (s *parserSieve) planning(ctx context.Context) (json.RawMessage, error) {
 		return nil, err
 	}
 	operations := []model.LedgerMutationOperation{}
+	appliedTexts := []planningAppliedText{}
 	global := []model.LedgerItemID{}
 	unit := 0
 	sourceHash := fmt.Sprintf("%x", sha256.Sum256([]byte(s.call.PlanningResponse)))[:12]
@@ -37,7 +38,7 @@ func (s *parserSieve) planning(ctx context.Context) (json.RawMessage, error) {
 			}
 			unit++
 			if part.Kind == "change" {
-				if id := representedPlanningStatement(part.Text, current, operations); id != "" {
+				if id := representedPlanningStatement(part.Text, current, appliedTexts); id != "" {
 					if err := s.receipt("planning_restatement", map[string]any{
 						"block_id": s.blocks[index].ID, "text": part.Text, "item_id": id,
 					}); err != nil {
@@ -85,9 +86,11 @@ func (s *parserSieve) planning(ctx context.Context) (json.RawMessage, error) {
 				return nil, fmt.Errorf("admitted planning statement produced no ledger effect")
 			}
 			for _, operation := range parsed {
+				changedTexts := changedPlanningTexts(current, operation)
 				if err := applyPlanningOperation(&current, operation); err != nil {
 					return nil, err
 				}
+				appliedTexts = append(appliedTexts, changedTexts...)
 				if part.Kind == "project_constraint" && operation.Item != nil && operation.Item.Constraint != nil {
 					global = append(global, operation.Item.Constraint.ID)
 				}
