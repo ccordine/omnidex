@@ -19,7 +19,7 @@ func TestExecutionUsesNativeCommandsAndFileChanges(t *testing.T) {
 		}
 	}
 	result := codingagent.Result{}
-	if err := collectAgentResultItem(&result, codingagent.Execute, "agentMessage", "final_answer", "Done. I changed the implementation."); err != nil {
+	if err := collectAgentResultItem(&result, codingagent.Execute, "agentMessage", "final_answer", "", "Done. I changed the implementation."); err != nil {
 		t.Fatal(err)
 	}
 	var text string

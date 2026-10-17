@@ -38,23 +38,22 @@ func capturedAsyncResult(t *testing.T, raw json.RawMessage) codingagent.Result {
 	return codingagent.Result{ThreadID: frame.Params.ThreadID, TurnID: frame.Params.TurnID}
 }
 
-func TestCapturedNativeAsyncQuestionRemainsInTheOrdinaryFinalResponse(t *testing.T) {
+func TestCapturedNativeAsyncQuestionIsExcludedFromTheFinalResponse(t *testing.T) {
 	frames := capturedAsyncMessages(t)
 	for _, role := range []codingagent.Role{codingagent.Plan, codingagent.Execute, codingagent.Review} {
 		result := capturedAsyncResult(t, frames[0])
-		messages := &agentResponseMessages{}
 		for _, raw := range frames {
-			if done, err := messages.collectFrame(decodeAgentTestFrame(t, string(raw)), raw, &result, role); err != nil || done {
+			if done, err := collectAgentFrame(decodeAgentTestFrame(t, string(raw)), raw, &result, role); err != nil || done {
 				t.Fatalf("async message was mistaken for a duplicate terminal answer: %v", err)
 			}
 		}
 		raw, _ := json.Marshal(map[string]any{"method": "turn/completed", "params": map[string]any{"threadId": result.ThreadID, "turn": map[string]any{"id": result.TurnID, "status": "completed"}}})
-		if done, err := messages.collectFrame(decodeAgentTestFrame(t, string(raw)), raw, &result, role); err != nil || !done || !result.Completed {
+		if done, err := collectAgentFrame(decodeAgentTestFrame(t, string(raw)), raw, &result, role); err != nil || !done || !result.Completed {
 			t.Fatalf("actual terminal completion was lost: %v", err)
 		}
 		var text string
-		if err := json.Unmarshal(result.Content, &text); err != nil || text != "Which name should I use to verify greet?\n\nI’ll wait for your verification name before reading or changing files." {
-			t.Fatalf("question was dropped or reinterpreted: %s %v", result.Content, err)
+		if err := json.Unmarshal(result.Content, &text); err != nil || text != "I’ll wait for your verification name before reading or changing files." {
+			t.Fatalf("parser source differs from the exact final response: %s %v", result.Content, err)
 		}
 	}
 }
@@ -62,17 +61,16 @@ func TestCapturedNativeAsyncQuestionRemainsInTheOrdinaryFinalResponse(t *testing
 func TestNativeAsyncMessagesDoNotAuthorizeMissingOrDuplicateTerminalAnswers(t *testing.T) {
 	frames := capturedAsyncMessages(t)
 	result := capturedAsyncResult(t, frames[0])
-	messages := &agentResponseMessages{}
-	_, _ = messages.collectFrame(decodeAgentTestFrame(t, string(frames[0])), frames[0], &result, codingagent.Execute)
+	_, _ = collectAgentFrame(decodeAgentTestFrame(t, string(frames[0])), frames[0], &result, codingagent.Execute)
 	raw, _ := json.Marshal(map[string]any{"method": "turn/completed", "params": map[string]any{"threadId": result.ThreadID, "turn": map[string]any{"id": result.TurnID, "status": "completed"}}})
-	if _, err := messages.collectFrame(decodeAgentTestFrame(t, string(raw)), raw, &result, codingagent.Execute); err == nil || result.Completed {
+	if _, err := collectAgentFrame(decodeAgentTestFrame(t, string(raw)), raw, &result, codingagent.Execute); err == nil || result.Completed {
 		t.Fatal("async question alone was treated as terminal success")
 	}
-	_, err := messages.collectFrame(decodeAgentTestFrame(t, string(frames[1])), frames[1], &result, codingagent.Execute)
+	_, err := collectAgentFrame(decodeAgentTestFrame(t, string(frames[1])), frames[1], &result, codingagent.Execute)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := messages.collectFrame(decodeAgentTestFrame(t, string(frames[1])), frames[1], &result, codingagent.Execute); err == nil {
+	if _, err := collectAgentFrame(decodeAgentTestFrame(t, string(frames[1])), frames[1], &result, codingagent.Execute); err == nil {
 		t.Fatal("two actual terminal answers were accepted")
 	}
 }

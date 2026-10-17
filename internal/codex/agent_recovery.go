@@ -38,17 +38,13 @@ func (connection *connection) recoverExecutionResult(call codingagent.Assignment
 		return result, &codingagent.IncompleteTaskError{Reason: fmt.Sprintf("Original execution is %q, not complete; inspect partial work before planning continuation, without replaying commands.", turn.Status), ThreadID: result.ThreadID, TurnID: turn.ID}
 	}
 	result.TurnID = turn.ID
-	messages := &agentResponseMessages{}
 	for _, item := range turn.Items {
-		if err := messages.collectItem(&result, codingagent.Execute, item.Type, item.Phase, item.Delivery, item.Text); err != nil {
+		if err := collectAgentResultItem(&result, codingagent.Execute, item.Type, item.Phase, item.Delivery, item.Text); err != nil {
 			return result, err
 		}
 	}
 	if len(result.Content) == 0 {
 		return result, fmt.Errorf("original completed turn lacks its final response; no action was replayed")
-	}
-	if err := messages.finish(&result); err != nil {
-		return result, err
 	}
 	result.Completed = true
 	return result, nil

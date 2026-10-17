@@ -175,10 +175,10 @@ func recordAgentFrame(result *codingagent.Result, raw json.RawMessage, event fun
 }
 
 func consumeAgentFrame(frame rpcFrame, raw json.RawMessage, result *codingagent.Result, role codingagent.Role, items map[string]string, event func(codingagent.NativeEvent) error) (bool, error) {
-	return consumeAgentFrameTracked(frame, raw, result, role, items, nil, &agentResponseMessages{}, event)
+	return consumeAgentFrameTracked(frame, raw, result, role, items, nil, event)
 }
 
-func consumeAgentFrameTracked(frame rpcFrame, raw json.RawMessage, result *codingagent.Result, role codingagent.Role, items, closed map[string]string, messages *agentResponseMessages, event func(codingagent.NativeEvent) error) (bool, error) {
+func consumeAgentFrameTracked(frame rpcFrame, raw json.RawMessage, result *codingagent.Result, role codingagent.Role, items, closed map[string]string, event func(codingagent.NativeEvent) error) (bool, error) {
 	if err := validateAgentFrameBinding(frame, result); err != nil {
 		return false, err
 	}
@@ -196,7 +196,7 @@ func consumeAgentFrameTracked(frame rpcFrame, raw json.RawMessage, result *codin
 			return false, err
 		}
 	}
-	return messages.collectFrame(frame, raw, result, role)
+	return collectAgentFrame(frame, raw, result, role)
 }
 
 func agentDeltaItemKind(method string) string {
@@ -248,10 +248,6 @@ func (failure *agentInferenceFailure) Error() string   { return failure.message 
 func (failure *agentInferenceFailure) Retryable() bool { return failure.retryable }
 
 func collectAgentFrame(frame rpcFrame, raw json.RawMessage, result *codingagent.Result, role codingagent.Role) (bool, error) {
-	return (&agentResponseMessages{}).collectFrame(frame, raw, result, role)
-}
-
-func (messages *agentResponseMessages) collectFrame(frame rpcFrame, raw json.RawMessage, result *codingagent.Result, role codingagent.Role) (bool, error) {
 	var params struct {
 		ThreadID  string            `json:"threadId"`
 		TurnID    string            `json:"turnId"`
@@ -284,7 +280,7 @@ func (messages *agentResponseMessages) collectFrame(frame rpcFrame, raw json.Raw
 	switch frame.Method {
 	case "item/started", "item/completed":
 		if frame.Method == "item/completed" {
-			if err := messages.collectItem(result, role, params.Item.Type, params.Item.Phase, params.Item.Delivery, params.Item.Text); err != nil {
+			if err := collectAgentResultItem(result, role, params.Item.Type, params.Item.Phase, params.Item.Delivery, params.Item.Text); err != nil {
 				return false, err
 			}
 		}
@@ -294,16 +290,13 @@ func (messages *agentResponseMessages) collectFrame(frame rpcFrame, raw json.Raw
 		}
 		if params.Turn.ID == result.TurnID && params.Turn.Status == "completed" && len(result.Content) == 0 {
 			for _, item := range params.Turn.Items {
-				if err := messages.collectItem(result, role, item.Type, item.Phase, item.Delivery, item.Text); err != nil {
+				if err := collectAgentResultItem(result, role, item.Type, item.Phase, item.Delivery, item.Text); err != nil {
 					return false, err
 				}
 			}
 		}
 		if params.Turn.ID != result.TurnID || params.Turn.Status != "completed" || len(result.Content) == 0 {
 			return false, fmt.Errorf("agent did not complete the exact assignment")
-		}
-		if err := messages.finish(result); err != nil {
-			return false, err
 		}
 		result.Completed = true
 		return true, nil
@@ -319,7 +312,12 @@ func (messages *agentResponseMessages) collectFrame(frame rpcFrame, raw json.Raw
 	return false, nil
 }
 
-func collectAgentResultItem(result *codingagent.Result, role codingagent.Role, itemType, phase, text string) error {
+// Only the terminal response is semantic parser input. Earlier messages remain
+// native evidence and activity, including asynchronous questions or blockers.
+func collectAgentResultItem(result *codingagent.Result, role codingagent.Role, itemType, phase, delivery, text string) error {
+	if delivery == "async" {
+		return nil
+	}
 	var content string
 	switch {
 	case itemType == "agentMessage" && (phase == "final_answer" || (role == codingagent.Plan || role == codingagent.Execute || role == codingagent.Review) && phase == ""):

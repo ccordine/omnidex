@@ -12,7 +12,7 @@ func TestNativeReviewPreservesOrdinaryFinalText(t *testing.T) {
 	for _, phase := range []string{"", "final_answer"} {
 		text := "I checked the container over SSH.\n\n**Question:** Which version should be running? →"
 		var result codingagent.Result
-		if err := collectAgentResultItem(&result, codingagent.Review, "agentMessage", phase, text); err != nil {
+		if err := collectAgentResultItem(&result, codingagent.Review, "agentMessage", phase, "", text); err != nil {
 			t.Fatal(err)
 		}
 		var response string

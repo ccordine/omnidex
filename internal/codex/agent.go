@@ -100,12 +100,11 @@ func (client *Client) Run(parent context.Context, call codingagent.Assignment, e
 	}
 	items := map[string]string{}
 	closedItems := map[string]string{}
-	messages := &agentResponseMessages{}
 	consume := func(frame rpcFrame, raw json.RawMessage) (bool, error) {
 		if resumedUsageSnapshot(call, frame) {
 			return false, nil
 		}
-		return consumeAgentFrameTracked(frame, raw, &result, call.Role, items, closedItems, messages, event)
+		return consumeAgentFrameTracked(frame, raw, &result, call.Role, items, closedItems, event)
 	}
 	finished := false
 	for _, notification := range pending {

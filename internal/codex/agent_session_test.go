@@ -50,12 +50,18 @@ func TestExecutionResumesExactNativeThreadAndSendsOnlyNewOwnerReply(t *testing.T
 func TestNativeRecoveryReadsCompletedTurnWithoutDispatchingAgain(t *testing.T) {
 	for _, status := range []string{"completed", "interrupted", "inProgress"} {
 		input := &agentStartInput{}
-		response := `{"id":1,"result":{"data":[{"id":"original-turn","status":"` + status + `","items":[{"type":"agentMessage","phase":"final_answer","text":"Done."}]}]}}` + "\n"
+		response := `{"id":1,"result":{"data":[{"id":"original-turn","status":"` + status + `","items":[{"type":"agentMessage","phase":"commentary","delivery":"async","text":"Earlier blocker or question."},{"type":"agentMessage","phase":"commentary","text":"Earlier progress."},{"type":"agentMessage","phase":"final_answer","text":"Done."}]}]}}` + "\n"
 		connection := &connection{input: input, output: bufio.NewScanner(strings.NewReader(response))}
 		call := codingagent.Assignment{Session: &codingagent.ExecutionSession{ThreadID: "thread", TurnID: "original-turn", State: "running"}}
 		result, err := connection.recoverExecutionResult(call, codingagent.Result{ThreadID: "thread"}, nil)
 		if (err == nil) != (status == "completed") || result.Completed != (status == "completed") {
 			t.Fatalf("status=%s result=%+v error=%v", status, result, err)
+		}
+		if status == "completed" {
+			var source string
+			if err := json.Unmarshal(result.Content, &source); err != nil || source != "Done." || len(result.Evidence) != 1 || !strings.Contains(string(result.Evidence[0]), "Earlier blocker or question.") {
+				t.Fatalf("recovery changed final parser input or lost original evidence: %s %v", result.Content, err)
+			}
 		}
 		if strings.Contains(input.String(), "turn/start") {
 			t.Fatal("recovery replayed an effectful prompt")
