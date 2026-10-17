@@ -15,6 +15,12 @@ type parserPlanningProjection struct {
 	ExistingConstraintIDs []model.LedgerItemID      `json:"existing_constraint_ids,omitempty"`
 }
 
+// Provider adapters return validated, materialized operations from the sieve.
+// Sparse model patches are decoded only inside the sieve, before this boundary.
+type planningSieveMutationResult struct {
+	Operations []model.LedgerMutationOperation `json:"operations"`
+}
+
 func (s *parserSieve) planning(ctx context.Context) (json.RawMessage, error) {
 	current, err := parserPlanningLedger(s.call)
 	if err != nil {
@@ -119,7 +125,7 @@ func (s *parserSieve) planning(ctx context.Context) (json.RawMessage, error) {
 	if s.call.Role == PlanningInitial {
 		return json.Marshal(map[string]any{"ledger": current})
 	}
-	return json.Marshal(map[string]any{"operations": operations})
+	return json.Marshal(planningSieveMutationResult{Operations: operations})
 }
 
 func parserPlanningLedger(call Assignment) (EngineeringLedger, error) {

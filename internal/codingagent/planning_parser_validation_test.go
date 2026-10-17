@@ -59,7 +59,8 @@ func TestConstraintBindingFailureReturnsToParserWithoutReplanning(t *testing.T) 
 					operations = append(operations, map[string]any{"kind": "amend", "target_id": "task", "item": map[string]any{"task": map[string]any{"constraint_ids": []string{"new-rule"}}}, "rationale": "bind the stated project constraint"})
 				}
 				raw, _ := json.Marshal(map[string]any{"operations": operations})
-				return json.RawMessage(raw), nil
+				materialized, err := decodePlanningOperations(raw, ledger)
+				return planningSieveMutationResult{Operations: materialized}, err
 			}, passingChecks)
 			turn := PlanningTurn{OperationID: "add-rule", OwnerTurnID: "owner-rule", ObservedRevision: ledger.Revision, Text: rule}
 			var failure *ParserFailure

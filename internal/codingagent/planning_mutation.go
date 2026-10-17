@@ -157,10 +157,13 @@ func (controller *Controller) PlanPlanningMutation(ctx context.Context, ledger E
 	if err != nil {
 		return LedgerMutation{}, err
 	}
-	operations, err := decodePlanningOperations(result.Content, ledger)
-	if err != nil {
+	var parsed planningSieveMutationResult
+	if err := decodeContract(result.Content, &parsed); err != nil {
 		return LedgerMutation{}, controller.rejectPlanningParse(ctx, turn, PlanningMutation, result.CallID, err)
 	}
+	// The provider sieve already merged sparse patches with retained state.
+	// Reinterpreting these full rows as model patches rejects code-owned fields.
+	operations := parsed.Operations
 	mutation := LedgerMutation{
 		OperationID: turn.OperationID, OwnerTurnID: turn.OwnerTurnID,
 		BaseRevision: turn.ObservedRevision, Operations: operations,

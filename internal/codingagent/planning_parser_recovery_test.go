@@ -42,7 +42,8 @@ func TestCapturedInvalidPlanningMutationRetriesParserNotPlanner(t *testing.T) {
 			}
 			obligation := capture.Ledger.Tasks[1].DeliveryObligation + "\n" + capture.Responses[1].Response
 			patch, _ := json.Marshal(map[string]any{"operations": []any{map[string]any{"kind": "amend", "target_id": "t2", "item": map[string]any{"task": map[string]any{"delivery_obligation": obligation}}, "rationale": "Add the stated baseline verification context."}}})
-			return json.RawMessage(patch), nil
+			operations, err := decodePlanningOperations(patch, capture.Ledger)
+			return planningSieveMutationResult{Operations: operations}, err
 		default:
 			t.Fatalf("unexpected role %s", call.Role)
 			return nil, nil
