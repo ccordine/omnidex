@@ -1,4 +1,4 @@
-package codex
+package codingagent
 
 import "sort"
 
@@ -22,7 +22,7 @@ func planningMutationOutputSchema(
 	object func(map[string]any, ...string) map[string]any,
 	text, strings map[string]any,
 ) map[string]any {
-	target := map[string]any{"type": "string", "pattern": `\S`}
+	target := map[string]any{"type": "string", "pattern": `^(.|\n|\r)*[^\t\n\r\u000C ](.|\n|\r)*$`}
 	variants := []map[string]any{
 		object(map[string]any{"kind": planningEnum("add"), "item": planningMutationItemSchema(object, text, strings), "rationale": text}, "kind", "item", "rationale"),
 		object(map[string]any{"kind": planningEnum("amend"), "target_id": target, "item": planningAmendItemSchema(object, text, strings), "rationale": text}, "kind", "target_id", "item", "rationale"),

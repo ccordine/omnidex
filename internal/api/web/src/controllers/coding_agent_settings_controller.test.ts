@@ -12,7 +12,7 @@ function settings(): AgentSettings {
   const route = { provider: "codex", model: "future-model", effort: "ultra", service_tier: "fast" };
   return {
     configuration: { mode: "agents", planner: { ...route }, ledger_parser: { ...route }, executor: { ...route }, reviewer: { ...route } },
-    models: [{ id: "future-model", display_name: "Future <model>", default_effort: "max", efforts: ["low", "xhigh", "max", "ultra"].map((value) => ({ value, description: `${value} reasoning` })), service_tiers: ["default", "fast", "new-tier"].map((id) => ({ id, name: id, description: `${id} processing` })) }],
+    models: [{ provider: "codex", id: "future-model", display_name: "Future <model>", default_effort: "max", efforts: ["low", "xhigh", "max", "ultra"].map((value) => ({ value, description: `${value} reasoning` })), service_tiers: ["default", "fast", "new-tier"].map((id) => ({ id, name: id, description: `${id} processing` })) }],
     installation: { version: "0.999.0", can_update: true }, source: "startup",
   };
 }
@@ -38,11 +38,32 @@ async function mount(payload = settings()) {
 }
 
 describe("Agent settings controller", () => {
+  it("preserves a local parser and keeps native roles on Codex when names collide", async () => {
+    const payload = settings();
+    payload.models.push({ provider: "ollama", id: "future-model", display_name: "Local parser", default_effort: "", efforts: [], service_tiers: [] });
+    payload.configuration.ledger_parser = { provider: "ollama", model: "future-model", effort: "", service_tier: "" };
+    const { controller, field, button } = await mount(payload);
+    expect(field("ledger_parser", "model").value).toBe("ollama:future-model");
+    expect(field("ledger_parser", "model").disabled).toBe(false);
+    expect(field("ledger_parser", "effort").disabled).toBe(true);
+    expect(field("ledger_parser", "service_tier").disabled).toBe(true);
+    expect(Array.from(field("executor", "model").options, (option) => option.value)).not.toContain("ollama:future-model");
+    expect(button("save").disabled).toBe(false);
+    vi.mocked(api.saveAgentSettings).mockResolvedValue(payload);
+    await controller.save();
+    expect(api.saveAgentSettings).toHaveBeenCalledWith(payload.configuration, expect.any(AbortSignal));
+    field("ledger_parser", "model").value = "codex:future-model";
+    controller.modelChanged({ currentTarget: field("ledger_parser", "model") } as unknown as Event);
+    expect(field("ledger_parser", "effort").disabled).toBe(false);
+    expect(field("ledger_parser", "effort").value).toBe("max");
+    expect(field("ledger_parser", "service_tier").value).toBe("default");
+  });
+
   it("shows all advertised effort/tier options and safely presents saved values and CLI version", async () => {
     const { controller, field, button, element } = await mount();
     expect(Array.from(field("planner", "effort").options, (option) => option.value)).toEqual(["", "low", "xhigh", "max", "ultra"]);
     expect(Array.from(field("planner", "service_tier").options, (option) => option.value)).toEqual(["default", "fast", "new-tier"]);
-    expect(field("planner", "model").value).toBe("future-model");
+    expect(field("planner", "model").value).toBe("codex:future-model");
     expect(field("planner", "effort").value).toBe("ultra");
     expect(field("planner", "service_tier").value).toBe("fast");
     expect(element.querySelector("model")).toBeNull();
@@ -72,7 +93,7 @@ describe("Agent settings controller", () => {
     const refreshed = settings(); refreshed.models.push({ ...refreshed.models[0], id: "just-released", display_name: "Just released" });
     vi.mocked(api.refreshAgentModels).mockResolvedValue(refreshed);
     await controller.refresh();
-    expect(Array.from(field("planner", "model").options, (option) => option.value)).toContain("just-released");
+    expect(Array.from(field("planner", "model").options, (option) => option.value)).toContain("codex:just-released");
     expect(field("planner", "effort").value).toBe("max");
     expect(controller.statusTarget.textContent).toBe("Models refreshed");
   });
@@ -102,7 +123,7 @@ describe("Agent settings controller", () => {
   it("keeps unsupported provider values visible and blocks edits and save without falling back", async () => {
     const payload = settings(); payload.configuration.executor.provider = "future-agent";
     const { controller, field, button } = await mount(payload);
-    expect(field("executor", "model").value).toBe("future-model");
+    expect(field("executor", "model").value).toBe("future-agent:future-model");
     expect(field("executor", "model").disabled).toBe(true);
     expect(button("save").disabled).toBe(true);
     expect(controller.statusTarget.textContent).toMatch(/future-agent.*not supported/i);
@@ -113,9 +134,9 @@ describe("Agent settings controller", () => {
   it("keeps an unavailable saved model visible until the user chooses a listed model", async () => {
     const payload = settings(); payload.configuration.planner.model = "retired-model";
     const { controller, field, button } = await mount(payload);
-    expect(field("planner", "model").value).toBe("retired-model");
+    expect(field("planner", "model").value).toBe("codex:retired-model");
     expect(button("save").disabled).toBe(true);
-    field("planner", "model").value = "future-model";
+    field("planner", "model").value = "codex:future-model";
     controller.modelChanged({ currentTarget: field("planner", "model") } as unknown as Event);
     expect(field("planner", "effort").value).toBe("max");
     expect(field("planner", "service_tier").value).toBe("default");

@@ -447,7 +447,7 @@ func codingAgentAcceptedCall(entry codingagent.Entry, role codingagent.Role, rou
 		return fmt.Errorf("agent acceptance lacks its exact independent native call")
 	}
 	result := completion.Result
-	if result.CallID != entry.CallID || !result.Completed || result.Provider != route.Provider || result.Model != route.Model || result.ThreadID == "" || result.TurnID == "" || !json.Valid(result.Content) {
+	if result.CallID != entry.CallID || result.ValidateFor(role, route) != nil {
 		return fmt.Errorf("agent acceptance has incomplete or unbound native result")
 	}
 	return nil

@@ -25,3 +25,31 @@ func TestCodingAgentOptionsUseActualCatalogAndIndependentRoles(t *testing.T) {
 		}
 	}
 }
+
+func TestLocalParserOptionsDoNotGrantNativeRolesOrCodexOptions(t *testing.T) {
+	native := codingagent.Route{Provider: "codex", Model: "native"}
+	configuration := codingagent.Configuration{Mode: codingagent.Agents, Planner: native, Executor: native, Reviewer: native,
+		LedgerParser: codingagent.Route{Provider: "ollama", Model: "installed-local:7b"}}
+	models := []codex.Model{{ID: "native"}}
+	if err := validateCodingAgentModelOptions(configuration, models); err != nil {
+		t.Fatal(err)
+	}
+	for _, role := range []string{"planner", "executor", "reviewer", "effort", "speed"} {
+		invalid := configuration
+		switch role {
+		case "planner":
+			invalid.Planner = configuration.LedgerParser
+		case "executor":
+			invalid.Executor = configuration.LedgerParser
+		case "reviewer":
+			invalid.Reviewer = configuration.LedgerParser
+		case "effort":
+			invalid.LedgerParser.Effort = "low"
+		case "speed":
+			invalid.LedgerParser.ServiceTier = "default"
+		}
+		if err := validateCodingAgentModelOptions(invalid, models); err == nil {
+			t.Fatalf("local parser acquired unsupported %s authority", role)
+		}
+	}
+}

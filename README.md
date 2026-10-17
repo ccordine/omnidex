@@ -144,6 +144,18 @@ requirement intake; that intake retains its station settings. Existing jobs keep
 their frozen routes. Model availability and effort/speed choices come from the
 installed Codex catalog rather than a fixed list.
 
+The **Response parser** can instead use an installed Ollama model. Set
+`OLLAMA_BASE_URL` to your existing local endpoint, then select the local model in
+Coding agents. Planning chat, execution and independent review continue through
+Codex; only the four planning/result extraction roles use the parser route.
+For environment configuration, set `CODING_LEDGER_PARSER_PROVIDER=ollama` and
+`CODING_LEDGER_PARSER_MODEL=qwen2.5-coder:7b`, with empty
+`CODING_LEDGER_PARSER_EFFORT` and `CODING_LEDGER_PARSER_SERVICE_TIER` values.
+The parser uses schema-constrained JSON, temperature zero and the configured
+`INFERENCE_CONTEXT_TOKENS` budget (8,192 by default). Provider failures or
+incomplete output fail explicitly; no other model is substituted. New jobs freeze
+the selected parser route alongside their native routes.
+
 The built-in agent adapter is signed-in Codex; other adapters implement the
 portable `codingagent.Provider` port and register through worker options.
 Execution writes only granted files through Omnidex's mutation fence; review

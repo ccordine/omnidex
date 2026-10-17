@@ -145,7 +145,7 @@ func (client *Client) Run(parent context.Context, call codingagent.Assignment, e
 	if len(items) > 0 {
 		return result, fmt.Errorf("agent ended with incomplete native items")
 	}
-	mapped, err := mapAgentReviewResponse(call, result.Content)
+	mapped, err := codingagent.MapParserResponse(call, result.Content)
 	if err != nil {
 		return result, err
 	}

@@ -176,6 +176,16 @@ type Result struct {
 	Evidence  []json.RawMessage `json:"evidence"`
 }
 
+func (result Result) ValidateFor(role Role, route Route) error {
+	if result.Provider != route.Provider || result.Model != route.Model || !result.Completed || !json.Valid(result.Content) {
+		return fmt.Errorf("provider returned an unbound or incomplete result")
+	}
+	if role.IsNative() && (result.ThreadID == "" || result.TurnID == "") {
+		return fmt.Errorf("native execution requires its original thread and turn identities")
+	}
+	return nil
+}
+
 type Provider interface {
 	Run(context.Context, Assignment, func(NativeEvent) error) (Result, error)
 }

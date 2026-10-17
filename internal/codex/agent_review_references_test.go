@@ -11,7 +11,7 @@ import (
 
 func TestReviewParserMalformedOutputFailsExplicitly(t *testing.T) {
 	task := codingagent.Task{ID: "task-a", Acceptance: []string{"Behavior remains exact."}}
-	_, err := mapAgentReviewResponse(
+	_, err := codingagent.MapParserResponse(
 		codingagent.Assignment{Role: codingagent.ReviewResponse, Task: &task},
 		json.RawMessage(`{"kind":"done","findings":[],"overall_explanation":"","overall_correctness":"patch is incorrect"}`),
 	)
@@ -24,7 +24,7 @@ func TestAgentReviewReferencesRestoreExactQuotedPortableFindings(t *testing.T) {
 	task := codingagent.Task{ID: "task\"quoted\\identity", Acceptance: []string{"Preserve \"exact\" values, slash \\, and newline\nbytes."}}
 	call := codingagent.Assignment{Role: codingagent.ReviewResponse, Task: &task}
 	raw := json.RawMessage(`{"kind":"done","findings":[{"requirement":"criterion_1","file":"","observation":"Observed independent failure."}],"verification":"Inspected the task-local result against the criterion."}`)
-	mapped, err := mapAgentReviewResponse(call, raw)
+	mapped, err := codingagent.MapParserResponse(call, raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestAgentReviewReferencesRestoreExactQuotedPortableFindings(t *testing.T) {
 func TestAgentReviewReferencesPreserveTypedVerification(t *testing.T) {
 	task := codingagent.Task{ID: "task-a", Acceptance: []string{"Behavior remains exact."}}
 	call := codingagent.Assignment{Role: codingagent.ReviewResponse, Task: &task}
-	mapped, err := mapAgentReviewResponse(call, json.RawMessage(`{"kind":"done","findings":[],"verification":"Ran the declared check and an independent edge case."}`))
+	mapped, err := codingagent.MapParserResponse(call, json.RawMessage(`{"kind":"done","findings":[],"verification":"Ran the declared check and an independent edge case."}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestAgentReviewReferenceDecoderRejectsUnknownOrMalformedNativeFindings(t *t
 		`{"verification":"checked"}`,
 		`{"kind":"done","findings":[],"verification":"checked"} {}`,
 	} {
-		if _, err := mapAgentReviewResponse(call, json.RawMessage(raw)); err == nil {
+		if _, err := codingagent.MapParserResponse(call, json.RawMessage(raw)); err == nil {
 			t.Errorf("invalid task-local review references accepted: %s", raw)
 		}
 	}
@@ -94,12 +94,12 @@ func TestAgentReviewContextIncludesOnlyItsExactCriterionReferenceTable(t *testin
 	if !found {
 		t.Fatal("reviewer lacks the original assignment boundary")
 	}
-	var references []agentReviewTaskReference
+	var references []codingagent.ReviewTaskReference
 	if err := json.Unmarshal([]byte(table), &references); err != nil {
 		t.Fatal(err)
 	}
-	want := []agentReviewTaskReference{{Reference: "task_1", TaskID: task.ID,
-		Criteria: []agentReviewCriterionReference{{Reference: "criterion_1", Requirement: task.Acceptance[0]}}}}
+	want := []codingagent.ReviewTaskReference{{Reference: "task_1", TaskID: task.ID,
+		Criteria: []codingagent.ReviewCriterionReference{{Reference: "criterion_1", Requirement: task.Acceptance[0]}}}}
 	if !reflect.DeepEqual(references, want) {
 		t.Fatalf("review reference table expanded or altered task authority: %+v", references)
 	}
@@ -132,7 +132,7 @@ func TestReviewParserDoesNotInheritTheSemantic128KiBCeiling(t *testing.T) {
 func TestAgentReviewMappingLeavesNonReviewResultsUnchanged(t *testing.T) {
 	for _, role := range []codingagent.Role{codingagent.Plan, codingagent.Execute, codingagent.Review} {
 		raw := json.RawMessage(`"An ordinary review response."`)
-		mapped, err := mapAgentReviewResponse(codingagent.Assignment{Role: role}, raw)
+		mapped, err := codingagent.MapParserResponse(codingagent.Assignment{Role: role}, raw)
 		if err != nil || string(mapped) != string(raw) {
 			t.Fatalf("%s mapping changed non-review response: %s %v", role, mapped, err)
 		}

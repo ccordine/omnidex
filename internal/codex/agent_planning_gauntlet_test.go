@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -69,8 +70,19 @@ func TestPlanningMutationSchemaRejectsBlankTargets(t *testing.T) {
 	variants := schema["properties"].(map[string]any)["operations"].(map[string]any)["items"].(map[string]any)["anyOf"].([]map[string]any)
 	for _, variant := range variants {
 		properties := variant["properties"].(map[string]any)
-		if target, exists := properties["target_id"]; exists && target.(map[string]any)["pattern"] != `\S` {
-			t.Fatal("parser can still emit blank operation targets")
+		if target, exists := properties["target_id"]; exists {
+			// JSON Schema accepts Unicode escapes; Go's regexp engine requires
+			// this equivalent literal character instead of the ECMAScript escape.
+			expression := strings.ReplaceAll(target.(map[string]any)["pattern"].(string), `\u000C`, "\f")
+			pattern, err := regexp.Compile(expression)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, id := range []string{"", " ", "\t\n", "task-1", " task-1 ", "\nitem\n"} {
+				if pattern.MatchString(id) != regexp.MustCompile(`\S`).MatchString(id) {
+					t.Fatalf("mutation identity boundary changed for %q", id)
+				}
+			}
 		}
 	}
 }
