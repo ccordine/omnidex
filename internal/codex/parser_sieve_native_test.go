@@ -26,14 +26,13 @@ type sieveGoldenCase struct {
 	}
 }
 
-// One fixed provider, with held-out positive and forbidden-result assertions.
-// This is parser qualification, not a model benchmark or an application build.
+// Held-out positive and forbidden-result assertions qualify one selected route.
+// Repeating the same corpus across routes benchmarks the production parser.
 func TestInstalledParserSieveGoldenCorpus(t *testing.T) {
 	if os.Getenv("OMNI_TEST_PARSER_SIEVE") != "1" {
 		t.Skip("OMNI_TEST_PARSER_SIEVE=1 is required")
 	}
-	client, selected := installedAgentClient(t)
-	client.timeout = 45 * time.Second
+	client, route := installedSieveProvider(t)
 	qualification, stop := context.WithTimeout(t.Context(), 20*time.Minute)
 	defer stop()
 	modelCalls := 0
@@ -48,7 +47,7 @@ func TestInstalledParserSieveGoldenCorpus(t *testing.T) {
 	for _, fixture := range corpus.Cases {
 		t.Run(fixture.Name, func(t *testing.T) {
 			call := codingagent.Assignment{JobID: 17, Generation: 1, Role: codingagent.Role(fixture.Role), Root: t.TempDir(),
-				Route: codingagent.Route{Provider: "codex", Model: selected, Effort: "low", ServiceTier: "default"}}
+				Route: route}
 			var before codingagent.EngineeringLedger
 			if call.Role.IsPlanning() {
 				call.PlanningResponse = fixture.Source
@@ -67,6 +66,8 @@ func TestInstalledParserSieveGoldenCorpus(t *testing.T) {
 				}
 			}
 			frames := []json.RawMessage{}
+			frameSeconds := []float64{}
+			envelopes := []sieveBenchmarkEnvelope{}
 			ctx, cancel := context.WithTimeout(qualification, 5*time.Minute)
 			defer cancel()
 			start := time.Now()
@@ -75,10 +76,20 @@ func TestInstalledParserSieveGoldenCorpus(t *testing.T) {
 					return nil
 				}
 				frames = append(frames, append(json.RawMessage(nil), event.Frame...))
+				frameSeconds = append(frameSeconds, time.Since(start).Seconds())
+				envelope, err := sieveBenchmarkEnvelopeFor(call, event.Frame)
+				if err != nil {
+					return err
+				}
+				if envelope != nil {
+					envelopes = append(envelopes, *envelope)
+				}
 				var receipt struct {
 					Result struct {
 						InstructionSources []string `json:"instructionSources"`
 					} `json:"result"`
+					Provider string `json:"provider"`
+					Phase    string `json:"phase"`
 				}
 				if err := json.Unmarshal(event.Frame, &receipt); err != nil {
 					return err
@@ -86,7 +97,7 @@ func TestInstalledParserSieveGoldenCorpus(t *testing.T) {
 				if len(receipt.Result.InstructionSources) > 0 {
 					return fmt.Errorf("parser inherited external instruction files")
 				}
-				if receipt.Result.InstructionSources != nil {
+				if receipt.Result.InstructionSources != nil || receipt.Provider == "ollama" && receipt.Phase == "request" {
 					modelCalls++
 					if modelCalls > 160 {
 						return fmt.Errorf("qualification exceeded its 160-call budget")
@@ -95,7 +106,7 @@ func TestInstalledParserSieveGoldenCorpus(t *testing.T) {
 				return nil
 			})
 			if evidence := os.Getenv("OMNI_PARSER_SIEVE_EVIDENCE"); evidence != "" {
-				encoded, _ := json.Marshal(map[string]any{"assignment": call, "result": result, "frames": frames, "seconds": time.Since(start).Seconds(), "error": fmt.Sprint(runErr)})
+				encoded, _ := json.Marshal(map[string]any{"assignment": call, "result": result, "frames": frames, "frame_seconds": frameSeconds, "envelopes": envelopes, "seconds": time.Since(start).Seconds(), "error": fmt.Sprint(runErr)})
 				if err := os.WriteFile(filepath.Join(evidence, fixture.Name+".json"), encoded, 0600); err != nil {
 					t.Fatal(err)
 				}

@@ -77,6 +77,17 @@ OMNI_TEST_CODEX_MODEL=gpt-6.1-sol \
 go test -run '^TestInstalledParserSieveGoldenCorpus$' -v -timeout=22m ./internal/codex
 ```
 
+The same test accepts `OMNI_TEST_CODEX_EFFORT` (default `low`) for comparisons.
+For the local provider, set `OMNI_TEST_PARSER_PROVIDER=ollama`,
+`OMNI_TEST_OLLAMA_PARSER_URL`, and `OMNI_TEST_OLLAMA_PARSER_MODEL`; its context
+stays at the production default of 8,192 tokens. The installed Codex test setup
+still supplies the disposable fixture workspace but performs no Codex inference
+on that route. Captures include original frames with arrival times and separately
+identified code-rendered leaf envelopes. Keep corpus, renderer, limits, and gold
+assertions fixed across routes; count failures rather than tuning prompts during
+the comparison. Read total latency together with correctness, since a failed
+projection can stop early.
+
 Qualify correctness repeatedly on one fixed provider before comparing models.
 Code guarantees processing/source/criterion accounting and explicit rejection of
 invalid results. Semantic correctness remains something the gold fixtures measure;
