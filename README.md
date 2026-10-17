@@ -152,7 +152,8 @@ For environment configuration, set `CODING_LEDGER_PARSER_PROVIDER=ollama` and
 `CODING_LEDGER_PARSER_MODEL=qwen2.5-coder:7b`, with empty
 `CODING_LEDGER_PARSER_EFFORT` and `CODING_LEDGER_PARSER_SERVICE_TIER` values.
 The parser uses schema-constrained JSON, temperature zero and the configured
-`INFERENCE_CONTEXT_TOKENS` budget (8,192 by default). Provider failures or
+`CODING_LEDGER_PARSER_CONTEXT_TOKENS` budget (8,192 by default), independently of
+the other inference routes. Provider failures or
 incomplete output fail explicitly; no other model is substituted. New jobs freeze
 the selected parser route alongside their native routes.
 

@@ -23,7 +23,7 @@ func agentProviders(cfg config.Config) func() (map[string]codingagent.Provider, 
 		}
 		providers := map[string]codingagent.Provider{"codex": client}
 		if cfg.OllamaBaseURL != "" {
-			contextTokens, err := strconv.Atoi(cfg.InferenceContextTokens)
+			contextTokens, err := strconv.Atoi(cfg.CodingParserContextTokens)
 			if err != nil {
 				return nil, nil, err
 			}
