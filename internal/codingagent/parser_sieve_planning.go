@@ -36,6 +36,16 @@ func (s *parserSieve) planning(ctx context.Context) (json.RawMessage, error) {
 				continue
 			}
 			unit++
+			if part.Kind == "change" {
+				if id := representedPlanningStatement(part.Text, current, operations); id != "" {
+					if err := s.receipt("planning_restatement", map[string]any{
+						"block_id": s.blocks[index].ID, "text": part.Text, "item_id": id,
+					}); err != nil {
+						return nil, err
+					}
+					continue
+				}
+			}
 			step := s.step(index, "planning_unit")
 			step.Source, step.Category, step.Ledger = part.Text, part.Kind, &current
 			step.NewIDs = map[string]string{}
