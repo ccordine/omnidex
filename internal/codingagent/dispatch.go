@@ -48,7 +48,7 @@ func (controller *Controller) invokeOnce(ctx context.Context, call Assignment, r
 	if err := call.ValidateTaskContext(); err != nil {
 		return Result{}, err
 	}
-	if controller.MinifyContext != nil && !(call.Role == Execute && call.Session != nil && call.Reply != "") {
+	if controller.MinifyContext != nil && call.Role.IsNative() && !(call.Role == Execute && call.Session != nil && call.Reply != "") {
 		var err error
 		call.Context, err = controller.MinifyContext(ctx, call)
 		if err != nil {

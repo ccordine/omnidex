@@ -159,6 +159,7 @@ type Assignment struct {
 	Continuation         *TaskContinuation   `json:"continuation,omitempty"`
 	Clarifications       []TaskClarification `json:"clarifications,omitempty"`
 	CompletedTaskIDs     []string            `json:"completed_task_ids,omitempty"`
+	ParserStep           *ParserStep         `json:"parser_step,omitempty"`
 }
 
 type PlanningMessage struct {

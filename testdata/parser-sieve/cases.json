@@ -1,0 +1,195 @@
+{
+  "version": 1,
+  "purpose": "Fixed positive and forbidden-result semantic parser qualification. No per-case corrective hints are sent to the provider.",
+  "cases": [
+    {
+      "name": "saved-three-step-plan",
+      "role": "planning_initial",
+      "provenance": "Saved final Codex planning response from prior job 4, source revision 48c3b66c.",
+      "source": "I propose three small steps:\n\n1. Create `wordcount.py`, run as `python wordcount.py \"hello world\"`. It will count whitespace-separated words and print only the number. Empty or whitespace-only input returns `0`; missing or extra arguments produce a usage error.\n2. Add automated tests using Python\u2019s built-in `unittest`, covering normal text, repeated whitespace, empty input, and argument errors. Run them successfully before proceeding.\n3. Write a short README with usage and test commands, then verify those commands locally.\n\nEverything stays in this directory, with no Git repository, commits, push, or PR.\n\nDoes that counting rule and command format match what you want?",
+      "owner": "Build a local Python word-count command with automated tests and a short README. No Git operations.",
+      "expected": {
+        "tasks": 3,
+        "required": [
+          "wordcount.py",
+          "unittest",
+          "README"
+        ],
+        "constraints": [
+          "no Git repository"
+        ],
+        "forbidden": [
+          "deploy",
+          "cloud",
+          "telemetry"
+        ]
+      }
+    },
+    {
+      "name": "backup-plan-red-team",
+      "role": "planning_initial",
+      "provenance": "Synthetic negative-scope fixture.",
+      "owner": "Plan a local backup command, with a restoration test. No upload.",
+      "source": "Proposed implementation:\n\n1. Create backup.py to copy the selected input into a local archive. Verify by restoring it and comparing the original bytes.\n\nKeep all archives local. Do not upload any data.\n\nAn optional future idea is a cloud dashboard; it is not proposed work.\n\nFor this planning turn, do not edit application files yet. Which archive format do you prefer?",
+      "expected": {
+        "tasks": 1,
+        "required": [
+          "backup.py",
+          "original bytes"
+        ],
+        "constraints": [
+          "Do not upload"
+        ],
+        "forbidden": [
+          "cloud dashboard",
+          "do not edit application files yet",
+          "Which archive format"
+        ]
+      }
+    },
+    {
+      "name": "mutation-project-constraint",
+      "role": "planning_mutation",
+      "owner": "Keep delivery local; preserve existing task fields.",
+      "source": "Add a project-wide constraint: delivery stays in the existing directory, with no repository initialization, commit, push or PR. Apply it to every remaining task. Preserve their other fields.",
+      "expected": {
+        "tasks": 2,
+        "required": [
+          "no repository initialization"
+        ],
+        "forbidden": [
+          "deploy",
+          "dashboard"
+        ]
+      }
+    },
+    {
+      "name": "mutation-context-not-replacement",
+      "role": "planning_mutation",
+      "owner": "Document the observed verification result for the existing task.",
+      "source": "For existing task task-a, append this delivery guidance: report the observed result of its required verification command. Preserve its goal, requirements, criteria, files and existing delivery obligations. No new task is proposed.",
+      "expected": {
+        "tasks": 2,
+        "required": [
+          "observed result"
+        ],
+        "forbidden": [
+          "new-task"
+        ]
+      }
+    },
+    {
+      "name": "execution-mixed-question",
+      "role": "execution_response",
+      "source": "Implemented the importer and its tests.\n\nI cannot finish until you answer: should duplicate records be replaced or rejected?",
+      "expected": {
+        "kind": "question"
+      }
+    },
+    {
+      "name": "execution-permission",
+      "role": "execution_response",
+      "source": "The implementation is ready.\n\nMay I install the missing package to run the required browser checks? Those checks are not finished.",
+      "expected": {
+        "kind": "permission"
+      }
+    },
+    {
+      "name": "execution-incomplete",
+      "role": "execution_response",
+      "source": "The export code is written.\n\nRequired verification could not run because the configured runtime is unavailable. This task remains incomplete.",
+      "expected": {
+        "kind": "error"
+      }
+    },
+    {
+      "name": "execution-resolved-and-quoted",
+      "role": "execution_response",
+      "source": "An earlier missing-package error was resolved by using the installed runtime.\n\nThe documentation contains the example question \"May I upload this file?\"; it is a quoted example, not an authorization request.\n\nThe requested implementation and required checks are complete. Nothing needs your answer or approval.",
+      "expected": {
+        "kind": "done"
+      }
+    },
+    {
+      "name": "review-two-defects",
+      "role": "review_response",
+      "source": "Required review is complete.\n\nI tested invalid dates: the application accepts them, violating the required rejection behavior.\n\nI tested duplicate records: the importer creates duplicates instead of rejecting them. This also violates its acceptance criterion.\n\nNo additional scope is proposed.",
+      "criteria": [
+        "Reject invalid dates.",
+        "Reject duplicate records."
+      ],
+      "expected": {
+        "kind": "done",
+        "findings": 2
+      }
+    },
+    {
+      "name": "review-uncovered-criterion",
+      "role": "review_response",
+      "source": "I verified that invalid dates are rejected.\n\nI did not verify duplicate-record rejection because the required runtime was unavailable. Required verification remains incomplete.",
+      "criteria": [
+        "Reject invalid dates.",
+        "Reject duplicate records."
+      ],
+      "expected": {
+        "kind": "error",
+        "findings": 0
+      }
+    },
+    {
+      "name": "review-optional-red-team",
+      "role": "review_response",
+      "source": "I independently verified that restoring the archive recovers the original bytes. Required review is complete with no defects.\n\nAn unrelated optional profiler could not run. A cloud dashboard might be useful later, but it is not required and is not a finding.",
+      "criteria": [
+        "Restoring the archive recovers the original bytes."
+      ],
+      "expected": {
+        "kind": "done",
+        "findings": 0
+      }
+    },
+    {
+      "name": "review-silence-is-not-verification",
+      "role": "review_response",
+      "source": "The files look tidy.\n\nNo additional changes are suggested.",
+      "criteria": [
+        "Restoring the archive recovers the original bytes."
+      ],
+      "expected": {
+        "kind": "error",
+        "findings": 0
+      }
+    },
+    {
+      "name": "execution-progress-is-not-completion",
+      "role": "execution_response",
+      "provenance": "Regression for known informational statements without completion or required-verification evidence.",
+      "source": "I modified the exporter implementation.",
+      "expected": {
+        "kind": "error"
+      }
+    },
+    {
+      "name": "saved-execution-completion",
+      "role": "execution_response",
+      "provenance": "Unmodified final Codex execution response from supervised job 4 at source revision 48c3b66c.",
+      "source": "Implemented `wordcount.py`, automated tests, and a short README.\n\nVerified: `python wordcount.py \"hello world\"` prints `2`. Tests pass for empty input, whitespace, and missing/extra arguments.\n\nDelivered locally only. No temporary artifacts created.",
+      "expected": {
+        "kind": "done"
+      }
+    },
+    {
+      "name": "saved-clean-review",
+      "role": "review_response",
+      "provenance": "Unmodified final independent Codex review and supplied criterion from supervised job 4 at source revision 48c3b66c.",
+      "source": "The task is fulfilled. I inspected `wordcount.py`, its automated tests, and the short README.\n\nBoth tests passed. Independent checks confirmed that `python wordcount.py \"hello world\"` prints only `2`, empty or whitespace-only input prints `0`, mixed whitespace separates words, and missing or extra arguments produce a usage error with exit status `2`.\n\nNo defects against the supplied criteria were found. No files were changed.",
+      "criteria": [
+        "The Python script `wordcount.py` should be created and run as `python wordcount.py \"hello world\"`. It will count whitespace-separated words and print only the number. Empty or whitespace-only input returns `0`; missing or extra arguments produce a usage error."
+      ],
+      "expected": {
+        "kind": "done",
+        "findings": 0
+      }
+    }
+  ]
+}

@@ -3,6 +3,9 @@ package codingagent
 import "fmt"
 
 func RenderParserPrompt(call Assignment) (string, error) {
+	if call.ParserStep != nil {
+		return renderParserStepPrompt(call)
+	}
 	var instruction string
 	switch call.Role {
 	case PlanningInitial:

@@ -14,8 +14,11 @@ import (
 
 func parserAssignment() codingagent.Assignment {
 	return codingagent.Assignment{Role: codingagent.ExecutionResponse,
-		Route: codingagent.Route{Provider: "ollama", Model: "parser:7b"}, Response: "The task is finished."}
+		Route: codingagent.Route{Provider: "ollama", Model: "parser:7b"}, Response: "The task is finished.",
+		ParserStep: &codingagent.ParserStep{Stage: "scan", BlockID: "block_1", Source: "The task is finished."}}
 }
+
+const parserScanFixture = `{"units":{"unit_1":{"kind":"done","reason":"Explicit completion.","group_start":"unit_1"}}}`
 
 func TestLocalParserUsesSharedSchemaAndOriginalWireEvidence(t *testing.T) {
 	dispatches := 0
@@ -34,7 +37,7 @@ func TestLocalParserUsesSharedSchemaAndOriginalWireEvidence(t *testing.T) {
 			t.Errorf("parser request changed its bounds or exact source: %+v", request)
 		}
 		_ = json.NewEncoder(w).Encode(parserResponse{Model: "parser:7b", Done: true, DoneReason: "stop",
-			Response: `{"kind":"done"}`, PromptEvalCount: 120, EvalCount: 7})
+			Response: parserScanFixture, PromptEvalCount: 120, EvalCount: 7})
 	}))
 	defer server.Close()
 	parser, err := NewParser(server.URL, time.Second, 8192)
@@ -46,7 +49,7 @@ func TestLocalParserUsesSharedSchemaAndOriginalWireEvidence(t *testing.T) {
 		frames = append(frames, event.Frame)
 		return nil
 	})
-	if err != nil || dispatches != 1 || len(frames) != 2 || !result.Completed || string(result.Content) != `{"kind":"done"}` ||
+	if err != nil || dispatches != 1 || len(frames) != 2 || !result.Completed || string(result.Content) != parserScanFixture ||
 		result.ThreadID != "" || result.TurnID != "" || result.ValidateFor(codingagent.ExecutionResponse, parserAssignment().Route) != nil {
 		t.Fatalf("local parser lost evidence or fabricated a native identity: %+v frames=%d err=%v", result, len(frames), err)
 	}
@@ -69,7 +72,7 @@ func TestLocalParserRejectsIncompleteOrUnboundProviderResponses(t *testing.T) {
 	for _, name := range []string{"different-model", "length-stop", "unfinished", "oversized-context", "malformed-output", "invalid-review-reference", "unavailable"} {
 		t.Run(name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				response := parserResponse{Model: "parser:7b", Done: true, DoneReason: "stop", Response: `{"kind":"done"}`, PromptEvalCount: 100, EvalCount: 8}
+				response := parserResponse{Model: "parser:7b", Done: true, DoneReason: "stop", Response: parserScanFixture, PromptEvalCount: 100, EvalCount: 8}
 				switch name {
 				case "different-model":
 					response.Model = "other:7b"

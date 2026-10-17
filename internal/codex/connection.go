@@ -50,6 +50,10 @@ func startConnection(ctx context.Context, command, directory string) (*connectio
 }
 
 func startConfiguredConnection(ctx context.Context, command, directory string, agent bool, overrides []string) (*connection, error) {
+	return launchConnection(ctx, command, directory, agent, configuredConnectionArguments(overrides))
+}
+
+func configuredConnectionArguments(overrides []string) []string {
 	// Semantic parsing uses this tool-free connection. Native planning,
 	// execution, review, and checks use startExecutionConnection instead.
 	enabled := fmt.Sprint(len(overrides) > 0)
@@ -59,7 +63,7 @@ func startConfiguredConnection(ctx context.Context, command, directory string, a
 		"-c", "features.hooks=false", "-c", "features.multi_agent=false",
 		"-c", "project_doc_max_bytes=0", "-c", "web_search=\"disabled\""}
 	arguments = append(arguments, overrides...)
-	return launchConnection(ctx, command, directory, agent, arguments)
+	return arguments
 }
 
 // Execution inherits the launching host environment, including SSH agents and

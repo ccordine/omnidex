@@ -61,6 +61,9 @@ type parserResponse struct {
 }
 
 func (parser *Parser) Run(ctx context.Context, call codingagent.Assignment, event func(codingagent.NativeEvent) error) (codingagent.Result, error) {
+	if !call.Role.IsNative() && call.ParserStep == nil {
+		return codingagent.RunParserSieve(ctx, call, event, parser.Run)
+	}
 	result := codingagent.Result{Provider: "ollama", Model: call.Route.Model}
 	if event == nil {
 		return result, fmt.Errorf("local response parser requires an evidence sink")

@@ -59,12 +59,15 @@ func TestNativeAssignmentsConsumeMinificationWithoutChangingTaskAuthority(t *tes
 	if err := controller.RunTask(context.Background(), task); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(roles, []Role{Execute, ExecutionResponse, Review, ReviewResponse}) {
-		t.Fatalf("a channel bypassed minification: %v", roles)
+	if !reflect.DeepEqual(roles, []Role{Execute, Review}) {
+		t.Fatalf("native context or parser source crossed the wrong processing boundary: %v", roles)
 	}
 	for _, entry := range journal.entries {
 		if entry.Phase == "call_opened" && entry.Role.IsNative() && entry.Assignment.Context == "" {
 			t.Fatal("compiled prompt was not journaled")
+		}
+		if entry.Phase == "call_opened" && !entry.Role.IsNative() && entry.Assignment.Context != "" {
+			t.Fatal("a response parser received a lossy shared-ledger projection")
 		}
 	}
 }

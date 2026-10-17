@@ -49,6 +49,12 @@ type nativeAgentReviewFinding struct {
 }
 
 func MapParserResponse(call Assignment, content json.RawMessage) (json.RawMessage, error) {
+	if call.ParserStep != nil {
+		if err := ValidateParserLeafResponse(call, content); err != nil {
+			return nil, err
+		}
+		return content, nil
+	}
 	if call.Role != ReviewResponse {
 		return content, nil
 	}
