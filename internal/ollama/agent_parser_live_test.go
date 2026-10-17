@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"reflect"
 	"testing"
 	"time"
 
@@ -63,17 +64,40 @@ func TestInstalledLocalResponseParser(t *testing.T) {
 			}
 		})
 	}
-	t.Run("initial-planning", func(t *testing.T) {
-		call := codingagent.Assignment{Role: codingagent.PlanningInitial, Route: route,
-			PlanningResponse: "One proposed implementation task: create a Python word-count command. Requirement: accept text and print its word count. Acceptance criterion: empty input prints zero and two words print two. Verify with automated tests covering those cases. Delivery is local-only."}
-		result := liveParserResult(t, parser, call)
-		var got struct {
-			Ledger codingagent.EngineeringLedger `json:"ledger"`
-		}
-		if err := json.Unmarshal(result.Content, &got); err != nil || len(got.Ledger.Tasks) != 1 || len(got.Ledger.Requirements) < 1 || len(got.Ledger.Checks) < 1 {
-			t.Fatalf("initial ledger: %s %v", result.Content, err)
-		}
-	})
+	for _, test := range []struct {
+		name, source string
+		argv         []string
+	}{
+		{"initial-planning", "One proposed implementation task: create a Python word-count command. Requirement: accept text and print its word count. Acceptance criterion: empty input prints zero and two words print two. Verify with automated tests covering those cases using `python3 -m unittest discover`. Delivery is local-only.", []string{"python3", "-m", "unittest", "discover"}},
+		{"initial-observation", "One proposed task: document a backup restoration procedure in RESTORE.md. Requirement: describe how to restore a saved archive. Acceptance criterion: the document includes prerequisites and restoration steps. Verify by reading the document and confirming those sections exist. Delivery is local-only.", nil},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			turn := codingagent.PlanningTurn{OperationID: "qualification", OwnerTurnID: "owner", Text: test.source}
+			journal := &livePlanningJournal{entries: []codingagent.Entry{{Phase: "planning_response", Notes: []string{turn.OperationID, turn.Text, test.source}}}}
+			native := codingagent.Route{Provider: "codex", Model: "not-invoked"}
+			controller := codingagent.Controller{JobID: 1, Generation: 1, Root: ".",
+				Configuration: codingagent.Configuration{Mode: codingagent.Agents, Planner: native, LedgerParser: route, Executor: native, Reviewer: native},
+				Providers:     map[string]codingagent.Provider{"codex": parser, "ollama": parser}, Environment: journal, Evidence: journal,
+				Requirements: []codingagent.Requirement{{ID: "objective", Outcome: test.source}}}
+			proposal, err := controller.ProposePlanningLedger(context.Background(), turn)
+			for _, entry := range journal.entries {
+				if entry.Result != nil {
+					t.Logf("role=%s output=%s", entry.Role, entry.Result.Content)
+				}
+			}
+			if err != nil {
+				t.Fatalf("production planning validation: %v", err)
+			}
+			if len(proposal.Ledger.Tasks) != 1 || len(proposal.Ledger.Requirements) < 1 || len(proposal.Ledger.Checks) < 1 {
+				t.Fatalf("initial ledger lost planned items: %#v", proposal.Ledger)
+			}
+			for _, check := range proposal.Ledger.Checks {
+				if len(test.argv) == 0 && len(check.Argv) != 0 || len(test.argv) > 0 && !reflect.DeepEqual(check.Argv, test.argv) {
+					t.Fatalf("parser invented or changed a verification command: %q", check.Argv)
+				}
+			}
+		})
+	}
 	t.Run("planning-mutation", func(t *testing.T) {
 		call := codingagent.Assignment{Role: codingagent.PlanningMutation, Route: route,
 			PlanningResponse: "The existing task-1 goal is unchanged. No ledger changes are proposed."}
@@ -86,6 +110,23 @@ func TestInstalledLocalResponseParser(t *testing.T) {
 		}
 	})
 }
+
+// Replay a retained native planning reply through the production controller.
+// Only the local parser runs; Parser itself rejects any accidental native call.
+type livePlanningJournal struct{ entries []codingagent.Entry }
+
+func (j *livePlanningJournal) Append(_ context.Context, entry codingagent.Entry) (int64, error) {
+	entry.ID = int64(len(j.entries) + 1)
+	j.entries = append(j.entries, entry)
+	return entry.ID, nil
+}
+func (j *livePlanningJournal) Read(context.Context) ([]codingagent.Entry, error) {
+	return j.entries, nil
+}
+func (*livePlanningJournal) ReadTaskClarifications(context.Context, string) ([]codingagent.TaskClarification, error) {
+	return nil, nil
+}
+func (*livePlanningJournal) Attest(context.Context) error { return nil }
 
 func liveParserResult(t *testing.T, parser *Parser, call codingagent.Assignment) codingagent.Result {
 	t.Helper()

@@ -1,6 +1,9 @@
 package codingagent
 
-import "sort"
+import (
+	"maps"
+	"sort"
+)
 
 func planningEnum(values ...string) map[string]any {
 	return map[string]any{"type": "string", "enum": values}
@@ -69,9 +72,10 @@ func planningLedgerSchema(
 	text, strings map[string]any,
 ) map[string]any {
 	integer := map[string]any{"type": "integer"}
+	nonempty := map[string]any{"type": "string", "minLength": 1}
 	base := func(extra map[string]any, required ...string) map[string]any {
 		properties := map[string]any{
-			"id": text, "provenance": object(map[string]any{"kind": text, "reference": text, "revision": integer}, "kind", "reference", "revision"),
+			"id": nonempty, "provenance": object(map[string]any{"kind": nonempty, "reference": nonempty, "revision": integer}, "kind", "reference", "revision"),
 			"rationale": text, "priority": planningEnum("critical", "high", "normal", "low"), "rank": integer,
 			"disposition":  planningEnum("active", "tombstoned"),
 			"review_state": planningEnum("", "proposed", "agreed", "needs_discussion"),
@@ -82,28 +86,30 @@ func planningLedgerSchema(
 		return object(properties, append([]string{"id", "provenance", "rationale", "priority", "rank", "disposition", "review_state"}, required...)...)
 	}
 	array := func(item map[string]any) map[string]any { return map[string]any{"type": "array", "items": item} }
-	objective := base(map[string]any{"outcome": text}, "outcome")
-	requirement := base(map[string]any{"outcome": text}, "outcome")
-	constraint := base(map[string]any{"rule": text}, "rule")
-	group := base(map[string]any{"title": text, "parent_group_id": text}, "title", "parent_group_id")
-	task := base(map[string]any{"goal": text, "group_id": text, "requirement_ids": strings,
+	objective := base(map[string]any{"outcome": nonempty}, "outcome")
+	requirement := base(map[string]any{"outcome": nonempty}, "outcome")
+	constraint := base(map[string]any{"rule": nonempty}, "rule")
+	group := base(map[string]any{"title": nonempty, "parent_group_id": text}, "title", "parent_group_id")
+	task := base(map[string]any{"goal": nonempty, "group_id": text, "requirement_ids": strings,
 		"constraint_ids": strings, "acceptance_criterion_ids": strings, "delivery_obligation": text,
 		"known_affected_systems": strings, "read_files": strings, "write_files": strings, "delete_files": strings},
 		"goal", "group_id", "requirement_ids", "constraint_ids", "acceptance_criterion_ids",
 		"delivery_obligation", "known_affected_systems", "read_files", "write_files", "delete_files")
-	criterion := base(map[string]any{"outcome": text, "requirement_ids": strings, "task_ids": strings},
+	criterion := base(map[string]any{"outcome": nonempty, "requirement_ids": strings, "task_ids": strings},
 		"outcome", "requirement_ids", "task_ids")
-	check := base(map[string]any{"argv": strings, "observation": text, "requirement_ids": strings,
-		"acceptance_criterion_ids": strings}, "argv", "observation", "requirement_ids", "acceptance_criterion_ids")
+	checkVariant := func(argv, observation map[string]any) map[string]any {
+		argv, observation = maps.Clone(argv), maps.Clone(observation)
+		argv["description"] = "Copy only an explicitly stated command from the source response as argv. If no command is stated, use [] and describe the stated verification in observation. Never derive or invent a command from a goal or test description."
+		observation["description"] = "The verification stated in the source response when no explicit command is given. Nonempty when argv is []; empty when argv contains a stated command."
+		return base(map[string]any{"argv": argv, "observation": observation, "requirement_ids": strings,
+			"acceptance_criterion_ids": strings}, "argv", "observation", "requirement_ids", "acceptance_criterion_ids")
+	}
+	check := checkVariant(strings, text)
+	// Grammar providers may compile anyOf independently of sibling properties.
+	// Each branch must therefore carry the complete object contract.
 	check["anyOf"] = []map[string]any{
-		{"properties": map[string]any{
-			"argv":        map[string]any{"type": "array", "items": text, "minItems": 1},
-			"observation": map[string]any{"type": "string", "enum": []string{""}},
-		}},
-		{"properties": map[string]any{
-			"argv":        map[string]any{"type": "array", "items": text, "maxItems": 0},
-			"observation": map[string]any{"type": "string", "minLength": 1},
-		}},
+		checkVariant(map[string]any{"type": "array", "items": text, "minItems": 1}, map[string]any{"type": "string", "enum": []string{""}}),
+		checkVariant(map[string]any{"type": "array", "items": text, "maxItems": 0}, map[string]any{"type": "string", "minLength": 1}),
 	}
 	dependency := base(map[string]any{"task_id": text, "prerequisite_id": text, "kind": planningEnum("requires", "blocks")}, "task_id", "prerequisite_id", "kind")
 	return object(map[string]any{

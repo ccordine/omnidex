@@ -35,6 +35,16 @@ func TestPlanningSchemaConstrainsCodeOwnedLedgerEnums(t *testing.T) {
 	if variants, ok := check["anyOf"].([]map[string]any); !ok || len(variants) != 2 {
 		t.Fatalf("planning check schema does not require exactly one command or observation: %#v", check)
 	}
+	for _, variant := range check["anyOf"].([]map[string]any) {
+		if !reflect.DeepEqual(variant["required"], check["required"]) || variant["additionalProperties"] != false {
+			t.Fatalf("check variant dropped required object fields: %#v", variant)
+		}
+		for name, schema := range check["properties"].(map[string]any) {
+			if name != "argv" && name != "observation" && !reflect.DeepEqual(variant["properties"].(map[string]any)[name], schema) {
+				t.Fatalf("check variant dropped %s contract", name)
+			}
+		}
+	}
 	for _, forbidden := range []string{"decisions", "findings", "questions"} {
 		if _, exists := properties[forbidden]; exists {
 			t.Fatalf("planning schema retained model-authored routing bucket %q", forbidden)
