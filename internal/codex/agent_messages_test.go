@@ -75,7 +75,7 @@ func TestNativeAsyncMessagesDoNotAuthorizeMissingOrDuplicateTerminalAnswers(t *t
 	}
 }
 
-func TestApprovedTaskDispatchRetainsPlanningConstraintWithoutRequestingPlanningAgain(t *testing.T) {
+func TestCapturedTaskDispatchSendsExactInstructionWithExistingGuidance(t *testing.T) {
 	raw, err := os.ReadFile("../../testdata/planning-gauntlet/execution-resume.json")
 	if err != nil {
 		t.Fatal(err)
@@ -97,11 +97,11 @@ func TestApprovedTaskDispatchRetainsPlanningConstraintWithoutRequestingPlanningA
 	}
 	call := codingagent.Assignment{Role: codingagent.Execute, Task: task}
 	prompt, err := renderAgentAssignment(call)
-	if err != nil || !strings.Contains(prompt, "approved ledger task") || !strings.Contains(prompt, "planning review is already complete") {
-		t.Fatalf("dispatch lost code-owned execution phase: %q %v", prompt, err)
+	if err != nil || prompt != task.Goal {
+		t.Fatalf("dispatch lost the literal work instruction: %q %v", prompt, err)
 	}
 	history, err := renderAgentContext(call)
-	if err != nil || !strings.Contains(history, "Make no changes until the owner reviews the plan.") || strings.Contains(prompt, task.Goal) {
-		t.Fatalf("phase fix dropped guidance or stuffed it into the current prompt: %v", err)
+	if err != nil || !strings.Contains(history, "Make no changes until the owner reviews the plan.") || strings.Contains(prompt, "Make no changes until the owner reviews the plan.") {
+		t.Fatalf("dispatch dropped existing guidance or substituted it for the work instruction: %v", err)
 	}
 }

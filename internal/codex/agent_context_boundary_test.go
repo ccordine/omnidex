@@ -37,12 +37,18 @@ func TestNativeContextWindowFailureIsAPlanningHandoff(t *testing.T) {
 	}
 }
 
-func TestNativeAssignmentsUseOnlyCompiledContextWithout128KiBCutoff(t *testing.T) {
+func TestNativeAssignmentsKeepExactInstructionsAndCompiledHistoryWithout128KiBCutoff(t *testing.T) {
 	for _, role := range []codingagent.Role{codingagent.Plan, codingagent.Execute, codingagent.Review} {
 		call := codingagent.Assignment{Role: role, Context: "The exact task, required guidance, and owner answer.", Task: &codingagent.Task{Goal: strings.Repeat("raw context ", 20000)}}
 		prompt, err := renderAgentAssignment(call)
-		if err != nil || strings.Contains(prompt, call.Context) || strings.Contains(prompt, "raw context") {
+		if err != nil || strings.Contains(prompt, call.Context) {
 			t.Fatalf("%s put shared context into the literal prompt: %v", role, err)
+		}
+		if role == codingagent.Plan && strings.Contains(prompt, call.Task.Goal) {
+			t.Fatal("planning received an unrelated task instruction")
+		}
+		if role != codingagent.Plan && strings.Count(prompt, call.Task.Goal) != 1 {
+			t.Fatalf("%s lost or truncated the literal work instruction", role)
 		}
 		context, err := renderAgentContext(call)
 		if err != nil || !strings.Contains(context, call.Context) || strings.Contains(context, "raw context") {

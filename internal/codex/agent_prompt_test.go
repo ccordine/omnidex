@@ -33,15 +33,15 @@ func TestExecutionAndReviewReceiveOnlyExactTaskPacket(t *testing.T) {
 			t.Fatal(err)
 		}
 		_, assignment, found := strings.Cut(context, "\n\nAssignment:\n")
-		if !found || strings.Contains(prompt, "Assignment:") || strings.Contains(prompt, task.Goal) {
-			t.Fatal("task context leaked into the literal user prompt")
+		if !found || strings.Contains(prompt, "Assignment:") || strings.Count(prompt, task.Goal) != 1 {
+			t.Fatal("literal user prompt lost the frozen work instruction or included shared context")
 		}
 		if role == codingagent.Review && (!strings.Contains(instruction, "Inspect only this task") || !strings.Contains(instruction, "sibling") ||
 			!strings.Contains(instruction, "file list is context") || strings.Contains(instruction, "supplied read tool")) {
 			t.Fatalf("%s prompt can escape its packet: %s", role, instruction)
 		}
-		if role == codingagent.Execute && (!strings.Contains(instruction, "Codex normally") || strings.Contains(instruction, "file tools") || strings.Contains(instruction, "receipt")) {
-			t.Fatalf("executor retained custom tool or result instructions: %s", instruction)
+		if role == codingagent.Execute && instruction != task.Goal {
+			t.Fatalf("executor did not receive its exact work instruction: %s", instruction)
 		}
 		var decoded struct {
 			Task *struct {
