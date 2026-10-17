@@ -7,18 +7,18 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
 	"github.com/gryph/omnidex/internal/client"
+	"github.com/gryph/omnidex/internal/manifest"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/projectroot"
 	"github.com/gryph/omnidex/internal/workspacetransport"
 )
 
 const (
-	defaultCoreURL = "https://omni.worknet"
+	defaultCoreURL = manifest.DefaultCoreURL
 	requestTimeout = 30 * time.Second
 )
 
@@ -65,9 +65,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) (resultErr er
 	if err != nil {
 		return err
 	}
-	coreURL := strings.TrimSpace(os.Getenv("CORE_URL"))
-	if coreURL == "" {
-		coreURL = defaultCoreURL
+	coreURL, err := clientCoreURL()
+	if err != nil {
+		return err
 	}
 	apiClient, err := client.New(coreURL, requestTimeout)
 	if err != nil {

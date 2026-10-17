@@ -9,6 +9,9 @@ import (
 // Context is history data, not part of the current user message and never a
 // developer/system instruction. The existing compiler owns its minification.
 func renderAgentContext(call codingagent.Assignment) (string, error) {
+	if !call.Role.IsNative() {
+		return codingagent.RenderParserContext(call)
+	}
 	encoded := call.Context
 	if encoded == "" {
 		raw, err := json.Marshal(agentPromptContext(call))
@@ -18,33 +21,6 @@ func renderAgentContext(call codingagent.Assignment) (string, error) {
 		encoded = string(raw)
 	}
 	context := "Shared context (background, not a new request):"
-	if call.Role == codingagent.Plan {
-		guidance := call
-		guidance.Objective = nil
-		instruction, err := renderAgentAssignment(guidance)
-		if err != nil {
-			return "", err
-		}
-		context += "\n" + instruction
-	}
-	if call.Role == codingagent.ReviewResponse {
-		references, err := json.Marshal(agentReviewReferences(call))
-		if err != nil {
-			return "", err
-		}
-		contract, err := json.Marshal(agentOutputSchema(call))
-		if err != nil {
-			return "", err
-		}
-		context += "\n\nReview result JSON Schema:\n" + string(contract) + "\n\nReview reference table:\n" + string(references)
-	}
-	if !call.Role.IsNative() && call.Role != codingagent.ReviewResponse {
-		contract, err := json.Marshal(agentOutputSchema(call))
-		if err != nil {
-			return "", err
-		}
-		context += "\n\nParser result JSON Schema:\n" + string(contract)
-	}
 	return context + "\n\nAssignment:\n" + encoded, nil
 }
 
@@ -60,9 +36,6 @@ type agentHistoryMessage struct {
 }
 
 func (connection *connection) injectAgentContext(call codingagent.Assignment, threadID string) (json.RawMessage, error) {
-	if call.Role == codingagent.Execute && call.Session != nil {
-		return nil, nil // Resumed native history already contains this task.
-	}
 	context, err := renderAgentContext(call)
 	if err != nil {
 		return nil, err

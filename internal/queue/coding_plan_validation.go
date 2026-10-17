@@ -54,12 +54,6 @@ func validateInitialCodingLedgerReviewStates(ledger model.EngineeringLedger) err
 			return fmt.Errorf("initial coding ledger item %s must start proposed", record.item.ID)
 		}
 	}
-	for _, dependency := range ledger.Dependencies {
-		if dependency.Disposition == model.LedgerDispositionActive &&
-			dependency.ReviewState != model.LedgerReviewProposed {
-			return fmt.Errorf("initial coding ledger dependency %s must start proposed", dependency.ID)
-		}
-	}
 	return nil
 }
 
@@ -92,21 +86,11 @@ func validateLedgerForRepository(ledger model.EngineeringLedger) error {
 		return err
 	}
 	for _, record := range ledgerRepositoryRecords(ledger) {
-		if !codingLedgerItemIDPattern.MatchString(string(record.item.ID)) ||
-			strings.HasPrefix(string(record.item.ID), codingLedgerDependencyRecordPrefix) {
+		if !codingLedgerItemIDPattern.MatchString(string(record.item.ID)) {
 			return fmt.Errorf("coding ledger item %q has an invalid or reserved stable identity", record.item.ID)
 		}
 		if len(record.item.Rationale) > 8192 {
 			return fmt.Errorf("coding ledger item %s rationale exceeds 8192 bytes", record.item.ID)
-		}
-	}
-	for _, dependency := range ledger.Dependencies {
-		if !codingLedgerItemIDPattern.MatchString(string(dependency.ID)) ||
-			strings.HasPrefix(string(dependency.ID), codingLedgerDependencyRecordPrefix) {
-			return fmt.Errorf("coding ledger dependency %q has an invalid or reserved stable identity", dependency.ID)
-		}
-		if len(dependency.Rationale) > 8192 {
-			return fmt.Errorf("coding ledger dependency %s rationale exceeds 8192 bytes", dependency.ID)
 		}
 	}
 	return validateCodingLedgerExactDuplicates(ledger)
@@ -144,43 +128,8 @@ func validateCodingLedgerExactDuplicates(ledger model.EngineeringLedger) error {
 		duplicates[key] = struct{}{}
 		return nil
 	}
-	for _, value := range ledger.Objectives {
-		if err := add("objective", value); err != nil {
-			return err
-		}
-	}
-	for _, value := range ledger.Requirements {
-		if err := add("requirement", value); err != nil {
-			return err
-		}
-	}
-	for _, value := range ledger.Constraints {
-		if err := add("constraint", value); err != nil {
-			return err
-		}
-	}
-	for _, value := range ledger.Groups {
-		if err := add("group", value); err != nil {
-			return err
-		}
-	}
 	for _, value := range ledger.Tasks {
 		if err := add("task", value); err != nil {
-			return err
-		}
-	}
-	for _, value := range ledger.AcceptanceCriteria {
-		if err := add("acceptance_criterion", value); err != nil {
-			return err
-		}
-	}
-	for _, value := range ledger.Checks {
-		if err := add("check", value); err != nil {
-			return err
-		}
-	}
-	for _, value := range ledger.Dependencies {
-		if err := add("dependency", value); err != nil {
 			return err
 		}
 	}
@@ -193,7 +142,7 @@ func validateDraftLedgerForRepository(ledger model.EngineeringLedger) error {
 
 func validateOwnerTurnDisposition(ledger model.EngineeringLedger, disposition model.OwnerTurnDisposition) error {
 	if len(disposition.Statements) == 0 {
-		if len(ledgerRepositoryRecords(ledger)) == 0 && len(ledger.Dependencies) == 0 {
+		if len(ledgerRepositoryRecords(ledger)) == 0 {
 			return nil
 		}
 		return fmt.Errorf("owner turn requires statement dispositions")
@@ -202,11 +151,6 @@ func validateOwnerTurnDisposition(ledger model.EngineeringLedger, disposition mo
 	for _, record := range ledgerRepositoryRecords(ledger) {
 		if record.item.Disposition == model.LedgerDispositionActive {
 			active[record.item.ID] = record.kind
-		}
-	}
-	for _, dependency := range ledger.Dependencies {
-		if dependency.Disposition == model.LedgerDispositionActive {
-			active[dependency.ID] = "dependency"
 		}
 	}
 	for _, disposition := range disposition.StatementDispositions() {
@@ -246,9 +190,6 @@ func validateMutationOwnerTurnDisposition(
 	known := make(map[model.LedgerItemID]string)
 	for _, record := range ledgerRepositoryRecords(next) {
 		known[record.item.ID] = record.kind
-	}
-	for _, dependency := range next.Dependencies {
-		known[dependency.ID] = "dependency"
 	}
 	represented := make(map[model.LedgerItemID]bool)
 	hasOutOfScope := false

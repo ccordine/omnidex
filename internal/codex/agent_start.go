@@ -24,7 +24,7 @@ func (connection *connection) startAgentTurn(call codingagent.Assignment, thread
 		"sandboxPolicy":  policy,
 		"summary":        "auto",
 	}
-	if !call.Role.IsNative() && call.Role != codingagent.PlanningMutation {
+	if !call.Role.IsNative() && call.Role != codingagent.PlanningMutation && (call.ParserStep == nil || call.ParserStep.Stage != "planning_unit") {
 		parameters["outputSchema"] = agentOutputSchema(call)
 	}
 	applyAgentInferenceOptions(parameters, call.Route)

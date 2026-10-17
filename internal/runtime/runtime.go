@@ -47,6 +47,13 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*Runtime, 
 		return nil, fmt.Errorf("connect runtime database: %w", err)
 	}
 	repo := queue.New(pool, cfg.ModelAuthority).WithCodingAgents(cfg.CodingAgents)
+	if cfg.ManifestConfigured {
+		if err := repo.StoreCodingAgentConfiguration(lifecycleContext, cfg.CodingAgents); err != nil {
+			cancel()
+			pool.Close()
+			return nil, fmt.Errorf("persist manifest model defaults: %w", err)
+		}
+	}
 
 	transports := llmprovider.NewLazyFromConfig(cfg)
 	server, err := api.NewServer(repo, transports.Embeddings, api.ServerOptions{

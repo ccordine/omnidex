@@ -2,9 +2,6 @@ package codingagent
 
 import (
 	"context"
-	"fmt"
-
-	"github.com/gryph/omnidex/internal/model"
 )
 
 func (controller *Controller) planningValidationNotes(ctx context.Context, operation string) ([]string, error) {
@@ -28,35 +25,4 @@ func (controller *Controller) rejectPlanningParse(ctx context.Context, turn Plan
 		return err
 	}
 	return &ParserFailure{Cause: cause}
-}
-
-// Newly proposed constraints need consumers in remaining work. Drafts without
-// tasks can still record constraints while implementation is being discussed.
-// Existing constraints and accepted work are not reopened.
-func validateAddedConstraintConsumers(ledger EngineeringLedger, operations []model.LedgerMutationOperation, completed []string) error {
-	remaining := []model.LedgerTask{}
-	for _, task := range ledger.Tasks {
-		if task.Disposition == model.LedgerDispositionActive && !contains(completed, string(task.ID)) {
-			remaining = append(remaining, task)
-		}
-	}
-	if len(remaining) == 0 {
-		return nil
-	}
-	for _, operation := range operations {
-		if operation.Kind != model.LedgerMutationAdd || operation.Item == nil || operation.Item.Constraint == nil {
-			continue
-		}
-		constraint := operation.Item.Constraint.ID
-		bound := false
-		for _, task := range remaining {
-			for _, id := range task.ConstraintIDs {
-				bound = bound || id == constraint
-			}
-		}
-		if !bound {
-			return fmt.Errorf("new constraint %s has no remaining task consumer; bind it through the affected tasks' constraint_ids without changing their other fields", constraint)
-		}
-	}
-	return nil
 }

@@ -15,7 +15,7 @@ func TestRenderPlanReviewShowsDecisionsWithoutModelScopeAnnotations(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "PLAN REVIEW\n" +
+	want := "PLAN APPROVAL\n" +
 		"job 42 · generation 3 · state review · revision 1\n\n" +
 		"> 1. [approved] Confirm the selected item\n" +
 		"  2. [pending] Display the item's status\n" +
@@ -56,7 +56,7 @@ func TestRenderPlanReviewZeroLeafStateOffersOnlyGuidanceAndExit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "PLAN REVIEW\n" +
+	want := "PLAN APPROVAL\n" +
 		"job 42 · generation 3 · state review · revision 1\n\n" +
 		"No proposed coding leaves were produced for this objective.\n\n" +
 		"Guidance is required before coding can start.\n" +

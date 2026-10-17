@@ -11,14 +11,7 @@ import (
 // introducing a second ledger representation.
 type EngineeringLedger = model.EngineeringLedger
 type LedgerItem = model.LedgerItem
-type LedgerObjective = model.LedgerObjective
-type LedgerRequirement = model.LedgerRequirement
-type LedgerConstraint = model.LedgerConstraint
-type LedgerGroup = model.LedgerGroup
 type LedgerTask = model.LedgerTask
-type LedgerAcceptanceCriterion = model.LedgerAcceptanceCriterion
-type LedgerCheck = model.LedgerCheck
-type LedgerDependency = model.LedgerDependency
 type LedgerMutation = model.LedgerMutation
 
 type RouteSet struct {

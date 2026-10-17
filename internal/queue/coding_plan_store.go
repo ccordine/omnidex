@@ -41,67 +41,18 @@ type ledgerRepositoryRecord struct {
 }
 
 func ledgerRepositoryRecords(ledger model.EngineeringLedger) []ledgerRepositoryRecord {
-	records := make([]ledgerRepositoryRecord, 0,
-		len(ledger.Objectives)+len(ledger.Requirements)+len(ledger.Constraints)+len(ledger.Groups)+
-			len(ledger.Tasks)+len(ledger.AcceptanceCriteria)+len(ledger.Checks))
-	for index := range ledger.Objectives {
-		value := &ledger.Objectives[index]
-		records = append(records, ledgerRepositoryRecord{"objective", value.LedgerItem, value})
-	}
-	for index := range ledger.Requirements {
-		value := &ledger.Requirements[index]
-		records = append(records, ledgerRepositoryRecord{"requirement", value.LedgerItem, value})
-	}
-	for index := range ledger.Constraints {
-		value := &ledger.Constraints[index]
-		records = append(records, ledgerRepositoryRecord{"constraint", value.LedgerItem, value})
-	}
-	for index := range ledger.Groups {
-		value := &ledger.Groups[index]
-		records = append(records, ledgerRepositoryRecord{"group", value.LedgerItem, value})
-	}
-	for index := range ledger.Tasks {
-		value := &ledger.Tasks[index]
-		records = append(records, ledgerRepositoryRecord{"task", value.LedgerItem, value})
-	}
-	for index := range ledger.AcceptanceCriteria {
-		value := &ledger.AcceptanceCriteria[index]
-		records = append(records, ledgerRepositoryRecord{"acceptance_criterion", value.LedgerItem, value})
-	}
-	for index := range ledger.Checks {
-		value := &ledger.Checks[index]
-		records = append(records, ledgerRepositoryRecord{"check", value.LedgerItem, value})
+	records := make([]ledgerRepositoryRecord, 0, len(ledger.Tasks))
+	for i := range ledger.Tasks {
+		task := &ledger.Tasks[i]
+		records = append(records, ledgerRepositoryRecord{"task", task.LedgerItem, task})
 	}
 	return records
 }
 
 func sortCodingLedgerProjection(ledger *model.EngineeringLedger) {
-	less := func(leftRank int64, leftID model.LedgerItemID, rightRank int64, rightID model.LedgerItemID) bool {
-		return leftRank < rightRank || (leftRank == rightRank && leftID < rightID)
-	}
-	sort.SliceStable(ledger.Objectives, func(i, j int) bool {
-		return less(ledger.Objectives[i].Rank, ledger.Objectives[i].ID, ledger.Objectives[j].Rank, ledger.Objectives[j].ID)
-	})
-	sort.SliceStable(ledger.Requirements, func(i, j int) bool {
-		return less(ledger.Requirements[i].Rank, ledger.Requirements[i].ID, ledger.Requirements[j].Rank, ledger.Requirements[j].ID)
-	})
-	sort.SliceStable(ledger.Constraints, func(i, j int) bool {
-		return less(ledger.Constraints[i].Rank, ledger.Constraints[i].ID, ledger.Constraints[j].Rank, ledger.Constraints[j].ID)
-	})
-	sort.SliceStable(ledger.Groups, func(i, j int) bool {
-		return less(ledger.Groups[i].Rank, ledger.Groups[i].ID, ledger.Groups[j].Rank, ledger.Groups[j].ID)
-	})
 	sort.SliceStable(ledger.Tasks, func(i, j int) bool {
-		return less(ledger.Tasks[i].Rank, ledger.Tasks[i].ID, ledger.Tasks[j].Rank, ledger.Tasks[j].ID)
-	})
-	sort.SliceStable(ledger.AcceptanceCriteria, func(i, j int) bool {
-		return less(ledger.AcceptanceCriteria[i].Rank, ledger.AcceptanceCriteria[i].ID, ledger.AcceptanceCriteria[j].Rank, ledger.AcceptanceCriteria[j].ID)
-	})
-	sort.SliceStable(ledger.Checks, func(i, j int) bool {
-		return less(ledger.Checks[i].Rank, ledger.Checks[i].ID, ledger.Checks[j].Rank, ledger.Checks[j].ID)
-	})
-	sort.SliceStable(ledger.Dependencies, func(i, j int) bool {
-		return less(ledger.Dependencies[i].Rank, ledger.Dependencies[i].ID, ledger.Dependencies[j].Rank, ledger.Dependencies[j].ID)
+		a, b := ledger.Tasks[i], ledger.Tasks[j]
+		return a.Rank < b.Rank || a.Rank == b.Rank && a.ID < b.ID
 	})
 }
 
@@ -228,29 +179,8 @@ func (r *Repository) CreateCodingLedger(ctx context.Context, command CreateCodin
 }
 
 func normalizeCodingLedgerProjectionSlices(ledger *model.EngineeringLedger) {
-	if ledger.Objectives == nil {
-		ledger.Objectives = []model.LedgerObjective{}
-	}
-	if ledger.Requirements == nil {
-		ledger.Requirements = []model.LedgerRequirement{}
-	}
-	if ledger.Constraints == nil {
-		ledger.Constraints = []model.LedgerConstraint{}
-	}
-	if ledger.Groups == nil {
-		ledger.Groups = []model.LedgerGroup{}
-	}
 	if ledger.Tasks == nil {
 		ledger.Tasks = []model.LedgerTask{}
-	}
-	if ledger.AcceptanceCriteria == nil {
-		ledger.AcceptanceCriteria = []model.LedgerAcceptanceCriterion{}
-	}
-	if ledger.Checks == nil {
-		ledger.Checks = []model.LedgerCheck{}
-	}
-	if ledger.Dependencies == nil {
-		ledger.Dependencies = []model.LedgerDependency{}
 	}
 }
 
@@ -309,26 +239,9 @@ func insertCodingLedgerDispositionTx(
 	for _, statement := range statements {
 		ids = append(ids, statement.ItemIDs...)
 	}
-	dependencies := make(map[model.LedgerItemID][]model.LedgerDependency)
-	ledgers := append([]model.EngineeringLedger{ledger}, authorityLedgers...)
-	for _, authorityLedger := range ledgers {
-		for _, dependency := range authorityLedger.Dependencies {
-			dependencies[dependency.ID] = append(dependencies[dependency.ID], dependency)
-		}
-	}
 	targets := make(map[model.LedgerItemID]bool)
 	for _, id := range ids {
-		if dependencyVersions := dependencies[id]; len(dependencyVersions) > 0 {
-			// Dependencies are durable edges, not item rows. Attach represented
-			// owner authority to both endpoints from every supplied before/after
-			// version so an amendment cannot discard authority for a removed endpoint.
-			for _, dependency := range dependencyVersions {
-				targets[dependency.TaskID] = true
-				targets[dependency.PrerequisiteID] = true
-			}
-		} else {
-			targets[id] = true
-		}
+		targets[id] = true
 	}
 	for id := range targets {
 		result, err := tx.Exec(ctx, `
@@ -402,11 +315,6 @@ func persistCodingLedgerSnapshotTx(ctx context.Context, tx pgx.Tx, ledgerID, rev
 		changed := !known || prior.Kind != record.kind || !sameCodingLedgerJSON(prior.Payload, raw) ||
 			prior.Disposition != expectedDisposition || prior.ReviewState != record.item.ReviewState ||
 			prior.Rank != record.item.Rank || prior.Rationale != record.item.Rationale
-		// Active check definitions are revision-bound by the durable schema.
-		// Tombstoned checks retain their exact removal version and attribution.
-		if record.kind == "check" && disposition == "active" {
-			changed = true
-		}
 		itemRevision := prior.Revision
 		if !known {
 			if _, err := tx.Exec(ctx, `
@@ -445,34 +353,6 @@ func persistCodingLedgerSnapshotTx(ctx context.Context, tx pgx.Tx, ledgerID, rev
 			return fmt.Errorf("project coding ledger item %s: %w", record.item.ID, err)
 		}
 	}
-	if err := persistCodingLedgerDependenciesTx(ctx, tx, ledgerID, revision, baseRevision, ownerTurnID, ledger.Dependencies); err != nil {
-		return err
-	}
-	if err := persistCodingLedgerEdgesTx(ctx, tx, ledgerID, revision, ledger); err != nil {
-		return err
-	}
-	for _, check := range ledger.Checks {
-		if check.Disposition != model.LedgerDispositionActive {
-			continue
-		}
-		var argv any
-		var observation any
-		if len(check.Argv) > 0 {
-			raw, err := json.Marshal(check.Argv)
-			if err != nil {
-				return err
-			}
-			argv = string(raw)
-		} else {
-			observation = check.Observation
-		}
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO coding_ledger_checks(ledger_id,revision,check_item_id,required,argv,observation)
-			VALUES($1,$2,$3,$4,$5::jsonb,$6)
-		`, ledgerID, revision, check.ID, check.Required, argv, observation); err != nil {
-			return fmt.Errorf("record coding ledger check %s: %w", check.ID, err)
-		}
-	}
 	for _, route := range routes {
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO coding_ledger_routes(
@@ -481,196 +361,6 @@ func persistCodingLedgerSnapshotTx(ctx context.Context, tx pgx.Tx, ledgerID, rev
 		`, ledgerID, revision, route.Role, route.ConfigurationRevision, route.Provider, route.Model,
 			route.ReasoningEffort, route.ServiceTier); err != nil {
 			return fmt.Errorf("record coding ledger %s route: %w", route.Role, err)
-		}
-	}
-	return nil
-}
-
-const (
-	codingLedgerDependencyRecordPrefix = "dependency.record."
-	codingLedgerDerivedEdgePrefix      = "derived.edge."
-	codingLedgerDependencyEdgePrefix   = "dependency.edge."
-	codingLedgerOriginDetailMaxBytes   = 8192
-)
-
-func codingLedgerDependencyEdgeID(id model.LedgerItemID) string {
-	return codingLedgerDependencyEdgePrefix + string(id)
-}
-
-func codingLedgerDependencyRecordID(id model.LedgerItemID) model.LedgerItemID {
-	digest := fnv.New128a()
-	_, _ = digest.Write([]byte(id))
-	return model.LedgerItemID(codingLedgerDependencyRecordPrefix + fmt.Sprintf("%x", digest.Sum(nil)))
-}
-
-func persistCodingLedgerDependenciesTx(
-	ctx context.Context,
-	tx pgx.Tx,
-	ledgerID, revision, baseRevision int64,
-	ownerTurnID string,
-	dependencies []model.LedgerDependency,
-) error {
-	type priorDependency struct {
-		itemRevision int64
-		payload      []byte
-	}
-	previous := make(map[model.LedgerItemID]priorDependency)
-	if baseRevision > 0 {
-		rows, err := tx.Query(ctx, `
-			SELECT version.payload->>'id',projection.item_revision,version.payload
-			FROM coding_ledger_revision_items projection
-			JOIN coding_ledger_items item USING(ledger_id,item_id)
-			JOIN coding_ledger_item_versions version
-			  ON (version.ledger_id,version.item_id,version.revision)=
-			     (projection.ledger_id,projection.item_id,projection.item_revision)
-			WHERE projection.ledger_id=$1 AND projection.revision=$2
-			  AND item.item_id LIKE $3
-		`, ledgerID, baseRevision, codingLedgerDependencyRecordPrefix+"%")
-		if err != nil {
-			return err
-		}
-		for rows.Next() {
-			var id model.LedgerItemID
-			var value priorDependency
-			if err := rows.Scan(&id, &value.itemRevision, &value.payload); err != nil {
-				rows.Close()
-				return err
-			}
-			previous[id] = value
-		}
-		if err := rows.Err(); err != nil {
-			rows.Close()
-			return err
-		}
-		rows.Close()
-	}
-	current := make(map[model.LedgerItemID]bool, len(dependencies))
-	for _, dependency := range dependencies {
-		current[dependency.ID] = true
-		raw, err := json.Marshal(dependency)
-		if err != nil {
-			return fmt.Errorf("encode coding ledger dependency %s: %w", dependency.ID, err)
-		}
-		recordID := codingLedgerDependencyRecordID(dependency.ID)
-		prior, known := previous[dependency.ID]
-		if !known {
-			if _, err := tx.Exec(ctx, `
-				INSERT INTO coding_ledger_items(ledger_id,item_id,item_kind,created_revision)
-				VALUES($1,$2,'dependency',$3)
-			`, ledgerID, recordID, revision); err != nil {
-				return fmt.Errorf("create coding ledger dependency record %s: %w", dependency.ID, err)
-			}
-		}
-		itemRevision := prior.itemRevision
-		if !known || !sameCodingLedgerJSON(prior.payload, raw) {
-			itemRevision = revision
-			if _, err := tx.Exec(ctx, `
-				INSERT INTO coding_ledger_item_versions(
-					ledger_id,item_id,revision,disposition,review_state,rank,payload,rationale,removed_by_turn_id
-				) VALUES($1,$2,$3,'removed',NULL,$4,$5::jsonb,$6,$7)
-			`, ledgerID, recordID, revision, dependency.Rank, string(raw), dependency.Rationale, ownerTurnID); err != nil {
-				return fmt.Errorf("version coding ledger dependency %s: %w", dependency.ID, err)
-			}
-			if _, err := tx.Exec(ctx, `
-				INSERT INTO coding_ledger_origins(ledger_id,item_id,revision,origin_kind,detail)
-				VALUES($1,$2,$3,'planner',$4)
-			`, ledgerID, recordID, revision, "dependency:"+string(dependency.ID)); err != nil {
-				return fmt.Errorf("record coding ledger dependency %s origin: %w", dependency.ID, err)
-			}
-		}
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO coding_ledger_revision_items(ledger_id,revision,item_id,item_revision)
-			VALUES($1,$2,$3,$4)
-		`, ledgerID, revision, recordID, itemRevision); err != nil {
-			return fmt.Errorf("project coding ledger dependency %s: %w", dependency.ID, err)
-		}
-	}
-	for id := range previous {
-		if !current[id] {
-			return fmt.Errorf("coding ledger dependency %s was omitted instead of retained as a tombstone", id)
-		}
-	}
-	return nil
-}
-
-func persistCodingLedgerEdgesTx(ctx context.Context, tx pgx.Tx, ledgerID, revision int64, ledger model.EngineeringLedger) error {
-	type edge struct {
-		id, kind  string
-		from, to  model.LedgerItemID
-		rationale string
-	}
-	edges := make([]edge, 0)
-	appendEdge := func(id, kind string, from, to model.LedgerItemID, rationale string) {
-		edges = append(edges, edge{id, kind, from, to, rationale})
-	}
-	var activeObjectiveID model.LedgerItemID
-	for _, objective := range ledger.Objectives {
-		if objective.Disposition == model.LedgerDispositionActive {
-			activeObjectiveID = objective.ID
-			break
-		}
-	}
-	for _, task := range ledger.Tasks {
-		if task.Disposition != model.LedgerDispositionActive {
-			continue
-		}
-		if len(task.RequirementIDs) == 0 && strings.TrimSpace(task.DeliveryObligation) != "" {
-			appendEdge(codingLedgerDerivedEdgePrefix+fmt.Sprintf("%s:delivery", task.ID), "covers", task.ID, activeObjectiveID, task.Rationale)
-		}
-		for index, id := range task.RequirementIDs {
-			appendEdge(codingLedgerDerivedEdgePrefix+fmt.Sprintf("%s:req:%d", task.ID, index), "covers", task.ID, id, task.Rationale)
-		}
-		for index, id := range task.ConstraintIDs {
-			appendEdge(codingLedgerDerivedEdgePrefix+fmt.Sprintf("%s:constraint:%d", task.ID, index), "affects", id, task.ID, task.Rationale)
-		}
-		for index, id := range task.AcceptanceCriterionIDs {
-			appendEdge(codingLedgerDerivedEdgePrefix+fmt.Sprintf("%s:accept:%d", task.ID, index), "covers", task.ID, id, task.Rationale)
-		}
-		if task.GroupID != "" {
-			appendEdge(codingLedgerDerivedEdgePrefix+fmt.Sprintf("%s:group", task.ID), "contains", task.GroupID, task.ID, task.Rationale)
-		}
-	}
-	for _, group := range ledger.Groups {
-		if group.Disposition == model.LedgerDispositionActive && group.ParentGroupID != "" {
-			appendEdge(codingLedgerDerivedEdgePrefix+fmt.Sprintf("%s:parent", group.ID), "contains", group.ParentGroupID, group.ID, group.Rationale)
-		}
-	}
-	for _, criterion := range ledger.AcceptanceCriteria {
-		if criterion.Disposition != model.LedgerDispositionActive {
-			continue
-		}
-		for index, id := range criterion.RequirementIDs {
-			appendEdge(codingLedgerDerivedEdgePrefix+fmt.Sprintf("%s:req:%d", criterion.ID, index), "covers", criterion.ID, id, criterion.Rationale)
-		}
-	}
-	for _, check := range ledger.Checks {
-		if check.Disposition != model.LedgerDispositionActive {
-			continue
-		}
-		for index, id := range check.AcceptanceCriterionIDs {
-			appendEdge(codingLedgerDerivedEdgePrefix+fmt.Sprintf("%s:verify:%d", check.ID, index), "verifies", check.ID, id, check.Rationale)
-		}
-	}
-	activeTasks := make(map[model.LedgerItemID]bool, len(ledger.Tasks))
-	for _, task := range ledger.Tasks {
-		activeTasks[task.ID] = task.Disposition == model.LedgerDispositionActive
-	}
-	for _, value := range ledger.Dependencies {
-		// The durable edge trigger intentionally accepts only active endpoints.
-		// When endpoint removal also tombstones its dependency, the prior edge
-		// remains immutable history and the current tombstone is reconstructed
-		// from the canonical ledger mutation rather than inserted as a live edge.
-		if value.Disposition == model.LedgerDispositionTombstoned {
-			continue
-		}
-		appendEdge(codingLedgerDependencyEdgeID(value.ID), string(value.Kind), value.TaskID, value.PrerequisiteID, value.Rationale)
-	}
-	for _, value := range edges {
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO coding_ledger_edges(ledger_id,revision,edge_id,edge_kind,from_item_id,to_item_id,rationale)
-			VALUES($1,$2,$3,$4,$5,$6,$7)
-		`, ledgerID, revision, value.id, value.kind, value.from, value.to, value.rationale); err != nil {
-			return fmt.Errorf("record coding ledger edge %s: %w", value.id, err)
 		}
 	}
 	return nil

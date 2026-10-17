@@ -141,13 +141,18 @@ func (session *chatSession) control(
 			jobID,
 		)
 	}
+	var observedRevision int64
+	if action == "redirect" {
+		observedRevision, err = session.redirectLedgerRevision(jobID)
+		if err != nil {
+			return 0, err
+		}
+	}
 	operationID, err := session.controlOperationID(jobID, action, text, locallyEchoed)
 	if err != nil {
 		return 0, err
 	}
-	if action == "redirect" && session.planReview != nil {
-		session.pendingControl.observedLedgerRevision = session.planReview.snapshot.Revision
-	}
+	session.pendingControl.observedLedgerRevision = observedRevision
 	var receipt model.Job
 	switch action {
 	case "interrupt":

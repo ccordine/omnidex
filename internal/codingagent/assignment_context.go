@@ -13,19 +13,19 @@ func (call Assignment) ValidateTaskContext() error {
 		return fmt.Errorf("task-local context excludes continuation planning and completed task inventory")
 	}
 	if call.Role == ReviewResponse || call.Role == ExecutionResponse {
-		if (call.Task != nil) != (call.Role == ReviewResponse) || call.Response == "" || call.Objective != nil || len(call.Requirements) != 0 ||
+		if (call.Task != nil) != (call.Role == ReviewResponse) || call.Response == "" || call.Objective != nil ||
 			len(call.ConstructionFacts) != 0 ||
 			call.PlanningLedger != nil || len(call.PlanningConversation) != 0 || call.PlanningResponse != "" ||
 			len(call.ReadFiles) != 0 || len(call.WriteFiles) != 0 || len(call.DeleteFiles) != 0 ||
-			len(call.Findings) != 0 || len(call.Checks) != 0 || call.Session != nil || call.Reply != "" || len(call.Clarifications) != 0 {
-			return fmt.Errorf("response parser requires only its source response and review criteria when applicable")
+			len(call.Findings) != 0 || call.Session != nil || call.Reply != "" || len(call.Clarifications) != 0 {
+			return fmt.Errorf("response parser requires only its source response and task instructions when applicable")
 		}
 		return nil
 	}
 	if call.Role != Execute && call.Role != Review {
 		return nil
 	}
-	if call.Task == nil || call.Objective != nil || len(call.Requirements) != 0 || len(call.ConstructionFacts) != 0 || call.PlanningLedger != nil || len(call.PlanningConversation) != 0 || call.PlanningResponse != "" {
+	if call.Task == nil || call.Objective != nil || len(call.ConstructionFacts) != 0 || call.PlanningLedger != nil || len(call.PlanningConversation) != 0 || call.PlanningResponse != "" {
 		return fmt.Errorf("narrow agent context requires one task and excludes parent context")
 	}
 	if call.Role == Execute && call.Response != "" || call.Role == Review && (call.Session != nil || (call.Response == "") != (call.Reply == "")) {
@@ -64,15 +64,6 @@ func (call Assignment) ValidateTaskContext() error {
 		}
 	} else if len(call.WriteFiles) != 0 || len(call.DeleteFiles) != 0 {
 		return fmt.Errorf("narrow review context received mutation authority")
-	}
-	for _, check := range call.Checks {
-		known := false
-		for _, expected := range call.Task.Checks {
-			known = known || expected.ID == check.ID
-		}
-		if !known {
-			return fmt.Errorf("narrow agent context includes an unrelated check")
-		}
 	}
 	return nil
 }

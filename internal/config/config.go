@@ -6,44 +6,47 @@ import (
 	"os"
 
 	"github.com/gryph/omnidex/internal/db"
+	"github.com/gryph/omnidex/internal/manifest"
 	"github.com/gryph/omnidex/internal/modelconfig"
 )
 
 type Config struct {
-	ListenAddr              string
-	CoreURL                 string
-	HostAgentURL            string
-	HostAgentToken          string
-	HostDirectoryAccessRoot string
-	IntegrationAPIToken     string
-	DatabaseURL             string
-	DatabaseSchema          string
-	LLMProvider             string
-	CodexCommand            string
-	CodexDirectory          string
-	CodingAgents            codingagent.Configuration
-	EmbeddingProvider       string
-	ProviderModels          map[string]ProviderModelConfig
-	OllamaBaseURL           string
-	CompatibleProviders     map[string]CompatibleProviderConfig
-	AzureAIBaseURL          string
-	AzureAIAPIKey           string
-	AzureAIAPIVersion       string
-	AzureAIAPIStyle         string
-	GoogleBaseURL           string
-	GoogleAPIKey            string
-	HuggingFaceBaseURL      string
-	HuggingFaceAPIKey       string
-	ModelAuthority          modelconfig.Authority
-	EmbeddingModel          string
-	WorkerPollInterval      string
-	RequestTimeout          string
-	RealtimeStreamMaxAge    string
-	RealtimeHeartbeat       string
-	RealtimeWriteTimeout    string
-	RedisURL                string
-	UISessionTTL            string
-	InferenceContextTokens  string
+	ManifestConfigured        bool
+	ListenAddr                string
+	CoreURL                   string
+	HostAgentURL              string
+	HostAgentToken            string
+	HostDirectoryAccessRoot   string
+	IntegrationAPIToken       string
+	DatabaseURL               string
+	DatabaseSchema            string
+	LLMProvider               string
+	CodexCommand              string
+	CodexDirectory            string
+	CodingAgents              codingagent.Configuration
+	EmbeddingProvider         string
+	ProviderModels            map[string]ProviderModelConfig
+	OllamaBaseURL             string
+	CompatibleProviders       map[string]CompatibleProviderConfig
+	AzureAIBaseURL            string
+	AzureAIAPIKey             string
+	AzureAIAPIVersion         string
+	AzureAIAPIStyle           string
+	GoogleBaseURL             string
+	GoogleAPIKey              string
+	HuggingFaceBaseURL        string
+	HuggingFaceAPIKey         string
+	ModelAuthority            modelconfig.Authority
+	EmbeddingModel            string
+	WorkerPollInterval        string
+	RequestTimeout            string
+	RealtimeStreamMaxAge      string
+	RealtimeHeartbeat         string
+	RealtimeWriteTimeout      string
+	RedisURL                  string
+	UISessionTTL              string
+	InferenceContextTokens    string
+	CodingParserContextTokens string
 }
 
 // Load parses the environment and preserves provider selections and credentials
@@ -58,39 +61,40 @@ func Load() (Config, error) {
 	providerModels := loadProviderModelConfigs()
 	modelAuthority := modelconfig.LoadEnvironment()
 	cfg := Config{
-		ListenAddr:              getenv("LISTEN_ADDR", "0.0.0.0:8090"),
-		HostAgentURL:            getenv("HOST_AGENT_URL", ""),
-		HostAgentToken:          getenv("HOST_AGENT_TOKEN", ""),
-		HostDirectoryAccessRoot: os.Getenv("HOST_DIRECTORY_ACCESS_ROOT"),
-		IntegrationAPIToken:     os.Getenv("OMNIDEX_INTEGRATION_API_TOKEN"),
-		CoreURL:                 os.Getenv("CORE_URL"),
-		DatabaseURL:             os.Getenv("DATABASE_URL"),
-		DatabaseSchema:          getenv("DATABASE_SCHEMA", db.DefaultRuntimeSchema),
-		LLMProvider:             provider,
-		CodexCommand:            getenv("CODEX_COMMAND", "codex"),
-		CodexDirectory:          getenv("CODEX_DIRECTORY", "."),
-		EmbeddingProvider:       embeddingProvider,
-		ProviderModels:          providerModels,
-		OllamaBaseURL:           getenv("OLLAMA_BASE_URL", ""),
-		CompatibleProviders:     compatibleProviders,
-		AzureAIBaseURL:          os.Getenv("AZURE_AI_BASE_URL"),
-		AzureAIAPIKey:           os.Getenv("AZURE_AI_API_KEY"),
-		AzureAIAPIVersion:       os.Getenv("AZURE_AI_API_VERSION"),
-		AzureAIAPIStyle:         os.Getenv("AZURE_AI_API_STYLE"),
-		GoogleBaseURL:           getenv("GOOGLE_BASE_URL", "https://generativelanguage.googleapis.com/v1beta"),
-		GoogleAPIKey:            os.Getenv("GOOGLE_API_KEY"),
-		HuggingFaceBaseURL:      getenv("HUGGINGFACE_BASE_URL", "https://router.huggingface.co"),
-		HuggingFaceAPIKey:       os.Getenv("HUGGINGFACE_API_KEY"),
-		ModelAuthority:          modelAuthority,
-		EmbeddingModel:          embeddingModelForProvider(embeddingProvider, providerModels),
-		WorkerPollInterval:      getenv("WORKER_POLL_INTERVAL", "2s"),
-		RequestTimeout:          getenv("REQUEST_TIMEOUT", "30m"),
-		RealtimeStreamMaxAge:    getenv("REALTIME_STREAM_MAX_AGE", "10m"),
-		RealtimeHeartbeat:       getenv("REALTIME_HEARTBEAT", "25s"),
-		RealtimeWriteTimeout:    getenv("REALTIME_WRITE_TIMEOUT", "10s"),
-		RedisURL:                getenv("REDIS_URL", ""),
-		UISessionTTL:            getenv("UI_SESSION_TTL", "30m"),
-		InferenceContextTokens:  getenv("INFERENCE_CONTEXT_TOKENS", "8192"),
+		ListenAddr:                getenv("LISTEN_ADDR", "0.0.0.0:8090"),
+		HostAgentURL:              getenv("HOST_AGENT_URL", ""),
+		HostAgentToken:            getenv("HOST_AGENT_TOKEN", ""),
+		HostDirectoryAccessRoot:   os.Getenv("HOST_DIRECTORY_ACCESS_ROOT"),
+		IntegrationAPIToken:       os.Getenv("OMNIDEX_INTEGRATION_API_TOKEN"),
+		CoreURL:                   os.Getenv("CORE_URL"),
+		DatabaseURL:               os.Getenv("DATABASE_URL"),
+		DatabaseSchema:            getenv("DATABASE_SCHEMA", db.DefaultRuntimeSchema),
+		LLMProvider:               provider,
+		CodexCommand:              getenv("CODEX_COMMAND", "codex"),
+		CodexDirectory:            getenv("CODEX_DIRECTORY", "."),
+		EmbeddingProvider:         embeddingProvider,
+		ProviderModels:            providerModels,
+		OllamaBaseURL:             getenv("OLLAMA_BASE_URL", ""),
+		CompatibleProviders:       compatibleProviders,
+		AzureAIBaseURL:            os.Getenv("AZURE_AI_BASE_URL"),
+		AzureAIAPIKey:             os.Getenv("AZURE_AI_API_KEY"),
+		AzureAIAPIVersion:         os.Getenv("AZURE_AI_API_VERSION"),
+		AzureAIAPIStyle:           os.Getenv("AZURE_AI_API_STYLE"),
+		GoogleBaseURL:             getenv("GOOGLE_BASE_URL", "https://generativelanguage.googleapis.com/v1beta"),
+		GoogleAPIKey:              os.Getenv("GOOGLE_API_KEY"),
+		HuggingFaceBaseURL:        getenv("HUGGINGFACE_BASE_URL", "https://router.huggingface.co"),
+		HuggingFaceAPIKey:         os.Getenv("HUGGINGFACE_API_KEY"),
+		ModelAuthority:            modelAuthority,
+		EmbeddingModel:            embeddingModelForProvider(embeddingProvider, providerModels),
+		WorkerPollInterval:        getenv("WORKER_POLL_INTERVAL", "2s"),
+		RequestTimeout:            getenv("REQUEST_TIMEOUT", "30m"),
+		RealtimeStreamMaxAge:      getenv("REALTIME_STREAM_MAX_AGE", "10m"),
+		RealtimeHeartbeat:         getenv("REALTIME_HEARTBEAT", "25s"),
+		RealtimeWriteTimeout:      getenv("REALTIME_WRITE_TIMEOUT", "10s"),
+		RedisURL:                  getenv("REDIS_URL", ""),
+		UISessionTTL:              getenv("UI_SESSION_TTL", "30m"),
+		InferenceContextTokens:    getenv("INFERENCE_CONTEXT_TOKENS", "8192"),
+		CodingParserContextTokens: getenv("CODING_LEDGER_PARSER_CONTEXT_TOKENS", "8192"),
 	}
 	cfg.CodingAgents = codingagent.Configuration{Mode: codingagent.Agents,
 		Planner:      codingagent.Route{Provider: getenv("CODING_PLANNER_PROVIDER", "codex"), Model: getenv("CODING_PLANNER_MODEL", modelAuthority.Config().Get("coding_requirements_model")), Effort: getenv("CODING_PLANNER_EFFORT", "low"), ServiceTier: getenv("CODING_PLANNER_SERVICE_TIER", "default")},
@@ -98,5 +102,19 @@ func Load() (Config, error) {
 		Executor:     codingagent.Route{Provider: getenv("CODING_EXECUTOR_PROVIDER", "codex"), Model: getenv("CODING_EXECUTOR_MODEL", modelAuthority.Config().Get("coding_fragment_model")), Effort: getenv("CODING_EXECUTOR_EFFORT", "low"), ServiceTier: getenv("CODING_EXECUTOR_SERVICE_TIER", "default")},
 		Reviewer:     codingagent.Route{Provider: getenv("CODING_REVIEWER_PROVIDER", "codex"), Model: getenv("CODING_REVIEWER_MODEL", modelAuthority.Config().Get("conversation_response_model")), Effort: getenv("CODING_REVIEWER_EFFORT", "low"), ServiceTier: getenv("CODING_REVIEWER_SERVICE_TIER", "default")}}
 
+	defaults, configured, err := manifest.LoadHome()
+	if err != nil {
+		return Config{}, err
+	}
+	if configured {
+		cfg.ManifestConfigured = true
+		cfg.CoreURL = defaults.CoreURL
+		cfg.CodingAgents = defaults.Coding()
+		cfg.LLMProvider = "codex"
+		cfg.ModelAuthority, err = defaults.ModelAuthority()
+		if err != nil {
+			return Config{}, err
+		}
+	}
 	return cfg, nil
 }

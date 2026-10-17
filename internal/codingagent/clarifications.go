@@ -19,7 +19,11 @@ func ExtractTaskClarifications(entries []Entry, taskID string) []TaskClarificati
 			continue
 		}
 		switch entry.Phase {
-		case "execution_response", "review_response", "execution_native_input":
+		case "execution_native_input":
+			if entry.NativeInput != nil && entry.NativeInput.Method == "item/tool/requestUserInput" && len(entry.Notes) == 1 {
+				questions[entry.CallID] = entry.Notes[0]
+			}
+		case "execution_response", "review_response":
 			if len(entry.Notes) == 1 && (entry.NativeInput != nil || entry.ResponseKind == ExecutionQuestion || entry.ResponseKind == ExecutionPermission) {
 				questions[entry.CallID] = entry.Notes[0]
 			}

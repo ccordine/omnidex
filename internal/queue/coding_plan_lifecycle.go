@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 	"strings"
+	"time"
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
@@ -169,11 +169,6 @@ func (r *Repository) FreezeCodingLedger(ctx context.Context, command FreezeCodin
 			return CodingLedgerRevision{}, fmt.Errorf("%w: active item %s is not agreed", ErrCodingLedgerState, record.item.ID)
 		}
 	}
-	for _, dependency := range proposal.Ledger.Dependencies {
-		if dependency.Disposition == model.LedgerDispositionActive && dependency.ReviewState != model.LedgerReviewAgreed {
-			return CodingLedgerRevision{}, fmt.Errorf("%w: active dependency %s is not agreed", ErrCodingLedgerState, dependency.ID)
-		}
-	}
 	if err := validateLedgerForRepository(proposal.Ledger); err != nil {
 		return CodingLedgerRevision{}, err
 	}
@@ -287,126 +282,28 @@ func (r *Repository) FreezeCodingLedger(ctx context.Context, command FreezeCodin
 }
 
 func createFrozenCodingAgentTasksTx(ctx context.Context, tx pgx.Tx, ledgerID, revision int64, ledger model.EngineeringLedger) error {
-	continuations, err := codingContinuationPrioritiesTx(ctx, tx, ledgerID, ledger)
-	if err != nil {
+	var prior int64
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(max(revision),0) FROM coding_ledger_revisions WHERE ledger_id=$1 AND revision<$2 AND state='frozen'`, ledgerID, revision).Scan(&prior); err != nil {
 		return err
 	}
-	prerequisites := map[model.LedgerItemID][]model.LedgerItemID{}
-	for _, dependency := range ledger.Dependencies {
-		if dependency.Disposition == model.LedgerDispositionActive {
-			prerequisites[dependency.TaskID] = append(prerequisites[dependency.TaskID], dependency.PrerequisiteID)
-		}
-	}
-	priority := func(value model.LedgerPriority) int {
-		switch value {
-		case model.LedgerPriorityCritical:
-			return 400
-		case model.LedgerPriorityHigh:
-			return 300
-		case model.LedgerPriorityNormal:
-			return 200
-		default:
-			return 100
-		}
-	}
-	carried := make(map[model.LedgerItemID]bool)
-	var priorRevision int64
-	if err := tx.QueryRow(ctx, `
-		SELECT COALESCE(max(revision),0)
-		FROM coding_ledger_revisions
-		WHERE ledger_id=$1 AND revision<$2 AND state='frozen'
-	`, ledgerID, revision).Scan(&priorRevision); err != nil {
-		return fmt.Errorf("read prior frozen coding ledger revision: %w", err)
-	}
-	if priorRevision > 0 {
-		prior, err := readCodingLedgerRevisionTx(ctx, tx, ledgerID, priorRevision, CodingLedgerReadOptions{Limit: -1})
-		if err != nil {
-			return err
-		}
-		for _, task := range ledger.Tasks {
-			if task.Disposition != model.LedgerDispositionActive {
-				continue
-			}
-			var accepted, contractMatches bool
-			if err := tx.QueryRow(ctx, `
-				SELECT EXISTS (
-					SELECT 1 FROM coding_agent_tasks
-					WHERE ledger_id=$1 AND frozen_revision=$2 AND task_item_id=$3 AND state='accepted'
-				), coding_agent_task_contract_matches($1,$2,$4,$3)
-			`, ledgerID, priorRevision, task.ID, revision).Scan(&accepted, &contractMatches); err != nil {
-				return fmt.Errorf("inspect prior coding task %s: %w", task.ID, err)
-			}
-			if !accepted || !contractMatches {
-				continue
-			}
-			priorTask, priorErr := codingAgentTaskFromLedger(prior.Ledger, task.ID)
-			currentTask, currentErr := codingAgentTaskFromLedger(ledger, task.ID)
-			if priorErr == nil && currentErr == nil && reflect.DeepEqual(priorTask, currentTask) {
-				carried[task.ID] = true
-			}
-		}
-		for changed := true; changed; {
-			changed = false
-			for taskID := range carried {
-				for _, prerequisiteID := range prerequisites[taskID] {
-					if !carried[prerequisiteID] {
-						delete(carried, taskID)
-						changed = true
-						break
-					}
-				}
-			}
-		}
-	}
-
-	inserted := make(map[model.LedgerItemID]bool, len(carried))
-	for len(inserted) < len(carried) {
-		advanced := false
-		for _, task := range ledger.Tasks {
-			if !carried[task.ID] || inserted[task.ID] {
-				continue
-			}
-			ready := true
-			for _, prerequisiteID := range prerequisites[task.ID] {
-				ready = ready && inserted[prerequisiteID]
-			}
-			if !ready {
-				continue
-			}
-			if _, err := tx.Exec(ctx, `
-				INSERT INTO coding_agent_tasks(
-					ledger_id,frozen_revision,task_item_id,state,priority,accepted_at
-				) VALUES($1,$2,$3,'accepted',$4,clock_timestamp())
-			`, ledgerID, revision, task.ID, priority(task.Priority)); err != nil {
-				return fmt.Errorf("carry accepted frozen coding task %s: %w", task.ID, err)
-			}
-			inserted[task.ID] = true
-			advanced = true
-		}
-		if !advanced {
-			return fmt.Errorf("carried coding tasks contain an unresolved dependency cycle")
-		}
-	}
-
 	for _, task := range ledger.Tasks {
 		if task.Disposition != model.LedgerDispositionActive {
 			continue
 		}
-		if carried[task.ID] {
-			continue
-		}
-		state := "ready"
-		for _, prerequisiteID := range prerequisites[task.ID] {
-			if !carried[prerequisiteID] {
-				state = "blocked"
-				break
+		accepted := false
+		if prior > 0 {
+			if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM coding_agent_tasks WHERE ledger_id=$1 AND frozen_revision=$2 AND task_item_id=$3 AND state='accepted') AND coding_agent_task_contract_matches($1,$2,$4,$3)`, ledgerID, prior, task.ID, revision).Scan(&accepted); err != nil {
+				return err
 			}
 		}
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO coding_agent_tasks(ledger_id,frozen_revision,task_item_id,state,priority,continuation_priority)
-			VALUES($1,$2,$3,$4,$5,$6)
-		`, ledgerID, revision, task.ID, state, priority(task.Priority), continuations[task.ID]); err != nil {
-			return fmt.Errorf("project frozen coding task %s: %w", task.ID, err)
+		state := "ready"
+		var acceptedAt any
+		if accepted {
+			state = "accepted"
+			acceptedAt = time.Now()
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO coding_agent_tasks(ledger_id,frozen_revision,task_item_id,state,accepted_at) VALUES($1,$2,$3,$4,$5)`, ledgerID, revision, task.ID, state, acceptedAt); err != nil {
+			return fmt.Errorf("project frozen task %s: %w", task.ID, err)
 		}
 	}
 	return nil

@@ -12,15 +12,12 @@ type Controller struct {
 	JobID, Generation int64
 	Root              string
 	Configuration     Configuration
-	Requirements      []Requirement
 	Providers         map[string]Provider
-	Verifier          Verifier
 	Environment       Environment
 	Evidence          EvidenceStore
 	Activity          func(model.AgentActivity)
 	CallActivity      func(model.AgentCallActivity)
 	NativeInput       func(context.Context, NativeInputRequest, int64, string) (json.RawMessage, error)
-	MinifyContext     func(context.Context, Assignment) (string, error)
 	CompletedTaskIDs  []string
 }
 
@@ -55,7 +52,7 @@ func (controller *Controller) resumeTask(ctx context.Context, task Task) error {
 }
 
 func (controller *Controller) validatePlanning() error {
-	if controller == nil || controller.JobID < 1 || controller.Generation < 1 || controller.Root == "" || controller.Environment == nil || controller.Evidence == nil || len(controller.Requirements) == 0 {
+	if controller == nil || controller.JobID < 1 || controller.Generation < 1 || controller.Root == "" || controller.Environment == nil || controller.Evidence == nil {
 		return fmt.Errorf("agent controller lacks task, environment or evidence authority")
 	}
 	if err := controller.Configuration.Validate(); err != nil {
@@ -77,7 +74,7 @@ func (controller *Controller) validatePlanning() error {
 
 func (controller *Controller) validateTaskExecution() error {
 	if controller == nil || controller.JobID < 1 || controller.Generation < 1 || controller.Root == "" ||
-		controller.Environment == nil || controller.Evidence == nil || controller.Verifier == nil {
+		controller.Environment == nil || controller.Evidence == nil {
 		return fmt.Errorf("agent controller lacks task, environment, evidence, or verification authority")
 	}
 	if err := controller.Configuration.Validate(); err != nil {
@@ -98,16 +95,4 @@ func (controller *Controller) validateTaskExecution() error {
 		return fmt.Errorf("execution response parser provider is not registered")
 	}
 	return nil
-}
-
-func checksPass(checks []CheckResult) bool {
-	if len(checks) == 0 {
-		return false
-	}
-	for _, check := range checks {
-		if check.ExitCode != 0 {
-			return false
-		}
-	}
-	return true
 }

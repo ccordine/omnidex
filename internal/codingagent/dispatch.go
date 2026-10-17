@@ -48,13 +48,6 @@ func (controller *Controller) invokeOnce(ctx context.Context, call Assignment, r
 	if err := call.ValidateTaskContext(); err != nil {
 		return Result{}, err
 	}
-	if controller.MinifyContext != nil && !(call.Role == Execute && call.Session != nil && call.Reply != "") {
-		var err error
-		call.Context, err = controller.MinifyContext(ctx, call)
-		if err != nil {
-			return Result{}, err
-		}
-	}
 	if err := controller.Environment.Attest(ctx); err != nil {
 		return Result{}, err
 	}
@@ -143,8 +136,8 @@ func (controller *Controller) invokeOnce(ctx context.Context, call Assignment, r
 		}
 		return nil
 	})
-	if runErr == nil && (frames == 0 || result.Provider != call.Route.Provider || result.Model != call.Route.Model || !result.Completed || !json.Valid(result.Content) || result.ThreadID == "" || result.TurnID == "") {
-		runErr = fmt.Errorf("agent returned unbound or incomplete native evidence")
+	if runErr == nil && (frames == 0 || result.ValidateFor(call.Role, call.Route) != nil) {
+		runErr = fmt.Errorf("agent returned unbound or incomplete provider evidence")
 	}
 	if runErr != nil {
 		var incomplete *IncompleteTaskError

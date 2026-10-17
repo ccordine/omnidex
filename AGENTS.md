@@ -1,5 +1,14 @@
 AGENTS.md
 
+## Owner controls scope and architecture
+
+- Do exactly what the owner explicitly requests, and only that. Expanding scope is forbidden.
+- Unrequested hardening, features, enhancements, redesigns, refactors, extra entities, relationships, checks, gates, and workflows are forbidden.
+- You are not the architect. The owner makes architectural decisions; do not invent or substitute your own architecture or acceptance requirements.
+- Permission to implement a request is not permission to add adjacent work or "improvements." Do not turn a simple request into a larger system.
+- Do not invent reasons to resist, delay, or avoid the owner's instructions. If an essential decision is genuinely missing, ask only for that decision instead of expanding the task.
+- Do not reopen completed work or add further work after fulfilling the request. Finish the requested work, report it plainly, and stop.
+
 
 # PRIME DIRECTIVE
 

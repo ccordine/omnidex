@@ -45,7 +45,7 @@ func (controller *Controller) review(ctx context.Context, scope Assignment, task
 		switch review.Kind {
 		case ExecutionDone:
 			normalizeReviewFindingFiles(tasks, &review.ReviewResult)
-			err = ValidateReview(tasks, review.ReviewResult, scope.Requirements...)
+			err = ValidateReview(tasks, review.ReviewResult)
 		case ExecutionQuestion, ExecutionPermission, ExecutionError:
 		default:
 			err = fmt.Errorf("review response parser returned unknown kind %q", review.Kind)

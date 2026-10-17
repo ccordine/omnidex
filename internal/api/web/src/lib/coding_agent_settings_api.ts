@@ -6,7 +6,7 @@ export type AgentRole = typeof AGENT_ROLES[number];
 export type AgentRouteSettings = { provider: string; model: string; effort?: string; service_tier?: string };
 export type AgentConfiguration = { mode: "agents" } & Record<AgentRole, AgentRouteSettings>;
 export type AgentModel = {
-  id: string; display_name: string; default_effort: string;
+  provider: string; id: string; display_name: string; default_effort: string;
   description?: string; is_default?: boolean; hidden?: boolean; default_service_tier?: string | null;
   efforts: Array<{ value: string; description: string }>;
   service_tiers: Array<{ id: string; name: string; description: string }>;
@@ -53,7 +53,7 @@ export function parseAgentSettings(value: unknown): AgentSettings {
     };
   }
   const models = array(root.models, "Agent models", 512).map((raw) => {
-    const model = exactRecord(raw, "Agent model", ["id", "display_name", "default_effort", "efforts", "service_tiers", "description", "is_default", "hidden", "default_service_tier"], ["id", "display_name", "default_effort", "efforts", "service_tiers"]);
+    const model = exactRecord(raw, "Agent model", ["provider", "id", "display_name", "default_effort", "efforts", "service_tiers", "description", "is_default", "hidden", "default_service_tier"], ["provider", "id", "display_name", "default_effort", "efforts", "service_tiers"]);
     const efforts = array(model.efforts, "Model efforts", 32).map((raw) => {
       const effort = exactRecord(raw, "Model effort", ["value", "description"]);
       return { value: token(effort.value, "Model effort value"), description: description(effort.description) };
@@ -68,14 +68,14 @@ export function parseAgentSettings(value: unknown): AgentSettings {
       if (model[field] !== undefined && typeof model[field] !== "boolean") throw new Error(`Model ${field} must be boolean.`);
     }
     return {
-      id: token(model.id, "Model id"), display_name: token(model.display_name, "Model display name"), default_effort: token(model.default_effort, "Model default effort", true), efforts, service_tiers,
+      provider: token(model.provider, "Model provider"), id: token(model.id, "Model id"), display_name: token(model.display_name, "Model display name"), default_effort: token(model.default_effort, "Model default effort", true), efforts, service_tiers,
       ...(model.description === undefined ? {} : { description: description(model.description) }),
       ...(model.is_default === undefined ? {} : { is_default: model.is_default as boolean }),
       ...(model.hidden === undefined ? {} : { hidden: model.hidden as boolean }),
       ...(model.default_service_tier === undefined ? {} : { default_service_tier: model.default_service_tier === null ? null : token(model.default_service_tier, "Model default service tier") }),
     };
   });
-  unique(models.map((model) => model.id), "Agent models");
+  unique(models.map((model) => `${model.provider}:${model.id}`), "Agent models");
   const installation = exactRecord(root.installation, "Codex installation", ["version", "can_update", "update_method"], ["version", "can_update"]);
   if (typeof installation.can_update !== "boolean") throw new Error("Codex installation update support must be boolean.");
   if (root.source !== "saved" && root.source !== "startup") throw new Error("Agent settings has an unknown source.");

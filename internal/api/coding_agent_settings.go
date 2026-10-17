@@ -15,9 +15,14 @@ import (
 
 type codingAgentSettingsResponse struct {
 	Configuration codingagent.Configuration `json:"configuration"`
-	Models        []codex.Model             `json:"models"`
+	Models        []codingAgentModel        `json:"models"`
 	Installation  codex.Installation        `json:"installation"`
 	Source        string                    `json:"source"`
+}
+
+type codingAgentModel struct {
+	Provider string `json:"provider"`
+	codex.Model
 }
 
 func (server *Server) codingAgentClient() (*codex.Client, error) {
@@ -42,7 +47,11 @@ func (server *Server) codingAgentSettings(ctx context.Context, client *codex.Cli
 	if err != nil {
 		return codingAgentSettingsResponse{}, err
 	}
-	return codingAgentSettingsResponse{Configuration: configuration, Models: models, Installation: installation, Source: source}, nil
+	catalog, err := server.codingAgentModelCatalog(ctx, models)
+	if err != nil {
+		return codingAgentSettingsResponse{}, err
+	}
+	return codingAgentSettingsResponse{Configuration: configuration, Models: catalog, Installation: installation, Source: source}, nil
 }
 
 func (server *Server) handleCodingAgentSettings(w http.ResponseWriter, r *http.Request) {
@@ -91,6 +100,21 @@ func (server *Server) handleCodingAgentSettings(w http.ResponseWriter, r *http.R
 			writeError(w, 400, err.Error())
 			return
 		}
+		if request.Configuration.LedgerParser.Provider == "ollama" {
+			if server.ollamaEndpoint() == "" {
+				writeError(w, 400, "local parser requires a configured Ollama endpoint")
+				return
+			}
+			installed, err := server.hasInstalledOllamaModel(r.Context(), request.Configuration.LedgerParser.Model)
+			if err != nil {
+				writeError(w, 503, err.Error())
+				return
+			}
+			if !installed {
+				writeError(w, 400, "parser model is absent from the installed Ollama catalog")
+				return
+			}
+		}
 		if err := server.repo.StoreCodingAgentConfiguration(r.Context(), request.Configuration); err != nil {
 			writeError(w, 500, err.Error())
 			return
@@ -114,7 +138,19 @@ func validateCodingAgentModelOptions(configuration codingagent.Configuration, mo
 	for _, model := range models {
 		byID[model.ID] = model
 	}
-	for _, route := range []codingagent.Route{configuration.Planner, configuration.LedgerParser, configuration.Executor, configuration.Reviewer} {
+	routes := []codingagent.Route{configuration.Planner, configuration.Executor, configuration.Reviewer}
+	parser := configuration.LedgerParser
+	switch parser.Provider {
+	case "codex":
+		routes = append(routes, parser)
+	case "ollama":
+		if parser.Effort != "" || parser.ServiceTier != "" {
+			return fmt.Errorf("local parser does not support Codex effort or service-tier options")
+		}
+	default:
+		return fmt.Errorf("unsupported response parser provider %q", parser.Provider)
+	}
+	for _, route := range routes {
 		model, known := byID[route.Model]
 		if route.Provider != "codex" || !known {
 			return fmt.Errorf("model %q is absent from the installed Codex catalog", route.Model)

@@ -144,6 +144,19 @@ requirement intake; that intake retains its station settings. Existing jobs keep
 their frozen routes. Model availability and effort/speed choices come from the
 installed Codex catalog rather than a fixed list.
 
+The **Response parser** can instead use an installed Ollama model. Set
+`OLLAMA_BASE_URL` to your existing local endpoint, then select the local model in
+Coding agents. Planning chat, execution and independent review continue through
+Codex; only the four planning/result extraction roles use the parser route.
+For environment configuration, set `CODING_LEDGER_PARSER_PROVIDER=ollama` and
+`CODING_LEDGER_PARSER_MODEL=qwen2.5-coder:7b`, with empty
+`CODING_LEDGER_PARSER_EFFORT` and `CODING_LEDGER_PARSER_SERVICE_TIER` values.
+The parser uses schema-constrained JSON, temperature zero and the configured
+`CODING_LEDGER_PARSER_CONTEXT_TOKENS` budget (8,192 by default), independently of
+the other inference routes. Provider failures or
+incomplete output fail explicitly; no other model is substituted. New jobs freeze
+the selected parser route alongside their native routes.
+
 The built-in agent adapter is signed-in Codex; other adapters implement the
 portable `codingagent.Provider` port and register through worker options.
 Execution writes only granted files through Omnidex's mutation fence; review
@@ -644,6 +657,26 @@ The CLI streams the server-authoritative session and submits each free-form turn
 through the ordinary production request boundary.
 
 ## Configuration
+
+Installation defaults live in `~/.omni/manifest.json`; [manifest.example.json](manifest.example.json)
+contains the requested defaults. Both the CLI and core read that file. Its URL and
+model defaults take precedence over the corresponding environment settings. Use
+`https://core.omni.worknet` for the core's WorkNet publication.
+Database credentials, listener addresses, and service secrets remain in the existing
+deployment environment.
+
+All models default to `gpt-6.1-sol`. Planning and review use `xhigh`; execution and
+response parsers use `low`. Other narrow semantic stations use the default model
+at low reasoning. Restart the core after changing installation defaults: startup
+persists them through the existing settings store, and new jobs capture their own
+immutable routes. Existing jobs retain their captured configuration.
+
+The frozen task grants execution full host access without routine command approval.
+The executor receives only its task, persisted answers and current findings; it asks
+only for essential missing owner information. Fresh calls reconstruct that context
+from durable state. Native turn identity supports interrupted-call recovery, rather
+than serving as the task ledger. Planning is explicitly assigned before ledger
+freeze, and each independent review receives only the same task.
 
 Start with [.env.example](.env.example). Important groups are:
 

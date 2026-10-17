@@ -5,7 +5,7 @@ function payload() {
   const route = { provider: "codex", model: "future-model", effort: "ultra", service_tier: "fast" };
   return {
     configuration: { mode: "agents", planner: route, ledger_parser: route, executor: route, reviewer: route },
-    models: [{ id: "future-model", display_name: "Future model", default_effort: "ultra", efforts: [{ value: "ultra", description: "Most reasoning" }], service_tiers: [{ id: "fast", name: "Fast", description: "Priority processing" }, { id: "new-tier", name: "New tier", description: "Account supplied tier" }] }],
+    models: [{ provider: "codex", id: "future-model", display_name: "Future model", default_effort: "ultra", efforts: [{ value: "ultra", description: "Most reasoning" }], service_tiers: [{ id: "fast", name: "Fast", description: "Priority processing" }, { id: "new-tier", name: "New tier", description: "Account supplied tier" }] }],
     installation: { version: "codex 0.999.0", can_update: true }, source: "saved",
   };
 }
@@ -13,6 +13,13 @@ function payload() {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("Agent settings API", () => {
+  it("retains distinct provider identities when local and native model names match", () => {
+    const value = payload();
+    value.models.push({ provider: "ollama", id: "future-model", display_name: "Local parser", default_effort: "", efforts: [], service_tiers: [] });
+    const settings = parseAgentSettings(value);
+    expect(settings.models.map((model) => [model.provider, model.id])).toEqual([["codex", "future-model"], ["ollama", "future-model"]]);
+  });
+
   it("accepts future advertised models, efforts and service tiers without a hardcoded inventory", () => {
     const settings = parseAgentSettings(payload());
     expect(settings.models[0].efforts[0].value).toBe("ultra");

@@ -3,8 +3,6 @@ package codingagent
 import (
 	"context"
 	"encoding/json"
-
-	"github.com/gryph/omnidex/internal/model"
 )
 
 type Entry struct {
@@ -20,7 +18,6 @@ type Entry struct {
 	// Bytes are base64 encoded in JSON so JSONB preserves the original wire frame.
 	Frame             []byte                `json:"frame,omitempty"`
 	Findings          []Finding             `json:"findings,omitempty"`
-	Checks            []CheckResult         `json:"checks,omitempty"`
 	WrittenFiles      []string              `json:"written_files,omitempty"`
 	Notes             []string              `json:"notes,omitempty"`
 	ConstructionFacts []ConstructionFact    `json:"construction_facts,omitempty"`
@@ -42,9 +39,6 @@ type EvidenceStore interface {
 	ReadTaskClarifications(context.Context, string) ([]TaskClarification, error)
 }
 
-type Verifier interface {
-	ExecuteChecks(context.Context, Assignment, []Check, func(model.AgentActivity) error) ([]CheckResult, error)
-}
 type Environment interface {
 	Attest(context.Context) error
 }

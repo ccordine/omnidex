@@ -125,10 +125,10 @@ func codingLedgerPlanReviewFixture(plan model.CodingPlan) ledgerapi.CodingLedger
 		case model.CodingPlanDecisionRejected:
 			state = model.LedgerReviewNeedsDiscussion
 		}
-		ledger.Constraints = append(ledger.Constraints, model.LedgerConstraint{
+		ledger.Tasks = append(ledger.Tasks, model.LedgerTask{
 			LedgerItem: model.LedgerItem{ID: model.LedgerItemID(leaf.ID), Provenance: model.LedgerProvenance{Kind: "owner_turn", Reference: "test", Revision: 1},
-				Rationale: "test", Priority: model.LedgerPriorityNormal, Rank: int64(index), Disposition: model.LedgerDispositionActive, ReviewState: state},
-			Rule: strings.TrimPrefix(leaf.Statement, "[constraint] "),
+				Rationale: "test", Rank: int64(index), Disposition: model.LedgerDispositionActive, ReviewState: state},
+			Goal: strings.TrimPrefix(leaf.Statement, "[task] "),
 		})
 	}
 	state := "proposed"

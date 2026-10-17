@@ -49,7 +49,6 @@ func decodePlanningOperations(content json.RawMessage, ledger EngineeringLedger)
 					base.Disposition = model.LedgerDispositionActive
 					base.ReviewState = model.LedgerReviewProposed
 				}
-				requirePlanningItemVerification(operation.Item)
 			}
 		}
 		// Repeated prose can extract the same typed delta twice. It has one
@@ -111,44 +110,9 @@ func mergePlanningPatch(ledger EngineeringLedger, id model.LedgerItemID, raw jso
 }
 
 func retainedPlanningItem(ledger EngineeringLedger, id model.LedgerItemID) *model.LedgerMutationItem {
-	for _, value := range ledger.Objectives {
-		if value.ID == id {
-			return &model.LedgerMutationItem{Objective: &value}
-		}
-	}
-	for _, value := range ledger.Requirements {
-		if value.ID == id {
-			return &model.LedgerMutationItem{Requirement: &value}
-		}
-	}
-	for _, value := range ledger.Constraints {
-		if value.ID == id {
-			return &model.LedgerMutationItem{Constraint: &value}
-		}
-	}
-	for _, value := range ledger.Groups {
-		if value.ID == id {
-			return &model.LedgerMutationItem{Group: &value}
-		}
-	}
-	for _, value := range ledger.Tasks {
-		if value.ID == id {
-			return &model.LedgerMutationItem{Task: &value}
-		}
-	}
-	for _, value := range ledger.AcceptanceCriteria {
-		if value.ID == id {
-			return &model.LedgerMutationItem{AcceptanceCriterion: &value}
-		}
-	}
-	for _, value := range ledger.Checks {
-		if value.ID == id {
-			return &model.LedgerMutationItem{Check: &value}
-		}
-	}
-	for _, value := range ledger.Dependencies {
-		if value.ID == id {
-			return &model.LedgerMutationItem{Dependency: &value}
+	for _, task := range ledger.Tasks {
+		if task.ID == id {
+			return &model.LedgerMutationItem{Task: &task}
 		}
 	}
 	return nil

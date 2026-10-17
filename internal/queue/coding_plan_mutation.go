@@ -282,23 +282,9 @@ func codingLedgerDispositionMatchesTx(
 	for _, statement := range expectedStatements {
 		expectedIDs = append(expectedIDs, statement.ItemIDs...)
 	}
-	dependencyByID := make(map[model.LedgerItemID][]model.LedgerDependency)
-	ledgers := append([]model.EngineeringLedger{ledger}, authorityLedgers...)
-	for _, authorityLedger := range ledgers {
-		for _, dependency := range authorityLedger.Dependencies {
-			dependencyByID[dependency.ID] = append(dependencyByID[dependency.ID], dependency)
-		}
-	}
 	persistedSet := make(map[model.LedgerItemID]bool)
 	for _, id := range expectedIDs {
-		if dependencies := dependencyByID[id]; len(dependencies) > 0 {
-			for _, dependency := range dependencies {
-				persistedSet[dependency.TaskID] = true
-				persistedSet[dependency.PrerequisiteID] = true
-			}
-		} else {
-			persistedSet[id] = true
-		}
+		persistedSet[id] = true
 	}
 	expectedIDs = expectedIDs[:0]
 	for id := range persistedSet {
@@ -411,110 +397,19 @@ func applyCodingLedgerOperations(ledger *model.EngineeringLedger, operations []m
 	return nil
 }
 
-func resetCodingLedgerAffectedAgreements(ledger *model.EngineeringLedger, changedID model.LedgerItemID) {
-	setCodingLedgerItem(ledger, changedID, func(item *model.LedgerItem) {
+func resetCodingLedgerAffectedAgreements(ledger *model.EngineeringLedger, id model.LedgerItemID) {
+	setCodingLedgerItem(ledger, id, func(item *model.LedgerItem) {
 		if item.Disposition == model.LedgerDispositionActive {
 			item.ReviewState = model.LedgerReviewProposed
 		}
 	})
-
-	// A required check is part of the agreement for every criterion and task
-	// that names its verification scope. Amend calls this before and after
-	// replacement so both the prior and replacement scopes are reset.
-	for _, check := range ledger.Checks {
-		if check.ID != changedID || check.Disposition != model.LedgerDispositionActive || !check.Required {
-			continue
-		}
-		criterionIDs := make(map[model.LedgerItemID]bool, len(check.AcceptanceCriterionIDs))
-		for _, criterionID := range check.AcceptanceCriterionIDs {
-			criterionIDs[criterionID] = true
-			setCodingLedgerItem(ledger, criterionID, func(item *model.LedgerItem) {
-				if item.Disposition == model.LedgerDispositionActive {
-					item.ReviewState = model.LedgerReviewProposed
-				}
-			})
-		}
-		requirementIDs := make(map[model.LedgerItemID]bool, len(check.RequirementIDs))
-		for _, requirementID := range check.RequirementIDs {
-			requirementIDs[requirementID] = true
-		}
-		for index := range ledger.Tasks {
-			task := &ledger.Tasks[index]
-			if task.Disposition != model.LedgerDispositionActive {
-				continue
-			}
-			deliveryOnly := len(task.RequirementIDs) == 0 && strings.TrimSpace(task.DeliveryObligation) != ""
-			if (deliveryOnly || ledgerItemIDsIntersect(task.RequirementIDs, requirementIDs)) &&
-				ledgerItemIDsIntersect(task.AcceptanceCriterionIDs, criterionIDs) {
-				task.ReviewState = model.LedgerReviewProposed
-			}
-		}
-	}
-
-	// A dependency changes the meaning of its dependent task. Propagate that
-	// reset through active task dependencies, but preserve every unrelated
-	// agreement byte-for-byte.
-	pending := []model.LedgerItemID{changedID}
-	seen := map[model.LedgerItemID]bool{changedID: true}
-	for len(pending) > 0 {
-		current := pending[0]
-		pending = pending[1:]
-		for index := range ledger.Dependencies {
-			dependency := &ledger.Dependencies[index]
-			if dependency.Disposition != model.LedgerDispositionActive && dependency.ID != changedID {
-				continue
-			}
-			if dependency.ID != current && dependency.PrerequisiteID != current {
-				continue
-			}
-			if dependency.Disposition == model.LedgerDispositionActive {
-				dependency.ReviewState = model.LedgerReviewProposed
-			}
-			if !seen[dependency.TaskID] {
-				seen[dependency.TaskID] = true
-				pending = append(pending, dependency.TaskID)
-				setCodingLedgerItem(ledger, dependency.TaskID, func(item *model.LedgerItem) {
-					if item.Disposition == model.LedgerDispositionActive {
-						item.ReviewState = model.LedgerReviewProposed
-					}
-				})
-			}
-		}
-	}
-}
-
-func ledgerItemIDsIntersect(ids []model.LedgerItemID, candidates map[model.LedgerItemID]bool) bool {
-	for _, id := range ids {
-		if candidates[id] {
-			return true
-		}
-	}
-	return false
 }
 
 func ledgerMutationItemID(item *model.LedgerMutationItem) model.LedgerItemID {
-	switch {
-	case item == nil:
-		return ""
-	case item.Objective != nil:
-		return item.Objective.ID
-	case item.Requirement != nil:
-		return item.Requirement.ID
-	case item.Constraint != nil:
-		return item.Constraint.ID
-	case item.Group != nil:
-		return item.Group.ID
-	case item.Task != nil:
+	if item != nil && item.Task != nil {
 		return item.Task.ID
-	case item.AcceptanceCriterion != nil:
-		return item.AcceptanceCriterion.ID
-	case item.Check != nil:
-		return item.Check.ID
-	case item.Dependency != nil:
-		return item.Dependency.ID
-	default:
-		return ""
 	}
+	return ""
 }
 
 func ledgerHasItem(ledger model.EngineeringLedger, id model.LedgerItemID) bool {
@@ -524,134 +419,28 @@ func ledgerHasItem(ledger model.EngineeringLedger, id model.LedgerItemID) bool {
 }
 
 func appendCodingLedgerMutationItem(ledger *model.EngineeringLedger, item *model.LedgerMutationItem) {
-	switch {
-	case item.Objective != nil:
-		ledger.Objectives = append(ledger.Objectives, *item.Objective)
-	case item.Requirement != nil:
-		ledger.Requirements = append(ledger.Requirements, *item.Requirement)
-	case item.Constraint != nil:
-		ledger.Constraints = append(ledger.Constraints, *item.Constraint)
-	case item.Group != nil:
-		ledger.Groups = append(ledger.Groups, *item.Group)
-	case item.Task != nil:
+	if item != nil && item.Task != nil {
 		ledger.Tasks = append(ledger.Tasks, *item.Task)
-	case item.AcceptanceCriterion != nil:
-		ledger.AcceptanceCriteria = append(ledger.AcceptanceCriteria, *item.AcceptanceCriterion)
-	case item.Check != nil:
-		ledger.Checks = append(ledger.Checks, *item.Check)
-	case item.Dependency != nil:
-		ledger.Dependencies = append(ledger.Dependencies, *item.Dependency)
 	}
 }
 
-func replaceCodingLedgerMutationItem(ledger *model.EngineeringLedger, target model.LedgerItemID, item *model.LedgerMutationItem) bool {
-	switch {
-	case item.Objective != nil:
-		for index := range ledger.Objectives {
-			if ledger.Objectives[index].ID == target {
-				ledger.Objectives[index] = *item.Objective
-				return true
-			}
-		}
-	case item.Requirement != nil:
-		for index := range ledger.Requirements {
-			if ledger.Requirements[index].ID == target {
-				ledger.Requirements[index] = *item.Requirement
-				return true
-			}
-		}
-	case item.Constraint != nil:
-		for index := range ledger.Constraints {
-			if ledger.Constraints[index].ID == target {
-				ledger.Constraints[index] = *item.Constraint
-				return true
-			}
-		}
-	case item.Group != nil:
-		for index := range ledger.Groups {
-			if ledger.Groups[index].ID == target {
-				ledger.Groups[index] = *item.Group
-				return true
-			}
-		}
-	case item.Task != nil:
-		for index := range ledger.Tasks {
-			if ledger.Tasks[index].ID == target {
-				ledger.Tasks[index] = *item.Task
-				return true
-			}
-		}
-	case item.AcceptanceCriterion != nil:
-		for index := range ledger.AcceptanceCriteria {
-			if ledger.AcceptanceCriteria[index].ID == target {
-				ledger.AcceptanceCriteria[index] = *item.AcceptanceCriterion
-				return true
-			}
-		}
-	case item.Check != nil:
-		for index := range ledger.Checks {
-			if ledger.Checks[index].ID == target {
-				ledger.Checks[index] = *item.Check
-				return true
-			}
-		}
-	case item.Dependency != nil:
-		for index := range ledger.Dependencies {
-			if ledger.Dependencies[index].ID == target {
-				ledger.Dependencies[index] = *item.Dependency
-				return true
-			}
+func replaceCodingLedgerMutationItem(ledger *model.EngineeringLedger, id model.LedgerItemID, item *model.LedgerMutationItem) bool {
+	if item == nil || item.Task == nil {
+		return false
+	}
+	for i := range ledger.Tasks {
+		if ledger.Tasks[i].ID == id {
+			ledger.Tasks[i] = *item.Task
+			return true
 		}
 	}
 	return false
 }
 
 func setCodingLedgerItem(ledger *model.EngineeringLedger, id model.LedgerItemID, update func(*model.LedgerItem)) bool {
-	for index := range ledger.Objectives {
-		if ledger.Objectives[index].ID == id {
-			update(&ledger.Objectives[index].LedgerItem)
-			return true
-		}
-	}
-	for index := range ledger.Requirements {
-		if ledger.Requirements[index].ID == id {
-			update(&ledger.Requirements[index].LedgerItem)
-			return true
-		}
-	}
-	for index := range ledger.Constraints {
-		if ledger.Constraints[index].ID == id {
-			update(&ledger.Constraints[index].LedgerItem)
-			return true
-		}
-	}
-	for index := range ledger.Groups {
-		if ledger.Groups[index].ID == id {
-			update(&ledger.Groups[index].LedgerItem)
-			return true
-		}
-	}
-	for index := range ledger.Tasks {
-		if ledger.Tasks[index].ID == id {
-			update(&ledger.Tasks[index].LedgerItem)
-			return true
-		}
-	}
-	for index := range ledger.AcceptanceCriteria {
-		if ledger.AcceptanceCriteria[index].ID == id {
-			update(&ledger.AcceptanceCriteria[index].LedgerItem)
-			return true
-		}
-	}
-	for index := range ledger.Checks {
-		if ledger.Checks[index].ID == id {
-			update(&ledger.Checks[index].LedgerItem)
-			return true
-		}
-	}
-	for index := range ledger.Dependencies {
-		if ledger.Dependencies[index].ID == id {
-			update(&ledger.Dependencies[index].LedgerItem)
+	for i := range ledger.Tasks {
+		if ledger.Tasks[i].ID == id {
+			update(&ledger.Tasks[i].LedgerItem)
 			return true
 		}
 	}

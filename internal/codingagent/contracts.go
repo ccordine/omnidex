@@ -68,35 +68,11 @@ func (config Configuration) Validate() error {
 }
 
 type Task struct {
-	ID                     string         `json:"id"`
-	Goal                   string         `json:"goal"`
-	Guidance               []TaskGuidance `json:"guidance"`
-	KnownAffectedSystems   []string       `json:"known_affected_systems"`
-	Acceptance             []string       `json:"acceptance"`
-	ReadFiles              []string       `json:"read_files"`
-	WriteFiles             []string       `json:"write_files"`
-	DeleteFiles            []string       `json:"delete_files"`
-	Dependencies           []string       `json:"dependencies"`
-	RequirementIDs         []string       `json:"requirement_ids"`
-	AcceptanceCriterionIDs []string       `json:"acceptance_criterion_ids,omitempty"`
-	Checks                 []Check        `json:"checks"`
-}
-
-type TaskGuidance struct {
-	ID   string `json:"id"`
-	Kind string `json:"kind"`
-	Text string `json:"text"`
-}
-type Check struct {
-	ID                     string   `json:"id"`
-	Argv                   []string `json:"argv"`
-	RequirementIDs         []string `json:"requirement_ids,omitempty"`
-	AcceptanceCriterionIDs []string `json:"acceptance_criterion_ids,omitempty"`
-}
-
-type Requirement struct {
-	ID      string `json:"id"`
-	Outcome string `json:"outcome"`
+	ID          string   `json:"id"`
+	Goal        string   `json:"goal"`
+	ReadFiles   []string `json:"read_files"`
+	WriteFiles  []string `json:"write_files"`
+	DeleteFiles []string `json:"delete_files"`
 }
 
 type Objective struct {
@@ -110,7 +86,6 @@ type ConstructionFact struct {
 type Finding struct {
 	TaskID      string `json:"task_id"`
 	File        string `json:"file,omitempty"`
-	Requirement string `json:"requirement"`
 	Observation string `json:"observation"`
 }
 type ReviewResult struct {
@@ -125,22 +100,14 @@ type ReviewResponseResult struct {
 	ReviewResult
 }
 
-type CheckResult struct {
-	ID       string `json:"id"`
-	ExitCode int    `json:"exit_code"`
-	Output   string `json:"output"`
-}
-
 type Assignment struct {
 	JobID                int64               `json:"job_id"`
 	Generation           int64               `json:"generation"`
 	Role                 Role                `json:"role"`
 	Task                 *Task               `json:"task,omitempty"`
-	Requirements         []Requirement       `json:"requirements,omitempty"`
 	Objective            *Objective          `json:"objective,omitempty"`
 	ConstructionFacts    []ConstructionFact  `json:"construction_facts,omitempty"`
 	Findings             []Finding           `json:"findings,omitempty"`
-	Checks               []CheckResult       `json:"checks,omitempty"`
 	ValidationNotes      []string            `json:"validation_notes,omitempty"`
 	Root                 string              `json:"root"`
 	ReadFiles            []string            `json:"read_files"`
@@ -159,6 +126,7 @@ type Assignment struct {
 	Continuation         *TaskContinuation   `json:"continuation,omitempty"`
 	Clarifications       []TaskClarification `json:"clarifications,omitempty"`
 	CompletedTaskIDs     []string            `json:"completed_task_ids,omitempty"`
+	ParserStep           *ParserStep         `json:"parser_step,omitempty"`
 }
 
 type PlanningMessage struct {
@@ -174,6 +142,16 @@ type Result struct {
 	Completed bool              `json:"completed"`
 	Content   json.RawMessage   `json:"content"`
 	Evidence  []json.RawMessage `json:"evidence"`
+}
+
+func (result Result) ValidateFor(role Role, route Route) error {
+	if result.Provider != route.Provider || result.Model != route.Model || !result.Completed || !json.Valid(result.Content) {
+		return fmt.Errorf("provider returned an unbound or incomplete result")
+	}
+	if role.IsNative() && (result.ThreadID == "" || result.TurnID == "") {
+		return fmt.Errorf("native execution requires its original thread and turn identities")
+	}
+	return nil
 }
 
 type Provider interface {

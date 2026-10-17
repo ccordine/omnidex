@@ -53,7 +53,7 @@ export default class CodingAgentSettingsController extends Controller<HTMLElemen
     const model = this.model(this.field(role, "model").value);
     if (model) {
       this.options(this.field(role, "effort"), [{ value: "", label: "Default" }, ...model.efforts.map((effort) => ({ value: effort.value, label: effort.value, title: effort.description }))], model.default_effort);
-      this.options(this.field(role, "service_tier"), this.tierOptions(model), "default");
+      this.options(this.field(role, "service_tier"), this.tierOptions(model), model.provider === "ollama" ? "" : "default");
     }
     this.availability();
     this.status("Unsaved", "idle");
@@ -86,15 +86,16 @@ export default class CodingAgentSettingsController extends Controller<HTMLElemen
   private render(configuration: AgentConfiguration): void {
     for (const role of AGENT_ROLES) {
       const route = configuration[role];
-      this.options(this.field(role, "model"), this.settings!.models.map((model) => ({ value: model.id, label: model.display_name })), route.model);
-      const model = this.model(route.model);
+      this.options(this.field(role, "model"), this.settings!.models.filter((model) => role === "ledger_parser" || model.provider === "codex").map((model) => ({ value: modelKey(model.provider, model.id), label: model.display_name })), modelKey(route.provider, route.model));
+      const model = this.model(modelKey(route.provider, route.model));
       this.options(this.field(role, "effort"), [{ value: "", label: "Default" }, ...(model?.efforts ?? []).map((effort) => ({ value: effort.value, label: effort.value, title: effort.description }))], route.effort ?? "");
-      this.options(this.field(role, "service_tier"), model ? this.tierOptions(model) : [{ value: "default", label: "Default" }], route.service_tier || "default");
+      this.options(this.field(role, "service_tier"), model ? this.tierOptions(model) : [{ value: "default", label: "Default" }], route.service_tier ?? (route.provider === "ollama" ? "" : "default"));
     }
     this.versionTarget.textContent = this.settings!.installation.version ? `Codex ${this.settings!.installation.version}` : "Codex version unavailable";
   }
 
   private tierOptions(model: AgentModel): Array<{ value: string; label: string; title?: string }> {
+    if (model.provider === "ollama") return [{ value: "", label: "Default" }];
     const tiers = model.service_tiers.map((tier) => ({ value: tier.id, label: tier.name, title: tier.description }));
     return tiers.some((tier) => tier.value === "default") ? tiers : [{ value: "default", label: "Default" }, ...tiers];
   }
@@ -103,8 +104,10 @@ export default class CodingAgentSettingsController extends Controller<HTMLElemen
     if (!this.settings) throw new Error("Load Agent settings before saving.");
     const configuration = { mode: "agents" } as AgentConfiguration;
     for (const role of AGENT_ROLES) {
+      const selected = this.model(this.field(role, "model").value);
+      const stored = this.settings.configuration[role];
       configuration[role] = {
-        provider: this.settings.configuration[role].provider, model: this.field(role, "model").value,
+        provider: selected?.provider ?? stored.provider, model: selected?.id ?? stored.model,
         effort: this.field(role, "effort").value, service_tier: this.field(role, "service_tier").value,
       };
     }
@@ -114,11 +117,12 @@ export default class CodingAgentSettingsController extends Controller<HTMLElemen
   private validateDraft(configuration: AgentConfiguration): void {
     for (const role of AGENT_ROLES) {
       const route = configuration[role];
-      if (route.provider !== "codex") throw new Error(`${role} provider ${route.provider} is not supported by these Codex settings.`);
-      const model = this.model(route.model);
+      if (!providerSupported(role, route.provider)) throw new Error(`${role} provider ${route.provider} is not supported.`);
+      if (route.provider === "ollama" && (route.effort || route.service_tier)) throw new Error("Local parsers do not support Codex effort or speed options.");
+      const model = this.model(modelKey(route.provider, route.model));
       if (!model) throw new Error(`${role} model ${route.model} is unavailable. Refresh or choose an available model.`);
       if (route.effort && !model.efforts.some((effort) => effort.value === route.effort)) throw new Error(`${role} effort ${route.effort} is unavailable for this model.`);
-      if (route.service_tier !== "default" && !model.service_tiers.some((tier) => tier.id === route.service_tier)) throw new Error(`${role} speed ${route.service_tier} is unavailable for this model.`);
+      if (route.service_tier && route.service_tier !== "default" && !model.service_tiers.some((tier) => tier.id === route.service_tier)) throw new Error(`${role} speed ${route.service_tier} is unavailable for this model.`);
     }
   }
 
@@ -129,8 +133,9 @@ export default class CodingAgentSettingsController extends Controller<HTMLElemen
 
   private availability(): void {
     for (const role of AGENT_ROLES) {
-      const disabled = this.busy || !this.settings || this.settings.configuration[role].provider !== "codex";
-      for (const field of ["model", "effort", "service_tier"] as const) this.field(role, field).disabled = disabled;
+      const disabled = this.busy || !this.settings || !providerSupported(role, this.settings.configuration[role].provider);
+      const local = this.model(this.field(role, "model").value)?.provider === "ollama";
+      for (const field of ["model", "effort", "service_tier"] as const) this.field(role, field).disabled = disabled || (local && field !== "model");
     }
     this.saveTarget.disabled = this.busy || !this.settings || this.configurationIssue() !== undefined;
     this.refreshTarget.disabled = this.busy;
@@ -144,7 +149,7 @@ export default class CodingAgentSettingsController extends Controller<HTMLElemen
     return field;
   }
 
-  private model(id: string): AgentModel | undefined { return this.settings?.models.find((model) => model.id === id); }
+  private model(id: string): AgentModel | undefined { return this.settings?.models.find((model) => modelKey(model.provider, model.id) === id); }
 
   private options(select: HTMLSelectElement, options: Array<{ value: string; label: string; title?: string }>, selected: string): void {
     const nodes = options.map((option) => { const node = new Option(option.label, option.value); node.title = option.title ?? ""; return node; });
@@ -161,3 +166,9 @@ export default class CodingAgentSettingsController extends Controller<HTMLElemen
 }
 
 function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
+
+function modelKey(provider: string, model: string): string { return `${provider}:${model}`; }
+
+function providerSupported(role: AgentRole, provider: string): boolean {
+  return provider === "codex" || (role === "ledger_parser" && provider === "ollama");
+}

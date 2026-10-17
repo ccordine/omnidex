@@ -1,0 +1,30 @@
+{
+  "core_url": "https://core.omni.worknet",
+  "models": {
+    "default": "gpt-6.1-sol",
+    "planner": {
+      "provider": "codex",
+      "model": "gpt-6.1-sol",
+      "effort": "xhigh",
+      "service_tier": "default"
+    },
+    "executor": {
+      "provider": "codex",
+      "model": "gpt-6.1-sol",
+      "effort": "low",
+      "service_tier": "default"
+    },
+    "reviewer": {
+      "provider": "codex",
+      "model": "gpt-6.1-sol",
+      "effort": "xhigh",
+      "service_tier": "default"
+    },
+    "parsers": {
+      "provider": "codex",
+      "model": "gpt-6.1-sol",
+      "effort": "low",
+      "service_tier": "default"
+    }
+  }
+}

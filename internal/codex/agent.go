@@ -11,6 +11,9 @@ import (
 )
 
 func (client *Client) Run(parent context.Context, call codingagent.Assignment, event func(codingagent.NativeEvent) error) (codingagent.Result, error) {
+	if !call.Role.IsNative() && call.ParserStep == nil {
+		return codingagent.RunParserSieve(parent, call, event, client.Run)
+	}
 	result := codingagent.Result{Provider: "codex", Model: call.Route.Model, Evidence: []json.RawMessage{}}
 	if err := validateAgentAssignment(call); err != nil {
 		return result, err
@@ -37,7 +40,7 @@ func (client *Client) Run(parent context.Context, call codingagent.Assignment, e
 	if call.Role.IsNative() {
 		connection, err = startExecutionConnection(ctx, client.command, call.Root)
 	} else {
-		connection, err = startConfiguredConnection(ctx, client.command, call.Root, true, nil)
+		connection, err = startParserConnection(ctx, client.command, call.Root, scratch)
 	}
 	if err != nil {
 		return result, retryableAgentSessionError(err)
@@ -54,6 +57,19 @@ func (client *Client) Run(parent context.Context, call codingagent.Assignment, e
 	result.ThreadID = thread.Thread.ID
 	if err := recordAgentFrame(&result, raw, event); err != nil {
 		return result, err
+	}
+	if !call.Role.IsNative() {
+		var receipt struct {
+			Result struct {
+				InstructionSources []string `json:"instructionSources"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal(raw, &receipt); err != nil {
+			return result, err
+		}
+		if len(receipt.Result.InstructionSources) != 0 {
+			return result, fmt.Errorf("pure parser session inherited external instruction files")
+		}
 	}
 	if call.Role == codingagent.Execute {
 		if call.Session != nil && call.Session.State != "idle" {
@@ -100,12 +116,11 @@ func (client *Client) Run(parent context.Context, call codingagent.Assignment, e
 	}
 	items := map[string]string{}
 	closedItems := map[string]string{}
-	messages := &agentResponseMessages{}
 	consume := func(frame rpcFrame, raw json.RawMessage) (bool, error) {
 		if resumedUsageSnapshot(call, frame) {
 			return false, nil
 		}
-		return consumeAgentFrameTracked(frame, raw, &result, call.Role, items, closedItems, messages, event)
+		return consumeAgentFrameTracked(frame, raw, &result, call.Role, items, closedItems, event)
 	}
 	finished := false
 	for _, notification := range pending {
@@ -145,7 +160,7 @@ func (client *Client) Run(parent context.Context, call codingagent.Assignment, e
 	if len(items) > 0 {
 		return result, fmt.Errorf("agent ended with incomplete native items")
 	}
-	mapped, err := mapAgentReviewResponse(call, result.Content)
+	mapped, err := codingagent.MapParserResponse(call, result.Content)
 	if err != nil {
 		return result, err
 	}
@@ -184,7 +199,8 @@ func (connection *connection) startAgentThread(call codingagent.Assignment, scra
 		sandbox, approval, _ := agentPermissions(call)
 		parameters := map[string]any{"model": call.Route.Model, "allowProviderModelFallback": false,
 			"cwd": call.Root, "sandbox": sandbox, "approvalPolicy": approval, "ephemeral": call.Role != codingagent.Execute,
-			"config": map[string]any{"approvals_reviewer": "user"}}
+			"developerInstructions": agentRoleInstructions(call.Role),
+			"config":                map[string]any{"approvals_reviewer": "user"}}
 		applyAgentInferenceOptions(parameters, call.Route)
 		method := "thread/start"
 		if call.Role == codingagent.Execute && call.Session != nil {
