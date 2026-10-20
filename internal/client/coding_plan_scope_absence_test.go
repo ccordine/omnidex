@@ -30,12 +30,12 @@ func TestCodingPlanClientRejectsFieldsOutsideTheSharedTransportContract(t *testi
 				if err := json.Unmarshal(response["ledger"], &ledger); err != nil {
 					t.Fatal(err)
 				}
-				var constraints []map[string]json.RawMessage
-				if err := json.Unmarshal(ledger["constraints"], &constraints); err != nil {
+				var tasks []map[string]json.RawMessage
+				if err := json.Unmarshal(ledger["tasks"], &tasks); err != nil {
 					t.Fatal(err)
 				}
-				constraints[0][field] = json.RawMessage(`"speculative_review"`)
-				ledger["constraints"], err = json.Marshal(constraints)
+				tasks[0][field] = json.RawMessage(`"speculative_review"`)
+				ledger["tasks"], err = json.Marshal(tasks)
 				if err == nil {
 					response["ledger"], err = json.Marshal(ledger)
 				}

@@ -42,6 +42,9 @@ func (stream terminalReadWriter) Write(buffer []byte) (int, error) {
 }
 
 type chatConsole struct {
+	editors        map[string]workspaceEditorState
+	editorMode     string
+	inputMode      string
 	workspace      *chatWorkspace
 	terminal       *term.Terminal
 	pasteReader    *bracketedPasteReader
@@ -97,6 +100,8 @@ func newChatConsole(
 		_ = term.Restore(fd, state)
 		return nil, err
 	}
+	workspace.editorSwitching = true
+	console.editorMode = "infer"
 	source := &workspaceInputSource{source: newTerminalContextReader(ctx, inputFile), view: workspace}
 	reviewInput, err := newPlanReviewInputRouter(source)
 	if err != nil {
@@ -182,7 +187,7 @@ func (console *chatConsole) ReadLine() (string, bool, terminalInputAuthority, er
 		if console.workspace != nil {
 			console.workspace.beginInput()
 		}
-		line, err := console.terminal.ReadLine()
+		line, err := console.readEditorLine()
 		if console.workspace != nil {
 			console.workspace.endInput()
 		}
@@ -243,7 +248,12 @@ func (console *chatConsole) boundTerminalInput(
 }
 
 func (console *chatConsole) IsTerminal() bool {
-	return console != nil && console.terminal != nil
+	if console == nil {
+		return false
+	}
+	console.presentationMu.Lock()
+	defer console.presentationMu.Unlock()
+	return console.terminal != nil
 }
 
 func (console *chatConsole) SetPrompt(prompt string) error {
@@ -266,11 +276,11 @@ func (console *chatConsole) WriteOutput(value string) (resultErr error) {
 		return fmt.Errorf("interactive console is unavailable")
 	}
 	value = safeConsoleText(value)
+	console.presentationMu.Lock()
+	defer console.presentationMu.Unlock()
 	if console.terminal == nil {
 		return fmt.Errorf("interactive terminal is unavailable")
 	}
-	console.presentationMu.Lock()
-	defer console.presentationMu.Unlock()
 	if console.workspace != nil {
 		console.workspace.beginTranscript(value)
 		defer func() { resultErr = errors.Join(resultErr, console.workspace.endTranscript()) }()

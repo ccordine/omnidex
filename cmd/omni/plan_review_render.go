@@ -38,13 +38,17 @@ func renderPlanReview(state planReviewState) (string, error) {
 		if index == state.selected {
 			marker = ">"
 		}
+		statement := leaf.Statement
+		if leaf.Task != nil {
+			statement = leaf.Task.Instructions()
+		}
 		fmt.Fprintf(
 			&rendered,
 			"%s %d. [%s] %s\n",
 			marker,
 			index+1,
 			leaf.Decision,
-			planReviewTerminalText(leaf.Statement),
+			planReviewTerminalText(statement),
 		)
 	}
 	for _, disposition := range state.snapshot.OwnerTurnDispositions {

@@ -21,9 +21,15 @@ type userMessageOutcome struct {
 
 type pendingUserIntent struct{ request sessionintent.Request }
 
-// All ordinary text uses the same interpretation boundary, including replies to
-// ledger proposals, native questions and action-confirmation pitches.
+// Infer and Interact share the persisted proposal boundary. Interact binds the
+// known recipient before transport; only constrained answers need interpretation.
 func (session *chatSession) acceptUserMessage(text string) (resultErr error) {
+	if session.mode == sessionintent.Research {
+		return session.acceptResearchQuestion(text)
+	}
+	if session.mode == sessionintent.Ledger {
+		return fmt.Errorf("Ledger mode uses explicit item controls; /mode interact sends a message")
+	}
 	if err := client.ValidateSessionTurnText(text); err != nil {
 		return err
 	}
@@ -38,7 +44,21 @@ func (session *chatSession) acceptUserMessage(text string) (resultErr error) {
 		if err != nil {
 			return err
 		}
-		request := sessionintent.Request{OperationID: id, Text: text, State: session.serverState}
+		request := sessionintent.Request{OperationID: id, Text: text, State: session.serverState, Mode: session.mode}
+		if session.mode == sessionintent.Interact {
+			planning, err := activeJobRequiresPlanReview(session.active)
+			if err != nil {
+				return err
+			}
+			current := sessionintent.Context{Planning: planning}
+			if session.active != nil {
+				current.InputID = session.active.ExecutionInputID
+			}
+			if session.lastPendingIntent != "" {
+				current.Pending = &sessionintent.Proposal{ID: session.lastPendingIntent}
+			}
+			request.Recipient = sessionintent.InteractionRecipient(current)
+		}
 		if session.planReview != nil {
 			request.LedgerRevision = session.planReview.snapshot.Revision
 			if session.planNoteSubject != "" && session.planReview.selected < len(session.planReview.snapshot.Leaves) {
@@ -48,7 +68,11 @@ func (session *chatSession) acceptUserMessage(text string) (resultErr error) {
 		session.pendingIntent = &pendingUserIntent{request: request}
 	}
 	if session.renderer.console != nil {
-		activity := chatActivity{Label: "Interpreting reply", Working: true, StartedAt: time.Now()}
+		label := "Interpreting reply"
+		if session.mode == sessionintent.Interact {
+			label = "Sending reply"
+		}
+		activity := chatActivity{Label: label, Working: true, StartedAt: time.Now()}
 		if session.active != nil {
 			activity.JobID = session.active.Job.ID
 			activity.Generation = session.active.Job.CurrentGeneration

@@ -178,3 +178,57 @@ func TestWorkspaceOldestScrollUsesActualSplitPaneWidth(t *testing.T) {
 		t.Fatalf("oldest scroll stopped before the first line: %q", ansi.Strip(frame[2]))
 	}
 }
+
+func TestWorkspaceTabSwitchPreservesScrollAndEditor(t *testing.T) {
+	console, input, reads, done := workspaceEditor(t)
+	writeComposerKeys(t, input, reads, "界ab\x1b[DX")
+	view := console.workspace
+	view.mu.Lock()
+	view.conversationOffset, view.activityOffset = 6, 3
+	view.mu.Unlock()
+	for _, key := range []byte{2, '2', 2, '\t', 2, '[', 2, '1'} {
+		if err := view.key(key, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	view.mu.Lock()
+	if view.conversationOffset != 6 || view.activityOffset != 3 {
+		t.Error("tab switch reset viewport")
+	}
+	view.mu.Unlock()
+	finishScreenComposer(t, input, done, "界aXb")
+}
+
+func TestWorkspaceModeShortcutsAndPasteIsolation(t *testing.T) {
+	view, _ := testWorkspace(t, 32, 12)
+	source := &workspaceInputSource{view: view}
+	for _, key := range []byte("\x02f\x02e\x02l\x02r") {
+		if err := source.consume(key); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, want := range []string{"infer", "interact", "ledger", "research"} {
+		select {
+		case got := <-view.modeRequests:
+			if got != want {
+				t.Fatalf("mode %q, want %q", got, want)
+			}
+		default:
+			t.Fatal("missing mode request")
+		}
+	}
+	pasted := "\x1b[200~界\x02r\x02\t\x1b[201~"
+	for _, key := range []byte(pasted) {
+		if err := source.consume(key); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if string(source.queued) != pasted {
+		t.Fatalf("paste changed: %q", source.queued)
+	}
+	select {
+	case <-view.modeRequests:
+		t.Fatal("paste switched mode")
+	default:
+	}
+}

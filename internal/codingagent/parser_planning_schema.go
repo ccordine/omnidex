@@ -85,7 +85,10 @@ func planningLedgerSchema(
 		return object(properties, append([]string{"id", "provenance", "rationale", "rank", "disposition", "review_state"}, required...)...)
 	}
 	array := func(item map[string]any) map[string]any { return map[string]any{"type": "array", "items": item} }
-	task := base(map[string]any{"goal": nonempty, "read_files": strings, "write_files": strings, "delete_files": strings}, "goal", "read_files", "write_files", "delete_files")
+	task := base(map[string]any{"goal": nonempty, "objective": text, "owner_context": array(object(map[string]any{"text": nonempty, "provenance": object(map[string]any{"kind": nonempty, "reference": nonempty, "revision": integer}, "kind", "reference", "revision")}, "text", "provenance")), "constraints": strings,
+		"file_responsibilities": array(object(map[string]any{"path": nonempty, "action": planningEnum("inspect", "change", "create", "delete"), "responsibility": nonempty}, "path", "action", "responsibility")),
+		"acceptance":            array(object(map[string]any{"id": nonempty, "text": nonempty, "verification": strings}, "id", "text", "verification")),
+		"read_files":            strings, "write_files": strings, "delete_files": strings}, "goal", "objective", "owner_context", "constraints", "file_responsibilities", "acceptance", "read_files", "write_files", "delete_files")
 	return object(map[string]any{"id": text, "revision": integer, "tasks": array(task)}, "id", "revision", "tasks")
 }
 

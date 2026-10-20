@@ -4616,7 +4616,7 @@ CREATE TABLE lifecycle_operation_registry (
     command_payload jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT lifecycle_operation_registry_check CHECK (((jsonb_typeof(command_payload) = 'object'::text) AND (command_payload ? 'operation_id'::text) AND ((command_payload ->> 'operation_id'::text) = operation_id))),
-    CONSTRAINT lifecycle_operation_registry_kind_check CHECK ((kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text, 'submit_feedback'::text, 'interrupt_job'::text, 'resume_job'::text, 'replan_job'::text, 'channel_session_turn'::text, 'channel_session_message'::text, 'scrum_channel_message'::text, 'cancel_job'::text]))),
+    CONSTRAINT lifecycle_operation_registry_kind_check CHECK ((kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text, 'submit_feedback'::text, 'interrupt_job'::text, 'resume_job'::text, 'replan_job'::text, 'channel_session_turn'::text, 'channel_session_message'::text, 'scrum_channel_message'::text, 'cancel_job'::text, 'research_turn'::text]))),
     CONSTRAINT lifecycle_operation_registry_operation_id_check CHECK ((operation_id ~ '^lifecycle_operation_[a-z0-9_]{1,128}$'::text))
 );
 
@@ -10778,7 +10778,7 @@ BEGIN
  command:=NEW.command_payload->'command'; admitted:=NEW.command_payload->'admitted_job';
  IF jsonb_typeof(command) IS DISTINCT FROM 'object' OR jsonb_typeof(admitted) IS DISTINCT FROM 'object' OR
    NOT (NEW.command_payload ?& ARRAY['operation_id','command','admitted_job','redirect_operation_id']) OR
-   (NEW.command_payload-ARRAY['operation_id','command','admitted_job','redirect_operation_id'])<>'{}'::jsonb OR
+   (NEW.command_payload-ARRAY['operation_id','command','admitted_job','redirect_operation_id','planning_binding'])<>'{}'::jsonb OR
    NOT (command ?& ARRAY['operation_id','channel_id','workspace_root','workspace_identity','text','expected_job_id','expected_generation']) OR
    (command-ARRAY['operation_id','channel_id','workspace_root','workspace_identity','text','coding_mode','expected_job_id','expected_generation'])<>'{}'::jsonb OR
    jsonb_typeof(NEW.command_payload->'operation_id') IS DISTINCT FROM 'string' OR
@@ -10808,6 +10808,22 @@ BEGIN
        AND admitted->>'status'=job.status AND admitted->>'instruction'=job.instruction
        AND admitted->'metadata'=job.metadata) THEN
    RAISE EXCEPTION 'Active message intake differs from exact live conversation authority';
+ END IF;
+ IF EXISTS(SELECT 1 FROM coding_ledgers ledger JOIN jobs job ON job.id=ledger.job_id
+   WHERE job.id=(command->>'expected_job_id')::bigint AND ledger.state='frozen'
+     AND job.metadata->'coding_execution'->>'mode'='agents') THEN
+   IF jsonb_typeof(NEW.command_payload->'planning_binding') IS DISTINCT FROM 'object' OR
+     NOT ((NEW.command_payload->'planning_binding') ?& ARRAY['ledger_id','revision']) OR
+     ((NEW.command_payload->'planning_binding')-ARRAY['ledger_id','revision'])<>'{}'::jsonb OR
+     jsonb_typeof(NEW.command_payload->'planning_binding'->'ledger_id') IS DISTINCT FROM 'number' OR
+     jsonb_typeof(NEW.command_payload->'planning_binding'->'revision') IS DISTINCT FROM 'number' OR
+     NOT EXISTS(SELECT 1 FROM coding_ledgers WHERE job_id=(command->>'expected_job_id')::bigint
+       AND id=(NEW.command_payload->'planning_binding'->>'ledger_id')::bigint
+       AND frozen_revision=(NEW.command_payload->'planning_binding'->>'revision')::bigint AND state='frozen') THEN
+     RAISE EXCEPTION 'Execution message requires its exact frozen ledger binding';
+   END IF;
+ ELSIF NEW.command_payload ? 'planning_binding' THEN
+   RAISE EXCEPTION 'Message cannot invent a frozen ledger binding';
  END IF;
  RETURN NEW;
 END $$;
@@ -10848,7 +10864,9 @@ BEGIN
    NEW.job_id<>(intake->'command'->>'expected_job_id')::bigint OR
    (NEW.payload_json->'job'->>'id')::bigint<>NEW.job_id OR
    NOT EXISTS(SELECT 1 FROM job_steps WHERE id=NEW.step_id AND job_id=NEW.job_id
-     AND generation=(intake->'command'->>'expected_generation')::bigint) THEN
+     AND (generation=(intake->'command'->>'expected_generation')::bigint OR
+       (intake ? 'planning_binding' AND meaning IN ('planning','retired')
+        AND generation>(intake->'command'->>'expected_generation')::bigint))) THEN
    RAISE EXCEPTION 'Message resolution lacks exact intake owner';
  END IF;
  IF meaning IN ('answer','story','failed','planning') THEN
@@ -10864,12 +10882,22 @@ BEGIN
      RAISE EXCEPTION 'Message answer requires an exact typed attempt and reply';
    END IF;
    IF authority IS NULL OR (authority->>'job_id')::bigint<>NEW.job_id OR
-     (authority->>'generation')::bigint<>(intake->'command'->>'expected_generation')::bigint OR
+     ((authority->>'generation')::bigint<>(intake->'command'->>'expected_generation')::bigint AND NOT
+       (meaning='planning' AND intake ? 'planning_binding' AND
+        (authority->>'generation')::bigint>(intake->'command'->>'expected_generation')::bigint)) OR
      (authority->>'step_id')::bigint<>NEW.step_id OR NEW.payload_json ? 'control_operation_id' OR
      NOT EXISTS(SELECT 1 FROM jobs job JOIN job_steps step ON step.job_id=job.id
        JOIN job_step_attempts attempt ON attempt.job_id=job.id AND attempt.step_id=step.id
        WHERE job.id=NEW.job_id AND job.current_generation=(authority->>'generation')::bigint
-         AND job.status='running' AND step.id=NEW.step_id AND step.status='running'
+         AND step.id=NEW.step_id AND step.generation=job.current_generation
+         AND ((job.status='running' AND step.status='running') OR
+           (job.status='waiting_input' AND step.status='waiting_input' AND meaning<>'planning' AND
+             EXISTS(SELECT 1 FROM evidence request WHERE request.job_id=job.id AND request.step_id=step.id
+               AND request.kind='coding_agent' AND request.payload_json->>'generation'=job.current_generation::text
+               AND request.payload_json->>'phase'='execution_native_input'
+               AND NOT EXISTS(SELECT 1 FROM evidence later WHERE later.job_id=job.id AND later.step_id=step.id
+                 AND later.id>request.id AND later.kind='coding_agent' AND later.payload_json->>'phase' IN
+                   ('execution_reply','execution_native_input','execution_response','review_response','task_incomplete')))))
          AND step.current_attempt=(authority->>'attempt')::bigint
          AND attempt.attempt=step.current_attempt AND attempt.status='active'
          AND attempt.worker_id=authority->>'worker_id' AND attempt.expires_at>clock_timestamp()
@@ -10885,7 +10913,10 @@ BEGIN
          JOIN coding_ledgers ledger ON ledger.job_id=job.id
          WHERE step.id=NEW.step_id AND step.action='v3_coding_plan'
            AND job.metadata->'coding_execution'->>'mode'='agents'
-           AND ledger.state='proposed') OR
+           AND ledger.state='proposed'
+           AND (NOT (intake ? 'planning_binding') OR
+             (ledger.id=(intake->'planning_binding'->>'ledger_id')::bigint
+              AND ledger.current_revision>=(intake->'planning_binding'->>'revision')::bigint))) OR
        NOT EXISTS(SELECT 1 FROM evidence response WHERE response.job_id=NEW.job_id
          AND response.kind='coding_agent' AND response.payload_json->>'phase'='planning_response'
          AND response.payload_json->'notes'->>0=NEW.source_ref
@@ -10921,7 +10952,9 @@ BEGIN
      NEW.payload_json ? 'response_message_id' OR
      NOT (EXISTS(SELECT 1 FROM job_lifecycle_operations control
        WHERE control.operation_id=NEW.payload_json->>'control_operation_id' AND control.job_id=NEW.job_id
-         AND control.observed_generation=(intake->'command'->>'expected_generation')::bigint
+         AND (control.observed_generation=(intake->'command'->>'expected_generation')::bigint OR
+           (intake ? 'planning_binding' AND control.observed_generation>(intake->'command'->>'expected_generation')::bigint
+            AND control.kind IN ('cancel_job','fail_step')))
          AND control.kind IN ('replan_job','interrupt_job','cancel_job','fail_step')
          AND control.result_job=NEW.payload_json->'job') OR
        EXISTS(SELECT 1 FROM channel_session_turn_operations control
@@ -10987,3 +11020,60 @@ BEGIN
 END $$;
 CREATE TRIGGER channel_user_intents_immutable BEFORE UPDATE OR DELETE ON channel_user_intents
  FOR EACH ROW EXECUTE FUNCTION preserve_channel_user_intent();
+
+-- Dedicated read-only research history; no coding or approval state authority.
+CREATE TABLE channel_research_turns (
+    operation_id text PRIMARY KEY REFERENCES lifecycle_operation_registry(operation_id),
+    channel_id text NOT NULL REFERENCES ai_channels(id),
+    workspace_identity text NOT NULL,
+    request_json jsonb NOT NULL CHECK (jsonb_typeof(request_json)='object'),
+    context_json jsonb NOT NULL CHECK (jsonb_typeof(context_json)='object'),
+    result_json jsonb NOT NULL CHECK (jsonb_typeof(result_json)='object'),
+    evidence_json jsonb NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+CREATE INDEX channel_research_turns_conversation ON channel_research_turns(channel_id,workspace_identity,created_at DESC,operation_id);
+CREATE TRIGGER channel_research_turns_immutable BEFORE UPDATE OR DELETE OR TRUNCATE ON channel_research_turns
+    FOR EACH STATEMENT EXECUTE FUNCTION reject_agent_execution_history_mutation();
+
+-- Pending amendments are intake evidence, separate from executable ledger versions.
+CREATE UNIQUE INDEX coding_planning_amendment_unique ON evidence(source_ref)
+ WHERE kind='coding_planning_amendment';
+CREATE FUNCTION validate_coding_planning_amendment() RETURNS trigger
+ LANGUAGE plpgsql SET search_path TO 'pg_catalog','__OMNIDEX_RUNTIME_SCHEMA__','pg_temp' AS $$
+BEGIN
+ IF NEW.source_type IS DISTINCT FROM 'lifecycle_operation' OR
+   jsonb_typeof(NEW.payload_json) IS DISTINCT FROM 'object' OR
+   NOT (NEW.payload_json ?& ARRAY['ledger_id','revision']) OR
+   (NEW.payload_json-ARRAY['ledger_id','revision'])<>'{}'::jsonb OR
+   NOT EXISTS(SELECT 1 FROM lifecycle_operation_registry intake
+     JOIN coding_ledgers ledger ON ledger.job_id=intake.message_job_id
+     JOIN jobs job ON job.id=ledger.job_id
+     JOIN job_steps step ON step.job_id=job.id AND step.id=NEW.step_id AND step.generation=job.current_generation
+     JOIN job_step_attempts attempt ON attempt.step_id=step.id AND attempt.attempt=step.current_attempt
+     WHERE intake.kind='channel_session_message' AND intake.operation_id=NEW.source_ref AND job.id=NEW.job_id
+       AND intake.message_generation=job.current_generation AND step.action='v3_coding'
+       AND ((step.status='running' AND job.status='running') OR
+         (step.status='waiting_input' AND job.status='waiting_input' AND EXISTS(
+           SELECT 1 FROM evidence request WHERE request.job_id=job.id AND request.step_id=step.id
+             AND request.kind='coding_agent' AND request.payload_json->>'generation'=job.current_generation::text
+             AND request.payload_json->>'phase'='execution_native_input'
+             AND NOT EXISTS(SELECT 1 FROM evidence later WHERE later.job_id=job.id AND later.step_id=step.id
+               AND later.id>request.id AND later.kind='coding_agent' AND later.payload_json->>'phase' IN
+                 ('execution_reply','execution_native_input','execution_response','review_response','task_incomplete')))))
+       AND attempt.status='active' AND attempt.expires_at>clock_timestamp()
+       AND ledger.state='frozen' AND intake.command_payload->'planning_binding'=NEW.payload_json
+       AND ledger.id=(NEW.payload_json->>'ledger_id')::bigint
+       AND ledger.frozen_revision=(NEW.payload_json->>'revision')::bigint) THEN
+   RAISE EXCEPTION 'Pending amendment lacks exact active frozen intake authority';
+ END IF;
+ RETURN NEW;
+END $$;
+CREATE TRIGGER coding_planning_amendment_validate BEFORE INSERT ON evidence
+ FOR EACH ROW WHEN (NEW.kind='coding_planning_amendment') EXECUTE FUNCTION validate_coding_planning_amendment();
+CREATE TRIGGER coding_planning_amendment_update_immutable BEFORE UPDATE ON evidence
+ FOR EACH ROW WHEN (OLD.kind='coding_planning_amendment' OR NEW.kind='coding_planning_amendment')
+ EXECUTE FUNCTION prevent_channel_session_message_resolution_mutation();
+CREATE TRIGGER coding_planning_amendment_delete_immutable BEFORE DELETE ON evidence
+ FOR EACH ROW WHEN (OLD.kind='coding_planning_amendment')
+ EXECUTE FUNCTION prevent_channel_session_message_resolution_mutation();

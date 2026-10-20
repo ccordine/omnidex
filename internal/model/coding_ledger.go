@@ -42,10 +42,126 @@ type LedgerItem struct {
 
 type LedgerTask struct {
 	LedgerItem
-	Goal        string   `json:"goal"`
-	ReadFiles   []string `json:"read_files"`
-	WriteFiles  []string `json:"write_files"`
-	DeleteFiles []string `json:"delete_files"`
+	Goal                 string                   `json:"goal"`
+	Objective            string                   `json:"objective,omitempty"`
+	OwnerContext         []TaskContext            `json:"owner_context,omitempty"`
+	Constraints          []string                 `json:"constraints,omitempty"`
+	FileResponsibilities []TaskFileResponsibility `json:"file_responsibilities,omitempty"`
+	Acceptance           []TaskAcceptance         `json:"acceptance,omitempty"`
+	ReadFiles            []string                 `json:"read_files"`
+	WriteFiles           []string                 `json:"write_files"`
+	DeleteFiles          []string                 `json:"delete_files"`
+}
+
+// These values belong to one task, never independently scheduled ledger items.
+// Goal retains the original instructions; context retains its original source.
+type TaskContext struct {
+	Text       string           `json:"text"`
+	Provenance LedgerProvenance `json:"provenance"`
+}
+
+type TaskFileAction string
+
+const (
+	TaskFileInspect TaskFileAction = "inspect"
+	TaskFileChange  TaskFileAction = "change"
+	TaskFileCreate  TaskFileAction = "create"
+	TaskFileDelete  TaskFileAction = "delete"
+)
+
+type TaskFileResponsibility struct {
+	Path           string         `json:"path"`
+	Action         TaskFileAction `json:"action"`
+	Responsibility string         `json:"responsibility"`
+}
+
+// Verification is nested under the criterion it proves, so sparse amendments
+// and task projection cannot detach checks from their acceptance obligation.
+type TaskAcceptance struct {
+	ID           string   `json:"id"`
+	Text         string   `json:"text"`
+	Verification []string `json:"verification"`
+}
+
+func (task LedgerTask) Instructions() string {
+	var out strings.Builder
+	out.WriteString(task.Goal)
+	if task.Objective != "" {
+		fmt.Fprintf(&out, "\n\nObjective: %s", task.Objective)
+	}
+	for _, context := range task.OwnerContext {
+		fmt.Fprintf(&out, "\n\nOwner context (%s %s revision %d):\n%s", context.Provenance.Kind, context.Provenance.Reference, context.Provenance.Revision, context.Text)
+	}
+	for _, constraint := range task.Constraints {
+		fmt.Fprintf(&out, "\nConstraint: %s", constraint)
+	}
+	for _, group := range []struct {
+		name  string
+		files []string
+	}{{"Inspect", task.ReadFiles}, {"Change/create", task.WriteFiles}, {"Delete", task.DeleteFiles}} {
+		for _, file := range group.files {
+			fmt.Fprintf(&out, "\n%s: %s", group.name, file)
+		}
+	}
+	for _, file := range task.FileResponsibilities {
+		fmt.Fprintf(&out, "\n%s %s: %s", file.Action, file.Path, file.Responsibility)
+	}
+	for _, criterion := range task.Acceptance {
+		fmt.Fprintf(&out, "\n\nAcceptance %s: %s", criterion.ID, criterion.Text)
+		for _, check := range criterion.Verification {
+			fmt.Fprintf(&out, "\nVerify %s: %s", criterion.ID, check)
+		}
+	}
+	return out.String()
+}
+
+func (task LedgerTask) ValidatePacket() error {
+	for _, context := range task.OwnerContext {
+		if strings.TrimSpace(context.Text) == "" || strings.TrimSpace(context.Provenance.Kind) == "" || strings.TrimSpace(context.Provenance.Reference) == "" || context.Provenance.Revision < 0 {
+			return fmt.Errorf("task %s context requires text and provenance", task.ID)
+		}
+	}
+	for _, constraint := range task.Constraints {
+		if strings.TrimSpace(constraint) == "" {
+			return fmt.Errorf("task %s has a blank constraint", task.ID)
+		}
+	}
+	for _, file := range task.FileResponsibilities {
+		if err := ValidateTaskFileReference(file.Path); err != nil {
+			return err
+		}
+		var files []string
+		switch file.Action {
+		case TaskFileInspect:
+			files = task.ReadFiles
+		case TaskFileChange, TaskFileCreate:
+			files = task.WriteFiles
+		case TaskFileDelete:
+			files = task.DeleteFiles
+		default:
+			return fmt.Errorf("task %s has invalid file action %q", task.ID, file.Action)
+		}
+		found := false
+		for _, path := range files {
+			found = found || path == file.Path
+		}
+		if !found || strings.TrimSpace(file.Responsibility) == "" {
+			return fmt.Errorf("task %s has an unbound file responsibility for %s", task.ID, file.Path)
+		}
+	}
+	seen := map[string]bool{}
+	for _, criterion := range task.Acceptance {
+		if strings.TrimSpace(criterion.ID) == "" || seen[criterion.ID] || strings.TrimSpace(criterion.Text) == "" || len(criterion.Verification) == 0 {
+			return fmt.Errorf("task %s requires distinct acceptance criteria with bound verification", task.ID)
+		}
+		seen[criterion.ID] = true
+		for _, check := range criterion.Verification {
+			if strings.TrimSpace(check) == "" {
+				return fmt.Errorf("task %s has blank verification", task.ID)
+			}
+		}
+	}
+	return nil
 }
 
 // EngineeringLedger contains only the ordered instructions approved for execution.
@@ -337,6 +453,9 @@ func (item LedgerMutationItem) validate() (LedgerItemID, error) {
 	}
 	if strings.TrimSpace(task.Goal) == "" {
 		return task.ID, fmt.Errorf("task %s requires instructions", task.ID)
+	}
+	if err := task.ValidatePacket(); err != nil {
+		return task.ID, err
 	}
 	return task.ID, validateLedgerTaskFiles(*task)
 }

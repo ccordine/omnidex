@@ -213,27 +213,15 @@ func planningBoundaryLedger() model.EngineeringLedger {
 		return model.LedgerItem{
 			ID:         model.LedgerItemID(id),
 			Provenance: model.LedgerProvenance{Kind: "owner_turn", Reference: "turn-1", Revision: 1},
-			Rationale:  "required", Priority: model.LedgerPriorityNormal, Rank: rank,
+			Rationale:  "required", Rank: rank,
 			Disposition: model.LedgerDispositionActive, ReviewState: model.LedgerReviewProposed,
 		}
 	}
 	return model.EngineeringLedger{
 		ID: "ledger-1", Revision: 3,
-		Objectives:   []model.LedgerObjective{{LedgerItem: item("objective", 0), Outcome: "ship"}},
-		Requirements: []model.LedgerRequirement{{LedgerItem: item("requirement", 1), Outcome: "works"}},
 		Tasks: []model.LedgerTask{{
 			LedgerItem: item("task", 2), Goal: "implement",
-			RequirementIDs:         []model.LedgerItemID{"requirement"},
-			AcceptanceCriterionIDs: []model.LedgerItemID{"acceptance"},
-		}},
-		AcceptanceCriteria: []model.LedgerAcceptanceCriterion{{
-			LedgerItem: item("acceptance", 3), Outcome: "verified",
-			RequirementIDs: []model.LedgerItemID{"requirement"}, TaskIDs: []model.LedgerItemID{"task"}, Required: true,
-		}},
-		Checks: []model.LedgerCheck{{
-			LedgerItem: item("check", 4), Argv: []string{"go", "test", "./..."},
-			RequirementIDs:         []model.LedgerItemID{"requirement"},
-			AcceptanceCriterionIDs: []model.LedgerItemID{"acceptance"}, Required: true,
+			WriteFiles: []string{"fixture.txt"},
 		}},
 	}
 }
@@ -301,13 +289,12 @@ func TestPlanningLedgerProviderInterruptionPreservesDatabaseProposal(t *testing.
 	controller := &codingagent.Controller{
 		JobID: 1, Generation: 1, Root: t.TempDir(),
 		Configuration: codingagent.Configuration{
-			Mode: codingagent.Agents, Planner: route,
+			Mode: codingagent.Agents, Planner: route, LedgerParser: route,
 			Executor: codingagent.Route{Provider: "executor", Model: "model"},
 			Reviewer: codingagent.Route{Provider: "reviewer", Model: "model"},
 		},
-		Requirements: []codingagent.Requirement{{ID: "objective", Outcome: "ship"}},
-		Providers:    map[string]codingagent.Provider{"planner": interruptedPlanningProvider{}},
-		Environment:  planningBoundaryEnvironment{}, Evidence: planningBoundaryEvidence{},
+		Providers:   map[string]codingagent.Provider{"planner": interruptedPlanningProvider{}},
+		Environment: planningBoundaryEnvironment{}, Evidence: planningBoundaryEvidence{},
 	}
 	turn := codingagent.PlanningTurn{
 		OperationID: "semantic-turn", OwnerTurnID: "turn-3",
@@ -315,8 +302,8 @@ func TestPlanningLedgerProviderInterruptionPreservesDatabaseProposal(t *testing.
 	}
 	if _, err := applyCodingLedgerPlanningTransaction(
 		context.Background(), repository, controller, repository.current.LedgerID, turn, nil,
-	); err == nil {
-		t.Fatal("provider interruption was reported as a completed mutation")
+	); err == nil || !strings.Contains(err.Error(), "planning session interrupted") {
+		t.Fatalf("expected provider interruption, got %v", err)
 	}
 	if repository.readCalls != 1 || repository.applyCalls != 0 ||
 		repository.current.Revision != ledger.Revision {

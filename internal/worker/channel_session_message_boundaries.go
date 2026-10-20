@@ -46,6 +46,15 @@ func (runtime *nativeRuntimeV3) transitionAfterSessionMessages(ctx context.Conte
 		if _, err := runtime.consumeSessionMessage(ctx); err != nil {
 			return err
 		}
+		if runtime.action == "v3_coding" {
+			replanned, err := runtime.svc.repo.ReplanPendingCodingAmendments(ctx, runtime.claim.Authority)
+			if err != nil {
+				return err
+			}
+			if replanned {
+				return queue.ErrStaleStepAttempt
+			}
+		}
 		err := commit()
 		if !errors.Is(err, queue.ErrPendingChannelSessionMessage) {
 			return err

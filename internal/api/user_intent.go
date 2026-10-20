@@ -40,6 +40,17 @@ func (s *Server) postUserIntent(w http.ResponseWriter, r *http.Request, channelI
 		return
 	}
 	result, err := s.repo.InterpretUserIntent(r.Context(), request, func(ctx context.Context, current sessionintent.Context) (sessionintent.Result, json.RawMessage, error) {
+		request := request
+		if request.Mode == sessionintent.Interact && request.Recipient == "" {
+			request.Recipient = sessionintent.InteractionRecipient(current)
+		}
+		if err := request.ValidateRouting(current); err != nil {
+			return sessionintent.Result{}, nil, err
+		}
+		if request.Mode == sessionintent.Interact && request.Recipient != sessionintent.Approval && (request.Recipient != sessionintent.Native || len(current.NativeChoices) == 0) {
+			result, err := sessionintent.DirectContent(request, current)
+			return result, json.RawMessage(`[]`), err
+		}
 		ask, evidence, err := s.userIntentModel(ctx, current)
 		if err != nil {
 			return sessionintent.Result{}, nil, err

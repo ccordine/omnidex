@@ -44,6 +44,8 @@ func ledgerRepositoryRecords(ledger model.EngineeringLedger) []ledgerRepositoryR
 	records := make([]ledgerRepositoryRecord, 0, len(ledger.Tasks))
 	for i := range ledger.Tasks {
 		task := &ledger.Tasks[i]
+		// Persist the complete task payload, including source-bound context and
+		// criterion-bound verification; file/goal projections are never storage.
 		records = append(records, ledgerRepositoryRecord{"task", task.LedgerItem, task})
 	}
 	return records

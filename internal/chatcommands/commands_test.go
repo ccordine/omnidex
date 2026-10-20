@@ -4,6 +4,7 @@ import "testing"
 
 func TestCanonicalChatHelpPreservesExistingOutput(t *testing.T) {
 	want := "commands:\n" +
+		"  /mode <name>            Infer, Interact, Ledger, or Research\n" +
 		"  /status                 show current work\n" +
 		"  /verbosity <level>      quiet, normal, verbose, or debug\n" +
 		"  /interrupt [reason]     pause the active job on the same job identity\n" +

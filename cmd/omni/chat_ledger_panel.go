@@ -70,6 +70,8 @@ func (session *chatSession) refreshLedgerPanel() error {
 	if err == nil && snapshot.Generation != generation {
 		err = fmt.Errorf("ledger generation differs from current job")
 	}
+	// The panel keeps the full task payload; rendering must not substitute
+	// the goal-only list label for the approved packet.
 	if err == nil {
 		err = view.acceptLedger(snapshot)
 	}

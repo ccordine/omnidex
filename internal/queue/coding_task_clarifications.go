@@ -13,10 +13,10 @@ func (store *CodingAgentEvidenceStore) ReadTaskClarifications(ctx context.Contex
 	if err := store.repository.RequireActiveStepAttempt(ctx, store.authority); err != nil {
 		return nil, err
 	}
-	rows, err := store.repository.pool.Query(ctx, `SELECT payload_json FROM evidence
+	rows, err := store.repository.pool.Query(ctx, `SELECT id,payload_json FROM evidence
 	 WHERE job_id=$1 AND kind='coding_agent' AND COALESCE(payload_json->>'task_id','')=$2
 	 AND (payload_json->>'generation')::bigint<=$3
-	 AND payload_json->>'phase' IN ('execution_response','review_response','execution_native_input','execution_reply')
+	 AND payload_json->>'phase' IN ('execution_response','review_response','execution_native_input','execution_reply','response_recovery','task_resume')
 	 ORDER BY id`, store.authority.JobID, taskID, store.authority.Generation)
 	if err != nil {
 		return nil, err
@@ -25,13 +25,15 @@ func (store *CodingAgentEvidenceStore) ReadTaskClarifications(ctx context.Contex
 	entries := []codingagent.Entry{}
 	for rows.Next() {
 		var raw []byte
-		if err := rows.Scan(&raw); err != nil {
+		var evidenceID int64
+		if err := rows.Scan(&evidenceID, &raw); err != nil {
 			return nil, err
 		}
 		var entry codingagent.Entry
 		if err := json.Unmarshal(raw, &entry); err != nil {
 			return nil, err
 		}
+		entry.ID = evidenceID
 		entries = append(entries, entry)
 	}
 	if err := rows.Err(); err != nil {

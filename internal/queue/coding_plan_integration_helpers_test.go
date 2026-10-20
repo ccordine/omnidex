@@ -57,12 +57,10 @@ type codingAgentLedgerFixture struct {
 func codingAgentPlanReviewFixture(t *testing.T, repository *Repository, planner *model.ClaimedStep, goal string) codingAgentLedgerFixture {
 	t.Helper()
 	ledger := repositoryLedgerFixture()
-	ledger.Objectives[0].Outcome = goal
-	ledger.Requirements[0].Outcome = goal
 	ledger.Tasks[0].Goal = goal
 	ledger.Tasks[0].WriteFiles = []string{"agent-fixture.txt"}
-	ledger.AcceptanceCriteria[0].Outcome = goal
-	ledger.Checks[0].Argv = []string{"true"}
+	ledger.Tasks[0].Acceptance[0].Text = goal
+	ledger.Tasks[0].Acceptance[0].Verification = []string{"true"}
 	itemIDs := make([]model.LedgerItemID, 0, len(ledgerRepositoryRecords(ledger)))
 	for _, record := range ledgerRepositoryRecords(ledger) {
 		setCodingLedgerItem(&ledger, record.item.ID, func(item *model.LedgerItem) {
@@ -248,13 +246,9 @@ func acceptCodingLedgerTaskFixture(
 		t.Fatal("completed native review is unavailable for parser recovery")
 	}
 	appendCodingReviewParserFixture(t, store, authority, &task, configuration.LedgerParser, reviewCall)
-	checks := make([]codingagent.CheckResult, len(task.Checks))
-	for index, check := range task.Checks {
-		checks[index] = codingagent.CheckResult{ID: check.ID}
-	}
 	if _, err := store.Append(ctx, codingagent.Entry{
 		Generation: authority.Generation, Phase: "task_accepted", TaskID: task.ID,
-		CallID: reviewCall, Checks: checks,
+		CallID: reviewCall,
 	}); err != nil {
 		t.Fatal(err)
 	}

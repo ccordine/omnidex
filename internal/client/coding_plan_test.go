@@ -125,18 +125,18 @@ func TestCodingPlanClientRejectsContradictoryServerAuthority(t *testing.T) {
 	}{
 		{name: "wrong job", mutate: func(plan *ledgerapi.CodingLedgerRevision) { plan.JobID++ }, want: "differs from requested authority"},
 		{name: "duplicate leaf", mutate: func(plan *ledgerapi.CodingLedgerRevision) {
-			plan.Ledger.Constraints[1].ID = plan.Ledger.Constraints[0].ID
-		}, want: "is both constraint and constraint"},
+			plan.Ledger.Tasks[1].ID = plan.Ledger.Tasks[0].ID
+		}, want: "duplicate task"},
 		{name: "duplicate statement", mutate: func(plan *ledgerapi.CodingLedgerRevision) {
-			plan.Ledger.Constraints[1].Rule = plan.Ledger.Constraints[0].Rule
+			plan.Ledger.Tasks[1].Goal = plan.Ledger.Tasks[0].Goal
 		}, want: "repeats the statement"},
-		{name: "unknown decision", mutate: func(plan *ledgerapi.CodingLedgerRevision) { plan.Ledger.Constraints[0].ReviewState = "maybe" }, want: "requires a review state"},
+		{name: "unknown decision", mutate: func(plan *ledgerapi.CodingLedgerRevision) { plan.Ledger.Tasks[0].ReviewState = "maybe" }, want: "requires a review state"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			response := valid
-			response.Ledger.Constraints = append([]model.LedgerConstraint(nil), valid.Ledger.Constraints...)
+			response.Ledger.Tasks = append([]model.LedgerTask(nil), valid.Ledger.Tasks...)
 			test.mutate(&response)
 			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 				writeJSON(t, writer, http.StatusOK, response)
@@ -162,14 +162,14 @@ func codingLedgerFixture(plan model.CodingPlan) ledgerapi.CodingLedgerRevision {
 		case model.CodingPlanDecisionRejected:
 			reviewState = model.LedgerReviewNeedsDiscussion
 		}
-		ledger.Constraints = append(ledger.Constraints, model.LedgerConstraint{
+		ledger.Tasks = append(ledger.Tasks, model.LedgerTask{
 			LedgerItem: model.LedgerItem{
 				ID:         model.LedgerItemID(leaf.ID),
 				Provenance: model.LedgerProvenance{Kind: "owner_turn", Reference: "test", Revision: 1},
-				Rationale:  "test", Priority: model.LedgerPriorityNormal, Rank: int64(index),
+				Rationale:  "test", Rank: int64(index),
 				Disposition: model.LedgerDispositionActive, ReviewState: reviewState,
 			},
-			Rule: leaf.Statement,
+			Goal: leaf.Statement,
 		})
 	}
 	state := "proposed"

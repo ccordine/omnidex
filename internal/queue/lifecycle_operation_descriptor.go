@@ -302,7 +302,7 @@ func validateLifecycleText(name, value string, maximum int, allowEmpty bool) err
 func registeredLifecycleOperationKind(kind LifecycleOperationKind) bool {
 	switch kind {
 	case LifecycleResumeJob, LifecycleCompleteStep, LifecycleFailStep, LifecycleSubmitFeedback, LifecycleInterruptJob,
-		LifecycleReplanJob, LifecycleChannelSession, LifecycleChannelSessionMessage, LifecycleCancelJob:
+		LifecycleResearch, LifecycleReplanJob, LifecycleChannelSession, LifecycleChannelSessionMessage, LifecycleCancelJob:
 		return true
 	default:
 		return false

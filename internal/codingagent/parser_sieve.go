@@ -14,16 +14,17 @@ const ParserBlockBytes = 2048
 // ParserStep is a code-selected semantic leaf, never a model-authored workflow.
 // Source and neighbouring context refer only to the completed final response.
 type ParserStep struct {
-	TaskInstructions string             `json:"task_instructions,omitempty"`
-	Stage            string             `json:"stage"`
-	BlockID          string             `json:"block_id"`
-	Source           string             `json:"source"`
-	Before           string             `json:"before,omitempty"`
-	After            string             `json:"after,omitempty"`
-	Category         string             `json:"category,omitempty"`
-	Ledger           *EngineeringLedger `json:"ledger,omitempty"`
-	NewIDs           map[string]string  `json:"new_ids,omitempty"`
-	OwnerTurn        string             `json:"owner_turn,omitempty"`
+	TaskIndex        []planningTaskReference `json:"task_index,omitempty"`
+	TaskInstructions string                  `json:"task_instructions,omitempty"`
+	Stage            string                  `json:"stage"`
+	BlockID          string                  `json:"block_id"`
+	Source           string                  `json:"source"`
+	Before           string                  `json:"before,omitempty"`
+	After            string                  `json:"after,omitempty"`
+	Category         string                  `json:"category,omitempty"`
+	Ledger           *EngineeringLedger      `json:"ledger,omitempty"`
+	NewIDs           map[string]string       `json:"new_ids,omitempty"`
+	OwnerTurn        string                  `json:"owner_turn,omitempty"`
 }
 
 type ParserPart struct {
@@ -139,8 +140,10 @@ func RunParserSieve(ctx context.Context, call Assignment, event func(NativeEvent
 
 func (s *parserSieve) step(index int, stage string) ParserStep {
 	step := ParserStep{Stage: stage, BlockID: s.blocks[index].ID, Source: s.blocks[index].Text}
-	if (s.call.Role == ReviewResponse || s.call.Role == ExecutionResponse) && s.call.Task != nil {
-		step.TaskInstructions = s.call.Task.Goal
+	if s.call.Task != nil {
+		step.TaskInstructions = s.call.Task.Instructions()
+	}
+	if s.call.Role.IsPlanning() || s.call.Role == ReviewResponse || s.call.Role == ExecutionResponse {
 		if index > 0 {
 			step.Before = s.blocks[index-1].Text
 		}
@@ -202,6 +205,12 @@ func ValidateParserLeafResponse(call Assignment, content json.RawMessage) error 
 			return err
 		}
 		return validateParserReviewFindings(call.ParserStep.Source, parsed)
+	case "planning_targets":
+		var choice string
+		if err := decodeContract(content, &choice); err != nil {
+			return err
+		}
+		return validatePlanningChoice(call.ParserStep, choice)
 	case "planning_unit":
 		var parsed parserPlanningProjection
 		if err := decodeContract(content, &parsed); err != nil {

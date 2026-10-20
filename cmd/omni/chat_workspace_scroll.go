@@ -37,3 +37,80 @@ func workspaceRowAnchor(screen *workspaceScreen, width, target int) (int, int) {
 	}
 	return screen.row, screen.column
 }
+
+type workspaceResizeAnchor struct {
+	mode        string
+	row, column int
+}
+
+func (view *chatWorkspace) scrollScreenLocked(mode string) workspaceScreen {
+	if mode != "research" {
+		return view.conversation
+	}
+	screen := newWorkspaceScreen(1)
+	screen.lines, screen.soft = nil, nil
+	for _, line := range view.researchLines {
+		for _, row := range strings.Split(line, "\n") {
+			screen.lines = append(screen.lines, []rune(row))
+			screen.soft = append(screen.soft, false)
+		}
+	}
+	return screen
+}
+
+func (view *chatWorkspace) resizeAnchorsLocked() []workspaceResizeAnchor {
+	active, focus := view.conversationMode, view.focus
+	defer func() { view.conversationMode, view.focus = active, focus }()
+	offsets := make(map[string]int, len(view.modeOffsets)+1)
+	for mode, offset := range view.modeOffsets {
+		offsets[mode] = offset
+	}
+	offsets[active] = view.conversationOffset
+	var anchors []workspaceResizeAnchor
+	for mode, offset := range offsets {
+		if offset <= 0 || mode == "ledger" {
+			continue
+		}
+		view.conversationMode = mode
+		view.focus = workspaceCompose
+		// Ledger tab geometry does not describe the hidden conversation viewport.
+		if mode == active && focus != workspaceLedgerPane {
+			view.focus = focus
+		}
+		if view.reviewVisibleLocked() {
+			continue
+		}
+		left, body, _, _ := view.paneGeometryLocked()
+		lines, _, _, _ := view.contentLocked(max(1, left-4))
+		if mode == "research" {
+			lines = view.researchContentLocked(max(1, left-4))
+		}
+		screen := view.scrollScreenLocked(mode)
+		row, column := workspaceRowAnchor(&screen, max(1, left-4), max(0, len(lines)-body-offset))
+		anchors = append(anchors, workspaceResizeAnchor{mode, row, column})
+	}
+	return anchors
+}
+
+func (view *chatWorkspace) restoreResizeAnchorsLocked(anchors []workspaceResizeAnchor) {
+	active, focus := view.conversationMode, view.focus
+	defer func() { view.conversationMode, view.focus = active, focus }()
+	for _, anchor := range anchors {
+		view.conversationMode, view.focus = anchor.mode, workspaceCompose
+		if anchor.mode == active && focus != workspaceLedgerPane {
+			view.focus = focus
+		}
+		left, body, _, _ := view.paneGeometryLocked()
+		lines, _, _, _ := view.contentLocked(max(1, left-4))
+		if anchor.mode == "research" {
+			lines = view.researchContentLocked(max(1, left-4))
+		}
+		screen := view.scrollScreenLocked(anchor.mode)
+		_, top, _ := workspaceWrappedRows(screen.lines, screen.soft, max(1, left-4), anchor.row, anchor.column)
+		offset := max(0, len(lines)-body-top)
+		view.modeOffsets[anchor.mode] = offset
+		if anchor.mode == active {
+			view.conversationOffset = offset
+		}
+	}
+}

@@ -2,11 +2,11 @@ package codingagent
 
 func PromptContext(call Assignment) any {
 	if call.Role == Plan {
-		tasks := []string{}
+		tasks := []LedgerTask{}
 		if call.PlanningLedger != nil {
 			for _, task := range call.PlanningLedger.Tasks {
 				if task.Disposition == "active" && !contains(call.CompletedTaskIDs, string(task.ID)) {
-					tasks = append(tasks, task.Goal)
+					tasks = append(tasks, task)
 				}
 			}
 		}
@@ -15,7 +15,7 @@ func PromptContext(call Assignment) any {
 			failure = call.Continuation.Reason
 		}
 		return struct {
-			Tasks            []string            `json:"tasks"`
+			Tasks            []LedgerTask        `json:"tasks"`
 			Conversation     []PlanningMessage   `json:"conversation,omitempty"`
 			IncompleteReason string              `json:"incomplete_reason,omitempty"`
 			Clarifications   []TaskClarification `json:"clarifications,omitempty"`
@@ -33,22 +33,15 @@ func PromptContext(call Assignment) any {
 		for _, finding := range call.Findings {
 			findings = append(findings, findingText{finding.File, finding.Observation})
 		}
-		var task any
-		if call.Task != nil {
-			task = struct {
-				ReadFiles   []string `json:"read_files,omitempty"`
-				WriteFiles  []string `json:"write_files,omitempty"`
-				DeleteFiles []string `json:"delete_files,omitempty"`
-			}{call.Task.ReadFiles, call.Task.WriteFiles, call.Task.DeleteFiles}
-		}
+
 		return struct {
 			ExecutionReport  *ExecutionReport    `json:"execution_report,omitempty"`
-			Task             any                 `json:"task"`
+			Task             *Task               `json:"task"`
 			Findings         []findingText       `json:"findings,omitempty"`
 			PreviousResponse string              `json:"previous_response,omitempty"`
 			Reply            string              `json:"reply,omitempty"`
 			Clarifications   []TaskClarification `json:"clarifications,omitempty"`
-		}{call.ExecutionReport, task, findings, call.Response, call.Reply, call.Clarifications}
+		}{call.ExecutionReport, call.Task, findings, call.Response, call.Reply, call.Clarifications}
 	}
 	return struct {
 		Objective            *Objective             `json:"objective,omitempty"`

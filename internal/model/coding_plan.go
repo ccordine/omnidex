@@ -49,6 +49,7 @@ type CodingPlan struct {
 }
 
 type CodingPlanLeaf struct {
+	Task      *LedgerTask        `json:"task,omitempty"`
 	ID        CodingPlanLeafID   `json:"id"`
 	Statement string             `json:"statement"`
 	Decision  CodingPlanDecision `json:"decision"`

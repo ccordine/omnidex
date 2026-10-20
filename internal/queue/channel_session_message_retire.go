@@ -7,14 +7,16 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// A control closes accepted messages from the authority it revokes. It does
-// not move their input into another generation or dispatch further inference.
+// Controls retire ordinary messages. Frozen-bound planning input survives
+// interruption/replan on the same job; terminal controls retire it as well.
 func retireChannelSessionMessagesTx(ctx context.Context, tx pgx.Tx, job model.Job, generation int64, controlID model.LifecycleOperationID) error {
 	rows, err := tx.Query(ctx, `SELECT intake.operation_id FROM lifecycle_operation_registry AS intake
-	 WHERE kind='channel_session_message' AND message_job_id=$1 AND message_generation=$2
+	 WHERE kind='channel_session_message' AND message_job_id=$1
+ AND (message_generation=$2 OR ($4 AND message_generation<$2 AND command_payload->'planning_binding' IS NOT NULL))
+ AND ($4 OR command_payload->'planning_binding' IS NULL)
 	 AND command_payload->>'redirect_operation_id'<>$3
 	 AND NOT EXISTS(SELECT 1 FROM evidence WHERE kind='channel_session_message' AND source_ref=intake.operation_id)
-	 ORDER BY created_at,operation_id`, job.ID, generation, controlID)
+	 ORDER BY created_at,operation_id`, job.ID, generation, controlID, terminalJobStatus(job.Status))
 	if err != nil {
 		return err
 	}

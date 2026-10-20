@@ -24,9 +24,9 @@ func renderAgentAssignment(call codingagent.Assignment) (string, error) {
 	switch call.Role {
 	case codingagent.Execute, codingagent.Review:
 		if call.Session != nil && call.Session.State == "interrupted" && call.Reply != "" {
-			return call.Task.Goal + "\n\nContinue retained partial work in this same native session. Inspect retained command results and workspace changes first. Do not repeat completed commands or effects. Owner continuation: " + call.Reply, nil
+			return call.Task.Instructions() + "\n\nContinue retained partial work in this same native session. Inspect retained command results and workspace changes first. Do not repeat completed commands or effects. Owner continuation: " + call.Reply, nil
 		}
-		return call.Task.Goal, nil
+		return call.Task.Instructions(), nil
 	default:
 		return "", fmt.Errorf("unknown agent role")
 	}

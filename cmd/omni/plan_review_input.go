@@ -57,6 +57,9 @@ type planReviewInputRouter struct {
 	noteBytes         []byte
 	reviewKeys        []planReviewKeyEvent
 	terminalErr       error
+	editorSwitch      *workspaceModeSwitch
+	editorSwitching   bool
+	editorMode        string
 	readWake          chan struct{}
 	keyWake           chan struct{}
 	capacityWake      chan struct{}
@@ -108,6 +111,12 @@ func (router *planReviewInputRouter) ReadWithAuthority(
 			router.signalCapacityLocked()
 			router.mu.Unlock()
 			return count, authority, nil
+		}
+		if router.editorSwitch != nil {
+			err := *router.editorSwitch
+			router.editorSwitch = nil
+			router.mu.Unlock()
+			return 0, terminalInputAuthority{}, err
 		}
 		if router.terminalErr != nil {
 			err := router.terminalErr
@@ -222,7 +231,12 @@ func (router *planReviewInputRouter) CurrentInputAuthority() terminalInputAuthor
 }
 
 func (router *planReviewInputRouter) ReviewEnabled() bool {
-	return router != nil && router.review.Load()
+	if router == nil {
+		return false
+	}
+	router.mu.Lock()
+	defer router.mu.Unlock()
+	return router.review.Load() && router.editorMode != "research" && router.editorMode != "ledger"
 }
 
 func (router *planReviewInputRouter) NextReviewKey(
@@ -332,6 +346,15 @@ func (router *planReviewInputRouter) readSource() {
 		if count > 0 {
 			router.routeBytesLocked(buffer[:count])
 		}
+		var switched workspaceModeSwitch
+		if errors.As(err, &switched) {
+			router.editorSwitch = &switched
+			router.editorSwitching = true
+			router.signalReadLocked()
+			router.mu.Unlock()
+			router.source.UnlockInput()
+			continue
+		}
 		if err != nil {
 			router.finishDecoderLocked()
 			router.terminalErr = err
@@ -364,7 +387,12 @@ func (router *planReviewInputRouter) waitForInputCapacity() bool {
 }
 
 func (router *planReviewInputRouter) inputCapacityAvailableLocked() bool {
+	if router.editorSwitching {
+		return false
+	}
 	switch {
+	case router.editorMode == "research" || router.editorMode == "ledger":
+		return len(router.lineBytes) == 0
 	case router.review.Load() && router.noteTransition:
 		return len(router.reviewKeys) == 0 && len(router.noteBytes) == 0
 	case router.review.Load():
@@ -390,6 +418,11 @@ func (router *planReviewInputRouter) routeBytesLocked(values []byte) {
 			if value == '\n' {
 				continue
 			}
+		}
+		if router.editorMode == "research" || router.editorMode == "ledger" {
+			router.appendLineBytesLocked(values[index:], terminalInputAuthority{Generation: router.modeGeneration, Mode: terminalInputOrdinary})
+			router.signalReadLocked()
+			return
 		}
 		if router.noteTransition {
 			router.noteBytes = append(router.noteBytes, values[index:]...)

@@ -297,7 +297,7 @@ func codingAgentTaskFromLedgerDetail(detail CodingLedgerRevision) (*codingagent.
 func codingAgentTaskFromLedger(ledger model.EngineeringLedger, id model.LedgerItemID) (*codingagent.Task, error) {
 	for _, item := range ledger.Tasks {
 		if item.ID == id && item.Disposition == model.LedgerDispositionActive {
-			task := &codingagent.Task{ID: string(item.ID), Goal: item.Goal, ReadFiles: item.ReadFiles, WriteFiles: item.WriteFiles, DeleteFiles: item.DeleteFiles}
+			task := &codingagent.Task{ID: string(item.ID), Goal: item.Goal, Objective: item.Objective, OwnerContext: item.OwnerContext, Constraints: item.Constraints, FileResponsibilities: item.FileResponsibilities, Acceptance: item.Acceptance, ReadFiles: item.ReadFiles, WriteFiles: item.WriteFiles, DeleteFiles: item.DeleteFiles}
 			return task, task.Validate()
 		}
 	}

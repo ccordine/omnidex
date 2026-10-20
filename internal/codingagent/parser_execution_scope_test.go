@@ -25,7 +25,7 @@ func (p *executionScopeProvider) Run(ctx context.Context, call Assignment, event
 			p.t.Fatal("execution parser lost frozen task or configured effort")
 		}
 		return RunParserSieve(ctx, call, event, sieveTestProvider(p.t, func(leaf Assignment) any {
-			if leaf.ParserStep.TaskInstructions != p.task.Goal {
+			if leaf.ParserStep.TaskInstructions != p.task.Instructions() {
 				p.t.Fatal("leaf lost frozen instructions")
 			}
 			prompt, err := RenderParserPrompt(leaf)

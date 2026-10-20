@@ -68,12 +68,26 @@ func (config Configuration) Validate() error {
 }
 
 type Task struct {
-	ID          string   `json:"id"`
-	Goal        string   `json:"goal"`
-	ReadFiles   []string `json:"read_files"`
-	WriteFiles  []string `json:"write_files"`
-	DeleteFiles []string `json:"delete_files"`
+	Objective            string                         `json:"objective,omitempty"`
+	OwnerContext         []model.TaskContext            `json:"owner_context,omitempty"`
+	Constraints          []string                       `json:"constraints,omitempty"`
+	FileResponsibilities []model.TaskFileResponsibility `json:"file_responsibilities,omitempty"`
+	Acceptance           []model.TaskAcceptance         `json:"acceptance,omitempty"`
+	ID                   string                         `json:"id"`
+	Goal                 string                         `json:"goal"`
+	ReadFiles            []string                       `json:"read_files"`
+	WriteFiles           []string                       `json:"write_files"`
+	DeleteFiles          []string                       `json:"delete_files"`
 }
+
+// LedgerTask maps the portable task back to its single authoritative payload shape.
+func (task Task) LedgerTask() model.LedgerTask {
+	return model.LedgerTask{LedgerItem: model.LedgerItem{ID: model.LedgerItemID(task.ID)}, Goal: task.Goal,
+		Objective: task.Objective, OwnerContext: task.OwnerContext, Constraints: task.Constraints,
+		FileResponsibilities: task.FileResponsibilities, Acceptance: task.Acceptance,
+		ReadFiles: task.ReadFiles, WriteFiles: task.WriteFiles, DeleteFiles: task.DeleteFiles}
+}
+func (task Task) Instructions() string { return task.LedgerTask().Instructions() }
 
 type Objective struct {
 	Instruction    string   `json:"instruction"`

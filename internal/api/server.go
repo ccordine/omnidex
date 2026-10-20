@@ -196,6 +196,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v1/ui/chat/memory", s.handleChatMemoryComponent)
 	s.mux.HandleFunc("/v1/ui/chat/timeline", s.handleChatTimelineComponent)
 	s.mux.HandleFunc("/v1/channels", s.handleChannels)
+	s.mux.HandleFunc("/v1/channels/cli-sessions", s.handleCLISessions)
 	s.mux.HandleFunc("/v1/channels/cli-session", s.handleCLIChatSessionBootstrap)
 	s.mux.HandleFunc("/v1/cli/workspace/ws", s.handleCLIWorkspaceConnection)
 	s.mux.HandleFunc("/v1/channels/", s.handleChannelByID)

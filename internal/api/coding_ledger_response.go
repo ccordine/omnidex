@@ -15,8 +15,13 @@ func codingLedgerRevisionResponse(value queue.CodingLedgerRevision) ledgerapi.Co
 			ReasoningEffort: route.ReasoningEffort, ServiceTier: route.ServiceTier,
 		}
 	}
+	pending := make([]ledgerapi.CodingPlanningAmendment, len(value.PendingAmendments))
+	for i, item := range value.PendingAmendments {
+		pending[i] = ledgerapi.CodingPlanningAmendment{OperationID: item.OperationID, Revision: item.Revision, Text: item.Text}
+	}
 	return ledgerapi.CodingLedgerRevision{
-		LedgerID: value.LedgerID, JobID: value.JobID, Generation: value.Generation,
+		PendingAmendments: pending,
+		LedgerID:          value.LedgerID, JobID: value.JobID, Generation: value.Generation,
 		Revision: value.Revision, BaseRevision: value.BaseRevision,
 		OperationID: value.OperationID, State: value.State,
 		OwnerTurnID:           value.OwnerTurnID,

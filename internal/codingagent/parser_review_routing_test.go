@@ -21,7 +21,7 @@ func (p *reviewScopeRoutingProvider) Run(ctx context.Context, call Assignment, e
 	p.roles = append(p.roles, call.Role)
 	if call.Role == ReviewResponse {
 		return RunParserSieve(ctx, call, event, sieveTestProvider(p.t, func(leaf Assignment) any {
-			if leaf.ParserStep.TaskInstructions != p.task.Goal {
+			if leaf.ParserStep.TaskInstructions != p.task.Instructions() {
 				p.t.Fatal("review lost frozen scope")
 			}
 			if leaf.ParserStep.Stage == "scan" {

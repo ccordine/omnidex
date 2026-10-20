@@ -43,6 +43,8 @@ type Context struct {
 }
 
 type Request struct {
+	Mode           Mode                       `json:"mode,omitempty"`
+	Recipient      Recipient                  `json:"recipient,omitempty"`
 	OperationID    model.LifecycleOperationID `json:"operation_id"`
 	Text           string                     `json:"text"`
 	State          model.ChannelSessionState  `json:"state"`

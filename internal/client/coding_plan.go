@@ -65,6 +65,10 @@ func projectCodingLedgerForTerminal(revision ledgerapi.CodingLedgerRevision) (mo
 	}
 	for _, value := range revision.Ledger.Tasks {
 		add(value.LedgerItem, "task", value.Goal)
+		if value.Disposition == model.LedgerDispositionActive {
+			task := value
+			plan.Leaves[len(plan.Leaves)-1].Task = &task
+		}
 	}
 	if err := plan.Validate(); err != nil {
 		return model.CodingPlan{}, err

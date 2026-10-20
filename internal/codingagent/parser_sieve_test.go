@@ -129,3 +129,17 @@ func TestExecutionSieveCannotHideInputOrFailureBehindProgress(t *testing.T) {
 		}
 	}
 }
+
+func TestPlanningParserGroupingCrossesBlankLinesWithinOwningTask(t *testing.T) {
+	source := "One task.\n\nObjective: restore routing.\nInspect a.go and create a_test.go for routing checks.\nConstraint: preserve approved authority.\nAcceptance: passes.\nVerification: run routing checks.\n"
+	scan := parserScanResult{Units: map[string]parserUnitDisposition{}}
+	for _, unit := range parserSourceUnits(source) {
+		if unit.ID != "" {
+			scan.Units[unit.ID] = parserUnitDisposition{Kind: "task", Reason: "same task supporting detail", GroupStart: "unit_1"}
+		}
+	}
+	parts, err := parserScanParts(PlanningInitial, source, scan)
+	if err != nil || len(parts) != 1 || parts[0].Text != source {
+		t.Fatalf("task supporting text was split: %+v %v", parts, err)
+	}
+}

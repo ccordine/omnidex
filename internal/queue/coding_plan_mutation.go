@@ -389,7 +389,12 @@ func applyCodingLedgerOperations(ledger *model.EngineeringLedger, operations []m
 			if disposition, found := codingLedgerItemDisposition(*ledger, operation.TargetID); !found || disposition != model.LedgerDispositionActive {
 				return fmt.Errorf("coding ledger reorder target %s is not active", operation.TargetID)
 			}
-			if !setCodingLedgerItem(ledger, operation.TargetID, func(item *model.LedgerItem) { item.Rank = *operation.Rank }) {
+			if !setCodingLedgerItem(ledger, operation.TargetID, func(item *model.LedgerItem) {
+				if item.Rank != *operation.Rank {
+					item.ReviewState = model.LedgerReviewProposed
+				}
+				item.Rank = *operation.Rank
+			}) {
 				return fmt.Errorf("coding ledger reorder target %s does not exist", operation.TargetID)
 			}
 		default:

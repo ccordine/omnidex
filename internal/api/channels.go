@@ -243,6 +243,10 @@ func (s *Server) handleChannelByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(parts) > 1 && parts[1] == "session" {
+		if len(parts) == 3 && parts[2] == "research" {
+			s.sessionResearch(w, r, channelID)
+			return
+		}
 		if len(parts) == 4 && parts[2] == "intent" && parts[3] == "cancel" {
 			if r.Method != http.MethodPost {
 				writeError(w, 405, "method not allowed")

@@ -45,7 +45,7 @@ func (console *chatConsole) SetActivityDetail(jobID, stepID int64, detail string
 func (console *chatConsole) PulseActivity(now time.Time) error {
 	console.presentationMu.Lock()
 	defer console.presentationMu.Unlock()
-	if console.reviewActive {
+	if console.reviewActive && console.editorMode != "research" && console.editorMode != "ledger" {
 		if console.workspace != nil && console.terminalFD >= 0 {
 			if w, h, err := term.GetSize(console.terminalFD); err == nil && w > 0 && h > 0 {
 				_, _, resizeErr := console.workspace.Resize(w, h)
@@ -61,7 +61,7 @@ func (console *chatConsole) PulseActivity(now time.Time) error {
 }
 
 func (console *chatConsole) redrawPromptLocked(now time.Time) error {
-	if console.reviewActive {
+	if console.reviewActive && console.editorMode != "research" && console.editorMode != "ledger" {
 		return nil
 	}
 	console.promptMu.Lock()

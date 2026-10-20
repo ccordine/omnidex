@@ -1,6 +1,7 @@
 package queue
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/model"
@@ -27,19 +28,16 @@ func TestInitialCodingLedgerRequiresProposedReviewState(t *testing.T) {
 			item.ReviewState = model.LedgerReviewProposed
 		})
 	}
-	ledger.Dependencies = []model.LedgerDependency{{
-		LedgerItem: model.LedgerItem{
-			ID: "dependency", Disposition: model.LedgerDispositionActive,
-			ReviewState: model.LedgerReviewAgreed,
-		},
-	}}
+	additional := model.LedgerTask{LedgerItem: repositoryLedgerItem("additional", 3), Goal: "additional"}
+	ledger.Tasks = append(ledger.Tasks, additional)
 	if err := validateInitialCodingLedgerReviewStates(ledger); err == nil {
-		t.Fatal("pre-agreed initial dependency was accepted")
+		t.Fatal("pre-agreed initial task was accepted")
 	}
-	ledger.Dependencies[0].ReviewState = model.LedgerReviewProposed
+	ledger.Tasks[1].ReviewState = model.LedgerReviewProposed
 	if err := validateInitialCodingLedgerReviewStates(ledger); err != nil {
 		t.Fatal(err)
 	}
+
 }
 
 func TestCodingLedgerRouteReplacementRequiresRepresentedMaterialMutation(t *testing.T) {
@@ -79,39 +77,19 @@ func TestInitialCodingLedgerRejectsMixedOwnerTurnDisposition(t *testing.T) {
 	}
 }
 
-func TestCodingLedgerRequiredCheckResetUsesExactTaskBinding(t *testing.T) {
+func TestCodingLedgerTaskAcceptanceResetUsesExactTaskBinding(t *testing.T) {
 	ledger := repositoryLedgerFixture()
-	ledger.AcceptanceCriteria = append(ledger.AcceptanceCriteria, model.LedgerAcceptanceCriterion{
-		LedgerItem: repositoryLedgerItem("acceptance-two", 5), Outcome: "second behavior verified",
-		RequirementIDs: []model.LedgerItemID{"requirement"}, TaskIDs: []model.LedgerItemID{"task-two"}, Required: true,
-	})
-	ledger.Tasks = append(ledger.Tasks, model.LedgerTask{
-		LedgerItem: repositoryLedgerItem("task-two", 6), Goal: "implement second behavior",
-		RequirementIDs:         []model.LedgerItemID{"requirement"},
-		AcceptanceCriterionIDs: []model.LedgerItemID{"acceptance-two"},
-	})
-	ledger.Checks = append(ledger.Checks, model.LedgerCheck{
-		LedgerItem: repositoryLedgerItem("check-two", 7), Argv: []string{"go", "test", "./internal/model"},
-		RequirementIDs:         []model.LedgerItemID{"requirement"},
-		AcceptanceCriterionIDs: []model.LedgerItemID{"acceptance-two"}, Required: true,
-	})
-
-	amended := ledger.Checks[0]
-	amended.Argv = []string{"go", "test", "./internal/queue"}
-	if err := applyCodingLedgerOperations(&ledger, []model.LedgerMutationOperation{{
-		Kind: model.LedgerMutationAmend, TargetID: amended.ID,
-		Item: &model.LedgerMutationItem{Check: &amended}, Rationale: "change first verification",
-	}}); err != nil {
+	second := model.LedgerTask{LedgerItem: repositoryLedgerItem("task-two", 6), Goal: "second behavior", Acceptance: []model.TaskAcceptance{{ID: "second", Text: "second verified", Verification: []string{"go test ./internal/model"}}}}
+	ledger.Tasks = append(ledger.Tasks, second)
+	amended := ledger.Tasks[0]
+	amended.Acceptance = []model.TaskAcceptance{{ID: "acceptance", Text: "verified", Verification: []string{"go test ./internal/queue"}}}
+	if err := applyCodingLedgerOperations(&ledger, []model.LedgerMutationOperation{{Kind: model.LedgerMutationAmend, TargetID: amended.ID, Item: &model.LedgerMutationItem{Task: &amended}, Rationale: "change first verification"}}); err != nil {
 		t.Fatal(err)
 	}
 	if ledger.Tasks[0].ReviewState != model.LedgerReviewProposed {
-		t.Fatalf("covered task review state = %s, want proposed", ledger.Tasks[0].ReviewState)
+		t.Fatal("changed task agreement was not reset")
 	}
-	if ledger.Tasks[1].ReviewState != model.LedgerReviewAgreed {
-		t.Fatalf("task sharing only the requirement changed to %s", ledger.Tasks[1].ReviewState)
-	}
-	if ledger.AcceptanceCriteria[1].ReviewState != model.LedgerReviewAgreed ||
-		ledger.Checks[1].ReviewState != model.LedgerReviewAgreed {
+	if !reflect.DeepEqual(ledger.Tasks[1], second) {
 		t.Fatal("unrelated verification scope changed")
 	}
 }

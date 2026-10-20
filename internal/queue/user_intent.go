@@ -95,6 +95,9 @@ func (r *Repository) InterpretUserIntent(ctx context.Context, request sessionint
 			return sessionintent.Result{}, ErrUserIntentStale
 		}
 	}
+	if err := request.ValidateRouting(displayed); err != nil {
+		return sessionintent.Result{}, err
+	}
 	result, evidence, interpretationErr := interpret(ctx, displayed)
 	if interpretationErr != nil {
 		if len(evidence) == 0 {
@@ -108,6 +111,9 @@ func (r *Repository) InterpretUserIntent(ctx context.Context, request sessionint
 	result.RequiresApproval = false
 	result.Pitch = ""
 	if result.Error == "" && result.Clarification == "" {
+		if err := sessionintent.ValidateRoutedPatch(request, displayed, result.Patch); err != nil {
+			return sessionintent.Result{}, err
+		}
 		after, err := sessionintent.Apply(displayed, result.Patch)
 		if err != nil {
 			return sessionintent.Result{}, err

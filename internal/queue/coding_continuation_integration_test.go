@@ -148,11 +148,7 @@ func TestIncompleteTaskReturnsToOwnerPlanningAndPrioritizesApprovedContinuation(
 	if err != nil || planClaim == nil || planClaim.Step.Action != "v3_coding_plan" {
 		t.Fatalf("continued planning: %#v %v", planClaim, err)
 	}
-	remaining, remainingIDs := continuationTaskOperations("remaining", 100)
-	dependency := model.LedgerDependency{LedgerItem: repositoryLedgerItem("continuation-edge", 103), TaskID: "task", PrerequisiteID: "remaining", Kind: model.LedgerDependencyRequires}
-	dependency.ReviewState = model.LedgerReviewProposed
-	remaining = append(remaining, model.LedgerMutationOperation{Kind: model.LedgerMutationAdd, Item: &model.LedgerMutationItem{Dependency: &dependency}, Rationale: "finish partial work before completing its parent"})
-	remainingIDs = append(remainingIDs, dependency.ID)
+	remaining, remainingIDs := continuationTaskOperations("remaining", 0)
 	proposed, err := repository.ApplyCodingLedgerMutation(ctx, ApplyCodingLedgerMutationCommand{LedgerID: frozen.LedgerID, OwnerTurnText: command.Feedback, Mutation: model.LedgerMutation{
 		OperationID: "remaining-proposal", OwnerTurnID: "remaining-proposal-turn", BaseRevision: discussed.Revision, OwnerTurnDisposition: model.RepresentedOwnerTurn(remainingIDs), Operations: remaining,
 	}})
@@ -184,20 +180,14 @@ func TestIncompleteTaskReturnsToOwnerPlanningAndPrioritizesApprovedContinuation(
 	acceptCodingLedgerTaskFixture(t, repository, resumed.Authority, *next)
 	next, err = repository.NextIncompleteCodingLedgerTask(ctx, resumed.Authority)
 	if err != nil || next == nil || next.ID != "task" {
-		t.Fatalf("interrupted task did not follow its prerequisite: %#v %v", next, err)
+		t.Fatalf("interrupted task did not follow its approved continuation: %#v %v", next, err)
 	}
 }
 
 func continuationTaskOperations(id string, rank int64) ([]model.LedgerMutationOperation, []model.LedgerItemID) {
-	task := model.LedgerTask{LedgerItem: repositoryLedgerItem(id, rank), Goal: "Complete " + id, RequirementIDs: []model.LedgerItemID{"requirement"}, AcceptanceCriterionIDs: []model.LedgerItemID{model.LedgerItemID(id + "-acceptance")}}
-	criterion := model.LedgerAcceptanceCriterion{LedgerItem: repositoryLedgerItem(id+"-acceptance", rank+1), Outcome: id + " is verified", RequirementIDs: []model.LedgerItemID{"requirement"}, TaskIDs: []model.LedgerItemID{task.ID}, Required: true}
-	check := model.LedgerCheck{LedgerItem: repositoryLedgerItem(id+"-check", rank+2), Argv: []string{"true"}, RequirementIDs: []model.LedgerItemID{"requirement"}, AcceptanceCriterionIDs: []model.LedgerItemID{criterion.ID}, Required: true}
-	task.ReviewState, criterion.ReviewState, check.ReviewState = model.LedgerReviewProposed, model.LedgerReviewProposed, model.LedgerReviewProposed
-	return []model.LedgerMutationOperation{
-		{Kind: model.LedgerMutationAdd, Item: &model.LedgerMutationItem{Task: &task}, Rationale: "owner task"},
-		{Kind: model.LedgerMutationAdd, Item: &model.LedgerMutationItem{AcceptanceCriterion: &criterion}, Rationale: "task verification"},
-		{Kind: model.LedgerMutationAdd, Item: &model.LedgerMutationItem{Check: &check}, Rationale: "mechanical check"},
-	}, []model.LedgerItemID{task.ID, criterion.ID, check.ID}
+	task := model.LedgerTask{LedgerItem: repositoryLedgerItem(id, rank), Goal: "Complete " + id, Acceptance: []model.TaskAcceptance{{ID: id + "-acceptance", Text: id + " is verified", Verification: []string{"true"}}}}
+	task.ReviewState = model.LedgerReviewProposed
+	return []model.LedgerMutationOperation{{Kind: model.LedgerMutationAdd, Item: &model.LedgerMutationItem{Task: &task}, Rationale: "owner task"}}, []model.LedgerItemID{task.ID}
 }
 
 type continuationTestEnvironment struct{}

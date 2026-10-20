@@ -3,6 +3,7 @@ package codex
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,11 +11,11 @@ import (
 	"github.com/gryph/omnidex/internal/codingagent"
 )
 
-func (client *Client) Run(parent context.Context, call codingagent.Assignment, event func(codingagent.NativeEvent) error) (codingagent.Result, error) {
+func (client *Client) Run(parent context.Context, call codingagent.Assignment, event func(codingagent.NativeEvent) error) (result codingagent.Result, runErr error) {
 	if !call.Role.IsNative() && call.ParserStep == nil {
 		return codingagent.RunParserSieve(parent, call, event, client.Run)
 	}
-	result := codingagent.Result{Provider: "codex", Model: call.Route.Model, Evidence: []json.RawMessage{}}
+	result = codingagent.Result{Provider: "codex", Model: call.Route.Model, Evidence: []json.RawMessage{}}
 	if err := validateAgentAssignment(call); err != nil {
 		return result, err
 	}
@@ -38,7 +39,16 @@ func (client *Client) Run(parent context.Context, call codingagent.Assignment, e
 	}
 	var connection *connection
 	if call.Role.IsNative() {
-		connection, err = startExecutionConnection(ctx, client.command, call.Root)
+		environment := os.Environ()
+		if call.Role == codingagent.Execute || call.Role == codingagent.Review {
+			dependencies, dependencyErr := prepareExecutionDependencies(ctx)
+			if dependencyErr != nil {
+				return result, dependencyErr
+			}
+			defer func() { runErr = errors.Join(runErr, dependencies.close()) }()
+			environment = dependencies.environment
+		}
+		connection, err = startExecutionConnection(ctx, client.command, call.Root, environment)
 	} else {
 		connection, err = startParserConnection(ctx, client.command, call.Root, scratch)
 	}

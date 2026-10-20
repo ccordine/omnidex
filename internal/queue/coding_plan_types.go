@@ -42,7 +42,14 @@ type FreezeCodingLedgerCommand struct {
 	OwnerTurnText string `json:"owner_turn_text"`
 }
 
+type CodingPlanningAmendment struct {
+	OperationID model.LifecycleOperationID `json:"operation_id"`
+	Revision    int64                      `json:"revision"`
+	Text        string                     `json:"text"`
+}
+
 type CodingLedgerRevision struct {
+	PendingAmendments     []CodingPlanningAmendment         `json:"pending_amendments,omitempty"`
 	LedgerID              int64                             `json:"ledger_id"`
 	JobID                 int64                             `json:"job_id"`
 	Generation            int64                             `json:"generation"`

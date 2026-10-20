@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"errors"
+	"github.com/gryph/omnidex/internal/sessionintent"
 	"io"
 )
 
 type chatInput struct {
+	Mode      sessionintent.Mode
 	Text      string
 	Pasted    bool
 	Authority terminalInputAuthority
@@ -35,7 +37,7 @@ func readChatInput(ctx context.Context, console *chatConsole) (<-chan chatInput,
 				}
 				return
 			}
-			if !sendChatInput(ctx, events, chatInput{Text: line, Pasted: pasted, Authority: authority}) {
+			if !sendChatInput(ctx, events, chatInput{Text: line, Pasted: pasted, Authority: authority, Mode: sessionintent.Mode(console.inputMode)}) {
 				return
 			}
 		}

@@ -57,7 +57,7 @@ func (r *Repository) resolveChannelSessionMessage(ctx context.Context, command R
 	if err != nil {
 		return ChannelSessionMessageResult{}, err
 	}
-	if !found || message.AdmittedJob.ID != command.Authority.JobID || message.AdmittedJob.CurrentGeneration != command.Authority.Generation {
+	if !found || message.AdmittedJob.ID != command.Authority.JobID || (message.AdmittedJob.CurrentGeneration != command.Authority.Generation && !(meaning == string(model.ChannelSessionMessagePlanning) && message.PlanningBinding != nil && message.AdmittedJob.CurrentGeneration < command.Authority.Generation)) {
 		return ChannelSessionMessageResult{}, fmt.Errorf("active message differs from consumer authority")
 	}
 	if err := lockLifecycleOperationIdentityTx(ctx, tx, message.RedirectOperationID); err != nil {
@@ -78,7 +78,14 @@ func (r *Repository) resolveChannelSessionMessage(ctx context.Context, command R
 	if err != nil {
 		return ChannelSessionMessageResult{}, err
 	}
-	if jobStatus != model.JobStatusRunning || stepStatus != model.StepStatusRunning {
+	nativeWaiting := false
+	if jobStatus == model.JobStatusWaiting && stepStatus == model.StepStatusWaiting {
+		nativeWaiting, err = codingNativeInputWaitingTx(ctx, tx, command.Authority)
+		if err != nil {
+			return ChannelSessionMessageResult{}, err
+		}
+	}
+	if !nativeWaiting && (jobStatus != model.JobStatusRunning || stepStatus != model.StepStatusRunning) {
 		return ChannelSessionMessageResult{}, staleStepAttemptError(command.Authority, "message resolution requires running authority", nil)
 	}
 	job, err := scanLockedJobTx(ctx, tx, command.Authority.JobID)
@@ -97,6 +104,25 @@ func (r *Repository) resolveChannelSessionMessage(ctx context.Context, command R
 	}
 	resolution = channelSessionMessageResolution{OperationID: command.OperationID, Kind: meaning, Job: job, Authority: &command.Authority}
 	result := ChannelSessionMessageResult{Job: job, Applied: true}
+	var amendmentQueued bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM evidence WHERE kind='coding_planning_amendment' AND source_ref=$1)`, command.OperationID).Scan(&amendmentQueued); err != nil {
+		return ChannelSessionMessageResult{}, err
+	}
+	if amendmentQueued && command.Kind != assemblyline.ObjectiveKindWorkspaceMutation && meaning != string(model.ChannelSessionMessagePlanning) {
+		return ChannelSessionMessageResult{}, fmt.Errorf("%w: queued amendment meaning changed", ErrLifecycleOperationConflict)
+	}
+	if command.Kind == assemblyline.ObjectiveKindWorkspaceMutation && message.PlanningBinding != nil {
+		applied, err := queueCodingPlanningAmendmentTx(ctx, tx, message, command.Authority)
+		if err != nil {
+			return ChannelSessionMessageResult{}, err
+		}
+		return ChannelSessionMessageResult{Job: job, Applied: applied}, tx.Commit(ctx)
+	}
+	if meaning == string(model.ChannelSessionMessagePlanning) && message.PlanningBinding != nil {
+		if err := requireCodingPlanningAmendmentTransitionTx(ctx, tx, message, command.Authority); err != nil {
+			return ChannelSessionMessageResult{}, err
+		}
+	}
 	if command.Kind == assemblyline.ObjectiveKindWorkspaceMutation {
 		child := ReplanJobCommand{OperationID: message.RedirectOperationID, JobID: job.ID, Feedback: message.Command.Text, WorkspaceRoot: message.Command.WorkspaceRoot, WorkspaceIdentity: message.Command.WorkspaceIdentity}
 		descriptor, err := describeLifecycleOperation(child.OperationID, LifecycleReplanJob, child)

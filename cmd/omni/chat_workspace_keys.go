@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"io"
 )
 
@@ -13,6 +14,8 @@ type workspaceInputSource struct {
 	review            func() bool
 	candidate, queued []byte
 	paste             bool
+	rawQueued         []byte
+	pendingSwitch     error
 }
 
 func (source *workspaceInputSource) LockInput()   { source.source.LockInput() }
@@ -32,24 +35,44 @@ func (source *workspaceInputSource) ReadInputLocked(destination []byte) (int, er
 		source.queued = source.queued[count:]
 		return count, nil
 	}
+	if source.pendingSwitch != nil {
+		err := source.pendingSwitch
+		source.pendingSwitch = nil
+		return 0, err
+	}
 	var raw [48]byte
-	count, err := source.source.ReadInputLocked(raw[:min(len(raw), max(1, len(destination)-8))])
+	values := source.rawQueued
+	source.rawQueued = nil
+	count, err := len(values), error(nil)
+	if count == 0 {
+		count, err = source.source.ReadInputLocked(raw[:min(len(raw), max(1, len(destination)-8))])
+		values = raw[:count]
+	}
 	if count == 0 {
 		if err == errPlanReviewInputSourceIdle && bytes.Equal(source.candidate, []byte{27}) {
 			source.candidate = nil
+			if source.reviewing() {
+				destination[0] = 27
+				return 1, nil
+			}
 			if keyErr := source.view.key(27, false); keyErr != nil {
 				return 0, keyErr
 			}
 		}
 		return 0, err
 	}
-	if source.review != nil && source.review() {
-		source.candidate = nil
-		return copy(destination, raw[:count]), err
-	}
-	for _, value := range raw[:count] {
+	for index, value := range values {
 		if keyErr := source.consume(value); keyErr != nil {
-			return 0, keyErr
+			var switched workspaceModeSwitch
+			if !errors.As(keyErr, &switched) {
+				return 0, keyErr
+			}
+			source.rawQueued = append([]byte(nil), values[index+1:]...)
+			if len(source.queued) == 0 {
+				return 0, keyErr
+			}
+			source.pendingSwitch = keyErr
+			break
 		}
 	}
 	count = copy(destination, source.queued)
@@ -79,7 +102,7 @@ func (source *workspaceInputSource) consume(value byte) error {
 				if bytes.Equal(sequence, bracketedPasteEnd) {
 					source.paste = false
 				}
-				if !source.paste && (bytes.Equal(sequence, []byte("\x1b[A")) || bytes.Equal(sequence, []byte("\x1b[B"))) {
+				if !source.paste && !source.reviewing() && (bytes.Equal(sequence, []byte("\x1b[A")) || bytes.Equal(sequence, []byte("\x1b[B"))) {
 					source.view.mu.Lock()
 					focus := source.view.focus
 					source.view.mu.Unlock()
@@ -92,7 +115,7 @@ func (source *workspaceInputSource) consume(value byte) error {
 						return source.view.key(key, false)
 					}
 				}
-				if !source.paste && (bytes.Equal(sequence, []byte("\x1b[5~")) || bytes.Equal(sequence, []byte("\x1b[6~"))) {
+				if !source.paste && !source.reviewing() && (bytes.Equal(sequence, []byte("\x1b[5~")) || bytes.Equal(sequence, []byte("\x1b[6~"))) {
 					key := byte('u')
 					if sequence[2] == '6' {
 						key = 'd'
@@ -115,6 +138,15 @@ func (source *workspaceInputSource) consume(value byte) error {
 	if source.paste {
 		source.queued = append(source.queued, value)
 		return nil
+	}
+	if source.reviewing() {
+		source.view.mu.Lock()
+		prefix := source.view.prefix
+		source.view.mu.Unlock()
+		if value != 2 && !prefix {
+			source.queued = append(source.queued, value)
+			return nil
+		}
 	}
 	if value == 12 {
 		source.view.mu.Lock()
@@ -146,6 +178,24 @@ func (view *chatWorkspace) key(key byte, page bool) error {
 		view.prefix = !view.prefix
 		return view.drawLocked()
 	}
+	if view.focus == workspaceSessionsPane && !view.prefix {
+		return view.sessionsKeyLocked(key)
+	}
+	if view.help && !view.prefix {
+		delta := 1
+		if page {
+			delta = max(1, view.height-4)
+		}
+		switch key {
+		case 'j', 'd':
+			view.helpOffset += delta
+		case 'k', 'u':
+			view.helpOffset = max(0, view.helpOffset-delta)
+		default:
+			view.help = false
+		}
+		return view.drawLocked()
+	}
 	if page {
 		if view.focus == workspaceCompose {
 			view.focus = workspaceConversation
@@ -158,26 +208,49 @@ func (view *chatWorkspace) key(key byte, page bool) error {
 		return view.drawLocked()
 	}
 	if view.prefix {
+		previousFocus := view.focus
 		view.prefix = false
+		if key != '?' {
+			view.help = false
+		}
 		switch key {
 		case '1':
 			view.focus = workspaceCompose
-			view.conversationOffset = 0
 		case '2':
 			view.focus = workspaceConversation
 		case '3':
 			view.focus = workspaceActivity
+		case '5':
+			return view.openSessionsLocked(view.focus)
 		case '4':
 			view.focus = workspaceLedgerPane
-		case 'o':
-			view.focus = (view.focus + 1) % 4
+		case 'o', '\t', ']':
+			view.focus = (view.focus + 1) % 5
+		case '[':
+			view.focus = (view.focus + 4) % 5
+		case 'f', 'e', 'l', 'r':
+			mode := map[byte]string{'f': "infer", 'e': "interact", 'l': "ledger", 'r': "research"}[key]
+			if view.editorSwitching {
+				return workspaceModeSwitch{mode}
+			}
+			select {
+			case view.modeRequests <- mode:
+			default:
+				select {
+				case <-view.modeRequests:
+				default:
+				}
+				view.modeRequests <- mode
+			}
+
 		case 'z':
 			view.zoom = !view.zoom
 		case '?':
 			view.help = !view.help
 		}
-		if view.focus == workspaceCompose {
-			view.conversationOffset = 0
+
+		if view.focus == workspaceSessionsPane {
+			return view.openSessionsLocked(previousFocus)
 		}
 		if view.focus == workspaceLedgerPane && !view.ledger.opened {
 			view.ledger.opened = true
@@ -195,7 +268,6 @@ func (view *chatWorkspace) key(key byte, page bool) error {
 	switch key {
 	case 'i', 27:
 		view.focus = workspaceCompose
-		view.conversationOffset = 0
 	case 'j':
 		view.scrollLocked(-1)
 	case 'k':
@@ -228,5 +300,15 @@ func (view *chatWorkspace) scrollLocked(delta int) {
 	}
 	leftWidth, bodyHeight, _, _ := view.paneGeometryLocked()
 	lines, _, _, _ := view.contentLocked(max(1, leftWidth-4))
+	if view.conversationMode == "research" {
+		lines = view.researchContentLocked(max(1, leftWidth-4))
+	}
 	view.conversationOffset = max(0, min(view.conversationOffset+delta, max(0, len(lines)-max(1, bodyHeight))))
+}
+
+func (source *workspaceInputSource) reviewing() bool {
+	source.view.mu.Lock()
+	sessions := source.view.focus == workspaceSessionsPane
+	source.view.mu.Unlock()
+	return !sessions && source.review != nil && source.review()
 }

@@ -61,10 +61,13 @@ func parserScanParts(role Role, source string, result parserScanResult) ([]Parse
 	parts := []ParserPart{}
 	seen := map[string]bool{}
 	group := ""
+	groupIndex := -1
 	for _, unit := range units {
 		if unit.ID == "" {
 			parts = append(parts, ParserPart{Text: unit.Text, Kind: "ignore", Reason: "whitespace"})
-			group = ""
+			if !role.IsPlanning() {
+				group = ""
+			}
 			continue
 		}
 		disposition, exists := result.Units[unit.ID]
@@ -80,11 +83,19 @@ func parserScanParts(role Role, source string, result parserScanResult) ([]Parse
 		if disposition.GroupStart == unit.ID {
 			parts = append(parts, ParserPart{Text: unit.Text, Kind: disposition.Kind, Reason: disposition.Reason})
 			group = unit.ID
+			groupIndex = len(parts) - 1
 		} else {
-			if group == "" || disposition.GroupStart != group || len(parts) == 0 || parts[len(parts)-1].Kind != disposition.Kind {
+			if group == "" || disposition.GroupStart != group || groupIndex < 0 || parts[groupIndex].Kind != disposition.Kind {
 				return nil, fmt.Errorf("source unit %s has an invalid or noncontiguous semantic group", unit.ID)
 			}
-			parts[len(parts)-1].Text += unit.Text
+			for _, gap := range parts[groupIndex+1:] {
+				if strings.TrimSpace(gap.Text) != "" {
+					return nil, fmt.Errorf("noncontiguous semantic group")
+				}
+				parts[groupIndex].Text += gap.Text
+			}
+			parts = parts[:groupIndex+1]
+			parts[groupIndex].Text += unit.Text
 		}
 	}
 	if len(seen) != len(result.Units) {

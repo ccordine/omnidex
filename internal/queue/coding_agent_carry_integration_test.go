@@ -81,9 +81,9 @@ func TestAgentsCompletionAcceptsUntouchedCarriedTask(t *testing.T) {
 	if selected, err := repository.NextIncompleteCodingLedgerTask(ctx, executor.Authority); err != nil || selected != nil {
 		t.Fatalf("carried task was selected again: %#v, %v", selected, err)
 	}
-	taskCount, checkCount, err := repository.CodingLedgerCompletionCounts(ctx, executor.Authority)
-	if err != nil || taskCount != 1 || checkCount != 1 {
-		t.Fatalf("carried completion counts = %d/%d, %v", taskCount, checkCount, err)
+	taskCount, err := repository.CodingLedgerCompletionCounts(ctx, executor.Authority)
+	if err != nil || taskCount != 1 {
+		t.Fatalf("carried accepted-task count = %d, %v", taskCount, err)
 	}
 	operationID, err := NewStepLifecycleOperationID(executor.Authority, LifecycleCompleteStep)
 	if err != nil {

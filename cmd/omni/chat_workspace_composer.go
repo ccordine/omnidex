@@ -57,7 +57,7 @@ func workspaceWrappedRows(rows [][]rune, soft []bool, width, cursorRow, cursorCo
 }
 
 func (view *chatWorkspace) contentLocked(width int) ([]string, []string, int, int) {
-	if !view.editing || view.reviewing {
+	if !view.editing || view.reviewVisibleLocked() {
 		lines, row, column := view.transcriptLocked(width)
 		return lines, nil, row, column
 	}

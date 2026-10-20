@@ -7,7 +7,9 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/gryph/omnidex/internal/client"
 	"github.com/gryph/omnidex/internal/ledgerapi"
 	"github.com/gryph/omnidex/internal/model"
@@ -264,5 +266,82 @@ func TestLedgerPanelRejectsForeignAndMalformedResponses(t *testing.T) {
 			t.Fatal("malformed success accepted")
 		}
 		server.Close()
+	}
+}
+
+func TestTaskPacketApprovalAndLedgerDetailPresentation(t *testing.T) {
+	snapshot := panelLedgerFixture()
+	snapshot.CreatedAt = time.Now().UTC()
+	snapshot.UpdatedAt = snapshot.CreatedAt
+	task := &snapshot.Ledger.Tasks[0]
+	task.Objective = "Provide a separate Research destination."
+	task.OwnerContext = []model.TaskContext{{Text: "Read-only research is approved.", Provenance: model.LedgerProvenance{Kind: "owner_turn", Reference: "owner-17", Revision: 2}}}
+	task.Constraints = []string{"Preserve accepted work."}
+	task.FileResponsibilities = []model.TaskFileResponsibility{{Path: task.WriteFiles[0], Action: "change", Responsibility: "Preserve routing."}}
+	task.Acceptance = []model.TaskAcceptance{{ID: "research", Text: "Research remains separate.", Verification: []string{"Run routing and read-only checks."}}}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { writeChatPlanReviewJSON(t, w, 200, snapshot) }))
+	defer server.Close()
+	session := panelSession(t, server.URL)
+	plan, err := session.client.CodingPlan(session.ctx, session.channel, session.workspaceIdentity, snapshot.JobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Leaves[0].Task == nil || !reflect.DeepEqual(*plan.Leaves[0].Task, *task) {
+		t.Fatal("terminal transport discarded approved task fields")
+	}
+	rendered, err := renderPlanReview(mustPlanReviewState(t, plan))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = session.refreshLedgerPanel(); err != nil {
+		t.Fatal(err)
+	}
+	view := session.ledgerWorkspace()
+	view.mu.Lock()
+	details := strings.Join(view.ledgerLinesLocked(100), "\n")
+	view.mu.Unlock()
+	for _, text := range []string{task.Objective, task.OwnerContext[0].Text, "owner-17", task.Constraints[0], task.FileResponsibilities[0].Responsibility, task.Acceptance[0].Text, task.Acceptance[0].Verification[0]} {
+		if !strings.Contains(rendered, text) || !strings.Contains(details, text) {
+			t.Fatal("approval or ledger details lost packet field", text)
+		}
+	}
+}
+
+func TestLedgerPanelSeparatesPendingAmendmentsFromFrozenItems(t *testing.T) {
+	view, _ := testWorkspace(t, 100, 24)
+	view.focus = workspaceLedgerPane
+	snapshot := panelLedgerFixture()
+	snapshot.State = "frozen"
+	snapshot.PendingAmendments = []ledgerapi.CodingPlanningAmendment{{OperationID: "owner-amendment", Revision: snapshot.Revision, Text: "Add the requested later behavior."}}
+	if err := view.acceptLedger(snapshot); err != nil {
+		t.Fatal(err)
+	}
+	view.mu.Lock()
+	lines := strings.Join(view.ledgerLinesLocked(100), "\n")
+	view.mu.Unlock()
+	for _, text := range []string{"Approved executable revision", "PENDING CHANGES", "awaiting revision and owner sign-off", "From revision", "Add the requested later behavior.", "APPROVED ITEMS"} {
+		if !strings.Contains(lines, text) {
+			t.Fatal("missing separation", text, lines)
+		}
+	}
+	if len(view.ledger.snapshot.Ledger.Tasks) != len(snapshot.Ledger.Tasks) {
+		t.Fatal("pending input became an executable item")
+	}
+	view.mu.Lock()
+	narrow := view.ledgerLinesLocked(22)
+	view.mu.Unlock()
+	for _, line := range narrow {
+		if ansi.StringWidth(line) > 22 {
+			t.Fatal("pending content exceeds narrow pane", line)
+		}
+	}
+	if err := view.key('j', false); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.key('a', false); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(view.ledger.feedback, "read-only") {
+		t.Fatal("pending amendment unlocked frozen controls")
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/codingagent"
+	"github.com/gryph/omnidex/internal/model"
 )
 
 func codingAgentTestConfiguration() codingagent.Configuration {
@@ -16,8 +17,7 @@ func codingTaskLedgerCompletionJournalFixture() ([]codingagent.Entry, map[string
 	config := codingAgentTestConfiguration()
 	task := codingagent.Task{
 		ID: "task-1", Goal: "Complete the selected ledger task",
-		Acceptance: []string{"the selected task is fulfilled"},
-		Checks:     []codingagent.Check{{ID: "task-check", Argv: []string{"go", "test"}}},
+		Acceptance: []model.TaskAcceptance{{ID: "task-check", Text: "the selected task is fulfilled", Verification: []string{"go test"}}},
 	}
 	entries := []codingagent.Entry{}
 	appendEntry := func(entry codingagent.Entry) int64 {
@@ -54,7 +54,7 @@ func codingTaskLedgerCompletionJournalFixture() ([]codingagent.Entry, map[string
 	parser := call(codingagent.ReviewResponse, "review-parser-thread", content)
 	appendEntry(codingagent.Entry{Phase: "review_response", TaskID: task.ID, CallID: review, ParserCallID: parser,
 		Role: codingagent.Review, ResponseKind: codingagent.ExecutionDone, ReviewResponse: &parsed, Notes: []string{"Checked the exact task; no defects found."}})
-	appendEntry(codingagent.Entry{Phase: "task_accepted", TaskID: task.ID, CallID: review, Checks: []codingagent.CheckResult{{ID: "task-check"}}})
+	appendEntry(codingagent.Entry{Phase: "task_accepted", TaskID: task.ID, CallID: review})
 	return entries, map[string]codingagent.Task{task.ID: task}
 }
 

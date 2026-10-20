@@ -98,7 +98,7 @@ func validateCurrentReplanTail(
 	canonicalIndex := 0
 	seenIDs := make(map[int64]struct{}, len(rows))
 	previousSort := -1
-	for _, row := range rows {
+	for index, row := range rows {
 		if row.ID <= 0 {
 			return nil, fmt.Errorf("%w: retiring step has invalid identity", ErrInvalidJobGeneration)
 		}
@@ -112,14 +112,23 @@ func validateCurrentReplanTail(
 				ErrInvalidJobGeneration, row.ID, row.Generation, currentGeneration,
 			)
 		}
-		if row.SortIndex <= previousSort {
+		if row.SortIndex < previousSort {
 			return nil, fmt.Errorf("%w: current replan tail is not strictly ordered", ErrInvalidJobGeneration)
 		}
-		previousSort = row.SortIndex
 		if !registeredStepStatus(row.Status) {
 			return nil, fmt.Errorf("%w: step %d has unregistered status %q", ErrInvalidJobGeneration, row.ID, row.Status)
 		}
 		retiringIDs = append(retiringIDs, row.ID)
+		if index > 0 && row.SortIndex == previousSort {
+			previous := rows[index-1]
+			// Recovery retains the failed attempt's step and appends its
+			// replacement at the same canonical position. Retire both records.
+			if previous.Status != model.StepStatusFailed || row.Action != previous.Action || row.ID <= previous.ID {
+				return nil, fmt.Errorf("%w: step %d duplicates an unrecovered canonical position", ErrInvalidJobGeneration, row.ID)
+			}
+			continue
+		}
+		previousSort = row.SortIndex
 		if canonicalIndex >= len(boundary.seeds) || row.Action != boundary.seeds[canonicalIndex].action {
 			return nil, fmt.Errorf(
 				"%w: step %d action %q is not canonical tail position %d",

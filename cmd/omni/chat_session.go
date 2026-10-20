@@ -12,6 +12,7 @@ import (
 	"github.com/gryph/omnidex/internal/client"
 	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/sessionintent"
 )
 
 type chatSessionConfig struct {
@@ -27,33 +28,38 @@ type chatSessionConfig struct {
 }
 
 type chatSession struct {
-	ctx                context.Context
-	cancel             context.CancelFunc
-	client             *client.Client
-	channel            model.Channel
-	workspaceIdentity  string
-	renderer           chatRenderer
-	active             *model.JobDetails
-	messages           map[int64]model.ChannelMessage
-	turns              map[model.LifecycleOperationID]model.ChannelSessionTurn
-	controls           map[model.LifecycleOperationID]model.ChannelSessionControl
-	lastPendingIntent  model.LifecycleOperationID
-	exitRequested      bool
-	pendingIntent      *pendingUserIntent
-	pendingControl     *pendingControl
-	pendingTurn        *pendingSessionTurn
-	pendingPlan        *pendingPlanMutation
-	planReview         *planReviewState
-	planReviewInputs   <-chan planReviewInput
-	planNoteEditing    bool
-	planNoteSubmitting bool
-	planNoteSubject    string
-	planNoteAuthority  terminalInputAuthority
-	signals            <-chan os.Signal
-	snapshotRevision   uint64
-	realtimeCursor     uint64
-	serverState        model.ChannelSessionState
-	lastPollError      string
+	mode                 sessionintent.Mode
+	pendingResearch      *sessionintent.ResearchRequest
+	researchConversation model.LifecycleOperationID
+	researchCancel       context.CancelFunc
+	researchResults      chan researchCompletion
+	ctx                  context.Context
+	cancel               context.CancelFunc
+	client               *client.Client
+	channel              model.Channel
+	workspaceIdentity    string
+	renderer             chatRenderer
+	active               *model.JobDetails
+	messages             map[int64]model.ChannelMessage
+	turns                map[model.LifecycleOperationID]model.ChannelSessionTurn
+	controls             map[model.LifecycleOperationID]model.ChannelSessionControl
+	lastPendingIntent    model.LifecycleOperationID
+	exitRequested        bool
+	pendingIntent        *pendingUserIntent
+	pendingControl       *pendingControl
+	pendingTurn          *pendingSessionTurn
+	pendingPlan          *pendingPlanMutation
+	planReview           *planReviewState
+	planReviewInputs     <-chan planReviewInput
+	planNoteEditing      bool
+	planNoteSubmitting   bool
+	planNoteSubject      string
+	planNoteAuthority    terminalInputAuthority
+	signals              <-chan os.Signal
+	snapshotRevision     uint64
+	realtimeCursor       uint64
+	serverState          model.ChannelSessionState
+	lastPollError        string
 }
 
 type pendingSessionTurn struct {
@@ -71,7 +77,8 @@ func runChatSession(config chatSessionConfig) (resultErr error) {
 		return fmt.Errorf("interactive chat requires context, client, console, signals, and realtime stream")
 	}
 	session := &chatSession{
-		ctx: config.Context, cancel: config.Cancel, client: config.Client, channel: config.Channel,
+		mode: sessionintent.Infer,
+		ctx:  config.Context, cancel: config.Cancel, client: config.Client, channel: config.Channel,
 		workspaceIdentity: config.WorkspaceIdentity,
 		renderer:          chatRenderer{console: config.Console},
 		messages:          make(map[int64]model.ChannelMessage),
@@ -109,12 +116,31 @@ func runChatSession(config chatSessionConfig) (resultErr error) {
 	statePollResults := make(chan chatStatePollResult, 1)
 	statePollActive := false
 
+	var modeRequests <-chan string
 	var ledgerRequests <-chan workspaceLedgerRequest
 	if view := session.ledgerWorkspace(); view != nil {
 		ledgerRequests = view.ledger.requests
+		modeRequests = view.modeRequests
 	}
 	for {
 		select {
+		case result := <-session.researchResults:
+			if err := session.completeResearch(result); err != nil {
+				return err
+			}
+		case mode := <-modeRequests:
+			view := session.ledgerWorkspace()
+			view.mu.Lock()
+			currentMode := view.conversationMode
+			view.mu.Unlock()
+			if mode != currentMode {
+				continue
+			}
+			if err := session.setConversationMode(mode); err != nil {
+				if err := session.renderer.system("%v", err); err != nil {
+					return err
+				}
+			}
 		case request := <-ledgerRequests:
 			if err := session.acceptLedgerPanelRequest(request); err != nil {
 				return err
@@ -127,6 +153,14 @@ func runChatSession(config chatSessionConfig) (resultErr error) {
 			if signal == syscall.SIGTERM {
 				config.Cancel()
 				return nil
+			}
+			if session.mode == sessionintent.Research && session.researchCancel != nil {
+				if err := session.cancelSelectedResearch(); err != nil {
+					if err := session.renderer.system("%v", err); err != nil {
+						return err
+					}
+				}
+				continue
 			}
 			// A prior transport failure may have left an idempotent turn or
 			// control outcome unknown. Resolve that exact operation first, then
@@ -240,6 +274,9 @@ func runChatSession(config chatSessionConfig) (resultErr error) {
 			}
 		case update, ok := <-stream:
 			if !ok {
+				if config.Context.Err() != nil {
+					return config.Context.Err()
+				}
 				return fmt.Errorf("Omnidex realtime stream stopped")
 			}
 			if update.Err != nil {
@@ -266,15 +303,20 @@ func runChatSession(config chatSessionConfig) (resultErr error) {
 
 func (session *chatSession) acceptInput(line string, pasted bool) (bool, error) {
 	name, text, command := parseChatCommand(line)
-	if session.pendingIntent != nil && (command && !pasted && name != "exit" || line != session.pendingIntent.request.Text && name != "exit") {
-		return false, fmt.Errorf("a previous user message remains unresolved")
+	if session.pendingIntent != nil {
+		modeControl := command && !pasted && name == "mode"
+		if !modeControl && (command && !pasted && name != "exit" || line != session.pendingIntent.request.Text && name != "exit") {
+			return false, fmt.Errorf("a previous user message remains unresolved")
+		}
 	}
-	if session.planNoteEditing {
+	if session.planNoteEditing && session.mode != sessionintent.Research && session.mode != sessionintent.Ledger {
 		if pasted || !command {
 			err := session.acceptPlanReviewNote(line)
 			return session.exitRequested, err
 		}
 		switch name {
+		case "mode":
+			return false, session.setConversationMode(text)
 		case "stop", "cancel", "interrupt", "redirect":
 			return session.acceptPlanReviewControl(line)
 		}
@@ -294,6 +336,10 @@ func (session *chatSession) acceptInput(line string, pasted bool) (bool, error) 
 		return session.exitRequested, err
 	}
 	switch name {
+	case "research-fork", "research-use", "research-share":
+		return false, session.researchCommand(name, text)
+	case "mode":
+		return false, session.setConversationMode(text)
 	case "exit":
 		if strings.TrimSpace(text) != "" {
 			return false, fmt.Errorf("/exit does not accept arguments")
@@ -320,6 +366,9 @@ func (session *chatSession) acceptInput(line string, pasted bool) (bool, error) 
 	case "verbosity":
 		return false, session.setChatVerbosity(text)
 	case "cancel", "stop":
+		if session.mode == sessionintent.Research {
+			return false, session.cancelSelectedResearch()
+		}
 		return false, session.stopCurrentJob(text)
 	case "interrupt", "redirect":
 		expectedJobID := int64(0)
@@ -334,7 +383,26 @@ func (session *chatSession) acceptInput(line string, pasted bool) (bool, error) 
 }
 
 func (session *chatSession) acceptAuthorizedInput(input chatInput) (bool, error) {
+	if input.Mode != "" {
+		if err := input.Mode.Validate(); err != nil {
+			return false, err
+		}
+		session.mode = input.Mode
+		defer func() {
+			if view := session.ledgerWorkspace(); view != nil {
+				view.mu.Lock()
+				session.mode = sessionintent.Mode(view.conversationMode)
+				view.mu.Unlock()
+			}
+		}()
+	}
 	current := session.renderer.console.CurrentInputAuthority()
+	if session.mode == sessionintent.Research || session.mode == sessionintent.Ledger {
+		if input.Authority.Generation != current.Generation || input.Authority.Mode != terminalInputOrdinary {
+			return false, fmt.Errorf("%w: stale mode input", errChatInputRejected)
+		}
+		return session.acceptInput(input.Text, input.Pasted)
+	}
 	if session.planNoteEditing {
 		if input.Authority != session.planNoteAuthority ||
 			input.Authority.Mode != terminalInputPlanNote {

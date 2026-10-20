@@ -54,6 +54,7 @@ type planningConversationProvider struct {
 	calls           []codingagent.Assignment
 	interrupt       bool
 	invalidMutation bool
+	unchanged       bool
 }
 
 func (provider *planningConversationProvider) Run(_ context.Context, call codingagent.Assignment, event func(codingagent.NativeEvent) error) (codingagent.Result, error) {
@@ -65,8 +66,14 @@ func (provider *planningConversationProvider) Run(_ context.Context, call coding
 		return codingagent.Result{}, err
 	}
 	content := json.RawMessage(`"I updated the task order as requested."`)
+	if provider.unchanged {
+		content = json.RawMessage(`"The approved task remains unchanged."`)
+	}
 	if call.Role == codingagent.PlanningMutation {
 		content = json.RawMessage(`{"operations":[{"kind":"reorder","target_id":"task","rank":10,"rationale":""}]}`)
+		if provider.unchanged {
+			content = json.RawMessage(`{"operations":[]}`)
+		}
 		if provider.invalidMutation {
 			content = json.RawMessage(`{"operations":[{"kind":"remove","target_id":"","rationale":""}]}`)
 		}
@@ -96,7 +103,7 @@ func TestPlanningConversationRetainsQueuedReplyAfterSemanticParserFailure(t *tes
 	route := codingagent.Route{Provider: "native", Model: "model"}
 	controller := &codingagent.Controller{JobID: 1, Generation: 1, Root: t.TempDir(),
 		Configuration: codingagent.Configuration{Mode: codingagent.Agents, Planner: route, LedgerParser: route, Executor: route, Reviewer: route},
-		Requirements:  []codingagent.Requirement{{ID: "objective", Outcome: "ship"}}, Providers: map[string]codingagent.Provider{"native": provider}, Environment: planningBoundaryEnvironment{}, Evidence: &planningRetryJournal{}}
+		Providers:     map[string]codingagent.Provider{"native": provider}, Environment: planningBoundaryEnvironment{}, Evidence: &planningRetryJournal{}}
 	_, err := finishPlanningConversation(context.Background(), repository, model.StepAttemptAuthority{}, controller, repository.current)
 	var failure *codingagent.ParserFailure
 	if !errors.As(err, &failure) || len(repository.pending) != 1 || len(repository.resolved) != 0 || repository.current.Revision != ledger.Revision {
@@ -131,7 +138,7 @@ func TestPlanningConversationDrainsFIFOAndRacingReplyWithoutClassifierOrReplan(t
 	route := codingagent.Route{Provider: "native", Model: "model"}
 	controller := &codingagent.Controller{JobID: 1, Generation: 1, Root: t.TempDir(),
 		Configuration: codingagent.Configuration{Mode: codingagent.Agents, Planner: route, LedgerParser: route, Executor: route, Reviewer: route},
-		Requirements:  []codingagent.Requirement{{ID: "objective", Outcome: "ship"}}, Providers: map[string]codingagent.Provider{"native": provider}, Environment: planningBoundaryEnvironment{}, Evidence: planningBoundaryEvidence{}}
+		Providers:     map[string]codingagent.Provider{"native": provider}, Environment: planningBoundaryEnvironment{}, Evidence: planningBoundaryEvidence{}}
 	result, err := finishPlanningConversation(context.Background(), repository, model.StepAttemptAuthority{}, controller, repository.current)
 	if err != nil {
 		t.Fatal(err)
@@ -162,5 +169,25 @@ func TestNativeAgentsPlanningDoesNotInstallGenericMessageClassifier(t *testing.T
 	consumer, err := newChannelSessionMessageConsumer(runtime)
 	if err != nil || consumer != nil {
 		t.Fatalf("native planning installed generic consumer: %v %v", consumer, err)
+	}
+}
+
+type replannedAmendmentFixture struct{ planningConversationFixture }
+
+func (repository *replannedAmendmentFixture) CodingLedgerRevisionForOperation(_ context.Context, _ int64, id string) (int64, bool, error) {
+	return repository.current.Revision, id == "transition-operation", nil
+}
+func TestPlanningConversationConsumesReplannedAmendmentOnce(t *testing.T) {
+	ledger := planningBoundaryLedger()
+	repository := &replannedAmendmentFixture{planningConversationFixture: planningConversationFixture{planningBoundaryRepository: planningBoundaryRepository{current: queue.CodingLedgerRevision{LedgerID: 7, Revision: ledger.Revision, Ledger: ledger}}, pending: []*queue.ChannelSessionMessage{{OperationID: "original-input", RedirectOperationID: "transition-operation", PlanningBinding: &queue.CodingPlanningBinding{LedgerID: 7, Revision: ledger.Revision - 1}, Command: queue.ChannelSessionTurnCommand{Text: "Retain requested amendment."}}}}}
+	journal := &planningRetryJournal{}
+	controller := &codingagent.Controller{Generation: 2, Evidence: journal}
+	result, err := finishPlanningConversation(t.Context(), repository, model.StepAttemptAuthority{}, controller, repository.current)
+	if err != nil || result.Revision != ledger.Revision || len(repository.resolved) != 1 || repository.resolved[0] != "original-input" {
+		t.Fatalf("replanned input was duplicated or lost: %+v %v", repository, err)
+	}
+	// No provider is installed: only the already-committed result may be published.
+	if len(journal.entries) != 1 || journal.entries[0].Phase != "planning_response" {
+		t.Fatal("existing amendment was reinterpreted")
 	}
 }

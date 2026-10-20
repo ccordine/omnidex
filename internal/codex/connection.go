@@ -70,15 +70,18 @@ func configuredConnectionArguments(overrides []string) []string {
 
 // Execution inherits the launching host environment, including SSH agents and
 // Docker configuration, just like starting Codex normally.
-func startExecutionConnection(ctx context.Context, command, directory string) (*connection, error) {
-	return launchConnection(ctx, command, directory, false, []string{"app-server", "--listen", "stdio://", "-c", "project_doc_max_bytes=0"})
+func startExecutionConnection(ctx context.Context, command, directory string, environment []string) (*connection, error) {
+	return launchConnection(ctx, command, directory, false, []string{"app-server", "--listen", "stdio://", "-c", "project_doc_max_bytes=0"}, environment)
 }
 
-func launchConnection(ctx context.Context, command, directory string, agent bool, arguments []string) (*connection, error) {
+func launchConnection(ctx context.Context, command, directory string, agent bool, arguments []string, environment ...[]string) (*connection, error) {
 	process := exec.CommandContext(ctx, command, arguments...)
 	process.Dir = directory
 	if agent {
 		process.Env = agentProcessEnvironment()
+	}
+	if len(environment) != 0 {
+		process.Env = environment[0]
 	}
 	process.WaitDelay = 5 * time.Second
 	configureProcessLifetime(process)

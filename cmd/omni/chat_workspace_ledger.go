@@ -164,6 +164,20 @@ func (view *chatWorkspace) ledgerLinesLocked(width int) []string {
 		return append(lines, "No ledger loaded. r refreshes the current job.")
 	}
 	lines = append(lines, fmt.Sprintf("Job #%d · revision %d · %s", snapshot.JobID, snapshot.Revision, snapshot.State), "", "ORDERED ITEMS")
+	if snapshot.State == "frozen" {
+		lines = append(lines, "Approved executable revision")
+	}
+	if len(snapshot.PendingAmendments) > 0 {
+		lines = append(lines, "", "PENDING CHANGES · awaiting revision and owner sign-off")
+		for _, pending := range snapshot.PendingAmendments {
+			lines = append(lines, fmt.Sprintf("From revision %d: %s", pending.Revision, pending.Text))
+		}
+		label := "REVISION ITEMS"
+		if snapshot.State == "frozen" {
+			label = "APPROVED ITEMS"
+		}
+		lines = append(lines, "", label)
+	}
 	tasks := view.ledgerTasksLocked()
 	var selected *model.LedgerTask
 	for i, task := range tasks {
@@ -178,7 +192,7 @@ func (view *chatWorkspace) ledgerLinesLocked(width int) []string {
 	}
 	if selected != nil {
 		task := *selected
-		lines = append(lines, "", "SELECTED ITEM", "Identity: "+string(task.ID), "Goal: "+task.Goal, "Review: "+string(task.ReviewState), "Disposition: "+string(task.Disposition), "Rationale: "+task.Rationale,
+		lines = append(lines, "", "SELECTED ITEM", "Identity: "+string(task.ID), "Goal: "+task.Instructions(), "Review: "+string(task.ReviewState), "Disposition: "+string(task.Disposition), "Rationale: "+task.Rationale,
 			fmt.Sprintf("Provenance: %s · %s · revision %d", task.Provenance.Kind, task.Provenance.Reference, task.Provenance.Revision), fmt.Sprintf("Rank: %d", task.Rank))
 		for _, group := range []struct {
 			label string

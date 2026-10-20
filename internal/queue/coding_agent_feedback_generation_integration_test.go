@@ -64,10 +64,10 @@ func TestPlanningReplanRejectsStaleLedgerRevisionBeforeGenerationAdvance(t *test
 		t.Fatal(err)
 	}
 	current, err := repository.ApplyCodingLedgerMutation(ctx, ApplyCodingLedgerMutationCommand{
-		LedgerID: created.LedgerID, OwnerTurnText: "Agree the objective.",
+		LedgerID: created.LedgerID, OwnerTurnText: "Agree the task.",
 		Mutation: model.LedgerMutation{OperationID: "stale-replan-change", BaseRevision: created.Revision, OwnerTurnID: "stale-replan-change-turn",
-			OwnerTurnDisposition: model.RepresentedOwnerTurn([]model.LedgerItemID{"objective"}),
-			Operations:           []model.LedgerMutationOperation{{Kind: model.LedgerMutationReview, TargetID: "objective", ReviewState: model.LedgerReviewAgreed, Rationale: "explicit owner control"}}},
+			OwnerTurnDisposition: model.RepresentedOwnerTurn([]model.LedgerItemID{"task"}),
+			Operations:           []model.LedgerMutationOperation{{Kind: model.LedgerMutationReview, TargetID: "task", ReviewState: model.LedgerReviewAgreed, Rationale: "explicit owner control"}}},
 	})
 	if err != nil {
 		t.Fatal(err)

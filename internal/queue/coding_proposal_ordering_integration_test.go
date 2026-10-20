@@ -169,12 +169,12 @@ func TestProposalOrderingPersistPublishReplayAndPostgreSQLSelection(t *testing.T
 				t.Fatal("queued owner reorder invoked ordering")
 			}
 			operations := []model.LedgerMutationOperation{}
-			for _, id := range []model.LedgerItemID{"a", "z"} {
-				operations = append(operations, model.LedgerMutationOperation{Kind: model.LedgerMutationReview, TargetID: id, ReviewState: model.LedgerReviewAgreed})
-			}
 			if ties {
 				rank := int64(1)
 				operations = append(operations, model.LedgerMutationOperation{Kind: model.LedgerMutationReorder, TargetID: "z", Rank: &rank})
+			}
+			for _, id := range []model.LedgerItemID{"a", "z"} {
+				operations = append(operations, model.LedgerMutationOperation{Kind: model.LedgerMutationReview, TargetID: id, ReviewState: model.LedgerReviewAgreed})
 			}
 			agreed, err := repo.ApplyCodingLedgerControl(ctx, ApplyCodingLedgerMutationCommand{LedgerID: created.LedgerID, OwnerTurnText: "Agree to the displayed order.", Mutation: model.LedgerMutation{OperationID: "agree", OwnerTurnID: "owner-agree", BaseRevision: created.Revision, OwnerTurnDisposition: model.RepresentedOwnerTurn([]model.LedgerItemID{"a", "z"}), Operations: operations}})
 			if err != nil {

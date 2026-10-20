@@ -44,6 +44,12 @@ func finishPlanningConversation(ctx context.Context, repository planningConversa
 		if err != nil {
 			return ledger, err
 		}
+		if !applied && message.PlanningBinding != nil {
+			_, applied, err = repository.CodingLedgerRevisionForOperation(ctx, ledger.LedgerID, string(message.RedirectOperationID))
+			if err != nil {
+				return ledger, err
+			}
+		}
 		if !applied {
 			ledger, err = applyCodingLedgerPlanningTransaction(ctx, repository, controller, ledger.LedgerID, turn, nil)
 			if err != nil {

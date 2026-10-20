@@ -26,6 +26,8 @@ func NewStepLifecycleOperationID(authority model.StepAttemptAuthority, kind Life
 
 type LifecycleOperationKind string
 
+const LifecycleResearch LifecycleOperationKind = "research_turn"
+
 const (
 	LifecycleCompleteStep          LifecycleOperationKind = "complete_step"
 	LifecycleFailStep              LifecycleOperationKind = "fail_step"

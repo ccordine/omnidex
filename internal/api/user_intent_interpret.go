@@ -8,6 +8,12 @@ import (
 )
 
 func interpretSessionUserIntent(ctx context.Context, request sessionintent.Request, current sessionintent.Context, ask userintent.Ask) (sessionintent.Result, error) {
+	if err := request.ValidateRouting(current); err != nil {
+		return sessionintent.Result{}, err
+	}
+	if request.Mode == sessionintent.Interact && sessionintent.InteractionRecipient(current) != sessionintent.Approval && (sessionintent.InteractionRecipient(current) != sessionintent.Native || len(current.NativeChoices) == 0) {
+		return sessionintent.DirectContent(request, current)
+	}
 	result := sessionintent.Result{OperationID: request.OperationID, Patch: []userintent.Patch{}}
 	background := userintent.Context{Facts: append([]string{}, current.Facts...), Recent: []userintent.Message{}}
 	for _, m := range current.Recent {
@@ -24,7 +30,18 @@ func interpretSessionUserIntent(ctx context.Context, request sessionintent.Reque
 	if err != nil {
 		return result, err
 	}
-	proposed, err := userintent.Interpret(ctx, userintent.Input{Snapshot: snapshot, Contract: contract, Prompt: request.Text, Context: background, Writable: sessionintent.Writable, Validate: sessionintent.Validate}, ask)
+	writable := sessionintent.Writable
+	if request.Mode == sessionintent.Interact {
+		if request.Recipient == "" {
+			request.Recipient = sessionintent.InteractionRecipient(current)
+		}
+		path := "/approval"
+		if request.Recipient == sessionintent.Native {
+			path = "/native_reply"
+		}
+		writable = func(candidate string) bool { return candidate == path }
+	}
+	proposed, err := userintent.Interpret(ctx, userintent.Input{Snapshot: snapshot, Contract: contract, Prompt: request.Text, Context: background, Writable: writable, Validate: sessionintent.Validate}, ask)
 	if err != nil {
 		return result, err
 	}

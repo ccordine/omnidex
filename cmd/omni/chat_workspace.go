@@ -17,11 +17,20 @@ const (
 	workspaceConversation
 	workspaceActivity
 	workspaceLedgerPane
+	workspaceSessionsPane
 )
 
 // chatWorkspace is the single physical terminal presenter. The existing
 // terminal editor and review router keep their exact input/approval authority.
 type chatWorkspace struct {
+	sessions                                             workspaceSessions
+	reviewWriting                                        bool
+	editorSwitching                                      bool
+	helpOffset                                           int
+	modeRequests                                         chan string
+	modeOffsets                                          map[string]int
+	conversationMode                                     string
+	researchLines                                        []string
 	ledger                                               workspaceLedger
 	lastCursorRow, lastCursorColumn                      int
 	lastCursorVisible                                    bool
@@ -47,12 +56,12 @@ type chatWorkspace struct {
 	editing                                              bool
 	draftRow, draftColumn, draftDropped, transcriptBytes int
 	transcriptWriting                                    bool
-	scrollRowsBefore                                     int
+	transcriptAnchors                                    []workspaceResizeAnchor
 	color                                                bool
 }
 
 func newChatWorkspace(output io.Writer, width, height int) (*chatWorkspace, error) {
-	view := &chatWorkspace{output: output, width: max(1, width), height: max(1, height), cursorVisible: true, color: os.Getenv("NO_COLOR") == ""}
+	view := &chatWorkspace{modeRequests: make(chan string, 16), modeOffsets: make(map[string]int), conversationMode: "infer", output: output, width: max(1, width), height: max(1, height), cursorVisible: true, color: os.Getenv("NO_COLOR") == ""}
 	view.ledger.requests = make(chan workspaceLedgerRequest, 1)
 	columns, _ := view.editorSizeLocked()
 	view.conversation, view.review = newWorkspaceScreen(columns), newWorkspaceScreen(columns)
@@ -120,7 +129,7 @@ func (view *chatWorkspace) Write(value []byte) (int, error) {
 }
 
 func (view *chatWorkspace) screenLocked() *workspaceScreen {
-	if view.reviewing {
+	if view.reviewWriting || view.reviewVisibleLocked() {
 		return &view.review
 	}
 	return &view.conversation
@@ -170,9 +179,7 @@ func (view *chatWorkspace) beginTranscript(value string) {
 	view.mu.Lock()
 	defer view.mu.Unlock()
 	view.transcriptWriting = true
-	left, _, _, _ := view.paneGeometryLocked()
-	lines, _, _, _ := view.contentLocked(max(1, left-4))
-	view.scrollRowsBefore = len(lines)
+	view.transcriptAnchors = view.resizeAnchorsLocked()
 	view.transcriptBytes = len(strings.ReplaceAll(value, "\n", "\r\n"))
 }
 
@@ -180,11 +187,8 @@ func (view *chatWorkspace) endTranscript() error {
 	view.mu.Lock()
 	defer view.mu.Unlock()
 	view.transcriptWriting = false
-	if view.conversationOffset > 0 {
-		left, _, _, _ := view.paneGeometryLocked()
-		lines, _, _, _ := view.contentLocked(max(1, left-4))
-		view.conversationOffset = max(0, view.conversationOffset+len(lines)-view.scrollRowsBefore)
-	}
+	view.restoreResizeAnchorsLocked(view.transcriptAnchors)
+	view.transcriptAnchors = nil
 	return view.drawLocked()
 }
 
@@ -200,25 +204,14 @@ func (view *chatWorkspace) Resize(width, height int) (int, int, error) {
 	view.mu.Lock()
 	defer view.mu.Unlock()
 	if width != view.width || height != view.height {
-		anchorRow, anchorColumn := -1, 0
-		if view.conversationOffset > 0 && !view.reviewing {
-			left, body, _, _ := view.paneGeometryLocked()
-			lines, _, _, _ := view.contentLocked(max(1, left-4))
-			top := max(0, len(lines)-body-view.conversationOffset)
-			anchorRow, anchorColumn = workspaceRowAnchor(&view.conversation, max(1, left-4), top)
-		}
+		anchors := view.resizeAnchorsLocked()
 		if view.focus == workspaceLedgerPane {
 			paneWidth, paneHeight, _, _ := view.paneGeometryLocked()
 			row := view.ledgerSelectedRowLocked(max(1, paneWidth-4))
 			view.ledger.followSelection = view.ledger.followSelection || row >= view.ledger.offset && row < view.ledger.offset+paneHeight
 		}
 		view.width, view.height = max(1, width), max(1, height)
-		if anchorRow >= 0 {
-			left, body, _, _ := view.paneGeometryLocked()
-			lines, _, _, _ := view.contentLocked(max(1, left-4))
-			_, top, _ := workspaceWrappedRows(view.conversation.lines, view.conversation.soft, max(1, left-4), anchorRow, anchorColumn)
-			view.conversationOffset = max(0, len(lines)-body-top)
-		}
+		view.restoreResizeAnchorsLocked(anchors)
 		view.lastFrame = nil
 	}
 	columns, rows := view.editorSizeLocked()
@@ -272,4 +265,8 @@ func (view *chatWorkspace) elapsedLocked() string {
 		return ""
 	}
 	return max(time.Duration(0), time.Since(view.activity.StartedAt)).Truncate(time.Second).String()
+}
+
+func (view *chatWorkspace) reviewVisibleLocked() bool {
+	return view.focus != workspaceSessionsPane && view.reviewing && view.conversationMode != "research" && view.conversationMode != "ledger"
 }

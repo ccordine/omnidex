@@ -15,6 +15,7 @@ func TestCodingLedgerRevisionResponseMapsRepositoryStateIntoTheSharedContract(t 
 	value := queue.CodingLedgerRevision{
 		LedgerID: 7, JobID: 11, Generation: 2, Revision: 4, BaseRevision: 3,
 		OperationID: "operation", State: "proposed",
+		PendingAmendments:     []queue.CodingPlanningAmendment{{OperationID: "owner-input", Revision: 3, Text: "Retain queued amendment."}},
 		OwnerTurnDispositions: []model.OwnerStatementDisposition{{Kind: model.OwnerTurnRepresented}},
 		LatestDelta: queue.CodingLedgerDiff{
 			LedgerID: 7, FromRevision: 3, ToRevision: 4,
@@ -31,6 +32,13 @@ func TestCodingLedgerRevisionResponseMapsRepositoryStateIntoTheSharedContract(t 
 		response.LatestDelta.FromRevision != 3 || len(response.LatestDelta.Added) != 1 ||
 		len(response.Routes) != 1 || response.Routes[0].Role != "executor" {
 		t.Fatalf("transport response lost repository authority: %+v", response)
+	}
+	if len(response.PendingAmendments) != 1 || response.PendingAmendments[0].Revision != 3 || response.PendingAmendments[0].Text != "Retain queued amendment." {
+		t.Fatal("transport lost pending binding")
+	}
+	value.PendingAmendments[0].Text = "changed"
+	if response.PendingAmendments[0].Text != "Retain queued amendment." {
+		t.Fatal("pending transport aliases repository")
 	}
 	raw, err := json.Marshal(response)
 	if err != nil {

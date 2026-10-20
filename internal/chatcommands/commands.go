@@ -10,6 +10,7 @@ import (
 type Name string
 
 const (
+	Mode      Name = "mode"
 	Status    Name = "status"
 	Verbosity Name = "verbosity"
 	Interrupt Name = "interrupt"
@@ -26,6 +27,7 @@ type Definition struct {
 }
 
 var definitions = [...]Definition{
+	{Mode, " <name>", "Infer, Interact, Ledger, or Research"},
 	{Status, "", "show current work"},
 	{Verbosity, " <level>", "quiet, normal, verbose, or debug"},
 	{Interrupt, " [reason]", "pause the active job on the same job identity"},

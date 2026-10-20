@@ -82,7 +82,7 @@ func TestCapturedCodingContextsReachMinifierWithoutInventedArtifactBindings(t *t
 			service := &Service{repo: repository, stationClient: provider, inferenceContextTokens: "8192", runtimeEventChannels: make(map[int64]runtimeEventChannelBinding)}
 			runtime := &nativeRuntimeV3{svc: service, ctx: ctx, claim: claim}
 			source := call.PlanningResponse
-			compact, err := runtime.minifyCodingContext(ctx, call)
+			compact, err := compileCodingContextFixture(ctx, runtime, call)
 			if err != nil {
 				t.Fatal(err)
 			}

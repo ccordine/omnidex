@@ -2,17 +2,24 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"testing"
 
+	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/codingagent"
+	"github.com/gryph/omnidex/internal/contextcompiler"
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/modelconfig"
+	"github.com/gryph/omnidex/internal/queue"
 )
 
 // Fixed responses verify the production compiler/station/PG boundary, not live
 // semantic quality or a workload-building qualification.
-func TestCodingContextUsesExistingMinificationForLargeNativeAndParserInputs(t *testing.T) {
+func TestCodingContextCompilerMinificationForLargeNativeAndParserInputs(t *testing.T) {
 	databaseURL := strings.TrimSpace(os.Getenv("OMNI_TEST_DATABASE_URL"))
 	if databaseURL == "" {
 		t.Skip("OMNI_TEST_DATABASE_URL is required")
@@ -43,12 +50,12 @@ func TestCodingContextUsesExistingMinificationForLargeNativeAndParserInputs(t *t
 			runtime := &nativeRuntimeV3{svc: service, ctx: ctx, claim: claim}
 			call := codingagent.Assignment{Role: role}
 			if role == codingagent.Execute {
-				call.Task = &codingagent.Task{ID: "selected", Goal: "Keep /opt/project/config.toml exactly.", Acceptance: []string{"Keep the owner's answer."}}
+				call.Task = &codingagent.Task{ID: "selected", Goal: "Keep /opt/project/config.toml exactly.", Acceptance: []model.TaskAcceptance{{ID: "owner-answer", Text: "Keep the owner's answer.", Verification: []string{"Inspect retained answer."}}}}
 			} else {
 				call.ConstructionFacts = []codingagent.ConstructionFact{{Kind: "retained_context", Quote: "Keep /srv/service/settings.yaml exactly. The owner's answer is still needed."}}
 				call.PlanningResponse = "The exact new response remains current parser input."
 			}
-			small, err := runtime.minifyCodingContext(ctx, call)
+			small, err := compileCodingContextFixture(ctx, runtime, call)
 			if err != nil || provider.calls != 0 || !strings.Contains(small, "owner") {
 				t.Fatalf("small context needlessly inferred or lost facts: %q calls=%d %v", small, provider.calls, err)
 			}
@@ -57,7 +64,7 @@ func TestCodingContextUsesExistingMinificationForLargeNativeAndParserInputs(t *t
 			} else {
 				call.ConstructionFacts[0].Quote += strings.Repeat(" Repeated retained detail.", 7000)
 			}
-			compact, err := runtime.minifyCodingContext(ctx, call)
+			compact, err := compileCodingContextFixture(ctx, runtime, call)
 			if err != nil || len(compact) > 2048 || provider.calls == 0 {
 				t.Fatalf("large context did not minify: %d calls=%d %v", len(compact), provider.calls, err)
 			}
@@ -69,7 +76,7 @@ func TestCodingContextUsesExistingMinificationForLargeNativeAndParserInputs(t *t
 				t.Fatalf("compact context lost exact bindings: %q", compact)
 			}
 			before := provider.calls
-			if replay, err := runtime.minifyCodingContext(ctx, call); err != nil || replay != compact || provider.calls != before {
+			if replay, err := compileCodingContextFixture(ctx, runtime, call); err != nil || replay != compact || provider.calls != before {
 				t.Fatalf("minification repeated accepted inference: calls=%d/%d %v", before, provider.calls, err)
 			}
 			calls, err := listAllWorkerLLMCallEvidence(ctx, repository, job.ID)
@@ -86,4 +93,76 @@ func TestCodingContextUsesExistingMinificationForLargeNativeAndParserInputs(t *t
 			}
 		})
 	}
+}
+
+// Compose existing projection/redaction/compiler boundaries for these captured
+// component fixtures. Native execution no longer has a minification adapter;
+// this helper is not proof that production native packets are summarized.
+func compileCodingContextFixture(ctx context.Context, runtime *nativeRuntimeV3, call codingagent.Assignment) (string, error) {
+	raw, err := json.Marshal(codingagent.PromptContext(call))
+	if err != nil {
+		return "", err
+	}
+	redacted, bindings, err := assemblyline.RedactContextArtifactJSON(raw)
+	if err != nil {
+		return "", err
+	}
+	var value any
+	if err := json.Unmarshal([]byte(redacted), &value); err != nil {
+		return "", err
+	}
+	var parts []string
+	var collect func(any) error
+	collect = func(value any) error {
+		switch v := value.(type) {
+		case string:
+			if strings.HasPrefix(strings.TrimSpace(v), "{") && json.Valid([]byte(v)) {
+				var nested any
+				if err := json.Unmarshal([]byte(v), &nested); err != nil {
+					return err
+				}
+				return collect(nested)
+			}
+			if v != "" {
+				parts = append(parts, v)
+			}
+		case []any:
+			for _, item := range v {
+				if err := collect(item); err != nil {
+					return err
+				}
+			}
+		case map[string]any:
+			keys := make([]string, 0, len(v))
+			for key := range v {
+				keys = append(keys, key)
+			}
+			sort.Strings(keys)
+			for _, key := range keys {
+				if err := collect(v[key]); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	if err := collect(value); err != nil {
+		return "", err
+	}
+	if len(parts) == 0 {
+		return "", nil
+	}
+	set, err := buildContextCandidateSet([]queue.ContextSearchRecord{{Namespace: "coding_context_fixture", SourceID: "captured", Content: strings.Join(parts, "\n")}}, nil)
+	if err != nil {
+		return "", err
+	}
+	stations := portableObjectiveContextSieveStations{runtime: runtime}
+	result, err := contextcompiler.Compile(ctx, contextcompiler.Request{ExactInstruction: "Retain the required task facts and owner's answer.", ModelInstruction: "Retain the required task facts and owner's answer.", KnownArtifactPaths: []string{}}, sessionTaskContextProvider{set: set}, contextcompiler.Stations{Minification: stations})
+	if err != nil {
+		return "", err
+	}
+	if len(result.Context.Capsules) != 1 {
+		return "", fmt.Errorf("expected one compiled context capsule")
+	}
+	return assemblyline.RestoreArtifactIdentities(result.Context.Capsules[0].Content, bindings)
 }

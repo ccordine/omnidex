@@ -78,7 +78,24 @@ func TestTerminalPresentationPTY(t *testing.T) {
 		}
 		streamDone <- nil
 	}()
+	fmt.Fprintln(os.Stderr, "PTY_READY")
 	line, _, _, err := console.ReadLine()
+	if err == nil {
+		fmt.Fprintln(os.Stderr, "PTY_SECOND")
+		var second string
+		second, _, _, err = console.ReadLine()
+		if err == nil && second != "界ot!her" {
+			t.Fatalf("separate Unicode draft/cursor changed: %q", second)
+		}
+	}
+	if err == nil {
+		fmt.Fprintln(os.Stderr, "PTY_HISTORY")
+		var recalled string
+		recalled, _, _, err = console.ReadLine()
+		if err == nil && recalled != "aXb\n  quoted 'value'\n\nend!" {
+			t.Fatalf("per-mode history changed: %q", recalled)
+		}
+	}
 	cancel()
 	if streamErr := <-streamDone; streamErr != nil {
 		t.Fatal(streamErr)
@@ -98,4 +115,36 @@ func TestTerminalPresentationPTY(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("actual PTY draft/cursor preserved; submitted %q; ledger selection %s; terminal restored", strings.ReplaceAll(line, "\n", "\\n"), console.workspace.ledger.selected)
+}
+
+func TestTerminalPresentationPTYSuspendedReviewResize(t *testing.T) {
+	if os.Getenv("OMNI_TEST_TERMINAL_PTY") != "1" {
+		t.Skip("requires an isolated interactive PTY")
+	}
+	console, err := newChatConsole(t.Context(), os.Stdin, os.Stdout, os.Stderr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer console.Close()
+	console.reviewActive = true
+	console.editorMode = "research"
+	console.workspace.conversationMode = "research"
+	fmt.Fprintln(os.Stderr, "PTY_RESIZE_READY")
+	var key [1]byte
+	if _, err := os.Stdin.Read(key[:]); err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []string{"research", "ledger"} {
+		console.editorMode = mode
+		console.workspace.conversationMode = mode
+		if err := console.PulseActivity(time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		if console.terminalWidth != 32 || console.terminalHeight != 7 {
+			t.Fatalf("%s editor dimensions = %dx%d, want 32x7", mode, console.terminalWidth, console.terminalHeight)
+		}
+		if !console.reviewActive {
+			t.Fatal("resize cleared pending review")
+		}
+	}
 }

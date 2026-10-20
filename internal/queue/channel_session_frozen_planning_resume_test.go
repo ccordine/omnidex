@@ -3,13 +3,14 @@ package queue
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/model"
 )
 
-func TestInterruptedFrozenPlanningResumesThroughOrdinarySessionTurn(t *testing.T) {
+func TestInterruptedFrozenPlanningResumesThroughRevisionBoundControl(t *testing.T) {
 	_, repository := freshCodingPlanRepository(t)
 	configuration := codingAgentTestConfiguration()
 	repository.WithCodingAgents(configuration)
@@ -65,21 +66,27 @@ func TestInterruptedFrozenPlanningResumesThroughOrdinarySessionTurn(t *testing.T
 		t.Fatal(err)
 	}
 	resume.OperationID = codingPlanOperationID(t, "resume-frozen-planner", initial.Job.ID)
-	continued, err := repository.SubmitChannelSessionTurn(ctx, resume)
-	if err != nil || !continued.Applied || continued.Job.ID != initial.Job.ID || continued.Job.CurrentGeneration != interrupted.Job.CurrentGeneration+1 {
-		t.Fatalf("ordinary resume lost saved planning authority: %+v %v", continued, err)
+	// Frozen execution interruption is no longer an unbound planning turn.
+	// Its explicit recovery control retains the exact generation and revision.
+	if _, err := repository.SubmitChannelSessionTurn(ctx, resume); !errors.Is(err, ErrStepNotWritable) {
+		t.Fatalf("unbound frozen resume was admitted: %v", err)
+	}
+	paused, err := repository.CurrentJobDetails(ctx, initial.Job.ID)
+	if err != nil || paused.Job.Status != model.JobStatusWaiting || paused.Job.CurrentGeneration != interrupted.Job.CurrentGeneration {
+		t.Fatal("rejected turn changed paused authority", paused, err)
+	}
+	control := ResumeJobCommand{OperationID: codingPlanOperationID(t, "resume-frozen-control", initial.Job.ID), JobID: initial.Job.ID, ExpectedGeneration: interrupted.Job.CurrentGeneration, ObservedLedgerRevision: frozen.Revision, Feedback: resume.Text, WorkspaceRoot: command.WorkspaceRoot, WorkspaceIdentity: command.WorkspaceIdentity}
+	continued, err := repository.ResumeJob(ctx, control)
+	if err != nil || !continued.Applied || continued.Job.ID != initial.Job.ID || continued.Job.CurrentGeneration != interrupted.Job.CurrentGeneration {
+		t.Fatal("revision-bound resume lost frozen authority", continued, err)
 	}
 	assertSessionCodingConfiguration(t, continued.Job, configuration)
-	continuity, err := repository.ObjectiveContinuityAuthorities(ctx, continued.Job, replanCodingBoundary)
-	if err != nil || continuity.Replan == nil || continuity.ObservedLedgerRevision != frozen.Revision || continuity.Replan.Feedback != resume.Text {
-		t.Fatalf("resume did not bind the retained frozen revision: %+v %v", continuity, err)
-	}
 	current, exists, err := repository.CurrentCodingLedgerForJob(ctx, initial.Job.ID)
-	if err != nil || !exists || current.State != "frozen" || current.Revision != frozen.Revision {
+	if err != nil || !exists || current.State != "frozen" || current.Revision != frozen.Revision || !reflect.DeepEqual(current.Ledger, frozen.Ledger) {
 		t.Fatalf("resume silently changed the approved ledger: %+v %v", current, err)
 	}
-	replayed, err := repository.SubmitChannelSessionTurn(ctx, resume)
+	replayed, err := repository.ResumeJob(ctx, control)
 	if err != nil || replayed.Applied || replayed.Job.ID != continued.Job.ID || replayed.Job.CurrentGeneration != continued.Job.CurrentGeneration {
-		t.Fatalf("ordinary resume replayed twice: %+v %v", replayed, err)
+		t.Fatalf("revision-bound resume replayed twice: %+v %v", replayed, err)
 	}
 }

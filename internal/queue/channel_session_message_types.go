@@ -11,7 +11,13 @@ var ErrPendingChannelSessionMessage = errors.New("active conversation has an unr
 
 const channelSessionMessageEvidence = "channel_session_message"
 
+type CodingPlanningBinding struct {
+	LedgerID int64 `json:"ledger_id"`
+	Revision int64 `json:"revision"`
+}
+
 type ChannelSessionMessage struct {
+	PlanningBinding     *CodingPlanningBinding     `json:"planning_binding,omitempty"`
 	OperationID         model.LifecycleOperationID `json:"operation_id"`
 	Command             ChannelSessionTurnCommand  `json:"command"`
 	AdmittedJob         model.Job                  `json:"admitted_job"`

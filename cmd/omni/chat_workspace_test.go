@@ -53,6 +53,9 @@ func TestWorkspaceFramesFitWideNarrowAndUnicodeTerminals(t *testing.T) {
 					t.Fatalf("row %d overflows %d cells: %q", index, size[0], line)
 				}
 			}
+			if size[0] >= 24 && size[1] >= 5 && !strings.Contains(ansi.Strip(frame[len(frame)-1]), "Ctrl-B ? keys") {
+				t.Fatal("narrow terminal hid discoverable key help")
+			}
 			if visible && (row < 0 || row >= size[1] || column < 0 || column >= size[0]) {
 				t.Fatalf("cursor escaped terminal: %d,%d", row, column)
 			}
@@ -175,7 +178,7 @@ func TestWorkspaceBoundsItsDisplayScrollback(t *testing.T) {
 	}
 }
 
-func TestWorkspaceReviewInputBypassesAllPaneControls(t *testing.T) {
+func TestWorkspaceReviewInputKeepsReviewKeysAndAllowsPaneControls(t *testing.T) {
 	view, _ := testWorkspace(t, 70, 20)
 	keys := "\x02z\x1b[B \r"
 	results := make(chan planReviewTestSourceResult, 1)
@@ -186,11 +189,11 @@ func TestWorkspaceReviewInputBypassesAllPaneControls(t *testing.T) {
 	}
 	var buffer [64]byte
 	count, err := source.Read(buffer[:])
-	if err != nil || string(buffer[:count]) != keys {
+	if err != nil || string(buffer[:count]) != "\x1b[B \r" {
 		t.Fatalf("review keys were changed: %q, %v", buffer[:count], err)
 	}
-	if view.zoom || view.prefix || view.focus != workspaceCompose {
-		t.Fatal("review input executed a pane command")
+	if !view.zoom || view.prefix || view.focus != workspaceCompose {
+		t.Fatal("review input did not execute the explicit pane command")
 	}
 }
 

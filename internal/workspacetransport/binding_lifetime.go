@@ -34,3 +34,28 @@ func (hub *Hub) Lifetime(ctx context.Context, root, identity string) (context.Co
 	}()
 	return lifetime, release, nil
 }
+
+// Connected is discovery information only. Consumers must still attest the
+// exact retained connection before reading state or submitting operations.
+func (hub *Hub) Connected(root, identity string) bool {
+	if hub == nil {
+		return false
+	}
+	hub.mu.Lock()
+	defer hub.mu.Unlock()
+	connection := hub.connections[identity]
+	if connection == nil || connection.binding.Root != root {
+		return false
+	}
+	select {
+	case <-connection.done:
+		return false
+	default:
+	}
+	select {
+	case <-connection.ready:
+		return true
+	default:
+		return false
+	}
+}

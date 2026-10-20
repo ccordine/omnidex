@@ -69,7 +69,9 @@ func readPendingUserProposalTx(ctx context.Context, tx pgx.Tx, state model.Chann
 // Keep the authoritative context intact for execution-time stale checks.
 func userIntentDisplayedContext(current sessionintent.Context, request sessionintent.Request) sessionintent.Context {
 	if request.LedgerRevision == 0 {
-		current.Planning = false
+		if request.Mode != sessionintent.Interact {
+			current.Planning = false
+		}
 		current.Items = []sessionintent.Item{}
 	}
 	return current

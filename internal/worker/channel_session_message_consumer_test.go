@@ -176,3 +176,16 @@ func activeSessionConsumerTest(t *testing.T) (*channelSessionMessageConsumer, *s
 			Text: "Explain /interrupt and /stop without changing the task."}, AdmittedJob: job}}
 	return &channelSessionMessageConsumer{claim: claim, repository: store}, store, claim
 }
+
+func TestActiveSessionConsumerQueuesAmendmentWithoutCancellingTask(t *testing.T) {
+	consumer, store, claim := activeSessionConsumerTest(t)
+	original := *claim
+	store.pending.PlanningBinding = &queue.CodingPlanningBinding{LedgerID: 28, Revision: 60}
+	consumer.kind = sessionKindFunc(func(assemblyline.ConversationObjectiveKindInput) (assemblyline.ConversationObjectiveKindDecision, int, error) {
+		return assemblyline.ConversationObjectiveKindDecision{Schema: assemblyline.ConversationObjectiveKindSchemaV1, Kind: assemblyline.ObjectiveKindWorkspaceMutation}, 0, nil
+	})
+	consumed, err := consumer.consume(t.Context())
+	if err != nil || !consumed || !reflect.DeepEqual(original, *claim) || len(store.resolutions) != 1 {
+		t.Fatalf("amendment interrupted accepted execution: %+v %v", claim, err)
+	}
+}

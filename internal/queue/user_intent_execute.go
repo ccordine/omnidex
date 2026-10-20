@@ -130,7 +130,11 @@ func saveUserIntentReceiptTx(ctx context.Context, tx pgx.Tx, id model.LifecycleO
 }
 
 func validateStoredUserDelta(current sessionintent.Context, saved storedUserIntent) error {
-	after, err := sessionintent.Apply(userIntentDisplayedContext(current, saved.request), saved.result.Patch)
+	displayed := userIntentDisplayedContext(current, saved.request)
+	if err := sessionintent.ValidateRoutedPatch(saved.request, displayed, saved.result.Patch); err != nil {
+		return err
+	}
+	after, err := sessionintent.Apply(displayed, saved.result.Patch)
 	if err == nil && after.Approval != nil && !reflect.DeepEqual(current.Pending, saved.current.Pending) {
 		return ErrUserIntentStale
 	}

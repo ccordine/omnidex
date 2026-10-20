@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/sessionintent"
 )
 
 const codingPlanReviewStepAction = "v3_coding_plan"
@@ -60,6 +61,9 @@ func sendPlanReviewInput(
 }
 
 func (session *chatSession) reconcilePlanReview() error {
+	if session.mode == sessionintent.Research || session.mode == sessionintent.Ledger {
+		return nil
+	}
 	if session.planNoteEditing || session.planNoteSubmitting {
 		return nil
 	}

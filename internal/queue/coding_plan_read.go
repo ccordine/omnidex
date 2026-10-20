@@ -28,14 +28,18 @@ func (r *Repository) ReadCodingLedger(ctx context.Context, ledgerID int64, optio
 		return CodingLedgerRevision{}, err
 	}
 	defer tx.Rollback(ctx)
+	var currentState string
 	if options.Revision == 0 {
-		if err := tx.QueryRow(ctx, `SELECT current_revision FROM coding_ledgers WHERE id=$1`, ledgerID).Scan(&options.Revision); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT current_revision,state FROM coding_ledgers WHERE id=$1`, ledgerID).Scan(&options.Revision, &currentState); err != nil {
 			return CodingLedgerRevision{}, err
 		}
 	}
 	result, err := readCodingLedgerRevisionTx(ctx, tx, ledgerID, options.Revision, options)
 	if err != nil {
 		return CodingLedgerRevision{}, err
+	}
+	if currentState == "revising" {
+		result.State = currentState
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return CodingLedgerRevision{}, err
@@ -96,6 +100,11 @@ func readCodingLedgerRevisionTx(ctx context.Context, tx pgx.Tx, ledgerID, revisi
 		&result.CreatedAt, &result.UpdatedAt); err != nil {
 		return CodingLedgerRevision{}, err
 	}
+	pending, err := pendingCodingPlanningAmendmentsTx(ctx, tx, result.JobID)
+	if err != nil {
+		return CodingLedgerRevision{}, err
+	}
+	result.PendingAmendments = pending
 	if result.OwnerTurnID != "" {
 		var rawDispositions []byte
 		err := tx.QueryRow(ctx, `
@@ -170,7 +179,7 @@ func readCodingLedgerRevisionTx(ctx context.Context, tx pgx.Tx, ledgerID, revisi
  WHERE ($3::text[] IS NULL OR kind=ANY($3))
  AND ($4::text IS NULL OR payload->>'disposition'=$4)
  AND ($5::text IS NULL OR payload->>'review_state'=$5)
- AND ($6::text IS NULL OR lower(payload::text) LIKE $6 ESCAPE E'\\\\')
+ AND ($6::text IS NULL OR lower(payload::text) LIKE $6 ESCAPE E'\\')
  AND ($7::text[] IS NULL OR id=ANY($7))
  AND ($8::text IS NULL OR id=$8)
  ORDER BY rank,id LIMIT $9 OFFSET $10

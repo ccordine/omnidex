@@ -18,14 +18,29 @@ func (r *Repository) NextChannelSessionMessage(ctx context.Context, authority mo
 	if err != nil {
 		return nil, err
 	}
+	if jobStatus == model.JobStatusWaiting && stepStatus == model.StepStatusWaiting {
+		waiting, err := codingNativeInputWaitingTx(ctx, tx, authority)
+		if err != nil {
+			return nil, err
+		}
+		if waiting {
+			return nil, tx.Commit(ctx)
+		}
+	}
 	if jobStatus != model.JobStatusRunning || stepStatus != model.StepStatusRunning {
 		return nil, staleStepAttemptError(authority, "message consumer requires running authority", nil)
 	}
+	var planning bool
+	if err := tx.QueryRow(ctx, `SELECT action='v3_coding_plan' FROM job_steps WHERE id=$1`, authority.StepID).Scan(&planning); err != nil {
+		return nil, err
+	}
 	var operationID model.LifecycleOperationID
 	err = tx.QueryRow(ctx, `SELECT operation_id FROM lifecycle_operation_registry AS intake
-	 WHERE kind='channel_session_message' AND message_job_id=$1 AND message_generation=$2
+	 WHERE kind='channel_session_message' AND message_job_id=$1
+ AND (message_generation=$2 OR ($3 AND message_generation<$2 AND command_payload->'planning_binding' IS NOT NULL))
+ AND ($3 OR NOT EXISTS(SELECT 1 FROM evidence WHERE kind='coding_planning_amendment' AND source_ref=intake.operation_id))
 	 AND NOT EXISTS(SELECT 1 FROM evidence WHERE kind='channel_session_message' AND source_ref=intake.operation_id)
-	 ORDER BY created_at,operation_id LIMIT 1`, authority.JobID, authority.Generation).Scan(&operationID)
+	 ORDER BY created_at,operation_id LIMIT 1`, authority.JobID, authority.Generation, planning).Scan(&operationID)
 	if err == pgx.ErrNoRows {
 		return nil, tx.Commit(ctx)
 	}

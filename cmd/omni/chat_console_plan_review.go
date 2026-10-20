@@ -9,7 +9,7 @@ import (
 )
 
 func (console *chatConsole) ShowPlanReview(value string) error {
-	if console == nil || console.terminal == nil || console.reviewInput == nil || console.output == nil {
+	if console == nil {
 		return fmt.Errorf("interactive plan-review console is unavailable")
 	}
 	value = safeConsoleText(value)
@@ -18,6 +18,9 @@ func (console *chatConsole) ShowPlanReview(value string) error {
 	}
 	console.presentationMu.Lock()
 	defer console.presentationMu.Unlock()
+	if console.terminal == nil || console.reviewInput == nil || console.output == nil {
+		return fmt.Errorf("interactive plan-review console is unavailable")
+	}
 	console.reviewView = value
 	console.reviewInput.EnableReview()
 	if !console.reviewActive {
@@ -59,11 +62,14 @@ func (console *chatConsole) HidePlanReview() error {
 }
 
 func (console *chatConsole) BeginPlanReviewNote() (terminalInputAuthority, error) {
-	if console == nil || console.terminal == nil || console.reviewInput == nil || console.output == nil {
+	if console == nil {
 		return terminalInputAuthority{}, fmt.Errorf("interactive plan-review console is unavailable")
 	}
 	console.presentationMu.Lock()
 	defer console.presentationMu.Unlock()
+	if console.terminal == nil || console.reviewInput == nil || console.output == nil {
+		return terminalInputAuthority{}, fmt.Errorf("interactive plan-review console is unavailable")
+	}
 	authority, err := console.reviewInput.BeginNoteInput()
 	if err != nil {
 		return terminalInputAuthority{}, err
@@ -104,6 +110,16 @@ func (console *chatConsole) redrawPlanReviewLocked() error {
 	view := strings.ReplaceAll(console.reviewView, "\n", "\r\n")
 	if !strings.HasSuffix(view, "\r\n") {
 		view += "\r\n"
+	}
+	if console.workspace != nil {
+		console.workspace.mu.Lock()
+		console.workspace.reviewWriting = true
+		console.workspace.mu.Unlock()
+		defer func() {
+			console.workspace.mu.Lock()
+			console.workspace.reviewWriting = false
+			console.workspace.mu.Unlock()
+		}()
 	}
 	return writeTerminalControl(console.output, "\x1b[H\x1b[2J"+view)
 }

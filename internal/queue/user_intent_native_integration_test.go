@@ -5,7 +5,9 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/codingagent"
+	"github.com/gryph/omnidex/internal/model"
 )
 
 func TestUserIntentCurrentNativeChoiceAndReceiptReplay(t *testing.T) {
@@ -35,9 +37,23 @@ func TestUserIntentCurrentNativeChoiceAndReceiptReplay(t *testing.T) {
 				{Label: "allow once", Response: json.RawMessage(`{"decision":"accept"}`)},
 				{Label: "deny", Response: json.RawMessage(`{"decision":"decline"}`)},
 			}
+			message := command
+			message.OperationID, _ = model.NewLifecycleOperationID()
+			message.ExpectedJobID = &executor.Job.ID
+			message.ExpectedGeneration = &executor.Authority.Generation
+			message.Text = "Queue a future change while the current native request stays authoritative."
+			if _, err := repo.SubmitChannelSessionTurn(ctx, message); err != nil {
+				t.Fatal(err)
+			}
 			inputID, err := repo.WaitForCodingNativeInput(ctx, executor.Authority, codingagent.NativeInputRequest{ID: json.RawMessage(`1`), Method: "item/commandExecution/requestApproval", ThreadID: "synthetic-thread", TurnID: "synthetic-turn", Prompt: "Allow the current synthetic command?", Choices: choices}, callID, task.ID)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if next, err := repo.NextChannelSessionMessage(ctx, executor.Authority); err != nil || next != nil {
+				t.Fatal("message poller cancelled native input wait", err)
+			}
+			if result, err := repo.ResolveChannelSessionMessage(ctx, ResolveChannelSessionMessageCommand{Authority: executor.Authority, OperationID: message.OperationID, Kind: assemblyline.ObjectiveKindWorkspaceMutation}); err != nil || result.Replanned {
+				t.Fatal("in-flight amendment disrupted native input", err)
 			}
 			index := 0
 			if label == "deny" {

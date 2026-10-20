@@ -121,14 +121,14 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) (resultErr er
 	if err != nil {
 		return err
 	}
-	sessionErr := runChatSession(chatSessionConfig{
+	sessionErr := runChatSessions(chatSessionConfig{
 		Context: ctx, Cancel: cancel, Client: apiClient, Channel: bootstrap.channel,
 		WorkspaceIdentity: workspaceIdentity,
 		Snapshot:          bootstrap.snapshot,
 		Stream:            bootstrap.stream,
 		Console:           console,
 		Signals:           signals,
-	})
+	}, clientID)
 	return errors.Join(sessionErr, workspaceConnection.Err(), console.Close())
 }
 
