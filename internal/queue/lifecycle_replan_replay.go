@@ -31,6 +31,20 @@ func requireInterruptReplayTx(
 	record lifecycleOperationRecord,
 	command ReplanJobCommand,
 ) error {
+	if record.ResultGeneration == record.ObservedGeneration {
+		if record.JobID != command.JobID || record.Kind != LifecycleInterruptJob || record.StepID == nil || record.ResultStepStatus == nil || *record.ResultStepStatus != model.StepStatusWaiting || record.ResultJobStatus != model.JobStatusWaiting {
+			return lifecycleReplayStateError(record.ID, "frozen execution pause")
+		}
+		var exists bool
+		err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM job_steps WHERE id=$1 AND job_id=$2 AND generation=$3 AND action='v3_coding')`, *record.StepID, record.JobID, record.ResultGeneration).Scan(&exists)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return lifecycleReplayStateError(record.ID, "paused execution step")
+		}
+		return nil
+	}
 	return requireGenerationCutoverReplayTx(
 		ctx,
 		tx,

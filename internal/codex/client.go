@@ -16,6 +16,7 @@ type Client struct {
 	command   string
 	directory string
 	timeout   time.Duration
+	parser    *parserProcess
 }
 
 func New(command, directory string, timeout time.Duration) (*Client, error) {
@@ -60,12 +61,28 @@ func (client *Client) GeneratePreparedExactWithActivity(parent context.Context, 
 	}
 	ctx, cancel := context.WithTimeout(parent, client.timeout)
 	defer cancel()
-	connection, err := startConnection(ctx, client.command, client.directory)
+	connection, release, err := client.generationConnection(ctx)
 	if err != nil {
 		return result, err
 	}
-	defer connection.close()
+	healthy := false
+	defer func() { release(healthy) }()
+	// Cancel blocked transport reads as well as active inference.
+	interrupted := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() { _ = connection.process.Cancel(); close(interrupted) })
+	defer func() {
+		if !stop() {
+			<-interrupted
+		}
+	}()
+	if client.parser != nil && (request.Continuation != nil || request.RetainContext) {
+		return result, fmt.Errorf("user parser requires fresh ephemeral threads")
+	}
 	capture, dispatched, err := connection.generate(ctx, request, observer)
+	healthy = err == nil
+	if client.parser != nil && ctx.Err() != nil {
+		err = ctx.Err()
+	}
 	if dispatched {
 		result.ProviderRequestDisposition = llm.ProviderRequestDispatched
 	}

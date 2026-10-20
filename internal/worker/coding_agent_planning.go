@@ -42,10 +42,10 @@ func (runtime *nativeRuntimeV3) runAgentPlanningAction(configuration codingagent
 	controller := codingagent.Controller{
 		JobID: runtime.claim.Job.ID, Generation: runtime.claim.Authority.Generation,
 		Root: scope.Root, Configuration: configuration,
-		Providers:     providers,
-		Environment:   &codingAgentEnvironment{runtime: runtime, root: scope.Root, identity: identity},
-		Evidence:      runtime.svc.repo.CodingAgentEvidence(runtime.claim.Authority),
-		NativeInput:   runtime.waitForNativeCodingInput,
+		Providers:   providers,
+		Environment: &codingAgentEnvironment{runtime: runtime, root: scope.Root, identity: identity},
+		Evidence:    runtime.svc.repo.CodingAgentEvidence(runtime.claim.Authority),
+		NativeInput: runtime.waitForNativeCodingInput,
 		Activity: func(activity model.AgentActivity) {
 			runtime.svc.emitRuntimeEvent(RuntimeEvent{JobID: runtime.claim.Authority.JobID, StepID: runtime.claim.Authority.StepID, Attempt: runtime.claim.Authority.Attempt, Kind: "agent_activity", AgentActivity: &activity})
 		},
@@ -95,6 +95,9 @@ func (runtime *nativeRuntimeV3) runAgentPlanningAction(configuration codingagent
 	}
 	if err != nil {
 		return runtime.planningInputError(agentContext, err)
+	}
+	if err := controller.PublishPlanningLedger(agentContext, turn, ledger.Ledger); err != nil {
+		return err
 	}
 	ledger, err = runtime.finishPlanningConversation(agentContext, &controller, ledger)
 	if err != nil {
@@ -197,7 +200,7 @@ func applyCodingLedgerPlanningTransaction(
 		return queue.CodingLedgerRevision{}, err
 	}
 	if len(mutation.Operations) == 0 {
-		if current.State == "frozen" {
+		if current.State == "revising" {
 			return repository.ProposeUnchangedCodingLedger(ctx, queue.ProposeUnchangedCodingLedgerCommand{
 				LedgerID: ledgerID, Revision: current.Revision, OperationID: turn.OperationID,
 				OwnerTurnID: turn.OwnerTurnID, OwnerTurnText: turn.Text,

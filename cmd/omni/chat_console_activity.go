@@ -46,6 +46,12 @@ func (console *chatConsole) PulseActivity(now time.Time) error {
 	console.presentationMu.Lock()
 	defer console.presentationMu.Unlock()
 	if console.reviewActive {
+		if console.workspace != nil && console.terminalFD >= 0 {
+			if w, h, err := term.GetSize(console.terminalFD); err == nil && w > 0 && h > 0 {
+				_, _, resizeErr := console.workspace.Resize(w, h)
+				return resizeErr
+			}
+		}
 		return nil
 	}
 	if console.activity.Working {
@@ -62,11 +68,20 @@ func (console *chatConsole) redrawPromptLocked(now time.Time) error {
 	prompt := console.prompt
 	console.promptMu.Unlock()
 	if console.terminalFD >= 0 {
-		if width, height, err := term.GetSize(console.terminalFD); err == nil && width > 0 && height > 0 && (width != console.terminalWidth || height != console.terminalHeight) {
-			if err := console.terminal.SetSize(width, height); err != nil {
-				return err
+		if width, height, err := term.GetSize(console.terminalFD); err == nil && width > 0 && height > 0 {
+			if console.workspace != nil {
+				var resizeErr error
+				width, height, resizeErr = console.workspace.Resize(width, height)
+				if resizeErr != nil {
+					return resizeErr
+				}
 			}
-			console.terminalWidth, console.terminalHeight = width, height
+			if width != console.terminalWidth || height != console.terminalHeight {
+				if err := console.terminal.SetSize(width, height); err != nil {
+					return err
+				}
+				console.terminalWidth, console.terminalHeight = width, height
+			}
 		}
 	}
 	width := console.terminalWidth
@@ -74,7 +89,12 @@ func (console *chatConsole) redrawPromptLocked(now time.Time) error {
 		width = 80
 	}
 	activity := console.activity
-	if activity.JobID > 0 {
+	if console.workspace != nil {
+		if err := console.workspace.SetActivity(activity, console.activityDetail); err != nil {
+			return err
+		}
+	}
+	if activity.JobID > 0 && console.workspace == nil {
 		label := activity.Label
 		if console.activityDetail != "" && console.activityDetail != label {
 			label += " | " + console.activityDetail
@@ -127,14 +147,21 @@ func startChatActivityDisplay(ctx context.Context, console *chatConsole) (<-chan
 	displayContext, cancel := context.WithCancel(ctx)
 	errors := make(chan error, 1)
 	done := make(chan struct{})
+	resizes, stopResize := watchChatResize()
 	go func() {
 		defer close(done)
+		defer stopResize()
 		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-displayContext.Done():
 				return
+			case <-resizes:
+				if err := console.PulseActivity(time.Now()); err != nil {
+					errors <- fmt.Errorf("resize chat workspace: %w", err)
+					return
+				}
 			case now := <-ticker.C:
 				if err := console.PulseActivity(now); err != nil {
 					errors <- fmt.Errorf("update chat activity: %w", err)

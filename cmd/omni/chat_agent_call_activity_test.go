@@ -15,7 +15,7 @@ func TestAgentCallLifecycleShowsTypedActualRoleAndStatus(t *testing.T) {
 				console, output := planReviewTestConsole(t)
 				renderer := chatRenderer{console: console}
 				activity := model.AgentCallActivity{Schema: 1, CallID: 73, Role: role, Status: status}
-				if role == "execute" || role == "review" || role == "review_response" {
+				if role == "execute" || role == "execution_response" || role == "review" || role == "review_response" {
 					activity.TaskID = "actual-task"
 				}
 				if err := renderer.realtime(client.RealtimeEvent{EventName: client.RealtimeJobRuntimeEvent, JobID: 41, StepID: 12,

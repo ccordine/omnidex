@@ -100,7 +100,15 @@ type ReviewResponseResult struct {
 	ReviewResult
 }
 
+// ExecutionReport retains the original task-local native evidence for independent review.
+type ExecutionReport struct {
+	CallID   int64  `json:"call_id"`
+	Round    int64  `json:"round"`
+	Response string `json:"response"`
+}
+
 type Assignment struct {
+	ExecutionReport      *ExecutionReport    `json:"execution_report,omitempty"`
 	JobID                int64               `json:"job_id"`
 	Generation           int64               `json:"generation"`
 	Role                 Role                `json:"role"`

@@ -33,6 +33,10 @@ func codingAgentAcceptedReviewResponse(accepted codingagent.Entry, route codinga
 	if err := codingAgentAcceptedCall(parserAcceptance, codingagent.ReviewResponse, route, opened, completed, native); err != nil {
 		return fmt.Errorf("agent acceptance lacks its review response parser: %w", err)
 	}
+	reviewAssignment := opened[accepted.CallID].Assignment
+	if err := validateReviewExecutionEvidence(reviewAssignment, accepted.CallID, completed, entries); err != nil {
+		return err
+	}
 	parser := opened[receipt.ParserCallID].Assignment
 	task := opened[accepted.CallID].Assignment.Task
 	if task == nil || parser.Response != response || !reflect.DeepEqual(parser.Task, task) || parser.ValidateTaskContext() != nil ||
@@ -46,6 +50,34 @@ func codingAgentAcceptedReviewResponse(accepted codingagent.Entry, route codinga
 	if !reflect.DeepEqual(parsed, *receipt.ReviewResponse) || parsed.Kind != codingagent.ExecutionDone ||
 		len(parsed.Findings) != 0 || codingagent.ValidateReview(map[string]codingagent.Task{task.ID: *task}, parsed.ReviewResult) != nil {
 		return fmt.Errorf("agent acceptance contains unresolved review findings or lacks verification")
+	}
+	return nil
+}
+
+// Retained accepted journals predate attached execution evidence. When present,
+// that evidence must identify the latest completed task report, byte for byte.
+func validateReviewExecutionEvidence(review *codingagent.Assignment, before int64, completed map[int64]codingagent.Entry, entries []codingagent.Entry) error {
+	if review == nil || review.ExecutionReport == nil {
+		return nil
+	}
+	if review.Task == nil {
+		return fmt.Errorf("review execution evidence lacks its task")
+	}
+	var latest *codingagent.Entry
+	for i := range entries {
+		e := &entries[i]
+		if e.TaskID == review.Task.ID && e.Phase == "execution_response" && e.ID < before && (latest == nil || e.ID > latest.ID) {
+			latest = e
+		}
+	}
+	if latest == nil || latest.ResponseKind != codingagent.ExecutionDone || len(latest.Notes) != 1 {
+		return fmt.Errorf("review lacks its completed execution report")
+	}
+	report := review.ExecutionReport
+	completion := completed[report.CallID]
+	var original string
+	if report.CallID != latest.CallID || report.Round != latest.Round || report.Response != latest.Notes[0] || completion.Result == nil || completion.ID >= before || decodeCodingAgentJournalResult(completion.Result.Content, &original) != nil || original != report.Response {
+		return fmt.Errorf("review changed its original execution evidence")
 	}
 	return nil
 }

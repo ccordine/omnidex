@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gryph/omnidex/internal/client"
 	"github.com/gryph/omnidex/internal/model"
 )
 
@@ -30,7 +29,7 @@ func (session *chatSession) beginPlanReviewNote(leafID model.CodingPlanLeafID) e
 		return err
 	}
 	return session.renderer.system(
-		"job %d · continue planning; submit an empty line to review the ledger",
+		"job %d · reply naturally to discuss, change, approve or start the plan; empty line opens ledger controls",
 		jobID,
 	)
 }
@@ -47,45 +46,7 @@ func (session *chatSession) acceptPlanReviewNote(note string) error {
 		session.planNoteSubject = ""
 		return session.showPlanReview()
 	}
-	feedback, err := planReviewNoteFeedback(session.planNoteSubject, note)
-	if err != nil {
-		return err
-	}
-	jobID := session.planReview.snapshot.JobID
-	session.planNoteEditing = false
-	session.planNoteSubmitting = true
-	_, err = session.control("redirect", feedback, true, &jobID)
-	session.planNoteSubmitting = false
-	if err != nil {
-		if errors.Is(err, errChatRequestInterrupted) {
-			if endErr := session.endPlanReviewNoteInput(); endErr != nil {
-				return errors.Join(err, endErr)
-			}
-			return err
-		}
-		if definitiveChatRequestFailure(err) {
-			if endErr := session.endPlanReviewNoteInput(); endErr != nil {
-				return errors.Join(err, endErr)
-			}
-			session.planNoteSubject = ""
-			if showErr := session.showPlanReview(); showErr != nil {
-				return errors.Join(err, showErr)
-			}
-			return err
-		}
-		session.planNoteEditing = true
-		if promptErr := session.renderer.console.SetPrompt(fmt.Sprintf("plan #%d> ", jobID)); promptErr != nil {
-			return errors.Join(err, promptErr)
-		}
-		return err
-	}
-	if err := session.endPlanReviewNoteInput(); err != nil {
-		return err
-	}
-	session.planNoteSubject = ""
-	session.planReview = nil
-	session.planReviewInputs = nil
-	return session.reloadSnapshot()
+	return session.acceptUserMessage(note)
 }
 
 func (session *chatSession) endPlanReviewNoteInput() error {
@@ -130,16 +91,4 @@ func planReviewNoteSubject(
 		}
 	}
 	return "", fmt.Errorf("selected planning leaf is absent from the authoritative review")
-}
-
-func planReviewNoteFeedback(subject, note string) (string, error) {
-	feedback := note
-	if subject != "" {
-		feedback = "The user's planning note concerns this proposed outcome:\n\n" +
-			subject + "\n\n" + note
-	}
-	if err := client.ValidateReplanFeedback(feedback); err != nil {
-		return "", err
-	}
-	return feedback, nil
 }

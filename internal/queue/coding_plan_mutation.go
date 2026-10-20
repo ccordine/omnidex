@@ -46,6 +46,14 @@ func (r *Repository) applyCodingLedgerMutation(ctx context.Context, command Appl
 	}
 	defer tx.Rollback(ctx)
 
+	result, err := applyCodingLedgerMutationTx(ctx, tx, command, ownerAction)
+	if err != nil {
+		return CodingLedgerRevision{}, err
+	}
+	return result, tx.Commit(ctx)
+}
+
+func applyCodingLedgerMutationTx(ctx context.Context, tx pgx.Tx, command ApplyCodingLedgerMutationCommand, ownerAction string) (CodingLedgerRevision, error) {
 	var current int64
 	var state string
 	if err := tx.QueryRow(ctx, `SELECT current_revision,state FROM coding_ledgers WHERE id=$1 FOR UPDATE`, command.LedgerID).Scan(&current, &state); err != nil {
@@ -54,7 +62,7 @@ func (r *Repository) applyCodingLedgerMutation(ctx context.Context, command Appl
 	var replayRevision, replayBase int64
 	var replayOwner, replayAction, replayText string
 	var replayMutation []byte
-	err = tx.QueryRow(ctx, `
+	err := tx.QueryRow(ctx, `
 		SELECT revision.revision,revision.base_revision,revision.owner_turn_id,turn_record.action,turn_record.exact_text,
 		       revision.mutation_payload
 		FROM coding_ledger_revisions revision
@@ -85,9 +93,6 @@ func (r *Repository) applyCodingLedgerMutation(ctx context.Context, command Appl
 		}
 		if !matches {
 			return CodingLedgerRevision{}, fmt.Errorf("coding ledger operation %q was already used by a different mutation", command.Mutation.OperationID)
-		}
-		if err := tx.Commit(ctx); err != nil {
-			return CodingLedgerRevision{}, err
 		}
 		result.Applied = false
 		return result, nil
@@ -174,9 +179,6 @@ func (r *Repository) applyCodingLedgerMutation(ctx context.Context, command Appl
 	}
 	result, err := readCodingLedgerRevisionTx(ctx, tx, command.LedgerID, next.Revision, CodingLedgerReadOptions{Limit: -1})
 	if err != nil {
-		return CodingLedgerRevision{}, err
-	}
-	if err := tx.Commit(ctx); err != nil {
 		return CodingLedgerRevision{}, err
 	}
 	result.Applied = true

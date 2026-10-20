@@ -30,6 +30,7 @@ const (
 	LifecycleCompleteStep          LifecycleOperationKind = "complete_step"
 	LifecycleFailStep              LifecycleOperationKind = "fail_step"
 	LifecycleSubmitFeedback        LifecycleOperationKind = "submit_feedback"
+	LifecycleResumeJob             LifecycleOperationKind = "resume_job"
 	LifecycleInterruptJob          LifecycleOperationKind = "interrupt_job"
 	LifecycleReplanJob             LifecycleOperationKind = "replan_job"
 	LifecycleChannelSession        LifecycleOperationKind = "channel_session_turn"
@@ -118,4 +119,15 @@ type CancelJobCommand struct {
 type LifecycleJobResult struct {
 	Job     model.Job
 	Applied bool
+}
+
+// ResumeJobCommand consumes the exact observed frozen authority, without replan.
+type ResumeJobCommand struct {
+	OperationID            model.LifecycleOperationID `json:"operation_id"`
+	JobID                  int64                      `json:"job_id"`
+	Feedback               string                     `json:"feedback"`
+	ExpectedGeneration     int64                      `json:"expected_generation"`
+	ObservedLedgerRevision int64                      `json:"observed_ledger_revision"`
+	WorkspaceRoot          string                     `json:"workspace_root,omitempty"`
+	WorkspaceIdentity      string                     `json:"workspace_identity,omitempty"`
 }

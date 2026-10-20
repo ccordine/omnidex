@@ -115,7 +115,7 @@ func scanOracle(source, kind string) parserScanResult {
 
 func TestExecutionSieveCannotHideInputOrFailureBehindProgress(t *testing.T) {
 	for _, kind := range []string{"question", "permission", "error"} {
-		call := Assignment{Role: ExecutionResponse, Route: Route{Provider: "fixture", Model: "fixture"}, Response: "Completed some work.\n\nAn outstanding need remains."}
+		call := Assignment{Role: ExecutionResponse, Task: &Task{ID: "task", Goal: "Complete the requested work and required verification."}, Route: Route{Provider: "fixture", Model: "fixture"}, Response: "Completed some work.\n\nAn outstanding need remains."}
 		provider := sieveTestProvider(t, func(call Assignment) any {
 			state := "done"
 			if call.ParserStep.BlockID == "block_2" {

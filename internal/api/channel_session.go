@@ -6,12 +6,14 @@ import (
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
+	"github.com/gryph/omnidex/internal/sessionintent"
 	"github.com/jackc/pgx/v5"
 )
 
 const defaultChannelSessionMessageLimit = 100
 
 type channelSessionResponse struct {
+	PendingUserAction *sessionintent.Proposal       `json:"pending_user_action,omitempty"`
 	RealtimeCursor    uint64                        `json:"realtime_cursor"`
 	State             model.ChannelSessionState     `json:"state"`
 	WorkspaceIdentity string                        `json:"workspace_identity"`
@@ -108,6 +110,7 @@ func (s *Server) getChannelSession(
 		Controls:          snapshot.Controls,
 		ControlsTruncated: snapshot.ControlsTruncated,
 		ActiveJob:         snapshot.ActiveJob,
+		PendingUserAction: snapshot.PendingUserAction,
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, payload)

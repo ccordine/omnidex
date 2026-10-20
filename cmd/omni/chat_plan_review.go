@@ -168,6 +168,11 @@ func (session *chatSession) showPlanReview() error {
 		return err
 	}
 	console := session.renderer.console
+	if console.workspace != nil {
+		if err := console.workspace.focusReview(view, session.planReview.selected, session.planReview.confirming, len(session.planReview.snapshot.Leaves) == 0); err != nil {
+			return err
+		}
+	}
 	if err := console.ShowPlanReview(view); err != nil {
 		return err
 	}

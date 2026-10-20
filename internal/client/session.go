@@ -14,6 +14,7 @@ import (
 	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/projectroot"
+	"github.com/gryph/omnidex/internal/sessionintent"
 )
 
 const (
@@ -27,6 +28,7 @@ const (
 )
 
 type ChatSessionSnapshot struct {
+	PendingUserAction *sessionintent.Proposal       `json:"pending_user_action,omitempty"`
 	RealtimeCursor    uint64                        `json:"realtime_cursor"`
 	State             model.ChannelSessionState     `json:"state"`
 	Channel           model.Channel                 `json:"channel"`
@@ -285,7 +287,7 @@ func validateChatSessionControls(snapshot ChatSessionSnapshot) error {
 		maximum := maxObjectiveControlBytes
 		switch control.Kind {
 		case model.ChannelSessionControlInterrupt:
-			if control.Generation < 2 || control.Status != model.JobStatusWaiting {
+			if control.Generation < 1 || control.Status != model.JobStatusWaiting {
 				return fmt.Errorf("chat session interrupt %q has contradictory authority", control.OperationID)
 			}
 		case model.ChannelSessionControlReplan:

@@ -20,7 +20,7 @@ func TestNativeAgentMessageDeltasComposeAndCompletionAppends(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, required := range []string{"omni> Inspect the settings.", "omni> Next check permissions."} {
+	for _, required := range []string{"omni> Inspect the settings.", "      Next check permissions."} {
 		if strings.Count(output.String(), required) != 1 {
 			t.Errorf("composed native message omitted or repeated %q: %q", required, output.String())
 		}

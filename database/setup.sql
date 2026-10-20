@@ -585,6 +585,25 @@ $$;
 -- Name: enforce_jobs_state_authority(); Type: FUNCTION; Schema: current runtime; Owner: -
 --
 
+CREATE FUNCTION frozen_coding_resume_authorized(target_job bigint, target_generation bigint) RETURNS boolean
+ LANGUAGE plpgsql STABLE AS $$
+BEGIN
+ RETURN EXISTS (
+  SELECT 1 FROM jobs job JOIN coding_ledgers ledger ON ledger.job_id=job.id
+  JOIN lifecycle_operation_registry operation ON operation.kind='resume_job'
+   AND operation.command_payload->>'job_id'=job.id::text
+   AND operation.command_payload->>'expected_generation'=target_generation::text
+   AND operation.command_payload->>'observed_ledger_revision'=ledger.current_revision::text
+  WHERE job.id=target_job AND job.current_generation=target_generation
+   AND job.status IN ('failed','waiting_input') AND ledger.state='frozen'
+   AND ledger.current_revision=ledger.frozen_revision
+   AND NOT EXISTS(SELECT 1 FROM job_lifecycle_operations committed WHERE committed.operation_id=operation.operation_id)
+   AND EXISTS(SELECT 1 FROM job_steps step WHERE step.job_id=job.id AND step.generation=target_generation
+     AND step.action='v3_coding' AND step.status IN ('failed','waiting_input') AND step.superseded_at_generation IS NULL)
+ );
+END;
+$$;
+
 CREATE FUNCTION enforce_jobs_state_authority() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -600,7 +619,10 @@ BEGIN
     END IF;
     IF TG_OP='UPDATE'
        AND OLD.status IN ('completed','failed','canceled')
-       AND NEW.status NOT IN ('completed','failed','canceled') THEN
+       AND NEW.status NOT IN ('completed','failed','canceled') AND NOT (
+         OLD.status='failed' AND NEW.status='running' AND NEW.current_generation=OLD.current_generation
+         AND frozen_coding_resume_authorized(OLD.id,OLD.current_generation)
+       ) THEN
         RAISE EXCEPTION 'terminal job cannot become nonterminal';
     END IF;
     RETURN NEW;
@@ -1221,10 +1243,18 @@ BEGIN
     IF OLD.action IS DISTINCT FROM NEW.action THEN
         RAISE EXCEPTION 'job step action identity is immutable';
     END IF;
-    IF OLD.status <> 'pending' AND NEW.status = 'pending' THEN
+    IF OLD.status <> 'pending' AND NEW.status = 'pending' AND NOT (OLD.status='waiting_input' AND OLD.action='v3_coding' AND OLD.current_attempt=0
+       AND frozen_coding_resume_authorized(OLD.job_id,OLD.generation)) THEN
         RAISE EXCEPTION 'job step execution identity cannot return to pending';
     END IF;
     IF NEW.action='v3_coding' AND NEW.status='waiting_input' AND NOT EXISTS (
+        SELECT 1 FROM lifecycle_operation_registry operation JOIN coding_ledgers ledger ON ledger.job_id=NEW.job_id
+        WHERE operation.kind='interrupt_job' AND operation.command_payload->>'job_id'=NEW.job_id::text
+          AND NOT EXISTS(SELECT 1 FROM job_lifecycle_operations committed WHERE committed.operation_id=operation.operation_id)
+          AND ledger.state='frozen' AND ledger.frozen_revision=ledger.current_revision
+          AND NEW.worker_id IS NULL AND NEW.superseded_at_generation IS NULL
+          AND NOT EXISTS(SELECT 1 FROM job_step_attempts attempt WHERE attempt.step_id=NEW.id AND attempt.status='active')
+    ) AND NOT EXISTS (
         SELECT 1 FROM evidence response
         WHERE response.job_id=NEW.job_id AND response.step_id=NEW.id AND response.kind='coding_agent'
           AND response.payload_json->>'generation'=NEW.generation::text
@@ -1239,6 +1269,8 @@ BEGIN
         RAISE EXCEPTION 'coding execution input requires a parsed final response or bound native request';
     END IF;
     IF NEW.action='v3_coding' AND OLD.status='waiting_input' AND NEW.status='running' AND NOT EXISTS (
+        SELECT 1 WHERE frozen_coding_resume_authorized(NEW.job_id,NEW.generation)
+    ) AND NOT EXISTS (
         SELECT 1 FROM evidence reply
         WHERE reply.job_id=NEW.job_id AND reply.step_id=NEW.id AND reply.kind='coding_agent'
           AND reply.payload_json->>'generation'=NEW.generation::text
@@ -1748,6 +1780,19 @@ DECLARE
     expected_transition_purpose TEXT;
 BEGIN
     IF NEW.kind NOT IN ('interrupt_job', 'replan_job', 'submit_feedback') THEN
+        RETURN NULL;
+    END IF;
+    IF NEW.kind='interrupt_job' AND NEW.result_generation=NEW.observed_generation THEN
+        IF NOT EXISTS (
+          SELECT 1 FROM jobs job JOIN coding_ledgers ledger ON ledger.job_id=job.id
+          JOIN job_steps step ON step.job_id=job.id AND step.generation=job.current_generation
+          WHERE job.id=NEW.job_id AND job.current_generation=NEW.result_generation
+            AND job.status='waiting_input' AND ledger.state='frozen'
+            AND ledger.frozen_revision=ledger.current_revision
+            AND step.id=NEW.step_id AND step.action='v3_coding' AND step.status='waiting_input'
+            AND step.worker_id IS NULL AND step.superseded_at_generation IS NULL
+            AND NOT EXISTS(SELECT 1 FROM job_step_attempts attempt WHERE attempt.step_id=step.id AND attempt.status='active')
+        ) THEN RAISE EXCEPTION 'execution pause lacks retained frozen authority'; END IF;
         RETURN NULL;
     END IF;
     IF NEW.kind='submit_feedback' AND NEW.result_generation<>NEW.observed_generation THEN
@@ -4429,7 +4474,8 @@ CREATE TABLE job_lifecycle_operations (
           (result_step_status='running' AND result_job_status='running' AND COALESCE(result_job->'metadata'->'coding_execution'->>'mode'='agents',false)))) OR
         (result_generation=observed_generation+1 AND result_step_status='canceled' AND result_job_status='running' AND
           COALESCE(result_job->'metadata'->'coding_execution'->>'mode'='agents',false)))) OR
-      (kind='interrupt_job' AND step_id IS NULL AND result_step_status IS NULL AND result_generation=observed_generation+1 AND result_job_status='waiting_input') OR
+      (kind='interrupt_job' AND result_job_status='waiting_input' AND ((step_id IS NULL AND result_step_status IS NULL AND result_generation=observed_generation+1) OR (step_id IS NOT NULL AND result_step_status='waiting_input' AND result_generation=observed_generation))) OR
+      (kind='resume_job' AND step_id IS NULL AND result_step_status IS NULL AND result_generation=observed_generation AND result_job_status='running') OR
       (kind='replan_job' AND step_id IS NULL AND result_step_status IS NULL AND result_generation=observed_generation+1 AND result_job_status='running') OR
       (kind='cancel_job' AND step_id IS NULL AND result_step_status IS NULL AND result_generation=observed_generation AND result_job_status='canceled')),
     CONSTRAINT job_lifecycle_operations_check4 CHECK (
@@ -4437,7 +4483,7 @@ CASE
     WHEN (kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text])) THEN ((command_payload ? 'step_id'::text) AND (((command_payload ->> 'step_id'::text))::bigint = step_id))
     ELSE ((command_payload ? 'job_id'::text) AND (((command_payload ->> 'job_id'::text))::bigint = job_id))
 END),
-    CONSTRAINT job_lifecycle_operations_kind_check CHECK ((kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text, 'submit_feedback'::text, 'interrupt_job'::text, 'replan_job'::text, 'cancel_job'::text]))),
+    CONSTRAINT job_lifecycle_operations_kind_check CHECK ((kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text, 'submit_feedback'::text, 'interrupt_job'::text, 'resume_job'::text, 'replan_job'::text, 'cancel_job'::text]))),
     CONSTRAINT job_lifecycle_operations_observed_generation_check CHECK ((observed_generation > 0)),
     CONSTRAINT job_lifecycle_operations_operation_id_check CHECK ((operation_id ~ '^lifecycle_operation_[a-z0-9_]{1,128}$'::text)),
     CONSTRAINT job_lifecycle_operations_result_generation_check CHECK ((result_generation > 0)),
@@ -4570,7 +4616,7 @@ CREATE TABLE lifecycle_operation_registry (
     command_payload jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT lifecycle_operation_registry_check CHECK (((jsonb_typeof(command_payload) = 'object'::text) AND (command_payload ? 'operation_id'::text) AND ((command_payload ->> 'operation_id'::text) = operation_id))),
-    CONSTRAINT lifecycle_operation_registry_kind_check CHECK ((kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text, 'submit_feedback'::text, 'interrupt_job'::text, 'replan_job'::text, 'channel_session_turn'::text, 'channel_session_message'::text, 'scrum_channel_message'::text, 'cancel_job'::text]))),
+    CONSTRAINT lifecycle_operation_registry_kind_check CHECK ((kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text, 'submit_feedback'::text, 'interrupt_job'::text, 'resume_job'::text, 'replan_job'::text, 'channel_session_turn'::text, 'channel_session_message'::text, 'scrum_channel_message'::text, 'cancel_job'::text]))),
     CONSTRAINT lifecycle_operation_registry_operation_id_check CHECK ((operation_id ~ '^lifecycle_operation_[a-z0-9_]{1,128}$'::text))
 );
 
@@ -5682,15 +5728,19 @@ UNION ALL
     operation.job_id,
     operation.result_generation AS generation,
         CASE operation.kind
-            WHEN 'interrupt_job'::text THEN 0
+            -- Frozen coding pauses preserve the current generation. Like a
+            -- resume, their conversational text follows that generation's turn.
+            WHEN 'interrupt_job'::text THEN CASE WHEN operation.result_generation=operation.observed_generation THEN 1 ELSE 0 END
             WHEN 'replan_job'::text THEN 0
+			WHEN 'resume_job'::text THEN 1
 			WHEN 'submit_feedback'::text THEN 1
             WHEN 'cancel_job'::text THEN 2
             ELSE NULL::integer
         END AS phase,
         CASE operation.kind
-            WHEN 'interrupt_job'::text THEN 'interruption'::text
+            WHEN 'interrupt_job'::text THEN CASE WHEN operation.result_generation=operation.observed_generation THEN 'follow_up'::text ELSE 'interruption'::text END
             WHEN 'replan_job'::text THEN 'redirect'::text
+			WHEN 'resume_job'::text THEN 'follow_up'::text
 			WHEN 'submit_feedback'::text THEN 'follow_up'::text
             WHEN 'cancel_job'::text THEN 'cancellation'::text
             ELSE NULL::text
@@ -5700,8 +5750,9 @@ UNION ALL
             ELSE (operation.command_payload ->> 'feedback'::text)
         END AS text,
         CASE operation.kind
-            WHEN 'interrupt_job'::text THEN (E'\n\nuser interruption:\n'::text || (operation.command_payload ->> 'feedback'::text))
+            WHEN 'interrupt_job'::text THEN ((CASE WHEN operation.result_generation=operation.observed_generation THEN E'\n\nuser follow-up:\n'::text ELSE E'\n\nuser interruption:\n'::text END) || (operation.command_payload ->> 'feedback'::text))
             WHEN 'replan_job'::text THEN (E'\n\nuser redirect:\n'::text || (operation.command_payload ->> 'feedback'::text))
+			WHEN 'resume_job'::text THEN (E'\n\nuser follow-up:\n'::text || (operation.command_payload ->> 'feedback'::text))
 			WHEN 'submit_feedback'::text THEN (E'\n\nuser follow-up:\n'::text || (operation.command_payload ->> 'feedback'::text))
             WHEN 'cancel_job'::text THEN (E'\n\nuser cancellation:\n'::text || (operation.command_payload ->> 'reason'::text))
             ELSE NULL::text
@@ -5710,7 +5761,7 @@ UNION ALL
     operation.operation_id
    FROM (job_lifecycle_operations operation
      JOIN jobs job ON ((job.id = operation.job_id)))
-  WHERE ((job.pipeline = 'chat'::text) AND (job.metadata ? 'channel_id'::text) AND (operation.kind = ANY (ARRAY['submit_feedback'::text, 'interrupt_job'::text, 'replan_job'::text, 'cancel_job'::text])))
+  WHERE ((job.pipeline = 'chat'::text) AND (job.metadata ? 'channel_id'::text) AND (operation.kind = ANY (ARRAY['submit_feedback'::text, 'interrupt_job'::text, 'resume_job'::text, 'replan_job'::text, 'cancel_job'::text])))
     AND NOT (operation.kind='submit_feedback' AND operation.result_generation<>operation.observed_generation);
 
 
@@ -6065,6 +6116,10 @@ ALTER TABLE job_lifecycle_operations
       ((kind = ANY (ARRAY['interrupt_job'::text, 'replan_job'::text])) AND
        (command_payload ?& ARRAY['operation_id'::text, 'job_id'::text, 'feedback'::text]) AND
        ((command_payload - ARRAY['operation_id'::text, 'job_id'::text, 'feedback'::text, 'observed_ledger_revision'::text, 'workspace_root'::text, 'workspace_identity'::text]) = '{}'::jsonb) AND
+       lifecycle_workspace_payload_is_valid(command_payload)) OR
+      ((kind = 'resume_job') AND
+       command_payload ?& ARRAY['operation_id','job_id','feedback','expected_generation','observed_ledger_revision'] AND
+       command_payload - ARRAY['operation_id','job_id','feedback','expected_generation','observed_ledger_revision','workspace_root','workspace_identity']='{}'::jsonb AND
        lifecycle_workspace_payload_is_valid(command_payload)) OR
       ((kind = 'cancel_job'::text) AND
        (command_payload ?& ARRAY['operation_id'::text, 'job_id'::text, 'reason'::text]) AND
@@ -10902,3 +10957,33 @@ BEGIN
 END $$;
 CREATE TRIGGER channel_session_message_reply_update_immutable BEFORE UPDATE ON ai_channel_messages
  FOR EACH ROW EXECUTE FUNCTION prevent_channel_session_message_reply_mutation();
+
+-- A parsed owner message is intake; only a separate execution transaction may
+-- fill its receipt. The exact actor, message, context and model evidence persist.
+CREATE TABLE channel_user_intents (
+    operation_id text PRIMARY KEY CHECK (operation_id ~ '^lifecycle_operation_[a-z0-9_]{1,128}$'),
+    channel_id text NOT NULL REFERENCES ai_channels(id),
+    workspace_identity text NOT NULL,
+    request_json jsonb NOT NULL CHECK (jsonb_typeof(request_json)='object'),
+    context_json jsonb NOT NULL CHECK (jsonb_typeof(context_json)='object'),
+    result_json jsonb NOT NULL CHECK (jsonb_typeof(result_json)='object'),
+    evidence_json jsonb NOT NULL CHECK (jsonb_typeof(evidence_json)='array'),
+    receipt_json jsonb CHECK (jsonb_typeof(receipt_json)='object'),
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    CHECK (request_json->>'operation_id'=operation_id),
+    CHECK (request_json->'state'->>'channel_id'=channel_id),
+    CHECK (request_json->'state'->>'workspace_identity'=workspace_identity)
+);
+CREATE INDEX channel_user_intents_channel_created ON channel_user_intents(channel_id,created_at DESC,operation_id);
+CREATE FUNCTION preserve_channel_user_intent() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    IF TG_OP='DELETE' THEN RAISE EXCEPTION 'User intention provenance is immutable'; END IF;
+    IF ROW(NEW.operation_id,NEW.channel_id,NEW.workspace_identity,NEW.request_json,NEW.context_json,NEW.result_json,NEW.evidence_json,NEW.created_at)
+       IS DISTINCT FROM ROW(OLD.operation_id,OLD.channel_id,OLD.workspace_identity,OLD.request_json,OLD.context_json,OLD.result_json,OLD.evidence_json,OLD.created_at)
+       OR OLD.receipt_json IS NOT NULL THEN
+        RAISE EXCEPTION 'User intention provenance and completed receipts are immutable';
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER channel_user_intents_immutable BEFORE UPDATE OR DELETE ON channel_user_intents
+ FOR EACH ROW EXECUTE FUNCTION preserve_channel_user_intent();

@@ -84,6 +84,10 @@
       "source": "Implemented the importer and its tests.\n\nI cannot finish until you answer: should duplicate records be replaced or rejected?",
       "expected": {
         "kind": "question"
+      },
+      "task": {
+        "id": "fixture-task",
+        "goal": "Implement the importer and tests; determine required duplicate handling."
       }
     },
     {
@@ -92,6 +96,10 @@
       "source": "The implementation is ready.\n\nMay I install the missing package to run the required browser checks? Those checks are not finished.",
       "expected": {
         "kind": "permission"
+      },
+      "task": {
+        "id": "fixture-task",
+        "goal": "Implement the task and run required browser checks."
       }
     },
     {
@@ -100,6 +108,10 @@
       "source": "The export code is written.\n\nRequired verification could not run because the configured runtime is unavailable. This task remains incomplete.",
       "expected": {
         "kind": "error"
+      },
+      "task": {
+        "id": "fixture-task",
+        "goal": "Implement the export and verify with the configured runtime."
       }
     },
     {
@@ -108,6 +120,10 @@
       "source": "An earlier missing-package error was resolved by using the installed runtime.\n\nThe documentation contains the example question \"May I upload this file?\"; it is a quoted example, not an authorization request.\n\nThe requested implementation and required checks are complete. Nothing needs your answer or approval.",
       "expected": {
         "kind": "done"
+      },
+      "task": {
+        "id": "fixture-task",
+        "goal": "Complete the requested implementation and required checks."
       }
     },
     {
@@ -167,6 +183,10 @@
       "source": "I modified the exporter implementation.",
       "expected": {
         "kind": "error"
+      },
+      "task": {
+        "id": "fixture-task",
+        "goal": "Complete the requested implementation and required checks."
       }
     },
     {
@@ -176,6 +196,10 @@
       "source": "Implemented `wordcount.py`, automated tests, and a short README.\n\nVerified: `python wordcount.py \"hello world\"` prints `2`. Tests pass for empty input, whitespace, and missing/extra arguments.\n\nDelivered locally only. No temporary artifacts created.",
       "expected": {
         "kind": "done"
+      },
+      "task": {
+        "id": "fixture-task",
+        "goal": "Implement wordcount.py, automated tests for whitespace and arguments, and a short README."
       }
     },
     {
@@ -189,6 +213,179 @@
       "expected": {
         "kind": "done",
         "findings": 0
+      }
+    },
+    {
+      "name": "saved-job14-task-scoped-review",
+      "role": "review_response",
+      "source": "Independent review found no task-specific defects. Both startup boundaries reuse the execution grant; fresh task-local sessions, authority checks, essential questions, and reviewer non-modification instructions remain intact.\n\nProtocol/coding-agent checks and both queue runtime cases passed, including four real isolated Chromium checks. Semantic responses were scripted; live-model behavior remains unverified.\n\nUnchanged obsolete queue tests still prevent full-package compilation. Results are recorded in [the evidence ledger](/home/gryph/Projects/tools/omnidex/docs/EVIDENCE_LEDGER.md:103). Implementation was untouched, and all review-owned resources were removed.",
+      "task": {
+        "id": "p_5536f6a7dedf_1_task",
+        "goal": "1. **Reuse the execution grant for independent review.** Fix `agentPermissions` and corresponding role instructions so task-local review receives the approved execution and verification permissions at both thread and turn startup, without routine command prompts. Preserve fresh independent review sessions, scope and authority checks, and essential questions. Reviewers must inspect and actually verify the task without modifying its implementation. Verify protocol settings and isolated Docker/browser checks through both execution and review.\n\nEach frozen task must run through Omnidex\u2019s existing queue using a fresh task-local execution session followed by a fresh independent review session.\n\nKeep all work in `/home/gryph/Projects/tools/omnidex`, preserve uncommitted owner work and the existing user-intent implementation, and leave the cordine.site workload and job untouched.\n\nVerification must use bounded disposable isolated fixtures, affected automated checks and actual terminal/runtime checks.\n\nRecord commands and observed results in existing evidence; distinguish scripted semantic fixtures from live-model evidence.\n\nReport unrelated obsolete-test failures separately without weakening tests or expanding scope.\n\nCreate no source copies/worktrees, production-data fixtures, direct database patches, destructive resets, deployments, installations or service restarts.\n\nRetire task-owned test resources when finished.",
+        "read_files": [],
+        "write_files": [],
+        "delete_files": []
+      },
+      "provenance": "Unmodified job 14 review_response notes[0] and frozen review assignment, read-only capture 2026-10-19",
+      "expected": {
+        "kind": "done",
+        "findings": 0
+      }
+    },
+    {
+      "name": "saved-job15-task-scoped-execution",
+      "role": "execution_response",
+      "source": "Implemented task-scoped review parsing and validation, preserving original responses, findings, and evidence. Added job #14\u2019s exact response/task regression plus failure, finding, and question cases.\n\nVerified: bounded Docker checks passed for coding-agent and Codex packages. Live-model classification remains unverified. Unrelated tests preserved.\n\nEvidence and cleanup recorded in [EVIDENCE_LEDGER.md](/home/gryph/Projects/tools/omnidex/docs/EVIDENCE_LEDGER.md). Disposable resources removed; no commit or deployment performed.",
+      "task": {
+        "id": "p_1816da2e4c9a_1_task",
+        "goal": "1. **Correct task-scoped review evaluation.** Evaluate required verification against the exact frozen task. Preserve the reviewer\u2019s original response, concrete findings, and evidence. A completed review reporting no task-specific defects must remain complete when its limitations concern unrelated obsolete tests or unrequested live-model evidence. Required failed checks remain failures; essential missing questions request input; implementation defects return to correction. Use job #14\u2019s preserved response as a regression case, alongside real failure, finding, and question cases. Fix parsing and validation rather than sanitizing recaps.\n\nAfter approval, Omnidex executes and independently reviews each frozen task through its normal workflow.\n\nVerification uses bounded disposable isolated fixtures and actual affected terminal/runtime checks, with exact commands, results, evidence limitations, and cleanup recorded in [docs/EVIDENCE_LEDGER.md](/home/gryph/Projects/tools/omnidex/docs/EVIDENCE_LEDGER.md).\n\nPreserve unrelated tests.\n\nNo direct coding outside Omnidex, source copies, worktrees, database patches, live-schema changes, deployment, installation, service restarts, or changes to cordine.site or its job.",
+        "read_files": [],
+        "write_files": [],
+        "delete_files": []
+      },
+      "provenance": "Unmodified job 15 execution_response notes[0] and frozen execution assignment, read-only capture 2026-10-19",
+      "expected": {
+        "kind": "done"
+      }
+    },
+    {
+      "name": "task-scoped-execution_response-required-failure",
+      "role": "execution_response",
+      "source": "Required verification failed with exit 1. The task remains incomplete.",
+      "task": {
+        "id": "scope-task",
+        "goal": "Run the required protocol checks."
+      },
+      "expected": {
+        "kind": "error"
+      }
+    },
+    {
+      "name": "task-scoped-execution_response-essential-question",
+      "role": "execution_response",
+      "source": "Which required fixture endpoint should I use? I need that answer to finish required verification.",
+      "task": {
+        "id": "scope-task",
+        "goal": "Verify the configured endpoint; ask if its identity is unavailable."
+      },
+      "expected": {
+        "kind": "question"
+      }
+    },
+    {
+      "name": "task-scoped-execution_response-required-live-evidence",
+      "role": "execution_response",
+      "source": "Implementation is complete. Live-model verification remains unverified.",
+      "task": {
+        "id": "scope-task",
+        "goal": "Implement the change and verify live-model classification."
+      },
+      "expected": {
+        "kind": "error"
+      }
+    },
+    {
+      "name": "task-scoped-review_response-required-failure",
+      "role": "review_response",
+      "source": "Required verification failed with exit 1. The task remains incomplete.",
+      "task": {
+        "id": "scope-task",
+        "goal": "Run the required protocol checks."
+      },
+      "expected": {
+        "kind": "error",
+        "findings": 0
+      }
+    },
+    {
+      "name": "task-scoped-review_response-essential-question",
+      "role": "review_response",
+      "source": "Which required fixture endpoint should I use? I need that answer to finish required verification.",
+      "task": {
+        "id": "scope-task",
+        "goal": "Verify the configured endpoint; ask if its identity is unavailable."
+      },
+      "expected": {
+        "kind": "question",
+        "findings": 0
+      }
+    },
+    {
+      "name": "task-scoped-review_response-required-live-evidence",
+      "role": "review_response",
+      "source": "Implementation is complete. Live-model verification remains unverified.",
+      "task": {
+        "id": "scope-task",
+        "goal": "Implement the change and verify live-model classification."
+      },
+      "expected": {
+        "kind": "error",
+        "findings": 0
+      }
+    },
+    {
+      "name": "task-scoped-review-concrete-finding",
+      "role": "review_response",
+      "source": "Review complete. agentPermissions leaves review read-only at turn startup, violating the required execution grant.",
+      "task": {
+        "id": "scope-task",
+        "goal": "Reuse the execution grant for independent review at thread and turn startup."
+      },
+      "expected": {
+        "kind": "done",
+        "findings": 1
+      }
+    },
+    {
+      "name": "job21-execution-before-independent-review",
+      "role": "execution_response",
+      "source": "Implemented and verified locally. Recovery fixtures preserve job identity and completed effects; cancellation and completion boundaries pass.\n\nEvidence and limitations are appended to [the ledger](docs/EVIDENCE_LEDGER.md). Disposable fixtures are cleaned; installed runtime remains unchanged. The existing controller dispatches independent review next.",
+      "task": {
+        "id": "p_2cc9345103a0_1_task",
+        "goal": "1. **Continue recoverable work on the same job.** Repair recovery admission and reconciliation so failed or interrupted work continues where retained authority permits. Preserve accepted tasks, partial changes, native session identities, and completed commands/results. Retry interpretation or reconciliation without repeating completed execution or review. Preserve explicit cancellation and completed-job boundaries. Verify interruption, retained-result parser failure, disconnect/reconnect, and duplicate retry using isolated PostgreSQL/runtime fixtures; demonstrate unchanged job identity and no repeated completed effects.\n\nPreserve the existing ledger panel, reusable intent boundary, permission grants, and installed runtime.\n\nEach task includes implementation and fresh independent review through Omnidex\u2019s existing dispatched sessions. Those sessions perform the work directly; they do not launch nested Omnidex sessions.\n\nVerification uses bounded disposable isolated fixtures, established resource limits, and synthetic data.\n\nAppend concrete commands, results, identities, findings, limitations, and cleanup evidence to the existing evidence ledger.\n\nUse only the authoritative workspace and PostgreSQL ledger.\n\nPreserve unrelated changes, settings, identities, prior evidence, and the private activation rollback set.\n\nNo historical job/ledger edits, source copies/worktrees, new architecture, live schema changes, installation/restart, or destructive resets.",
+        "read_files": [],
+        "write_files": [],
+        "delete_files": []
+      },
+      "expected": {
+        "kind": "done"
+      }
+    },
+    {
+      "name": "review-before-code-owned-acceptance",
+      "role": "review_response",
+      "source": "Independent review complete. Required checks pass; no task-specific defects. Code-owned task acceptance remains pending.",
+      "task": {
+        "id": "scope-task",
+        "goal": "Implement and verify the requested result, then independently review it through Omnidex."
+      },
+      "expected": {
+        "kind": "done",
+        "findings": 0
+      }
+    },
+    {
+      "name": "execution-later-review-pending",
+      "role": "execution_response",
+      "source": "Implementation and required checks complete. Required independent review remains pending.",
+      "task": {
+        "id": "scope-task",
+        "goal": "Implement and verify the requested change. Omnidex dispatches independent review after execution."
+      },
+      "expected": {
+        "kind": "done"
+      }
+    },
+    {
+      "name": "execution-required-review-protocol-check-failed",
+      "role": "execution_response",
+      "source": "Required independent-review protocol verification failed at turn startup.",
+      "task": {
+        "id": "scope-task",
+        "goal": "Preserve review permissions and verify independent-review thread and turn startup."
+      },
+      "expected": {
+        "kind": "error"
       }
     }
   ]

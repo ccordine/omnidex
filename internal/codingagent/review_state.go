@@ -4,6 +4,7 @@ func (state *taskState) projectReviewEntry(entry Entry) {
 	switch entry.Phase {
 	case "task_executing":
 		state.pendingReview = nil
+		state.reviewSession = nil
 		state.reviewQuestion, state.reviewReply = "", ""
 	case "call_completed":
 		if entry.Role == Review && entry.Result != nil {
@@ -12,6 +13,9 @@ func (state *taskState) projectReviewEntry(entry Entry) {
 	case "review_response":
 		if len(entry.Notes) != 1 {
 			return
+		}
+		if entry.ResponseKind == ExecutionError {
+			state.reviewQuestion = entry.Notes[0]
 		}
 		if entry.ResponseKind == ExecutionQuestion || entry.ResponseKind == ExecutionPermission {
 			state.reviewQuestion = entry.Notes[0]
@@ -23,6 +27,7 @@ func (state *taskState) projectReviewEntry(entry Entry) {
 		}
 		state.reviewReply = entry.Notes[1]
 		state.pendingReview = nil
+		state.reviewSession = nil
 		state.inputRequired = nil
 	}
 }

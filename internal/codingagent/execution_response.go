@@ -31,7 +31,7 @@ func (controller *Controller) handleExecutionResponse(ctx context.Context, task 
 		return fmt.Errorf("decode ordinary Codex response: %w", err)
 	}
 	call := controller.assignment(ExecutionResponse, nil, controller.Configuration.LedgerParser)
-	call.Response = response
+	call.Task, call.Response = &task, response
 	parsed, err := controller.invoke(ctx, call, round)
 	if err != nil {
 		return err

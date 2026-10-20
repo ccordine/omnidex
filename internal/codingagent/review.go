@@ -31,6 +31,12 @@ func (controller *Controller) review(ctx context.Context, scope Assignment, task
 		return ReviewResult{}, result, err
 	}
 	for _, entry := range entries {
+		if entry.Phase == "review_response" && entry.CallID == result.CallID && entry.ResponseKind == ExecutionDone && entry.ReviewResponse != nil && len(entry.Notes) == 1 && entry.Notes[0] == response {
+			if err := ValidateReview(tasks, entry.ReviewResponse.ReviewResult); err != nil {
+				return ReviewResult{}, result, err
+			}
+			return entry.ReviewResponse.ReviewResult, result, nil
+		}
 		if entry.Phase == "review_parse_rejected" && entry.CallID == result.CallID {
 			parser.ValidationNotes = entry.Notes
 		}

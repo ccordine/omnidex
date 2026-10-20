@@ -12,6 +12,10 @@ import (
 // Pure parser leaves keep normal sign-in/configuration, but global agent policy
 // is not their data or authority. The private mount never edits the host profile.
 func startParserConnection(ctx context.Context, command, directory, scratch string) (*connection, error) {
+	return startIsolatedParserConnection(ctx, command, directory, scratch, nil)
+}
+
+func startIsolatedParserConnection(ctx context.Context, command, directory, scratch string, overrides []string) (*connection, error) {
 	profile := os.Getenv("CODEX_HOME")
 	if profile == "" {
 		home, err := os.UserHomeDir()
@@ -30,6 +34,18 @@ func startParserConnection(ctx context.Context, command, directory, scratch stri
 		}
 	}
 	arguments := configuredConnectionArguments(nil)
+	arguments = append(arguments, overrides...)
+	if len(overrides) > 0 {
+		source, err := parserCatalogSource(profile)
+		if err != nil {
+			return nil, err
+		}
+		catalog, err := parserCatalog(source, scratch)
+		if err != nil {
+			return nil, err
+		}
+		arguments = append(arguments, "-c", fmt.Sprintf("model_catalog_json=%q", catalog))
+	}
 	if len(files) == 0 {
 		return launchConnection(ctx, command, directory, true, arguments)
 	}
@@ -52,7 +68,7 @@ func startParserConnection(ctx context.Context, command, directory, scratch stri
 		return nil, err
 	}
 	// All paths and the executable are positional arguments, never shell text.
-	script := `empty=$1; count=$2; shift 2; while [ "$count" -gt 0 ]; do mount --bind "$empty" "$1" && mount -o remount,bind,ro "$1" || exit 1; shift; count=$((count-1)); done; exec "$@"`
+	script := `empty=$1; count=$2; shift 2; while [ "$count" -gt 0 ]; do mount --bind "$empty" "$1" && mount -o remount,bind,ro,nosuid,nodev,noexec "$empty" "$1" || exit 1; shift; count=$((count-1)); done; exec "$@"`
 	wrapped := []string{"--user", "--map-root-user", "--mount", "--propagation", "private", "/bin/sh", "-c", script, "parser-isolation", empty, fmt.Sprint(len(files))}
 	wrapped = append(wrapped, files...)
 	wrapped = append(wrapped, resolved)

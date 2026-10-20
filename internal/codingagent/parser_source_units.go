@@ -71,7 +71,7 @@ func parserScanParts(role Role, source string, result parserScanResult) ([]Parse
 		if !exists || !contains(parserPartKinds(role), disposition.Kind) || strings.TrimSpace(disposition.Reason) == "" {
 			return nil, fmt.Errorf("source unit %s has no valid explained disposition", unit.ID)
 		}
-		if disposition.Kind == "unknown" {
+		if disposition.Kind == "unknown" && role.IsPlanning() {
 			// Unknown is non-authoritative parser commentary. Preserve the source
 			// bytes, but do not let the commentary block the response.
 			disposition.Kind = "ignore"

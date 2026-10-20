@@ -27,12 +27,14 @@ type rpcFrame struct {
 }
 
 type connection struct {
-	process       *exec.Cmd
-	input         io.WriteCloser
-	output        *bufio.Scanner
-	sequence      int
-	lastFrame     json.RawMessage
-	serverRequest func(rpcFrame) error
+	process        *exec.Cmd
+	input          io.WriteCloser
+	output         *bufio.Scanner
+	sequence       int
+	initialized    bool
+	isolatedParser bool
+	lastFrame      json.RawMessage
+	serverRequest  func(rpcFrame) error
 }
 
 type rpcError struct {

@@ -170,3 +170,10 @@ func joinAuthorityContent(authorities []assemblyline.ContextCandidateAuthority) 
 	}
 	return strings.Join(contents, "\n\n")
 }
+
+// ReduceRelevant minifies already scoped context using the same bounded grouping
+// and completion rules as Compile, without performing another relevance pass.
+func ReduceRelevant(ctx context.Context, instruction string, selected []assemblyline.ContextCandidateAuthority, station MinificationStation) (string, error) {
+	content, _, err := reduceSelectedAuthorities(ctx, instruction, "", []string{}, selected, station)
+	return content, err
+}

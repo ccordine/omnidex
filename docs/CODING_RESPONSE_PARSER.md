@@ -25,22 +25,52 @@ semantic questions; they never select execution work or mark ledger tasks done.
    and observation checks retain their admitted source text. Commands and file
    references need literal source support. Project-wide rules are bound by code
    to all remaining tasks, including tasks described later in the response.
-4. Execution combines the admitted signals deterministically. Outstanding
+4. Execution receives the exact frozen task instructions to determine required
+   implementation and verification, then combines the admitted signals deterministically. It evaluates the current
+   execution assignment: later code-owned independent review and acceptance cannot
+   be prerequisites for the execution response that enables them.
+   A concluded report disclosing unfinished implementation, failed checks or
+   unproven required claims reaches review with the entire original report.
+   This establishes neither implementation success nor acceptance. Runtime and
+   transport failures, unresolvable infrastructure errors and unconcluded sessions
+   remain explicit errors. Genuine owner decisions and permissions still use the
+   existing focused input path.
+   Unrelated obsolete tests and unrequested evidence limitations remain evidence,
+   without creating incomplete obligations. Outstanding
    permission, question, or error signals cannot disappear behind a progress
    claim. Progress or silence alone cannot establish completion. The original
    final response remains the owner's interaction text.
-5. Review examines every source block for every supplied acceptance criterion.
-   Each criterion has explicit pass, defect, blocked, or absent evidence.
-   Findings and verification quotes must occur in their original source block;
-   code supplies exact task and criterion identities. Missing or unfinished
-   criterion coverage prevents a clean completed review. Optional diagnostics
-   remain in verification without becoming new acceptance requirements.
+5. Review receives the exact frozen task instructions to distinguish required
+   verification from unrelated diagnostics. A finished review with implementation
+   defects returns findings for correction. A concluded inspection identifying
+   specific missing assigned work or required execution proof also returns
+   actionable findings. The reviewer's own unfinished or inaccessible required
+   inspection remains an error; essential owner questions request input.
+   A direction to corrective execution to supply proof is a finding, not an
+   owner-input request. Unrelated obsolete tests
+   and unrequested live-model limitations do not invalidate a completed review.
+   Later code-owned correction routing and acceptance cannot be prerequisites for
+   that review response. Findings retain exact source quotes; verification retains the entire original
+   response. Unresolved review meaning fails validation rather than disappearing.
 
-Intermediate dispositions, provider frames, criterion evidence, and the assembled
+Intermediate dispositions, provider frames, finding evidence, and the assembled
 result are recorded separately. An assembled result is a code transformation;
 it does not pretend that one model authored the entire ledger. Native identities
 belong to real provider calls. The existing PostgreSQL queue and task-local
 execution/review loop remain authoritative.
+
+Independent review receives the frozen task, the original task-local execution
+report with its call and round identity, and durable owner clarifications. Code
+reconstructs that evidence on restart before review and dispatches correction
+followed by a fresh independent review on the same task. An owner proof waiver
+amends the applicable obligation through the existing persisted clarification
+path; it requires no approval of the answer. An enabling answer retains the
+obligation and resumes the missing work. Unresolved findings prevent acceptance.
+Authorization, revisions, immutable routes, task selection, lifecycle validation
+and acceptance remain code-owned. Omnidex authors implementation, tests,
+documentation and independent review; Codex pilots and inspects evidence.
+Execution implements the frozen task directly without creating another job or
+ledger, preserving prior accepted work, the dirty tree and existing evidence.
 
 ## Instructions and boundaries
 
@@ -59,7 +89,8 @@ explicitly instead of being silently truncated.
 
 ## Qualification
 
-`testdata/parser-sieve/cases.json` contains saved real Codex outputs and fixed
+`testdata/parser-sieve/cases.json` contains saved real Codex outputs (including the verbatim job21 execution
+report before independent review) and fixed
 synthetic positive/negative examples. Its expected and forbidden results are test
 oracles, never model input. Ordinary tests verify source accounting, type and
 identity guards, forbidden projections, interaction precedence, and criterion

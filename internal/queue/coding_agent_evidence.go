@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 
 	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/llm"
@@ -46,6 +47,33 @@ func (store *CodingAgentEvidenceStore) Append(ctx context.Context, entry codinga
 	if entry.Phase == "questions" || entry.Phase == "answers" {
 		return 0, fmt.Errorf("coding agents cannot create owner-input state")
 	}
+	if entry.PlanningProposal != nil {
+		if entry.Phase != "planning_response" || len(entry.Notes) != 3 {
+			return 0, fmt.Errorf("published proposal lacks its operation provenance")
+		}
+		var ledgerID, current int64
+		if err := tx.QueryRow(ctx, `SELECT id,current_revision FROM coding_ledgers WHERE job_id=$1 FOR UPDATE`, store.authority.JobID).Scan(&ledgerID, &current); err != nil {
+			return 0, err
+		}
+		projection, err := readCodingLedgerRevisionTx(ctx, tx, ledgerID, current, CodingLedgerReadOptions{Limit: -1})
+		if err != nil {
+			return 0, err
+		}
+		expected, actual := *entry.PlanningProposal, projection.Ledger
+		sortCodingLedgerProjection(&expected)
+		sortCodingLedgerProjection(&actual)
+		if !reflect.DeepEqual(expected, actual) {
+			return 0, fmt.Errorf("%w: proposal changed before publication", ErrCodingLedgerRevision)
+		}
+		var prior int64
+		err = tx.QueryRow(ctx, `SELECT id FROM evidence WHERE job_id=$1 AND kind='coding_agent' AND payload_json->>'phase'='planning_response' AND payload_json->'notes'->>0=$2 ORDER BY id LIMIT 1`, store.authority.JobID, entry.Notes[0]).Scan(&prior)
+		if err == nil {
+			return prior, tx.Commit(ctx)
+		}
+		if err != pgx.ErrNoRows {
+			return 0, err
+		}
+	}
 	var id int64
 	if err := tx.QueryRow(ctx, `INSERT INTO evidence(job_id,step_id,kind,payload_json) VALUES($1,$2,'coding_agent',$3::jsonb) RETURNING id`, store.authority.JobID, store.authority.StepID, string(encoded)).Scan(&id); err != nil {
 		return 0, err
@@ -83,7 +111,7 @@ func (store *CodingAgentEvidenceStore) Read(ctx context.Context) ([]codingagent.
 		     AND (evidence.payload_json->>'phase' NOT IN ('native_event','call_opened','call_completed')
 		          OR (evidence.payload_json->>'phase'='call_completed' AND evidence.payload_json->>'role' IN ('execute','review'))))
 		    OR (current_step.action='v3_coding_plan' AND source_step.generation<=$3
-		        AND evidence.payload_json->>'phase' IN ('planning_response','task_incomplete','planning_incomplete'))
+		        AND evidence.payload_json->>'phase' IN ('planning_response','planning_draft','task_ordering','task_incomplete','planning_incomplete'))
 		  )
 		ORDER BY evidence.id
 	`, store.authority.JobID, store.authority.StepID, store.authority.Generation)
@@ -103,7 +131,7 @@ func (store *CodingAgentEvidenceStore) Read(ctx context.Context) ([]codingagent.
 			return nil, err
 		}
 		if entry.Generation != store.authority.Generation &&
-			!((entry.Phase == "planning_response" || entry.Phase == "task_incomplete" || entry.Phase == "planning_incomplete") && entry.Generation > 0 && entry.Generation < store.authority.Generation) {
+			!((entry.Phase == "planning_response" || entry.Phase == "planning_draft" || entry.Phase == "task_ordering" || entry.Phase == "task_incomplete" || entry.Phase == "planning_incomplete") && entry.Generation > 0 && entry.Generation < store.authority.Generation) {
 			return nil, fmt.Errorf("agent evidence changed its generation")
 		}
 		entry.ID = id

@@ -84,7 +84,7 @@ func (controller *Controller) invokeOnce(ctx context.Context, call Assignment, r
 			}
 		}
 		if event.Session != nil {
-			if call.Role != Execute || event.Session.ThreadID == "" {
+			if !call.Role.IsNative() || event.Session.ThreadID == "" {
 				return fmt.Errorf("native continuation lacks its exact execution assignment")
 			}
 			if _, err := controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "execution_session", CallID: callID,

@@ -6,5 +6,5 @@ type ExecutionSession struct {
 	ThreadID       string `json:"thread_id"`
 	TurnID         string `json:"turn_id,omitempty"`
 	PreviousTurnID string `json:"previous_turn_id,omitempty"`
-	State          string `json:"state"` // idle, dispatching, running
+	State          string `json:"state"` // idle, dispatching, running, interrupted (owner-authorized continuation)
 }

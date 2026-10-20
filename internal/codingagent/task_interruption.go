@@ -17,7 +17,11 @@ func (controller *Controller) RunTask(ctx context.Context, task Task) error {
 	if readErr != nil {
 		return errors.Join(err, readErr)
 	}
-	for _, entry := range entries {
+	for index := len(entries) - 1; index >= 0; index-- {
+		entry := entries[index]
+		if entry.TaskID == task.ID && (entry.Phase == "task_resume" || entry.Phase == "response_recovery") {
+			break
+		}
 		if entry.Phase == "task_interrupted" && entry.TaskID == task.ID && entry.Continuation != nil {
 			return err
 		}

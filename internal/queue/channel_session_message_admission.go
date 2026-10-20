@@ -17,6 +17,14 @@ func (r *Repository) submitChannelSessionMessage(ctx context.Context, command Ch
 		return ChannelSessionTurnResult{}, err
 	}
 	defer tx.Rollback(ctx)
+	result, err := submitChannelSessionMessageTx(ctx, tx, command)
+	if err != nil {
+		return ChannelSessionTurnResult{}, err
+	}
+	return result, tx.Commit(ctx)
+}
+
+func submitChannelSessionMessageTx(ctx context.Context, tx pgx.Tx, command ChannelSessionTurnCommand) (ChannelSessionTurnResult, error) {
 	if err := lockLifecycleOperationIdentityTx(ctx, tx, command.OperationID); err != nil {
 		return ChannelSessionTurnResult{}, err
 	}
@@ -33,9 +41,6 @@ func (r *Repository) submitChannelSessionMessage(ctx context.Context, command Ch
 			return ChannelSessionTurnResult{}, err
 		}
 		if err := validateAssistantSessionAuthority(command, authority); err != nil {
-			return ChannelSessionTurnResult{}, err
-		}
-		if err := tx.Commit(ctx); err != nil {
 			return ChannelSessionTurnResult{}, err
 		}
 		return channelSessionTurnResult(command, model.ChannelSessionTurnQueued, intake.AdmittedJob, nil, false), nil
@@ -100,9 +105,6 @@ func (r *Repository) submitChannelSessionMessage(ctx context.Context, command Ch
 		return ChannelSessionTurnResult{}, err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE ai_channels SET updated_at=clock_timestamp() WHERE id=$1`, command.ChannelID); err != nil {
-		return ChannelSessionTurnResult{}, err
-	}
-	if err := tx.Commit(ctx); err != nil {
 		return ChannelSessionTurnResult{}, err
 	}
 	return channelSessionTurnResult(command, model.ChannelSessionTurnQueued, job, nil, true), nil

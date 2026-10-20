@@ -2,22 +2,27 @@ package codingagent
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 )
 
 type taskState struct {
-	accepted        map[string]bool
-	findings        map[string][]Finding
-	tasks           map[string]Task
-	started         map[string]bool
-	round           int64
-	session         *ExecutionSession
-	reply           string
-	inputRequired   *ExecutionInputRequired
-	pendingResponse *Result
-	pendingReview   *Result
-	reviewQuestion  string
-	reviewReply     string
-	incomplete      *IncompleteTaskError
+	accepted         map[string]bool
+	findings         map[string][]Finding
+	tasks            map[string]Task
+	started          map[string]bool
+	round            int64
+	session          *ExecutionSession
+	reviewSession    *ExecutionSession
+	resumeIncomplete bool
+	reply            string
+	inputRequired    *ExecutionInputRequired
+	executionReport  *ExecutionReport
+	pendingResponse  *Result
+	pendingReview    *Result
+	reviewQuestion   string
+	reviewReply      string
+	incomplete       *IncompleteTaskError
 }
 
 func projectTaskState(task Task, entries []Entry) *taskState {
@@ -41,6 +46,32 @@ func projectTaskState(task Task, entries []Entry) *taskState {
 			state.round = entry.Round
 		}
 		switch entry.Phase {
+		case "response_recovery":
+			if entry.Result != nil && len(entry.Notes) == 1 {
+				state.incomplete = nil
+				state.resumeIncomplete = true
+				if entry.Role == Review {
+					state.pendingReview = entry.Result
+					state.reviewReply = entry.Notes[0]
+				} else {
+					state.pendingResponse = entry.Result
+					state.reply = entry.Notes[0]
+				}
+			}
+		case "task_resume":
+			if entry.Session != nil && len(entry.Notes) == 2 {
+				state.incomplete = nil
+				state.resumeIncomplete = true
+				if entry.Role == Review {
+					state.pendingReview = nil
+					state.reviewSession = entry.Session
+					state.reviewQuestion, state.reviewReply = entry.Notes[0], entry.Notes[1]
+				} else {
+					state.pendingResponse = nil
+					state.session = entry.Session
+					state.reply = entry.Notes[1]
+				}
+			}
 		case "task_interrupted":
 			if entry.Continuation != nil {
 				state.incomplete = &IncompleteTaskError{Reason: entry.Continuation.Reason, ThreadID: entry.Continuation.ThreadID, TurnID: entry.Continuation.TurnID}
@@ -52,7 +83,11 @@ func projectTaskState(task Task, entries []Entry) *taskState {
 			state.started[entry.TaskID] = false
 			state.reply = ""
 		case "execution_session":
-			state.session = entry.Session
+			if entry.Role == Review {
+				state.reviewSession = entry.Session
+			} else {
+				state.session = entry.Session
+			}
 		case "call_completed":
 			if entry.Role == Execute && entry.Result != nil {
 				state.pendingResponse = entry.Result
@@ -65,6 +100,9 @@ func projectTaskState(task Task, entries []Entry) *taskState {
 			}
 			state.reply = ""
 			state.started[task.ID] = entry.ResponseKind == ExecutionDone
+			if entry.ResponseKind == ExecutionDone {
+				state.executionReport = &ExecutionReport{CallID: entry.CallID, Round: entry.Round, Response: entry.Notes[0]}
+			}
 			if entry.ResponseKind == ExecutionQuestion || entry.ResponseKind == ExecutionPermission {
 				state.round = entry.Round - 1
 				state.inputRequired = &ExecutionInputRequired{TaskID: task.ID, Kind: entry.ResponseKind, Text: entry.Notes[0]}
@@ -107,7 +145,9 @@ func (controller *Controller) runTask(ctx context.Context, task Task, state *tas
 			return err
 		}
 		scope := controller.assignment(Review, &task, controller.Configuration.Reviewer)
+		scope.ExecutionReport = state.executionReport
 		scope.Findings = state.findings[task.ID]
+		scope.Session = state.reviewSession
 		scope.Response, scope.Reply = state.reviewQuestion, state.reviewReply
 		var err error
 		scope.Clarifications, err = controller.taskClarifications(ctx, task.ID)
@@ -116,8 +156,16 @@ func (controller *Controller) runTask(ctx context.Context, task Task, state *tas
 		}
 		review, reviewResult, err := controller.review(ctx, scope, map[string]Task{task.ID: task}, state.round, state.pendingReview)
 		if err != nil {
-			return err
+			var incomplete *IncompleteTaskError
+			if !state.resumeIncomplete || state.pendingReview == nil || !errors.As(err, &incomplete) {
+				return err
+			}
+			state.pendingReview = nil
+			state.reviewSession = &ExecutionSession{ThreadID: incomplete.ThreadID, TurnID: incomplete.TurnID, State: "interrupted"}
+			state.resumeIncomplete = false
+			continue
 		}
+		state.resumeIncomplete = false
 		if len(review.Findings) == 0 {
 			state.accepted[task.ID] = true
 			_, err := controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "task_accepted", TaskID: task.ID, CallID: reviewResult.CallID, Round: state.round})
@@ -151,7 +199,7 @@ func (controller *Controller) executeTask(ctx context.Context, task Task, state 
 	// Completed turns supply no durable task state. Reconstruct a fresh,
 	// narrow execution from the database task, clarifications and findings.
 	// A still-running turn retains its identity solely for exact recovery.
-	if execution.Session != nil && execution.Session.State == "idle" {
+	if execution.Session != nil && execution.Session.State == "idle" && !state.resumeIncomplete {
 		execution.Session = nil
 	}
 	execution.Findings = state.findings[task.ID]
@@ -162,9 +210,16 @@ func (controller *Controller) executeTask(ctx context.Context, task Task, state 
 	if err := controller.handleExecutionResponse(ctx, task, result, state.round+1); err != nil {
 		return err
 	}
+	var response string
+	if err := json.Unmarshal(result.Content, &response); err != nil {
+		return err
+	}
+	state.executionReport = &ExecutionReport{CallID: result.CallID, Round: state.round + 1, Response: response}
+	state.resumeIncomplete = false
 	state.session = &ExecutionSession{ThreadID: result.ThreadID, TurnID: result.TurnID, State: "idle"}
 	state.reply = ""
 	state.pendingReview = nil
+	state.reviewSession = nil
 	state.reviewQuestion, state.reviewReply = "", ""
 	state.round++
 	return nil

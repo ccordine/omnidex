@@ -133,6 +133,15 @@ func currentJobDetailsTx(ctx context.Context, tx pgx.Tx, jobID int64) (model.Job
 					continue
 				}
 			}
+			if step.Action == "v3_coding" {
+				recoveryStep, recoveryErr := codingRecoveryStepTx(ctx, tx, job)
+				if recoveryErr == nil && recoveryStep == step.ID {
+					continue
+				}
+				if recoveryErr != nil && recoveryErr != pgx.ErrNoRows {
+					return model.JobDetails{}, recoveryErr
+				}
+			}
 			response, err := codingExecutionResponseTx(ctx, tx, job.ID, step.ID, job.CurrentGeneration)
 			if err != nil {
 				return model.JobDetails{}, err

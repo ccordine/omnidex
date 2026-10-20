@@ -7,6 +7,7 @@ import (
 
 	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/sessionintent"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -15,6 +16,7 @@ const MaxChannelSessionMessages = 200
 // ChannelSessionSnapshot is one server-authoritative read of the persisted
 // channel conversation and its sole active turn, when one exists.
 type ChannelSessionSnapshot struct {
+	PendingUserAction *sessionintent.Proposal
 	Channel           model.Channel
 	WorkspaceIdentity string
 	State             model.ChannelSessionState
@@ -94,11 +96,15 @@ func (r *Repository) ChannelSessionSnapshot(
 	if err != nil {
 		return ChannelSessionSnapshot{}, err
 	}
+	pendingAction, err := readPendingUserProposalTx(ctx, tx, state)
+	if err != nil {
+		return ChannelSessionSnapshot{}, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return ChannelSessionSnapshot{}, fmt.Errorf("commit channel %q session snapshot: %w", channelID, err)
 	}
 	return ChannelSessionSnapshot{
-		Channel: channel, WorkspaceIdentity: workspaceIdentity, State: state,
+		Channel: channel, WorkspaceIdentity: workspaceIdentity, State: state, PendingUserAction: pendingAction,
 		Transcript: transcript,
 		Turns:      turns, TurnsTruncated: turnsTruncated,
 		Controls: controls, ControlsTruncated: controlsTruncated,

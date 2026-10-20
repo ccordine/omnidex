@@ -15,6 +15,7 @@ const (
 	jobItemRead          jobItemAction = ""
 	jobItemHistory       jobItemAction = "history"
 	jobItemFeedback      jobItemAction = "feedback"
+	jobItemResume        jobItemAction = "resume"
 	jobItemInterrupt     jobItemAction = "interrupt"
 	jobItemReplan        jobItemAction = "replan"
 	jobItemCancel        jobItemAction = "cancel"
@@ -47,7 +48,7 @@ func decodeJobItemRoute(request *http.Request) (int64, jobItemAction, error) {
 	if len(parts) >= 2 {
 		action = jobItemAction(strings.Join(parts[1:], "/"))
 		switch action {
-		case jobItemHistory, jobItemFeedback, jobItemInterrupt, jobItemReplan, jobItemCancel,
+		case jobItemResume, jobItemHistory, jobItemFeedback, jobItemInterrupt, jobItemReplan, jobItemCancel,
 			jobItemPlanRead, jobItemPlanDecisions, jobItemPlanFreeze:
 		default:
 			return 0, "", fmt.Errorf("job item action is not registered")

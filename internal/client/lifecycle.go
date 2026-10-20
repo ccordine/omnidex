@@ -48,6 +48,24 @@ func (client *Client) Interrupt(
 	)
 }
 
+// Resume consumes the displayed same-job generation and unchanged frozen revision.
+func (client *Client) Resume(ctx context.Context, channel model.Channel, workspaceIdentity string, jobID int64, operationID model.LifecycleOperationID, feedback string, generation, revision int64) (model.Job, error) {
+	if generation < 1 || revision < 1 {
+		return model.Job{}, fmt.Errorf("resume requires exact generation and frozen revision")
+	}
+	if err := validateLifecycleControl(channel, workspaceIdentity, jobID, operationID, feedback, "resume feedback", maxCancelReasonBytes); err != nil {
+		return model.Job{}, err
+	}
+	return client.postLifecycleControl(ctx, channel, workspaceIdentity, jobID, operationID, "resume", struct {
+		OperationID            model.LifecycleOperationID `json:"operation_id"`
+		Feedback               string                     `json:"feedback"`
+		ExpectedGeneration     int64                      `json:"expected_generation"`
+		ObservedLedgerRevision int64                      `json:"observed_ledger_revision"`
+		WorkspaceRoot          string                     `json:"workspace_root"`
+		WorkspaceIdentity      string                     `json:"workspace_identity"`
+	}{operationID, feedback, generation, revision, channel.WorkspaceRoot, workspaceIdentity})
+}
+
 func (client *Client) Replan(
 	ctx context.Context,
 	channel model.Channel,
@@ -174,7 +192,7 @@ func (client *Client) postLifecycleControl(
 		}
 	case "interrupt":
 		expectedStatus = model.JobStatusWaiting
-	case "replan":
+	case "resume", "replan":
 		expectedStatus = model.JobStatusRunning
 	case "cancel":
 		expectedStatus = model.JobStatusCanceled

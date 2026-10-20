@@ -243,6 +243,34 @@ func (s *Server) handleChannelByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(parts) > 1 && parts[1] == "session" {
+		if len(parts) == 4 && parts[2] == "intent" && parts[3] == "cancel" {
+			if r.Method != http.MethodPost {
+				writeError(w, 405, "method not allowed")
+				return
+			}
+			if err := validateExactQuery(r); err != nil {
+				writeError(w, 400, err.Error())
+				return
+			}
+			s.cancelUserIntent(w, r, channelID)
+			return
+		}
+		if len(parts) == 3 && parts[2] == "intent" || len(parts) == 4 && parts[2] == "intent" && parts[3] == "execute" {
+			if r.Method != http.MethodPost {
+				writeError(w, 405, "method not allowed")
+				return
+			}
+			if err := validateExactQuery(r); err != nil {
+				writeError(w, 400, err.Error())
+				return
+			}
+			if len(parts) == 3 {
+				s.postUserIntent(w, r, channelID)
+			} else {
+				s.executeUserIntent(w, r, channelID)
+			}
+			return
+		}
 		if len(parts) == 3 && parts[2] == "state" {
 			if r.Method != http.MethodGet {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

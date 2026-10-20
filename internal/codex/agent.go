@@ -71,8 +71,8 @@ func (client *Client) Run(parent context.Context, call codingagent.Assignment, e
 			return result, fmt.Errorf("pure parser session inherited external instruction files")
 		}
 	}
-	if call.Role == codingagent.Execute {
-		if call.Session != nil && call.Session.State != "idle" {
+	if call.Role.IsNative() {
+		if call.Session != nil && call.Session.State != "idle" && call.Session.State != "interrupted" {
 			return connection.recoverExecutionResult(call, result, event)
 		}
 	}
@@ -89,7 +89,7 @@ func (client *Client) Run(parent context.Context, call codingagent.Assignment, e
 			return result, err
 		}
 	}
-	if call.Role == codingagent.Execute {
+	if call.Role.IsNative() {
 		session := &codingagent.ExecutionSession{ThreadID: result.ThreadID, State: "dispatching"}
 		if call.Session != nil {
 			session.PreviousTurnID = call.Session.TurnID
@@ -109,7 +109,7 @@ func (client *Client) Run(parent context.Context, call codingagent.Assignment, e
 	if result.TurnID == "" {
 		return result, fmt.Errorf("agent turn lacks its native identity")
 	}
-	if call.Role == codingagent.Execute {
+	if call.Role.IsNative() {
 		if err := event(codingagent.NativeEvent{Session: &codingagent.ExecutionSession{ThreadID: result.ThreadID, TurnID: result.TurnID, State: "running"}}); err != nil {
 			return result, err
 		}
@@ -198,12 +198,12 @@ func (connection *connection) startAgentThread(call codingagent.Assignment, scra
 	if call.Role.IsNative() {
 		sandbox, approval, _ := agentPermissions(call)
 		parameters := map[string]any{"model": call.Route.Model, "allowProviderModelFallback": false,
-			"cwd": call.Root, "sandbox": sandbox, "approvalPolicy": approval, "ephemeral": call.Role != codingagent.Execute,
+			"cwd": call.Root, "sandbox": sandbox, "approvalPolicy": approval, "ephemeral": false,
 			"developerInstructions": agentRoleInstructions(call.Role),
 			"config":                map[string]any{"approvals_reviewer": "user"}}
 		applyAgentInferenceOptions(parameters, call.Route)
 		method := "thread/start"
-		if call.Role == codingagent.Execute && call.Session != nil {
+		if call.Role.IsNative() && call.Session != nil {
 			method = "thread/resume"
 			parameters["threadId"] = call.Session.ThreadID
 			delete(parameters, "ephemeral")

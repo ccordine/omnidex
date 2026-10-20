@@ -108,6 +108,30 @@ the checks, then a fresh read-only Codex review channel judges only that same
 packet. Code records acceptance and selects the next ready task. No model sees or
 controls the execution queue, sibling tasks, task transitions, or completion.
 
+Ordinary CLI messages first pass through a dedicated user-intent interpreter.
+It sees the current available actions, scoped persisted facts, the last two
+exchanges, and any pending question or proposal. Long recent messages are
+minified for that specific interaction. It resolves meaning and recipient,
+including references such as “that,” before a message reaches the planner or
+Codex. Unresolved references produce a focused question. Plan removal and other
+controls requiring approval produce a concrete pitch; approving that pitch
+executes its stored action directly. Plan and native approval replies do not
+create another approval. Explicit slash commands and keyboard controls remain
+typed controls; ordinary words, including “exit” and “quit,” use interpretation.
+
+`internal/userintent` is reusable independently of coding: callers supply context,
+options and callbacks. `Interpret` returns selected option identities or a
+clarification; deterministic `Dispatch` invokes registered callbacks in the
+caller's order and returns reply, handoff or resume outcomes. The session adapter
+uses `POST /v1/channels/{id}/session/intent` for interpretation and
+`POST /v1/channels/{id}/session/intent/execute` for authoritative execution.
+PostgreSQL retains the exact message, workspace actor, context, semantic evidence
+and committed receipt. Interpretation and execution are separate transactions;
+execution revalidates the exact target state and ledger revision. The typed
+`/session/intent/cancel` boundary revokes interrupted messages without restarting
+inference. Pending action pitches survive reconnection. The interpreter uses the configured parser model
+route independently of the planner and executor.
+
 Every invocation receives a fresh ephemeral thread. Native lifecycle events,
 thread and turn IDs, token notifications, review comments, and validated results
 are retained as evidence beside the PostgreSQL ledger; they are not another
@@ -606,6 +630,24 @@ the managed CLI launchers to the current binary and retained server URL, includi
 a recognized older Omnidex CLI that would otherwise shadow it on PATH. Configuration,
 identity and application data are preserved. The optional native UI is at
 `http://127.0.0.1:18090`.
+
+### Terminal workspace
+
+`omni chat` opens a fullscreen conversation with a docked composer, live activity
+pane, project/branch header, and an editor-style statusline. Activity displays
+observed commands, file changes, role/model routes and elapsed work—not guessed
+percentages. Narrow terminals show one focused pane; zoom expands it. The same
+server-owned session, ledger, approvals, and execution controls remain authoritative.
+
+Press `Ctrl-B`, then `1` (compose), `2` (conversation), or `3` (activity). `Ctrl-B o`
+cycles focus, `Ctrl-B z` zooms, and `Ctrl-B ?` opens the key guide. In a browsing
+pane, use `j/k`, arrow keys, `PgUp/PgDn`, and `g/G`; `i` or `Esc` returns to the
+draft. Pane changes and streamed output preserve the draft. `Enter`, input history,
+bracketed paste, `/help`, `/verbosity`, and the existing interruption controls keep
+their meanings. `Ctrl-L` redraws; `NO_COLOR=1` keeps the same layout in monochrome.
+Inside tmux with its default prefix, send its prefix twice before the Omnidex key
+(for example, `Ctrl-B Ctrl-B 3`). Closing the CLI restores the previous terminal
+screen, cursor and input mode; server work continues as before.
 
 From any directory, update the installed host checkout and binaries with:
 

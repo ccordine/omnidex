@@ -9,6 +9,7 @@ import (
 	"io"
 
 	"github.com/gryph/omnidex/internal/codingagent"
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -84,7 +85,39 @@ func (repository *Repository) StoreCodingAgentConfiguration(ctx context.Context,
 }
 
 func (repository *Repository) CodingAgentsBusy(ctx context.Context) (bool, error) {
+	tx, err := repository.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback(ctx)
 	var busy bool
-	err := repository.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM jobs WHERE status IN ('pending','running','waiting_input') AND metadata->'coding_execution'->>'mode'='agents')`).Scan(&busy)
-	return busy, err
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM jobs WHERE status IN ('pending','running','waiting_input') AND metadata->'coding_execution'->>'mode'='agents')`).Scan(&busy); err != nil || busy {
+		return busy, err
+	}
+	rows, err := tx.Query(ctx, `SELECT id,current_generation,status FROM jobs WHERE status='failed' AND metadata->'coding_execution'->>'mode'='agents' ORDER BY id`)
+	if err != nil {
+		return false, err
+	}
+	jobs := []model.Job{}
+	for rows.Next() {
+		var job model.Job
+		if err := rows.Scan(&job.ID, &job.CurrentGeneration, &job.Status); err != nil {
+			rows.Close()
+			return false, err
+		}
+		jobs = append(jobs, job)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return false, err
+	}
+	for _, job := range jobs {
+		if _, err := codingRecoveryStepTx(ctx, tx, job); err == nil {
+			return true, nil
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return false, err
+		}
+	}
+	return false, nil
 }

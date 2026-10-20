@@ -10,7 +10,7 @@ import (
 // events. It is history, not a new-turn receipt or an execution effect. Nothing
 // else from a different turn or thread may bypass assignment binding.
 func resumedUsageSnapshot(call codingagent.Assignment, frame rpcFrame) bool {
-	if call.Role != codingagent.Execute || call.Session == nil || call.Session.State != "idle" || call.Session.TurnID == "" || frame.Method != "thread/tokenUsage/updated" {
+	if (call.Role != codingagent.Execute && call.Role != codingagent.Review) || call.Session == nil || (call.Session.State != "idle" && call.Session.State != "interrupted") || call.Session.TurnID == "" || frame.Method != "thread/tokenUsage/updated" {
 		return false
 	}
 	var params struct {

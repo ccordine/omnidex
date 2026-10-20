@@ -22,13 +22,16 @@ type threadResult struct {
 
 func (connection *connection) generate(ctx context.Context, request llm.CodexStationRequest, observer func(model.AgentActivity) error) (llm.CodexResponseCapture, bool, error) {
 	var capture llm.CodexResponseCapture
-	if _, err := connection.call("initialize", map[string]any{
-		"clientInfo":   map[string]string{"name": "omnidex", "title": "Omnidex", "version": "0.5.0"},
-		"capabilities": map[string]bool{"experimentalApi": true}}, nil); err != nil {
-		return capture, false, err
-	}
-	if err := connection.send("initialized", map[string]any{}, nil); err != nil {
-		return capture, false, err
+	if !connection.initialized {
+		if _, err := connection.call("initialize", map[string]any{
+			"clientInfo":   map[string]string{"name": "omnidex", "title": "Omnidex", "version": "0.5.0"},
+			"capabilities": map[string]bool{"experimentalApi": true}}, nil); err != nil {
+			return capture, false, err
+		}
+		if err := connection.send("initialized", map[string]any{}, nil); err != nil {
+			return capture, false, err
+		}
+		connection.initialized = true
 	}
 	configuration, err := connection.disabledToolsConfiguration()
 	if err != nil {
@@ -39,6 +42,18 @@ func (connection *connection) generate(ctx context.Context, request llm.CodexSta
 		"runtimeWorkspaceRoots": []string{}, "dynamicTools": []any{}, "config": configuration,
 		"baseInstructions": "Answer the supplied semantic question using its supplied context. Return only the requested result.",
 		"serviceName":      "omnidex", "ephemeral": !request.RetainContext}
+	if connection.isolatedParser {
+		// The thread config replaces the startup feature table; carry the
+		// parser-only capability restrictions across that boundary as well.
+		features := configuration["features"].(map[string]bool)
+		for _, feature := range parserDisabledFeatures() {
+			features[feature] = false
+		}
+		features["skip_host_skill_discovery"] = true
+		configuration["tools"] = map[string]any{"experimental_request_user_input": map[string]bool{"enabled": false}}
+		parameters["developerInstructions"] = ""
+		parameters["cwd"] = connection.process.Dir
+	}
 	method := "thread/start"
 	if request.Continuation != nil {
 		method = "thread/resume"
@@ -118,9 +133,10 @@ func (connection *connection) disabledToolsConfiguration() (map[string]any, erro
 	for name := range current.Config.MCPServers {
 		servers[name] = map[string]bool{"enabled": false}
 	}
-	return map[string]any{"mcp_servers": servers, "project_doc_max_bytes": 0, "web_search": "disabled",
+	configuration := map[string]any{"mcp_servers": servers, "project_doc_max_bytes": 0, "web_search": "disabled",
 		"agents": map[string]bool{"enabled": false}, "features": map[string]bool{
-			"shell_tool": false, "unified_exec": false, "apps": false, "plugins": false, "multi_agent": false, "hooks": false}}, nil
+			"shell_tool": false, "unified_exec": false, "apps": false, "plugins": false, "multi_agent": false, "hooks": false}}
+	return configuration, nil
 }
 
 func collectGenerationFrame(frame rpcFrame, raw json.RawMessage, capture *llm.CodexResponseCapture, threadID, turnID string) (bool, error) {

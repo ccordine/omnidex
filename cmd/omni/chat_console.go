@@ -42,6 +42,7 @@ func (stream terminalReadWriter) Write(buffer []byte) (int, error) {
 }
 
 type chatConsole struct {
+	workspace      *chatWorkspace
 	terminal       *term.Terminal
 	pasteReader    *bracketedPasteReader
 	reviewInput    *planReviewInputRouter
@@ -87,31 +88,41 @@ func newChatConsole(
 		_ = term.Restore(fd, state)
 		return nil, err
 	}
-	reviewInput, err := newPlanReviewInputRouter(newTerminalContextReader(ctx, inputFile))
+	width, height := 80, 24
+	if w, h, sizeErr := term.GetSize(int(outputFile.Fd())); sizeErr == nil && w > 0 && h > 0 {
+		width, height = w, h
+	}
+	workspace, err := newChatWorkspace(output, width, height)
 	if err != nil {
+		_ = term.Restore(fd, state)
+		return nil, err
+	}
+	source := &workspaceInputSource{source: newTerminalContextReader(ctx, inputFile), view: workspace}
+	reviewInput, err := newPlanReviewInputRouter(source)
+	if err != nil {
+		_ = workspace.Close()
 		_ = term.Restore(fd, state)
 		return nil, fmt.Errorf("construct plan-review terminal input: %w", err)
 	}
+	source.review = reviewInput.ReviewEnabled
 	pasteReader := newBracketedPasteReader(reviewInput, model.MaxFreeFormTurnBytes)
 	interactive := term.NewTerminal(
 		terminalReadWriter{
 			reader: pasteReader,
-			writer: output,
+			writer: workspace,
 		},
 		"you> ",
 	)
 	interactive.AutoCompleteCallback = console.boundTerminalInput
 	interactive.SetBracketedPasteMode(true)
-	if width, height, sizeErr := term.GetSize(int(outputFile.Fd())); sizeErr == nil {
-		_ = interactive.SetSize(width, height)
-		if width > 0 && height > 0 {
-			console.terminalWidth, console.terminalHeight = width, height
-		}
-	}
+	columns, rows, _ := workspace.Resize(width, height)
+	_ = interactive.SetSize(columns, rows)
+	console.terminalWidth, console.terminalHeight = columns, rows
+	console.workspace = workspace
 	console.terminal = interactive
 	console.pasteReader = pasteReader
 	console.reviewInput = reviewInput
-	console.output = output
+	console.output = workspace
 	console.terminalFD = fd
 	console.terminalState = state
 	console.prompt = "you> "
@@ -147,6 +158,9 @@ func (console *chatConsole) Close() error {
 		if console.terminal != nil {
 			console.terminal.SetBracketedPasteMode(false)
 		}
+		if console.workspace != nil {
+			closeErr = errors.Join(closeErr, console.workspace.Close())
+		}
 		if console.terminalState != nil && console.terminalFD >= 0 {
 			if err := term.Restore(console.terminalFD, console.terminalState); err != nil && closeErr == nil {
 				closeErr = err
@@ -165,7 +179,13 @@ func (console *chatConsole) ReadLine() (string, bool, terminalInputAuthority, er
 	}
 	if console.terminal != nil {
 		console.inputOverflow.Store(false)
+		if console.workspace != nil {
+			console.workspace.beginInput()
+		}
 		line, err := console.terminal.ReadLine()
+		if console.workspace != nil {
+			console.workspace.endInput()
+		}
 		pasted, pasteOverflow, invalidUTF8, unsafeText, authority := console.pasteReader.consumeLineState()
 		composed := restorePasteProjection.Replace(line)
 		pasted = pasted || composed != line
@@ -241,7 +261,7 @@ func (console *chatConsole) SetPrompt(prompt string) error {
 	return console.redrawPromptLocked(time.Now())
 }
 
-func (console *chatConsole) WriteOutput(value string) error {
+func (console *chatConsole) WriteOutput(value string) (resultErr error) {
 	if console == nil {
 		return fmt.Errorf("interactive console is unavailable")
 	}
@@ -251,6 +271,10 @@ func (console *chatConsole) WriteOutput(value string) error {
 	}
 	console.presentationMu.Lock()
 	defer console.presentationMu.Unlock()
+	if console.workspace != nil {
+		console.workspace.beginTranscript(value)
+		defer func() { resultErr = errors.Join(resultErr, console.workspace.endTranscript()) }()
+	}
 	if console.reviewActive {
 		return console.writeAroundPlanReviewLocked(value)
 	}
@@ -259,20 +283,7 @@ func (console *chatConsole) WriteOutput(value string) error {
 }
 
 func (console *chatConsole) WriteError(value string) error {
-	if console == nil {
-		return fmt.Errorf("interactive console is unavailable")
-	}
-	value = safeConsoleText(value)
-	if console.terminal == nil {
-		return fmt.Errorf("interactive terminal is unavailable")
-	}
-	console.presentationMu.Lock()
-	defer console.presentationMu.Unlock()
-	if console.reviewActive {
-		return console.writeAroundPlanReviewLocked(value)
-	}
-	_, err := console.terminal.Write([]byte(value))
-	return err
+	return console.WriteOutput(value)
 }
 
 func safeConsoleText(value string) string {

@@ -78,6 +78,8 @@ func (s *Server) handleJobByID(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		switch action {
+		case jobItemResume:
+			s.resumeJob(w, r, id)
 		case jobItemFeedback:
 			s.submitJobFeedback(w, r, id)
 		case jobItemInterrupt:

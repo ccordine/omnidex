@@ -125,6 +125,14 @@ func (r *Repository) FreezeCodingLedger(ctx context.Context, command FreezeCodin
 		return CodingLedgerRevision{}, err
 	}
 	defer tx.Rollback(ctx)
+	result, err := freezeCodingLedgerTx(ctx, tx, command)
+	if err != nil {
+		return CodingLedgerRevision{}, err
+	}
+	return result, tx.Commit(ctx)
+}
+
+func freezeCodingLedgerTx(ctx context.Context, tx pgx.Tx, command FreezeCodingLedgerCommand) (CodingLedgerRevision, error) {
 	var current int64
 	var state string
 	if err := tx.QueryRow(ctx, `SELECT current_revision,state FROM coding_ledgers WHERE id=$1 FOR UPDATE`, command.LedgerID).Scan(&current, &state); err != nil {
@@ -132,7 +140,7 @@ func (r *Repository) FreezeCodingLedger(ctx context.Context, command FreezeCodin
 	}
 	var replay, replayBase int64
 	var replayOwner, replayText, replayState string
-	err = tx.QueryRow(ctx, `
+	err := tx.QueryRow(ctx, `
 		SELECT revision.revision,revision.base_revision,revision.owner_turn_id,turn_record.exact_text,revision.state
 		FROM coding_ledger_revisions revision
 		JOIN coding_ledger_owner_turns turn_record
@@ -146,9 +154,6 @@ func (r *Repository) FreezeCodingLedger(ctx context.Context, command FreezeCodin
 		result, readErr := readCodingLedgerRevisionTx(ctx, tx, command.LedgerID, replay, CodingLedgerReadOptions{Limit: -1})
 		if readErr != nil {
 			return CodingLedgerRevision{}, readErr
-		}
-		if err := tx.Commit(ctx); err != nil {
-			return CodingLedgerRevision{}, err
 		}
 		result.Applied = false
 		return result, nil
@@ -272,9 +277,6 @@ func (r *Repository) FreezeCodingLedger(ctx context.Context, command FreezeCodin
 	}
 	result, err := readCodingLedgerRevisionTx(ctx, tx, command.LedgerID, frozenRevision, CodingLedgerReadOptions{Limit: -1})
 	if err != nil {
-		return CodingLedgerRevision{}, err
-	}
-	if err := tx.Commit(ctx); err != nil {
 		return CodingLedgerRevision{}, err
 	}
 	result.Applied = true

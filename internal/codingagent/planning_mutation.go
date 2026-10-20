@@ -125,6 +125,9 @@ func (controller *Controller) ProposePlanningLedger(ctx context.Context, turn Pl
 	if err := ledger.ValidateDraft(); err != nil {
 		return InitialPlanningProposal{}, controller.rejectPlanningParse(ctx, turn, PlanningInitial, result.CallID, err)
 	}
+	if err := controller.orderPlanningTasks(ctx, turn, ledger.Tasks); err != nil {
+		return InitialPlanningProposal{}, err
+	}
 	return InitialPlanningProposal{Ledger: ledger, OwnerTurnDisposition: parsedPlanningDisposition(ledger, nil)}, nil
 }
 
@@ -173,6 +176,9 @@ func (controller *Controller) PlanPlanningMutation(ctx context.Context, ledger E
 		if err != nil {
 			return LedgerMutation{}, controller.rejectPlanningParse(ctx, turn, PlanningMutation, result.CallID, err)
 		}
+	}
+	if err := controller.orderPlanningAdditions(ctx, ledger, turn, &mutation); err != nil {
+		return LedgerMutation{}, err
 	}
 	return mutation, nil
 }

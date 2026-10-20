@@ -64,7 +64,7 @@ func listChannelSessionControlsTx(
 			if _, err := validateInterruptFeedback(control.Text); err != nil {
 				return nil, false, err
 			}
-			if control.Generation < 2 || control.Status != model.JobStatusWaiting {
+			if control.Generation < 1 || control.Status != model.JobStatusWaiting {
 				return nil, false, fmt.Errorf(
 					"channel %q interrupt operation %q has contradictory result authority",
 					channelID,

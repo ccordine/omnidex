@@ -16,6 +16,16 @@ func TestInstalledParserSieveCurrentCorpus(t *testing.T) {
 		t.Skip("OMNI_TEST_PARSER_SIEVE=1 is required")
 	}
 	provider, route := installedSieveProvider(t)
+	var evidence *os.File
+	if path := os.Getenv("OMNI_PARSER_SIEVE_EVIDENCE"); path != "" {
+		var err error
+		evidence, err = os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer evidence.Close()
+	}
+	t.Logf("live parser provider=%s model=%s effort=%s", route.Provider, route.Model, route.Effort)
 	raw, err := os.ReadFile("../../testdata/parser-sieve/cases.json")
 	if err != nil {
 		t.Fatal(err)
@@ -23,6 +33,7 @@ func TestInstalledParserSieveCurrentCorpus(t *testing.T) {
 	var corpus struct {
 		Cases []struct {
 			Name, Role, Source string
+			Task               *codingagent.Task `json:"task"`
 			Expected           struct {
 				Tasks    *int     `json:"tasks"`
 				Kind     string   `json:"kind"`
@@ -47,11 +58,28 @@ func TestInstalledParserSieveCurrentCorpus(t *testing.T) {
 				call.PlanningResponse = fixture.Source
 			case codingagent.ReviewResponse:
 				call.Response = fixture.Source
-				call.Task = &codingagent.Task{ID: "fixture-task"}
+				call.Task = fixture.Task
+				if call.Task == nil {
+					call.Task = &codingagent.Task{ID: "fixture-task"}
+				}
 			default:
+				call.Task = fixture.Task
 				call.Response = fixture.Source
 			}
-			result, err := codingagent.RunParserSieve(ctx, call, func(codingagent.NativeEvent) error { return nil }, provider.Run)
+			result, err := codingagent.RunParserSieve(ctx, call, func(event codingagent.NativeEvent) error {
+				if evidence == nil || len(event.Frame) == 0 {
+					return nil
+				}
+				record := map[string]any{"case": fixture.Name, "route": route, "frame": event.Frame}
+				envelope, err := sieveBenchmarkEnvelopeFor(call, event.Frame)
+				if err != nil {
+					return err
+				}
+				if envelope != nil {
+					record["code_rendered_envelope"] = envelope
+				}
+				return json.NewEncoder(evidence).Encode(record)
+			}, provider.Run)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -86,6 +114,9 @@ func TestInstalledParserSieveCurrentCorpus(t *testing.T) {
 				var parsed codingagent.ReviewResponseResult
 				if err := json.Unmarshal(result.Content, &parsed); err != nil {
 					t.Fatal(err)
+				}
+				if parsed.Verification != fixture.Source {
+					t.Fatal("review source evidence changed")
 				}
 				if string(parsed.Kind) != fixture.Expected.Kind {
 					t.Fatalf("kind=%s, want %s", parsed.Kind, fixture.Expected.Kind)

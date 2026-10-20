@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	"github.com/gryph/omnidex/internal/client"
 	"github.com/gryph/omnidex/internal/ledgerapi"
@@ -17,14 +18,15 @@ const (
 )
 
 type pendingPlanMutation struct {
-	kind        planMutationKind
-	jobID       int64
-	generation  int64
-	revision    int64
-	operationID model.LifecycleOperationID
-	leafID      model.CodingPlanLeafID
-	decision    model.CodingPlanDecision
-	targetID    model.LedgerItemID
+	kind         planMutationKind
+	jobID        int64
+	generation   int64
+	revision     int64
+	operationID  model.LifecycleOperationID
+	leafID       model.CodingPlanLeafID
+	decision     model.CodingPlanDecision
+	ledgerAction *client.DirectPlanningAction
+	targetID     model.LedgerItemID
 }
 
 func (session *chatSession) persistPlanReviewDecision(
@@ -100,7 +102,7 @@ func (session *chatSession) planMutationOperation(
 	if pending := session.pendingPlan; pending != nil {
 		if pending.kind == desired.kind && pending.jobID == desired.jobID &&
 			pending.generation == desired.generation && pending.revision == desired.revision &&
-			pending.leafID == desired.leafID && pending.decision == desired.decision {
+			pending.leafID == desired.leafID && pending.decision == desired.decision && reflect.DeepEqual(pending.ledgerAction, desired.ledgerAction) {
 			return pending, nil
 		}
 		return nil, fmt.Errorf(
@@ -126,6 +128,8 @@ func (session *chatSession) replayPendingPlanMutation(
 		return fmt.Errorf("pending plan mutation is required")
 	}
 	switch pending.kind {
+	case planMutationLedger:
+		return session.replayLedgerPanelMutation(pending, authoritative)
 	case planMutationDecision:
 		reviewState := model.LedgerReviewNeedsDiscussion
 		if pending.decision == model.CodingPlanDecisionApproved {

@@ -42,12 +42,13 @@ func PromptContext(call Assignment) any {
 			}{call.Task.ReadFiles, call.Task.WriteFiles, call.Task.DeleteFiles}
 		}
 		return struct {
+			ExecutionReport  *ExecutionReport    `json:"execution_report,omitempty"`
 			Task             any                 `json:"task"`
 			Findings         []findingText       `json:"findings,omitempty"`
 			PreviousResponse string              `json:"previous_response,omitempty"`
 			Reply            string              `json:"reply,omitempty"`
 			Clarifications   []TaskClarification `json:"clarifications,omitempty"`
-		}{task, findings, call.Response, call.Reply, call.Clarifications}
+		}{call.ExecutionReport, task, findings, call.Response, call.Reply, call.Clarifications}
 	}
 	return struct {
 		Objective            *Objective             `json:"objective,omitempty"`

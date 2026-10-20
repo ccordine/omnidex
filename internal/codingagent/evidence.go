@@ -6,15 +6,17 @@ import (
 )
 
 type Entry struct {
-	ID         int64       `json:"id,omitempty"`
-	Generation int64       `json:"generation"`
-	Phase      string      `json:"phase"`
-	TaskID     string      `json:"task_id,omitempty"`
-	Round      int64       `json:"round,omitempty"`
-	CallID     int64       `json:"call_id,omitempty"`
-	Role       Role        `json:"role,omitempty"`
-	Assignment *Assignment `json:"assignment,omitempty"`
-	Result     *Result     `json:"result,omitempty"`
+	PlanningProposal *EngineeringLedger    `json:"planning_proposal,omitempty"`
+	TaskOrdering     *TaskOrderingEvidence `json:"task_ordering,omitempty"`
+	ID               int64                 `json:"id,omitempty"`
+	Generation       int64                 `json:"generation"`
+	Phase            string                `json:"phase"`
+	TaskID           string                `json:"task_id,omitempty"`
+	Round            int64                 `json:"round,omitempty"`
+	CallID           int64                 `json:"call_id,omitempty"`
+	Role             Role                  `json:"role,omitempty"`
+	Assignment       *Assignment           `json:"assignment,omitempty"`
+	Result           *Result               `json:"result,omitempty"`
 	// Bytes are base64 encoded in JSON so JSONB preserves the original wire frame.
 	Frame             []byte                `json:"frame,omitempty"`
 	Findings          []Finding             `json:"findings,omitempty"`

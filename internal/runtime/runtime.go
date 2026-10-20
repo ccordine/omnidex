@@ -141,6 +141,9 @@ func (runtime *Runtime) Close() {
 	if runtime.cancel != nil {
 		runtime.cancel()
 	}
+	if runtime.server != nil {
+		runtime.server.CloseUserIntentProvider()
+	}
 	if runtime.pool != nil {
 		runtime.pool.Close()
 	}

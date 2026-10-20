@@ -150,3 +150,12 @@ func parserEvent(event func(codingagent.NativeEvent) error, phase string, payloa
 	}
 	return event(codingagent.NativeEvent{Frame: frame})
 }
+
+// GeneratePreparedExact answers a bounded semantic question without a parser sieve.
+func (parser *Parser) GeneratePreparedExact(ctx context.Context, prepared llm.PreparedModel) (llm.PreparedGeneration, error) {
+	return parser.client.GeneratePreparedExact(ctx, prepared)
+}
+
+func (parser *Parser) OrderingClient(context.Context) (llm.ExactStationClient, func(), error) {
+	return parser, func() {}, nil
+}

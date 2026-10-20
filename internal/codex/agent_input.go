@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/gryph/omnidex/internal/codingagent"
 )
@@ -138,11 +137,10 @@ func nativeInputRequest(frame rpcFrame) (codingagent.NativeInputRequest, error) 
 		return request, fmt.Errorf("unsupported native client request %q", frame.Method)
 	}
 	if len(request.Choices) > 0 {
-		labels := make([]string, len(request.Choices))
-		for index, item := range request.Choices {
-			labels[index] = item.Label
+		request.Prompt += "\nReply with one exact choice:"
+		for _, item := range request.Choices {
+			request.Prompt += "\n  " + item.Label
 		}
-		request.Prompt += "\nChoices: " + strings.Join(labels, ", ") + "."
 	}
 	return request, nil
 }

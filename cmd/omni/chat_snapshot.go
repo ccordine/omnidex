@@ -153,7 +153,17 @@ func (session *chatSession) reconcileSnapshot(
 	session.realtimeCursor = snapshot.RealtimeCursor
 	session.serverState = snapshot.State
 	session.snapshotRevision++
-	return nil
+	if snapshot.PendingUserAction != nil {
+		if session.lastPendingIntent != snapshot.PendingUserAction.ID {
+			if err := session.renderer.system("%s", snapshot.PendingUserAction.Pitch); err != nil {
+				return err
+			}
+		}
+		session.lastPendingIntent = snapshot.PendingUserAction.ID
+	} else {
+		session.lastPendingIntent = ""
+	}
+	return session.refreshLedgerPanel()
 }
 
 func terminalSnapshotEntry(message model.ChannelMessage) chatSnapshotEntry {

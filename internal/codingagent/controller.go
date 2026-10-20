@@ -3,6 +3,7 @@ package codingagent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/model"
@@ -39,14 +40,28 @@ func (controller *Controller) resumeTask(ctx context.Context, task Task) error {
 	if state.accepted[task.ID] {
 		return nil
 	}
-	if state.incomplete != nil && state.inputRequired == nil {
+	if state.incomplete != nil && state.inputRequired == nil && state.pendingResponse == nil && state.pendingReview == nil && !recoverableSession(state.session) && !recoverableSession(state.reviewSession) {
 		return state.incomplete
 	}
 	if state.pendingResponse != nil {
 		if err := controller.handleExecutionResponse(ctx, task, *state.pendingResponse, state.round); err != nil {
-			return err
+			var incomplete *IncompleteTaskError
+			if !state.resumeIncomplete || !errors.As(err, &incomplete) {
+				return err
+			}
+			// Reinterpretation confirmed actual remaining work. Only now consume the
+			// explicit owner resume as native continuation authority.
+			state.session = &ExecutionSession{ThreadID: incomplete.ThreadID, TurnID: incomplete.TurnID, State: "interrupted"}
+			state.pendingResponse = nil
+		} else {
+			var response string
+			if err := json.Unmarshal(state.pendingResponse.Content, &response); err != nil {
+				return err
+			}
+			state.executionReport = &ExecutionReport{CallID: state.pendingResponse.CallID, Round: state.round, Response: response}
+			state.started[task.ID] = true
+			state.resumeIncomplete = false
 		}
-		state.started[task.ID] = true
 	}
 	return controller.runTask(ctx, task, state)
 }
@@ -95,4 +110,8 @@ func (controller *Controller) validateTaskExecution() error {
 		return fmt.Errorf("execution response parser provider is not registered")
 	}
 	return nil
+}
+
+func recoverableSession(session *ExecutionSession) bool {
+	return session != nil && session.ThreadID != "" && session.State != "idle"
 }

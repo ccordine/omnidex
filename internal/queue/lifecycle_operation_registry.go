@@ -18,6 +18,13 @@ func reserveLifecycleOperationIdentityTx(
 	if _, err := model.ParseLifecycleOperationID(string(id)); err != nil {
 		return false, err
 	}
+	var intentExists bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM channel_user_intents WHERE operation_id=$1)`, id).Scan(&intentExists); err != nil {
+		return false, err
+	}
+	if intentExists {
+		return false, ErrLifecycleOperationConflict
+	}
 	result, err := tx.Exec(ctx, `
 		INSERT INTO lifecycle_operation_registry (
 			operation_id, kind, command_payload
@@ -47,4 +54,17 @@ func reserveLifecycleOperationIdentityTx(
 		)
 	}
 	return false, nil
+}
+
+// Admission holds the same operation lock as lifecycle writers. An intent may
+// not reinterpret an identity already committed by any lifecycle entry point.
+func rejectLifecycleUserIntentCollisionTx(ctx context.Context, tx pgx.Tx, id model.LifecycleOperationID) error {
+	var exists bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM lifecycle_operation_registry WHERE operation_id=$1)`, id).Scan(&exists); err != nil {
+		return err
+	}
+	if exists {
+		return ErrLifecycleOperationConflict
+	}
+	return nil
 }

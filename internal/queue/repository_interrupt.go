@@ -10,8 +10,8 @@ import (
 )
 
 // InterruptJob retires the active generation and installs a new, immutable
-// waiting boundary on the same job. Only an explicit replan may replace that
-// boundary with runnable work.
+// waiting boundary on the same job during planning. Frozen execution instead
+// pauses its exact step, retaining its ledger and journal for explicit resume.
 func (r *Repository) InterruptJob(ctx context.Context, command ReplanJobCommand) (LifecycleJobResult, error) {
 	command, err := normalizeInterruptJobCommand(command)
 	if err != nil {
@@ -88,6 +88,9 @@ func interruptJobTx(
 		command.Feedback,
 	); err != nil {
 		return LifecycleJobResult{}, err
+	}
+	if result, handled, err := pauseFrozenCodingTx(ctx, tx, job, descriptor); handled {
+		return result, err
 	}
 	currentGeneration, err := lockCurrentJobGenerationTx(ctx, tx, command.JobID)
 	if err != nil {

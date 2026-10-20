@@ -26,6 +26,7 @@ type agentRenderItem struct {
 	order        uint64
 	headingShown bool
 	truncated    bool
+	textShown    bool
 }
 
 // Only bounded, unfinished public display fragments live here. The runtime
@@ -77,15 +78,16 @@ func (renderer *chatRenderer) nativeActivity(event client.RealtimeEvent) error {
 		var rendered strings.Builder
 		if activity.Status == model.AgentActivityStarted {
 			renderBlock(&rendered, "command>", command)
-			if renderer.verbosity == chatVerbose || renderer.verbosity == chatDebug {
-				fmt.Fprintf(&rendered, "      in %s\n", activity.CWD)
+			if activity.CWD != "" {
+				fmt.Fprintf(&rendered, "[omni] directory %q\n", activity.CWD)
 			}
 		} else {
 			fmt.Fprintf(&rendered, "[omni] command %s", activity.Status)
 			if activity.ExitCode != nil {
 				fmt.Fprintf(&rendered, " · exit %d", *activity.ExitCode)
 			}
-			fmt.Fprintf(&rendered, " · %s\n", command)
+			fmt.Fprintln(&rendered)
+			renderBlock(&rendered, "command>", command)
 		}
 		if activity.Truncated {
 			fmt.Fprintln(&rendered, "[omni] Command preview truncated.")
@@ -242,7 +244,12 @@ func (renderer *chatRenderer) writeAgentSegment(key agentRenderKey, item *agentR
 		label = "output>"
 	}
 	var rendered strings.Builder
-	renderBlock(&rendered, label, text)
+	if item.textShown {
+		fmt.Fprintf(&rendered, "%s%s\n", strings.Repeat(" ", len(label)+1), text)
+	} else {
+		renderBlock(&rendered, label, text)
+		item.textShown = true
+	}
 	return renderer.console.WriteOutput(rendered.String())
 }
 

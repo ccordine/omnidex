@@ -77,6 +77,13 @@ func (r *Repository) CompleteCodingLedgerReview(ctx context.Context, jobID, ledg
 		return err
 	}
 	defer tx.Rollback(ctx)
+	if err := completeCodingLedgerReviewTx(ctx, tx, jobID, ledgerID, frozenRevision); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func completeCodingLedgerReviewTx(ctx context.Context, tx pgx.Tx, jobID, ledgerID, frozenRevision int64) error {
 	var generation, stepID int64
 	var jobStatus, stepStatus string
 	if err := tx.QueryRow(ctx, `
@@ -91,7 +98,7 @@ func (r *Repository) CompleteCodingLedgerReview(ctx context.Context, jobID, ledg
 		return err
 	}
 	if jobStatus == model.JobStatusRunning && stepStatus == model.StepStatusCompleted {
-		return tx.Commit(ctx)
+		return nil
 	}
 	if jobStatus != model.JobStatusWaiting || stepStatus != model.StepStatusWaiting {
 		return fmt.Errorf("%w: normalized planning boundary is job=%s step=%s", ErrCodingLedgerState, jobStatus, stepStatus)
@@ -110,5 +117,5 @@ func (r *Repository) CompleteCodingLedgerReview(ctx context.Context, jobID, ledg
 		}
 		return fmt.Errorf("%w: normalized planning job changed", ErrCodingLedgerState)
 	}
-	return tx.Commit(ctx)
+	return nil
 }

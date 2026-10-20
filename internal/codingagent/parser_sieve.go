@@ -14,15 +14,16 @@ const ParserBlockBytes = 2048
 // ParserStep is a code-selected semantic leaf, never a model-authored workflow.
 // Source and neighbouring context refer only to the completed final response.
 type ParserStep struct {
-	Stage     string             `json:"stage"`
-	BlockID   string             `json:"block_id"`
-	Source    string             `json:"source"`
-	Before    string             `json:"before,omitempty"`
-	After     string             `json:"after,omitempty"`
-	Category  string             `json:"category,omitempty"`
-	Ledger    *EngineeringLedger `json:"ledger,omitempty"`
-	NewIDs    map[string]string  `json:"new_ids,omitempty"`
-	OwnerTurn string             `json:"owner_turn,omitempty"`
+	TaskInstructions string             `json:"task_instructions,omitempty"`
+	Stage            string             `json:"stage"`
+	BlockID          string             `json:"block_id"`
+	Source           string             `json:"source"`
+	Before           string             `json:"before,omitempty"`
+	After            string             `json:"after,omitempty"`
+	Category         string             `json:"category,omitempty"`
+	Ledger           *EngineeringLedger `json:"ledger,omitempty"`
+	NewIDs           map[string]string  `json:"new_ids,omitempty"`
+	OwnerTurn        string             `json:"owner_turn,omitempty"`
 }
 
 type ParserPart struct {
@@ -138,6 +139,15 @@ func RunParserSieve(ctx context.Context, call Assignment, event func(NativeEvent
 
 func (s *parserSieve) step(index int, stage string) ParserStep {
 	step := ParserStep{Stage: stage, BlockID: s.blocks[index].ID, Source: s.blocks[index].Text}
+	if (s.call.Role == ReviewResponse || s.call.Role == ExecutionResponse) && s.call.Task != nil {
+		step.TaskInstructions = s.call.Task.Goal
+		if index > 0 {
+			step.Before = s.blocks[index-1].Text
+		}
+		if index+1 < len(s.blocks) {
+			step.After = s.blocks[index+1].Text
+		}
+	}
 	return step
 }
 
@@ -245,6 +255,7 @@ func validateParserParts(role Role, source string, parts []ParserPart) error {
 // planner's ledger, owner turn, conversation, workspace, findings, or other
 // workflow state as authority.
 func parserLeafAssignment(call Assignment, step ParserStep) Assignment {
+	call.ExecutionReport = nil
 	call.Context = ""
 	call.Objective = nil
 	call.ReadFiles = nil

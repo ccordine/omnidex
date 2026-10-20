@@ -37,6 +37,9 @@ type chatSession struct {
 	messages           map[int64]model.ChannelMessage
 	turns              map[model.LifecycleOperationID]model.ChannelSessionTurn
 	controls           map[model.LifecycleOperationID]model.ChannelSessionControl
+	lastPendingIntent  model.LifecycleOperationID
+	exitRequested      bool
+	pendingIntent      *pendingUserIntent
 	pendingControl     *pendingControl
 	pendingTurn        *pendingSessionTurn
 	pendingPlan        *pendingPlanMutation
@@ -106,8 +109,16 @@ func runChatSession(config chatSessionConfig) (resultErr error) {
 	statePollResults := make(chan chatStatePollResult, 1)
 	statePollActive := false
 
+	var ledgerRequests <-chan workspaceLedgerRequest
+	if view := session.ledgerWorkspace(); view != nil {
+		ledgerRequests = view.ledger.requests
+	}
 	for {
 		select {
+		case request := <-ledgerRequests:
+			if err := session.acceptLedgerPanelRequest(request); err != nil {
+				return err
+			}
 		case err := <-activityErrors:
 			return err
 		case <-config.Context.Done():
@@ -213,6 +224,9 @@ func runChatSession(config chatSessionConfig) (resultErr error) {
 			}
 			session.lastPollError = ""
 			if result.state.Equal(session.serverState) {
+				if err := session.refreshLedgerPanel(); err != nil {
+					return err
+				}
 				continue
 			}
 			if err := session.reloadSnapshot(); err != nil {
@@ -252,9 +266,13 @@ func runChatSession(config chatSessionConfig) (resultErr error) {
 
 func (session *chatSession) acceptInput(line string, pasted bool) (bool, error) {
 	name, text, command := parseChatCommand(line)
+	if session.pendingIntent != nil && (command && !pasted && name != "exit" || line != session.pendingIntent.request.Text && name != "exit") {
+		return false, fmt.Errorf("a previous user message remains unresolved")
+	}
 	if session.planNoteEditing {
 		if pasted || !command {
-			return false, session.acceptPlanReviewNote(line)
+			err := session.acceptPlanReviewNote(line)
+			return session.exitRequested, err
 		}
 		switch name {
 		case "stop", "cancel", "interrupt", "redirect":
@@ -265,13 +283,15 @@ func (session *chatSession) acceptInput(line string, pasted bool) (bool, error) 
 		if strings.TrimSpace(line) == "" {
 			return false, nil
 		}
-		return false, session.acceptText(line)
+		err := session.acceptUserMessage(line)
+		return session.exitRequested, err
 	}
 	if !command {
 		if strings.TrimSpace(text) == "" {
 			return false, nil
 		}
-		return false, session.acceptText(text)
+		err := session.acceptUserMessage(text)
+		return session.exitRequested, err
 	}
 	switch name {
 	case "exit":

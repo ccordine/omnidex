@@ -18,9 +18,6 @@ const defaultChatCancelReason = "User stopped the active objective from omni cha
 var errNoActiveChatJob = errors.New("no active task")
 
 func parseChatCommand(line string) (name, text string, command bool) {
-	if line == "exit" || line == "quit" {
-		return "exit", "", true
-	}
 	if !strings.HasPrefix(line, "/") {
 		return "", line, false
 	}
@@ -225,7 +222,7 @@ func (session *chatSession) control(
 		)
 	}
 	session.pendingControl = nil
-	return jobID, session.renderer.system("job %d · %s accepted", jobID, action)
+	return jobID, session.renderer.system("job %d · %s · %s", jobID, action, receipt.Status)
 }
 
 func validatedChatControlText(action, exactText string) (string, error) {

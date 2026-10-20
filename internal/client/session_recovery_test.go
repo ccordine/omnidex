@@ -2,6 +2,7 @@ package client
 
 import (
 	"testing"
+	"time"
 
 	"github.com/gryph/omnidex/internal/model"
 )
@@ -19,5 +20,16 @@ func TestFailedStepRequiresLaterMatchingRecovery(t *testing.T) {
 	recovery.SortIndex++
 	if hasLaterActiveRecoveryStep([]model.Step{failed, recovery}, failed) {
 		t.Fatal("different ledger position hid the failed step")
+	}
+}
+
+func TestPausedFrozenExecutionControlKeepsGenerationOne(t *testing.T) {
+	snapshot := ChatSessionSnapshot{Controls: []model.ChannelSessionControl{{OperationID: "lifecycle_operation_1111111111111111111111111111111111111111111111111111111111111111", Kind: model.ChannelSessionControlInterrupt, JobID: 4, Generation: 1, Status: model.JobStatusWaiting, Text: "Pause retained execution.", CreatedAt: time.Now()}}}
+	if err := validateChatSessionControls(snapshot); err != nil {
+		t.Fatal(err)
+	}
+	snapshot.Controls[0].Status = model.JobStatusRunning
+	if err := validateChatSessionControls(snapshot); err == nil {
+		t.Fatal("invalid pause status admitted")
 	}
 }

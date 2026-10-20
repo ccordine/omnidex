@@ -15,7 +15,9 @@ func (s *parserSieve) outcome() ExecutionResponseKind {
 		}
 	}
 	// A progress/completion claim cannot hide any unresolved owner interaction
-	// or required failure. Preserve the entire original final response for input.
+	// or unfinished assignment. Review check failures that expose defects are
+	// classified at the review semantic boundary, never remapped here because
+	// findings happen to exist. Preserve the entire original final response.
 	for _, kind := range []ExecutionResponseKind{ExecutionPermission, ExecutionQuestion, ExecutionError, ExecutionDone} {
 		if present[string(kind)] {
 			return kind
@@ -31,8 +33,8 @@ type parserReviewFindings struct {
 	} `json:"findings"`
 }
 
-// Interpret only the reviewer's final prose. The parser never receives task
-// instructions, grades evidence, or performs another implementation review.
+// Interpret only the reviewer's final prose against its frozen task. It receives no
+// authority beyond the frozen task instructions, or performs another implementation review.
 func (s *parserSieve) review(ctx context.Context) (json.RawMessage, error) {
 	if s.call.Task == nil {
 		return nil, fmt.Errorf("review response requires its code-selected task")

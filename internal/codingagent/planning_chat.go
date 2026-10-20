@@ -27,7 +27,7 @@ func (controller *Controller) planningResponse(ctx context.Context, turn Plannin
 			conversation = append(conversation, PlanningMessage{Role: "assistant", Text: entry.Notes[0]})
 			continue
 		}
-		if entry.Phase != "planning_response" || len(entry.Notes) != 3 {
+		if (entry.Phase != "planning_draft" && !(entry.Phase == "planning_response" && entry.PlanningProposal == nil)) || len(entry.Notes) != 3 {
 			continue
 		}
 		if entry.Notes[0] == turn.OperationID {
@@ -61,7 +61,7 @@ func (controller *Controller) planningResponse(ctx context.Context, turn Plannin
 	if err := json.Unmarshal(result.Content, &response); err != nil {
 		return "", err
 	}
-	_, err = controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "planning_response",
+	_, err = controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "planning_draft",
 		Role: Plan, CallID: result.CallID, Notes: []string{turn.OperationID, turn.Text, response}})
 	return response, err
 }

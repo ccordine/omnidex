@@ -50,6 +50,9 @@ func finishPlanningConversation(ctx context.Context, repository planningConversa
 				return ledger, err
 			}
 		}
+		if err := controller.PublishPlanningLedger(ctx, turn, ledger.Ledger); err != nil {
+			return ledger, err
+		}
 		if _, err := repository.ResolvePlanningSessionMessage(ctx, authority, message.OperationID); err != nil {
 			return ledger, err
 		}

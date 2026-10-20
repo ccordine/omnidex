@@ -34,12 +34,20 @@ func (connection *connection) recoverExecutionResult(call codingagent.Assignment
 		return result, &codingagent.IncompleteTaskError{Reason: "Execution dispatch is indeterminate; inspect partial work and plan its continuation without replaying commands.", ThreadID: result.ThreadID}
 	}
 	turn := response.Data[0]
+	result.TurnID = turn.ID
+	if turn.ID != "" && turn.ID != call.Session.PreviousTurnID && (call.Session.TurnID == "" || call.Session.TurnID == turn.ID) && (turn.Status == "interrupted" || turn.Status == "failed") {
+		// A terminal interrupted turn cannot be replayed. Retain its exact thread
+		// and partial effects; only an explicit owner resume may start continuation.
+		if err := event(codingagent.NativeEvent{Session: &codingagent.ExecutionSession{ThreadID: result.ThreadID, TurnID: turn.ID, State: "idle"}}); err != nil {
+			return result, err
+		}
+	}
 	if turn.ID == "" || turn.ID == call.Session.PreviousTurnID || call.Session.TurnID != "" && call.Session.TurnID != turn.ID || turn.Status != "completed" {
 		return result, &codingagent.IncompleteTaskError{Reason: fmt.Sprintf("Original execution is %q, not complete; inspect partial work before planning continuation, without replaying commands.", turn.Status), ThreadID: result.ThreadID, TurnID: turn.ID}
 	}
 	result.TurnID = turn.ID
 	for _, item := range turn.Items {
-		if err := collectAgentResultItem(&result, codingagent.Execute, item.Type, item.Phase, item.Delivery, item.Text); err != nil {
+		if err := collectAgentResultItem(&result, call.Role, item.Type, item.Phase, item.Delivery, item.Text); err != nil {
 			return result, err
 		}
 	}

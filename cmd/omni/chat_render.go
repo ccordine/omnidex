@@ -16,6 +16,9 @@ type chatRenderer struct {
 }
 
 func (renderer chatRenderer) banner(channel model.Channel) error {
+	if err := renderer.console.setWorkspaceProject(channel.WorkspaceRoot); err != nil {
+		return err
+	}
 	return renderer.console.WriteOutput(fmt.Sprintf(
 		"Omnidex · Agents\nproject: %s\n/help for controls · /exit or Ctrl-D to leave\n",
 		channel.WorkspaceRoot,
@@ -97,6 +100,9 @@ func (renderer chatRenderer) sessionControl(control model.ChannelSessionControl)
 }
 
 func (renderer chatRenderer) prompt(details *model.JobDetails) error {
+	if err := renderer.console.observeWorkspaceJob(details); err != nil {
+		return err
+	}
 	label := "you> "
 	activity := chatActivity{}
 	if details != nil {
@@ -143,6 +149,9 @@ func (renderer chatRenderer) status(details model.JobDetails) error {
 }
 
 func (renderer *chatRenderer) realtime(event client.RealtimeEvent) error {
+	if err := renderer.console.observeWorkspaceEvent(event); err != nil {
+		return err
+	}
 	if event.PlanningActivity != nil {
 		return renderer.planningActivity(event)
 	}
@@ -203,6 +212,6 @@ func renderBlock(destination *strings.Builder, label, value string) {
 	}
 	fmt.Fprintf(destination, "%s %s\n", label, lines[0])
 	for _, line := range lines[1:] {
-		fmt.Fprintf(destination, "      %s\n", line)
+		fmt.Fprintf(destination, "%s%s\n", strings.Repeat(" ", len(label)+1), line)
 	}
 }

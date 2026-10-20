@@ -30,6 +30,10 @@ func (session *chatSession) resolveOperationError(err error) (quit bool, resultE
 	if !errors.Is(err, errChatRequestInterrupted) {
 		return false, session.renderer.system("%v", err)
 	}
+	if session.pendingIntent != nil {
+		err := session.resolvePendingUserIntent()
+		return session.exitRequested, err
+	}
 	if err := session.renderer.system("request interrupted; reconciling server state"); err != nil {
 		return false, err
 	}
@@ -68,7 +72,7 @@ func (session *chatSession) resolveOperationError(err error) (quit bool, resultE
 		switch resolution.action {
 		case "interrupt":
 			return false, session.renderer.system(
-				"job %d interrupted; enter a redirection to resume",
+				"job %d paused; ask to continue this job or redirect it",
 				resolution.jobID,
 			)
 		case "cancel":
@@ -113,7 +117,7 @@ func (session *chatSession) resolveOperationError(err error) (quit bool, resultE
 		return false, err
 	}
 	return false, session.renderer.system(
-		"job %d interrupted; enter a redirection to resume",
+		"job %d paused; ask to continue this job or redirect it",
 		jobID,
 	)
 }

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/gryph/omnidex/internal/codex"
 	"github.com/gryph/omnidex/internal/config"
 	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/model"
@@ -16,6 +17,8 @@ import (
 )
 
 type Server struct {
+	userParserMu              sync.Mutex
+	userParser                *codex.Client
 	lifecycleContext          context.Context
 	repo                      *queue.Repository
 	roleplaySimulation        RoleplaySimulationStore

@@ -9,11 +9,14 @@ import (
 // Narrow roles receive one finalized step. Parent objectives and aggregate
 // workloads remain with their code-owned consumers, never the executor.
 func (call Assignment) ValidateTaskContext() error {
+	if call.ExecutionReport != nil && (call.Role != Review || call.ExecutionReport.CallID < 1 || call.ExecutionReport.Response == "") {
+		return fmt.Errorf("execution evidence requires a bound task review")
+	}
 	if !call.Role.IsPlanning() && (call.Continuation != nil || len(call.CompletedTaskIDs) != 0) {
 		return fmt.Errorf("task-local context excludes continuation planning and completed task inventory")
 	}
 	if call.Role == ReviewResponse || call.Role == ExecutionResponse {
-		if (call.Task != nil) != (call.Role == ReviewResponse) || call.Response == "" || call.Objective != nil ||
+		if call.Task == nil || call.Response == "" || call.Objective != nil ||
 			len(call.ConstructionFacts) != 0 ||
 			call.PlanningLedger != nil || len(call.PlanningConversation) != 0 || call.PlanningResponse != "" ||
 			len(call.ReadFiles) != 0 || len(call.WriteFiles) != 0 || len(call.DeleteFiles) != 0 ||
@@ -28,7 +31,7 @@ func (call Assignment) ValidateTaskContext() error {
 	if call.Task == nil || call.Objective != nil || len(call.ConstructionFacts) != 0 || call.PlanningLedger != nil || len(call.PlanningConversation) != 0 || call.PlanningResponse != "" {
 		return fmt.Errorf("narrow agent context requires one task and excludes parent context")
 	}
-	if call.Role == Execute && call.Response != "" || call.Role == Review && (call.Session != nil || (call.Response == "") != (call.Reply == "")) {
+	if call.Role == Execute && call.Response != "" || call.Role == Review && ((call.Session != nil && !recoverableSession(call.Session) && call.Response == "") || (call.Response == "") != (call.Reply == "")) {
 		return fmt.Errorf("task assignment includes unrelated response context")
 	}
 	allowed := uniqueFiles(append(append([]string{}, call.Task.ReadFiles...), call.Task.WriteFiles...))
