@@ -8841,3 +8841,90 @@ Final source and executable fingerprints matched across the pilot. Task core/CLI
 containers, binaries and compiler scratch removed; ports18091/25432/26379 closed.
 Installed service remains PID1553438 on its previous build, manifest unchanged.
 Delivered source/tests only; no installation, service replacement or commit.
+
+## Installed binary update — 2026-10-22
+
+Owner requested all installed Omnidex binaries updated to latest. Built from clean
+main commit 6776ee667fcb6509c6b2ddbe15a4e8a2e2a362f4 using the supported core/CLI
+builders, including the production UI; built cmd/omni-inference from the same tree.
+Builds ran sequentially with 2 CPU/3 GiB resource scopes. Atomically replaced
+bin/omni, bin/omnidex and the installed Omnidex inference executable at
+/home/gryph/Projects/tools/live-translate/bin/omni-inference. Existing launchers
+resolve to the updated binaries. Restarted omnidex.service and
+house-inference.service; their running executable hashes match the new files.
+Release label remains v0.5.0 (Charmeleon).
+
+The newer inference binary requires explicit provider selection. Added only
+OMNIDEX_INFERENCE_PROVIDER=ollama to its existing environment; verified all original
+bytes remain. Core environment, manifest, Valkey configuration and core service unit
+hashes are unchanged. PostgreSQL and Valkey were not restarted; all 31 pre-existing
+job IDs and statuses survived unchanged. No schema edits or database reset.
+
+Actual installed-software acceptance: readiness and dependency health PASS; embedded
+UI entry assets served successfully (no browser interaction claim). Authenticated
+inference against existing qwen3.5:9b returned the correct numeral in 18.872s. The
+installed omni chat used the running core and real Codex providers: Ctrl+C cleared
+an unsent draft, the creation request and approval each appeared once, and job32
+completed in 132.249s after one ordinary plan approval and zero corrective prompts.
+Omnidex created only greeting.txt with exactly 19 requested bytes; independent
+review passed. Normal /exit returned code0 in approximately 0.102s. This is an
+installation smoke test, not a repeat of the full prior usability gauntlet.
+
+Evidence: bin/native-update-20261022/evidence contains build logs, configuration and
+binary hashes, process identities, terminal input/output, rendered screens, scoped
+job results and inference result. Test CLI exited; build cache and staging removed.
+Installed core and inference services remain running. Application source unchanged;
+this evidence entry is the only tracked edit after the published commit.
+
+Observed pre-existing deployment limitations remain: the retained PostgreSQL schema
+still contains old content-size constraints, so updating executables alone does not
+remove those database limits. The obsolete omni-host-bridge.service was already
+restarting because it invokes the removed `omni host serve` command; its definition
+was not changed by this binary update.
+
+## Retained database limits and obsolete host bridge — 2026-10-22
+
+Owner explicitly requested fixing both deployment issues reported above. Removed
+the enabled omni-host-bridge.service, which called the removed `omni host serve`
+command and had restarted 280677 times. No service depended on it; its environment
+file was preserved. Systemd now reports not-found/inactive with no process. Native
+CLI workspace access uses the current transport.
+
+Performed one-time maintenance of the existing runtime schema, using current
+database/setup.sql as authority: 73 CHECK constraints replaced, eight obsolete size
+checks removed, one replacement CHECK added, and 22 validator functions updated.
+All changes are the existing source's size/count-limit removals. Preserved unrelated
+constraints, foreign keys, functions, legacy records and tables. No runtime upgrade
+framework, database reset, schema replacement or application-source changes.
+
+An isolated, disposable PostgreSQL fixture contained the scoped prior definitions
+and synthetic rows only. It reproduced the old size rejection, then accepted exact
+69632-byte user and 114688-byte assistant messages after the prepared changes.
+Large feedback/tag/text-array checks passed; blank content, invalid roles, malformed
+values and missing channel references remained rejected. A dry-run guard initially
+detected PostgreSQL's normalization of reparsed Boolean expressions; the fixture
+then tested the same DDL separately from the live catalogue guards. Live guards
+passed against the original definitions before any changes.
+
+Maintenance stopped the idle core for 7.105s and applied the guarded transaction.
+Before/after sorted row-digest fingerprints matched for all 504766 rows across 77
+tables, as did all 22 sequence positions. Final catalogue comparison matches the
+exact scoped changes and proves all unrelated constraint/function definitions were
+retained. Configuration hashes unchanged. Core restarted healthy; PostgreSQL,
+Valkey and inference services were not restarted. The obsolete service remains
+absent. Disposable PostgreSQL fixture removed.
+
+Final installed-software acceptance PASS: job33 accepted and persisted the entire
+34924-byte request exactly, produced a one-task plan, and completed in 183.513s with
+one normal approval and zero corrective prompts. Omnidex created only payload.txt,
+exactly 34800 bytes containing all 600 supplied lines and the final newline;
+independent review passed. No manual workload edits. Reopening the installed CLI
+restored the large conversation and the same completed job. Both normal exits
+returned code0. The installed core remains healthy and running; test CLIs exited
+and task scratch was removed. Both reported deployment issues are resolved.
+
+Evidence and retained verification artifacts: bin/deployment-repair-20261022/evidence
+contains the scoped SQL, before/after definitions, fixture results, row/sequence
+fingerprints, exact terminal input/output, rendered screens and job results.
+Executables remain the installed 6776ee6 builds from the preceding update; running
+core hash was rechecked. Only this existing evidence document changed in source.
