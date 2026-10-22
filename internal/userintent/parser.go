@@ -53,16 +53,16 @@ func Interpret(ctx context.Context, input Input, ask Ask) (Interpretation, error
 	if ask == nil || input.Writable == nil || input.Validate == nil {
 		return result, fmt.Errorf("user interpretation requires a semantic function and code-owned state contract")
 	}
-	if err := boundedText(input.Prompt, 32<<10); err != nil {
+	if err := validateText(input.Prompt); err != nil {
 		return result, err
 	}
 	if !json.Valid(input.Snapshot) || !strings.HasPrefix(strings.TrimSpace(string(input.Snapshot)), "{") {
-		return result, fmt.Errorf("server snapshot must be a JSON object within 64 KiB")
+		return result, fmt.Errorf("server snapshot must be a JSON object")
 	}
 	if len(input.Contract) > 0 && (!json.Valid(input.Contract) || !strings.HasPrefix(strings.TrimSpace(string(input.Contract)), "{")) {
-		return result, fmt.Errorf("state contract must be a JSON object within 32 KiB")
+		return result, fmt.Errorf("state contract must be a JSON object")
 	}
-	background, err := BuildContext(ctx, input.Context, input.Prompt, ask)
+	background, err := BuildContext(ctx, input.Context)
 	if err != nil {
 		return result, err
 	}
@@ -99,7 +99,7 @@ Input:
 		if len(result.Patch) != 0 {
 			return Interpretation{}, fmt.Errorf("clarification cannot contain effects")
 		}
-		if err := boundedText(result.Question, 1024); err != nil {
+		if err := validateText(result.Question); err != nil {
 			return Interpretation{}, err
 		}
 		return result, nil

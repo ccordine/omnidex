@@ -182,7 +182,7 @@ func userIntentContextTx(ctx context.Context, tx pgx.Tx, channelID model.Channel
 	if err != nil {
 		return c, err
 	}
-	if _, recoveryErr := codingRecoveryStepTx(ctx, tx, details.Job); recoveryErr == nil {
+	if _, _, recoveryErr := jobRecoveryStepTx(ctx, tx, details.Job); recoveryErr == nil {
 		c.Recoverable = true
 	} else if !errors.Is(recoveryErr, pgx.ErrNoRows) {
 		return c, recoveryErr

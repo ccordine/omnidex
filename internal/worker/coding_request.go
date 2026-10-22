@@ -19,6 +19,15 @@ func (request codingLedgerRequest) authority() string {
 	return strings.Join(append([]string{request.Instruction}, request.Feedback...), "\n")
 }
 
+// Before the first ledger exists, the initial request is still the task's only
+// scope authority. A continuation cannot replace it with its latest control text.
+func (request codingLedgerRequest) planningText(hasLedger bool) string {
+	if hasLedger && len(request.Feedback) > 0 {
+		return request.Feedback[len(request.Feedback)-1]
+	}
+	return request.authority()
+}
+
 func (runtime *nativeRuntimeV3) codingLedgerRequest() (codingLedgerRequest, error) {
 	if runtime == nil || runtime.claim == nil {
 		return codingLedgerRequest{}, fmt.Errorf("coding ledger requires a claimed job")

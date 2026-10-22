@@ -3,7 +3,7 @@ package main
 import "github.com/gryph/omnidex/internal/model"
 
 func (renderer chatRenderer) agentCallActivity(activity model.AgentCallActivity) error {
-	if renderer.verbosity == chatQuiet && activity.Status != model.AgentCallActivityFailed {
+	if (renderer.verbosity == chatQuiet || renderer.verbosity == chatNormal) && activity.Status != model.AgentCallActivityFailed {
 		return nil
 	}
 	if renderer.verbosity == chatDebug {

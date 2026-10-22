@@ -13,10 +13,16 @@ import (
 	"github.com/gryph/omnidex/internal/queue"
 )
 
-type sourcePlanningProvider struct{ calls []codingagent.Role }
+type sourcePlanningProvider struct {
+	calls      []codingagent.Role
+	objectives []string
+}
 
 func (p *sourcePlanningProvider) Run(_ context.Context, call codingagent.Assignment, emit func(codingagent.NativeEvent) error) (codingagent.Result, error) {
 	p.calls = append(p.calls, call.Role)
+	if call.Role == codingagent.Plan {
+		p.objectives = append(p.objectives, call.Objective.Instruction)
+	}
 	if err := emit(codingagent.NativeEvent{Frame: json.RawMessage(`{"fixture":"source-retention"}`)}); err != nil {
 		return codingagent.Result{}, err
 	}
@@ -62,12 +68,17 @@ func TestPlanningSourcePersistsExactBytesBeforeApproval(t *testing.T) {
 			provider := &sourcePlanningProvider{}
 			controller := &codingagent.Controller{JobID: job.ID, Generation: 1, Root: root, Configuration: configuration,
 				Providers: map[string]codingagent.Provider{"native": provider}, Environment: planningBoundaryEnvironment{}, Evidence: &planningRetryJournal{}}
-			turn := codingagent.PlanningTurn{OperationID: "source-create", OwnerTurnID: "source-owner", Text: source}
+			request := codingLedgerRequest{Instruction: source, Feedback: []string{"user follow-up: Pause.", "user redirect: Continue this job."}}
+			initialText := request.planningText(false)
+			if !strings.HasPrefix(initialText, source) || !strings.HasSuffix(initialText, "Continue this job.") {
+				t.Fatal("interrupted initial planning lost scope or continuation")
+			}
+			turn := codingagent.PlanningTurn{OperationID: "source-create", OwnerTurnID: "source-owner", Text: initialText}
 			created, err := createCodingLedgerPlanningTransaction(t.Context(), repo, controller, job.ID, turn)
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := model.TaskContext{Text: source, Provenance: model.LedgerProvenance{Kind: "owner_turn", Reference: turn.OwnerTurnID, Revision: 1}}
+			want := model.TaskContext{Text: initialText, Provenance: model.LedgerProvenance{Kind: "owner_turn", Reference: turn.OwnerTurnID, Revision: 1}}
 			read, err := repo.ReadCodingLedger(t.Context(), created.LedgerID, queue.CodingLedgerReadOptions{})
 			if err != nil || len(read.Ledger.Tasks) != 1 || !reflect.DeepEqual(read.Ledger.Tasks[0].OwnerContext, []model.TaskContext{want}) {
 				t.Fatal("planning persistence lost original bytes or provenance", err)
@@ -76,6 +87,13 @@ func TestPlanningSourcePersistsExactBytesBeforeApproval(t *testing.T) {
 			amended, err := applyCodingLedgerPlanningTransaction(t.Context(), repo, controller, created.LedgerID, turn, nil)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(provider.objectives, []string{initialText, turn.Text}) {
+				t.Fatal("planner received changed task authority", provider.objectives)
+			}
+			amendment := codingLedgerRequest{Instruction: source, Feedback: []string{"earlier retained change", turn.Text}}
+			if amendment.planningText(true) != turn.Text {
+				t.Fatal("existing ledger amendment repeated old instructions")
 			}
 			wantLater := model.TaskContext{Text: turn.Text, Provenance: model.LedgerProvenance{Kind: "owner_turn", Reference: turn.OwnerTurnID, Revision: amended.Revision}}
 			read, err = repo.ReadCodingLedger(t.Context(), created.LedgerID, queue.CodingLedgerReadOptions{})

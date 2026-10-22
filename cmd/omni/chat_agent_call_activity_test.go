@@ -13,7 +13,7 @@ func TestAgentCallLifecycleShowsTypedActualRoleAndStatus(t *testing.T) {
 		for _, status := range []model.AgentCallActivityStatus{model.AgentCallActivityStarted, model.AgentCallActivityCompleted, model.AgentCallActivityFailed} {
 			t.Run(role+"/"+string(status), func(t *testing.T) {
 				console, output := planReviewTestConsole(t)
-				renderer := chatRenderer{console: console}
+				renderer := chatRenderer{console: console, verbosity: chatVerbose}
 				activity := model.AgentCallActivity{Schema: 1, CallID: 73, Role: role, Status: status}
 				if role == "execute" || role == "execution_response" || role == "review" || role == "review_response" {
 					activity.TaskID = "actual-task"
@@ -33,25 +33,30 @@ func TestAgentCallLifecycleShowsTypedActualRoleAndStatus(t *testing.T) {
 	}
 }
 
-func TestQuietAgentCallLifecycleKeepsFailuresWithoutRoutineHandoffs(t *testing.T) {
-	console, output := planReviewTestConsole(t)
-	renderer := chatRenderer{console: console, verbosity: chatQuiet}
-	for _, status := range []model.AgentCallActivityStatus{model.AgentCallActivityStarted, model.AgentCallActivityCompleted} {
-		activity := model.AgentCallActivity{Schema: 1, CallID: 73, Role: "plan", Status: status}
-		if err := renderer.realtime(client.RealtimeEvent{EventName: client.RealtimeJobRuntimeEvent,
-			RuntimeEvent: "agent_call_activity", AgentCallActivity: &activity}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if output.Len() != 0 {
-		t.Fatalf("quiet output exposed routine native call handoffs: %q", output.String())
-	}
-	activity := model.AgentCallActivity{Schema: 1, CallID: 73, Role: "plan", Status: model.AgentCallActivityFailed}
-	if err := renderer.realtime(client.RealtimeEvent{EventName: client.RealtimeJobRuntimeEvent,
-		RuntimeEvent: "agent_call_activity", AgentCallActivity: &activity}); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(output.String(), "Planning") || !strings.Contains(output.String(), "failed") {
-		t.Fatalf("quiet output hid actual native call failure: %q", output.String())
+func TestNormalAgentCallLifecycleKeepsFailuresWithoutRoutineHandoffs(t *testing.T) {
+	for _, verbosity := range []chatVerbosity{chatQuiet, chatNormal} {
+		t.Run(verbosity.String(), func(t *testing.T) {
+			console, output := planReviewTestConsole(t)
+			renderer := chatRenderer{console: console, verbosity: verbosity}
+			for _, status := range []model.AgentCallActivityStatus{model.AgentCallActivityStarted, model.AgentCallActivityCompleted} {
+				activity := model.AgentCallActivity{Schema: 1, CallID: 73, Role: "plan", Status: status}
+				if err := renderer.realtime(client.RealtimeEvent{EventName: client.RealtimeJobRuntimeEvent,
+					RuntimeEvent: "agent_call_activity", AgentCallActivity: &activity}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if output.Len() != 0 {
+				t.Fatalf("normal output exposed routine native call handoffs: %q", output.String())
+			}
+			activity := model.AgentCallActivity{Schema: 1, CallID: 73, Role: "plan", Status: model.AgentCallActivityFailed}
+			if err := renderer.realtime(client.RealtimeEvent{EventName: client.RealtimeJobRuntimeEvent,
+				RuntimeEvent: "agent_call_activity", AgentCallActivity: &activity}); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(output.String(), "Planning") || !strings.Contains(output.String(), "failed") {
+				t.Fatalf("normal output hid actual native call failure: %q", output.String())
+			}
+
+		})
 	}
 }

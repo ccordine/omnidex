@@ -38,7 +38,6 @@ func (runtime *nativeRuntimeV3) runAgentPlanningAction(configuration codingagent
 	if err != nil {
 		return err
 	}
-	authority := request.authority()
 	controller := codingagent.Controller{
 		JobID: runtime.claim.Job.ID, Generation: runtime.claim.Authority.Generation,
 		Root: scope.Root, Configuration: configuration,
@@ -59,21 +58,17 @@ func (runtime *nativeRuntimeV3) runAgentPlanningAction(configuration codingagent
 	}
 	stopHeartbeat := runtime.svc.startProgressHeartbeat(runtime.ctx, runtime.claim.Authority, "scoped-agent-planning")
 	defer stopHeartbeat()
-	exactTurnText := authority
-	if count := len(request.Feedback); count > 0 {
-		exactTurnText = request.Feedback[count-1]
+	existing, exists, err := runtime.svc.repo.CurrentCodingLedgerForJob(runtime.ctx, runtime.claim.Job.ID)
+	if err != nil {
+		return err
 	}
 	turn := codingagent.PlanningTurn{
 		OperationID: fmt.Sprintf("planning:%d:%d", runtime.claim.Job.ID, runtime.claim.Authority.Generation),
 		OwnerTurnID: fmt.Sprintf("owner:%d:%d", runtime.claim.Job.ID, runtime.claim.Authority.Generation),
-		Text:        exactTurnText, ObservedRevision: request.ObservedLedgerRevision,
+		Text:        request.planningText(exists), ObservedRevision: request.ObservedLedgerRevision,
 	}
 	if request.PlanningOperationID != "" {
 		turn.OperationID = request.PlanningOperationID
-	}
-	existing, exists, err := runtime.svc.repo.CurrentCodingLedgerForJob(runtime.ctx, runtime.claim.Job.ID)
-	if err != nil {
-		return err
 	}
 	alreadyApplied := false
 	if exists {

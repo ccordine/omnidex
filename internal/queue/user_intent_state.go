@@ -3,6 +3,7 @@ package queue
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/model"
@@ -95,13 +96,45 @@ func (r *Repository) applyUserJobStateTx(ctx context.Context, tx pgx.Tx, saved s
 		if err := validateChannelSessionJobAuthority(current.State.ChannelID, authority, current.State.WorkspaceIdentity, job); err != nil {
 			return "", err
 		}
-		result, err := resumeJobTx(ctx, tx, ResumeJobCommand{OperationID: request.OperationID, JobID: job.ID, ExpectedGeneration: current.Generation, ObservedLedgerRevision: current.Revision, Feedback: request.Text, WorkspaceRoot: current.State.WorkspaceRoot, WorkspaceIdentity: current.State.WorkspaceIdentity})
+		_, planning, err := jobRecoveryStepTx(ctx, tx, job)
+		if err != nil {
+			return "", err
+		}
+		var result LifecycleJobResult
+		if planning {
+			// The intent receipt owns replay. Reuse the existing planning
+			// transition to retain the interrupted generation as history.
+			command := ReplanJobCommand{OperationID: request.OperationID, JobID: job.ID, ObservedLedgerRevision: current.Revision, Feedback: request.Text, WorkspaceRoot: current.State.WorkspaceRoot, WorkspaceIdentity: current.State.WorkspaceIdentity}
+			descriptor, describeErr := describeLifecycleOperation(command.OperationID, LifecycleReplanJob, command)
+			if describeErr != nil {
+				return "", describeErr
+			}
+			result, err = replanJobTx(ctx, tx, command, descriptor)
+			if err == nil {
+				receipt.ControlOperationID = command.OperationID
+				// Replanning appends the owner message in assistant channels.
+				// Bind that newly persisted row to the receipt for echo suppression.
+				messageErr := tx.QueryRow(ctx, `SELECT id FROM ai_channel_messages
+				 WHERE channel_id=$1 AND role='user' AND id>COALESCE($2::bigint,0)
+				 ORDER BY id DESC LIMIT 1`, current.State.ChannelID, current.State.LatestMessageID).Scan(&receipt.MessageID)
+				if messageErr != nil && !errors.Is(messageErr, pgx.ErrNoRows) {
+					return "", messageErr
+				}
+				if messageErr == nil {
+					if _, err := channelSessionUserMessageTx(ctx, tx, current.State.ChannelID, receipt.MessageID, request.Text); err != nil {
+						return "", err
+					}
+				}
+			}
+		} else {
+			result, err = resumeJobTx(ctx, tx, ResumeJobCommand{OperationID: request.OperationID, JobID: job.ID, ExpectedGeneration: current.Generation, ObservedLedgerRevision: current.Revision, Feedback: request.Text, WorkspaceRoot: current.State.WorkspaceRoot, WorkspaceIdentity: current.State.WorkspaceIdentity})
+		}
 		job = result.Job
 		if err != nil {
 			return "", err
 		}
 		receipt.Status, receipt.Generation = job.Status, job.CurrentGeneration
-		return "Resumed the same job from retained execution evidence.", nil
+		return "Resumed the same job from retained progress.", nil
 
 	case model.JobStatusCanceled:
 		result, err := cancelJobTx(ctx, tx, CancelJobCommand{OperationID: request.OperationID, JobID: current.JobID, Reason: request.Text, WorkspaceRoot: current.State.WorkspaceRoot, WorkspaceIdentity: current.State.WorkspaceIdentity})

@@ -61,7 +61,7 @@ func TestNativeAgentVerbositySeparatesPublicSummaryAndOutput(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if strings.Contains(output.String(), "Checking permissions") != (verbosity != chatQuiet) {
+			if strings.Contains(output.String(), "Checking permissions") != (verbosity == chatVerbose || verbosity == chatDebug) {
 				t.Errorf("summary heading visibility does not follow %s: %q", verbosity, output.String())
 			}
 			wantDetails := verbosity == chatVerbose || verbosity == chatDebug

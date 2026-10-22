@@ -174,23 +174,3 @@ func TestCancellationAndModelFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 }
-
-func TestLargeContextAddsOnlySharedMinificationBeforeInterpretation(t *testing.T) {
-	input := parserInput(t, "approve the plan")
-	input.Context = Context{Facts: []string{strings.Repeat("Relevant persisted information. ", 100)}}
-	minifications, interpretations := 0, 0
-	result, err := Interpret(context.Background(), input, func(_ context.Context, prompt string) (string, error) {
-		if strings.HasPrefix(prompt, "What is the smallest context needed") {
-			minifications++
-			return "The established current plan is proposed.", nil
-		}
-		interpretations++
-		if !strings.Contains(prompt, "established current plan") {
-			t.Fatal("minified context missing")
-		}
-		return `{"patch":[{"op":"replace","path":"/plan_state","value":"approved"}]}`, nil
-	})
-	if err != nil || minifications != 1 || interpretations != 1 || len(result.Patch) != 1 {
-		t.Fatal(result, minifications, interpretations, err)
-	}
-}

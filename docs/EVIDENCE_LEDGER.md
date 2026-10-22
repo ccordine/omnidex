@@ -8928,3 +8928,117 @@ contains the scoped SQL, before/after definitions, fixture results, row/sequence
 fingerprints, exact terminal input/output, rendered screens and job results.
 Executables remain the installed 6776ee6 builds from the preceding update; running
 core hash was rechecked. Only this existing evidence document changed in source.
+
+## Installed usability gauntlet — 2026-10-22
+
+Repeated the reading-list and search requests through installed `omni chat`, using
+the existing native core, PostgreSQL, Valkey and Codex provider. Source HEAD
+6c5464c91cf95386b194d891ff0a2a6c3fa703fc; binaries contain the 6776ee6 application
+changes and remained byte-identical. Core PID546557 stayed running. Planner/reviewer
+gpt-6.1-sol xhigh; executor/ledger parser gpt-6.1-sol low. No source, settings,
+service or schema changes during the run; no workload scaffolding, patches or
+intermediate hints. Fresh fixture workspaces and external evaluation criteria.
+
+| Scenario | Job | Elapsed excluding pilot approval wait | Ordinary approvals | Corrective prompts | Result |
+| --- | --- | --- | --- | --- | --- |
+| Reading-list app | 34 | 9m08.648s | 1 | 0 | PASS |
+| Search follow-up | 35 | 8m55.248s | 1 | 0 | PASS |
+| Exact 34924-byte request | 37 | 2m30.192s | 1 | 0 | PASS |
+| Interrupt, resume, cancel | 36 | Control test | 0 | Deliberate interaction | Resume FAIL; interrupt/cancel PASS |
+
+Full request-to-completion times were 12m04.736s, 9m33.469s and 3m08.386s;
+excluded approval waits were 176.088s, 38.221s and 38.195s. Each successful job
+used one execution and one independent review session. Independent browser checks
+passed all eight initial and ten follow-up groups: book actions, validation,
+Unicode, keyboard focus, status/search filters, deletion/reload persistence,
+retained pre-update data, mobile layout and no JavaScript errors. Desktop/mobile
+screenshots inspected. Omnidex's own four/seven browser tests passed. Job37 stored
+the entire request exactly, retained all 600 source lines on its ledger task, and
+created only payload.txt with the exact 34800 bytes and final newline.
+
+The gauntlet found a genuine recovery defect. Ctrl+C with a draft cleared it;
+empty Ctrl+C interrupted initial plan construction in about 0.103s, preserving
+job36 in generation2. The CLI suggested asking to continue, but `Continue this
+job.` returned `unavailable job state transition` and left it paused. Saved intent
+context had planning=true, recoverable=false, no ledger/revision. The model correctly
+requested running; internal/sessionintent/state.go:95 rejected that transition.
+Explicit /cancel succeeded on the same job in about 0.004s. No files created.
+This establishes failure during initial planning; coding-execution interruption
+was not exercised. No fix was made during this evaluation.
+
+Remaining friction: the large-input approval took 47.82s and ten model calls—nine
+context-minification calls over source chunks, then one intent call. Initial and
+follow-up review took 227.854s and 273.642s. Three browser-test interaction mistakes
+recovered autonomously but added delay and error-looking messages. They were test
+timeouts, not active-work aborts. Escaped shell commands, thinking snippets,
+repeated lifecycle notices, intentional server exit130 messages and long-paste
+display remain noisy. Old duplicate user-message echoes were not observed.
+
+Typed/pasted draft clearing and job34 exit/reconnect passed. Four normal CLI exits
+returned code0 in about 0.102–0.105s. Pilot-harness errors (sampling before paste
+delivery completed, then attempting reconnect before the first CLI exited) were
+recorded and corrected without changing the workload. These were not product
+failures. Successful scenarios required no rescue prompts, content-size workaround,
+AI-format correction or service restart; the overall recovery result is mixed.
+
+Report: bin/gauntlet-live-20261022/report.md. Evidence includes terminal recordings,
+browser checks/screenshots, paginated histories, scoped model and intent journals,
+timings, artifact fingerprints and preservation checks. Test CLIs/servers stopped;
+task-local dependencies and empty socket scratch removed. Generated workloads and
+verification evidence retained. Core healthy; pre-existing job states, executables,
+manifest and shared browser hashes unchanged. Only this evidence entry is tracked.
+
+
+## 2026-10-22 — interrupted planning, approval latency, and CLI noise
+
+Owner requested fixes for the installed gauntlet findings above. Implemented in
+place: initial-planning recovery on the same job through the existing planning
+transition; original request retention before the first ledger exists; exact
+single-call intent context; quieter normal-chat reasoning/lifecycle output; exact
+resume message/control receipt identities for echo suppression. No schema, model
+routing, or independent-review workflow change.
+
+Automated checks passed: complete userintent/sessionintent/CLI suites; PostgreSQL
+queue/API recovery, authority, cancellation and stale/terminal regressions; worker
+planning source/conversation/amendment tests with unrelated large text and tabular
+fixtures. Core/UI/CLI builds passed. Logs include the failed development checks and
+subsequent passes rather than suppressing those failures.
+
+The first live fix attempt (job 38) restarted planning but lost the original request
+in the model envelope. Canceled that run, corrected the responsible worker context,
+ran affected tests, rebuilt, and used fresh workspaces for final acceptance.
+
+Final installed-software tests used normal omni chat and the real Codex provider:
+
+- Job 39: initial-planning Ctrl+C before ledger creation; ordinary continuation
+  retained job identity and original objective, moving from paused generation 2 to
+  planning generation 3. Approved the correct task; interrupted frozen execution
+  and resumed the same job/generation/ledger. Completed with only notes.txt and
+  exactly the six bytes ready followed by a newline. No corrective guidance.
+- Job 40: a 36,124-byte unsent Unicode draft cleared with Ctrl+C and created no job.
+  Submitted the request normally, approved once, and completed. Independent byte
+  comparison verified 36,000 bytes, 600 lines, final newline, and no extra files.
+  Approval took 6.143 seconds and one intent call (5.967 seconds), versus 47.82
+  seconds and ten calls in the previous comparable run.
+- Normal conversation omitted routine native-call handoffs and reasoning snippets;
+  activity and real results remained visible. No duplicate continuation echo was
+  observed. Source fingerprints stayed unchanged throughout the final pilots.
+
+Both final jobs completed without rescue, task tweaking, or additional clarification.
+The deliberate pause/resume interactions are functional tests, not an assertion of
+an uninterrupted autonomous run. Required reviews still took 35.082 and 27.338
+seconds, plus parsing; large pasted text remains verbose. Browser-project review
+latency was not requalified by these file workloads.
+
+Installed/running core SHA-256
+33a029ba5e15129e47c2268769df4cfc19f53d33753cb8b6e4ab8902e9a28bcb;
+CLI eefd7be6187415d7973d73a86467d9fba07a9016ab66bce6bbd97793f9e52271.
+Core PID 1092475, health/readiness passed. Pre-existing paused job 17 retains
+generation 8. Test CLIs, disposable PostgreSQL, task caches/build scratch and sockets
+were cleaned up.
+
+Report: bin/gauntlet-fixes-20261022/report.md. Exact prompts/results, terminal logs,
+call timings, complete scoped histories, independent output checks, and binary/source
+fingerprints remain under its evidence directory. Job 39's transcript read after
+CLI exit was rejected by workspace authority; its terminal/journal evidence remains,
+and job 40's final transcript was captured before disconnecting.

@@ -22,11 +22,10 @@ type agentRenderKey struct {
 }
 
 type agentRenderItem struct {
-	pending      string
-	order        uint64
-	headingShown bool
-	truncated    bool
-	textShown    bool
+	pending   string
+	order     uint64
+	truncated bool
+	textShown bool
 }
 
 // Only bounded, unfinished public display fragments live here. The runtime
@@ -57,8 +56,12 @@ func (renderer *chatRenderer) nativeActivity(event client.RealtimeEvent) error {
 		return err
 	}
 	switch activity.Kind {
-	case model.AgentActivityMessage, model.AgentActivityReasoningSummary:
+	case model.AgentActivityMessage:
 		return renderer.agentText(event, activity)
+	case model.AgentActivityReasoningSummary:
+		if renderer.verbosity == chatVerbose || renderer.verbosity == chatDebug {
+			return renderer.agentText(event, activity)
+		}
 	case model.AgentActivityCommandOutput:
 		if renderer.verbosity == chatVerbose || renderer.verbosity == chatDebug {
 			return renderer.agentText(event, activity)
@@ -230,7 +233,7 @@ func (renderer *chatRenderer) agentText(event client.RealtimeEvent, activity mod
 		delete(renderer.agentStream.items, key)
 		return renderer.console.SetActivityDetail(event.JobID, event.StepID, agentActivityRoleLabel(activity))
 	}
-	if item.pending != "" && !(key.kind == model.AgentActivityReasoningSummary && item.headingShown && renderer.verbosity == chatNormal) {
+	if item.pending != "" {
 		excerpt := liveAgentExcerpt(item.pending)
 		if key.kind == model.AgentActivityCommandOutput {
 			excerpt = "Output: " + excerpt
@@ -248,13 +251,9 @@ func (renderer *chatRenderer) writeAgentSegment(key agentRenderKey, item *agentR
 	switch key.kind {
 	case model.AgentActivityReasoningSummary:
 		label = "thinking>"
-		if renderer.verbosity == chatNormal {
-			if item.headingShown || strings.TrimSpace(text) == "" {
-				return nil
-			}
-			text = shortAgentExcerpt(text)
+		if renderer.verbosity != chatVerbose && renderer.verbosity != chatDebug {
+			return nil
 		}
-		item.headingShown = item.headingShown || strings.TrimSpace(text) != ""
 	case model.AgentActivityCommandOutput:
 		if renderer.verbosity != chatVerbose && renderer.verbosity != chatDebug {
 			return nil

@@ -30,7 +30,7 @@ func StateContract(c Context) (json.RawMessage, error) {
 	p["plan_state"].Enum = stateValues(c.PlanState, "frozen")
 	p["plan_state"].Description = "proposed is editable; frozen commits the agreed plan and starts execution. Starting a proposed plan requires all remaining active items agreed, plan_state frozen and job_status running together."
 	p["job_status"].Enum = stateValues(c.JobStatus, model.JobStatusRunning, model.JobStatusWaiting, model.JobStatusCanceled)
-	p["job_status"].Description = "running executes or resumes the existing job; waiting_input interrupts it; canceled terminates it. A recoverable job resumes without changing the frozen plan or item reviews."
+	p["job_status"].Description = "running executes or resumes the existing job; waiting_input interrupts it; canceled terminates it. A recoverable job resumes its interrupted planning or execution without changing the retained plan or item reviews."
 	p["approval"].Description = "Response to authority.pending only: true confirms its exact stored proposal, false declines it. A reply confirming the pending proposal changes approval, not the proposed target fields again. Plan agreement is item review_state, not this field."
 	if c.Pending == nil {
 		p["approval"].Enum = []any{nil}
