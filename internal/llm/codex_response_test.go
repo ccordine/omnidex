@@ -39,8 +39,8 @@ func TestCodexReceiptBindsCompletionUsageAndContinuation(t *testing.T) {
 	if err != nil || context.ThreadID != "thread" || context.TurnID != "turn" {
 		t.Fatalf("context=%+v err=%v", context, err)
 	}
-	if err := ValidateExactPreparedNativeUsage(51, -1, response.Usage); err == nil {
-		t.Fatal("reasoning omitted from context budget")
+	if err := ValidateExactPreparedNativeUsage(51, -1, response.Usage); err != nil {
+		t.Fatal("native usage was size-rejected", err)
 	}
 }
 

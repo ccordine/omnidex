@@ -82,7 +82,7 @@ func validateStoredScrumCardSummary(card DBScrumCardSummary) error {
 }
 
 func validateStoredScrumCardIdentity(id string, projectID int64, title string) error {
-	if projectID <= 0 || id == "" || id != strings.TrimSpace(id) || len(id) > MaxScrumCardIDBytes {
+	if projectID <= 0 || id == "" || id != strings.TrimSpace(id) {
 		return fmt.Errorf("stored Scrum card requires a positive project and canonical bounded ID")
 	}
 	if err := validateStoredScrumText("id", id); err != nil {

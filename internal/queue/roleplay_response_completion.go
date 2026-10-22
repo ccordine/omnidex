@@ -30,9 +30,7 @@ func normalizeRoleplayResponseCompletions(
 	if len(responses) == 0 {
 		return nil, nil
 	}
-	if len(responses) > roleplay.MaxSceneParticipants {
-		return nil, fmt.Errorf("roleplay completion response round exceeds its participant bound")
-	}
+
 	normalized := make([]RoleplayResponseCompletion, len(responses))
 	seenCharacters := make(map[model.RoleplayCharacterID]struct{}, len(responses))
 	seenFacts := make(map[string]struct{})
@@ -50,15 +48,7 @@ func normalizeRoleplayResponseCompletions(
 		if err := model.ValidateChannelMessage(model.ChannelMessageRoleAssistant, response.Output); err != nil {
 			return nil, fmt.Errorf("roleplay completion response %d output: %w", index, err)
 		}
-		if len(response.Output) > roleplay.MaxNarrativeResponseBytes {
-			return nil, fmt.Errorf(
-				"roleplay completion response %d output exceeds the %d-byte narrative bound",
-				index, roleplay.MaxNarrativeResponseBytes,
-			)
-		}
-		if len(response.Facts) > roleplay.MaxCanonFactsPerTurn {
-			return nil, fmt.Errorf("roleplay completion response %d exceeds its fact bound", index)
-		}
+
 		facts := append([]string{}, response.Facts...)
 		for factIndex, fact := range facts {
 			if err := roleplay.ValidateCanonFact(fact); err != nil {
@@ -107,9 +97,7 @@ func normalizeRoleplayUserCanonCompletion(
 	if completion == nil {
 		return nil, nil
 	}
-	if len(completion.Facts) > roleplay.MaxCanonFactsPerTurn {
-		return nil, fmt.Errorf("roleplay user canon exceeds its fact bound")
-	}
+
 	facts := append([]string{}, completion.Facts...)
 	seenFacts := make(map[string]struct{}, len(facts))
 	for index, fact := range facts {
@@ -121,9 +109,7 @@ func normalizeRoleplayUserCanonCompletion(
 		}
 		seenFacts[fact] = struct{}{}
 	}
-	if len(completion.KnowledgeCharacterIDs) > roleplay.MaxKnowledgeRecipientsPerTurn {
-		return nil, fmt.Errorf("roleplay user canon exceeds its knowledge-recipient bound")
-	}
+
 	knowledge := append([]model.RoleplayCharacterID{}, completion.KnowledgeCharacterIDs...)
 	if len(facts) == 0 && len(knowledge) != 0 {
 		return nil, fmt.Errorf("roleplay user canon knowledge requires new facts")

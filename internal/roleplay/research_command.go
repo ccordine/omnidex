@@ -33,7 +33,7 @@ func ParseResearchCommand(exact string) (command ResearchCommand, matched bool, 
 		return ResearchCommand{}, true, fmt.Errorf("research command must contain one canonical quoted question")
 	}
 	if question == "" || question != strings.TrimSpace(question) ||
-		len(question) > MaxResearchQuestionBytes || !utf8.ValidString(question) ||
+		!utf8.ValidString(question) ||
 		strings.ContainsAny(question, "\r\n") || strings.ContainsRune(question, '\x00') {
 		return ResearchCommand{}, true, fmt.Errorf(
 			"research question must be 1 to %d trimmed single-line UTF-8 bytes", MaxResearchQuestionBytes,

@@ -32,9 +32,7 @@ func validateWebText(label, value string, maximum int, requireNonblank bool) err
 	if requireNonblank && strings.TrimSpace(value) == "" {
 		return fmt.Errorf("web station %s is blank", label)
 	}
-	if len(value) > maximum {
-		return fmt.Errorf("web station %s exceeds %d bytes", label, maximum)
-	}
+
 	if !utf8.ValidString(value) {
 		return fmt.Errorf("web station %s is not valid UTF-8", label)
 	}

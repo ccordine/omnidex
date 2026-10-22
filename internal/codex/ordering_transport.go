@@ -9,7 +9,7 @@ import (
 // OrderingClient reuses the instruction-isolated lightweight semantic transport.
 // Its lifetime belongs to one ordering operation, independently of native work.
 func (client *Client) OrderingClient(ctx context.Context) (llm.ExactStationClient, func(), error) {
-	parser, err := NewParser(ctx, client.command, client.directory, client.timeout)
+	parser, err := NewParser(ctx, client.command, client.directory)
 	if err != nil {
 		return nil, nil, err
 	}

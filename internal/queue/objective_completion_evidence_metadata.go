@@ -152,7 +152,7 @@ func validateObjectiveWebMetadata(record evidence.Record, requirementID string) 
 	}
 	rawIndexes, exists := record.Metadata["paragraph_indexes"]
 	indexes, exactType := rawIndexes.([]int)
-	if !exists || !exactType || len(indexes) < 1 || len(indexes) > 4 {
+	if !exists || !exactType || len(indexes) < 1 {
 		return fmt.Errorf("objective web citation requires 1..4 exact integer paragraph indexes")
 	}
 	previous := -1

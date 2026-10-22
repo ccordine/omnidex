@@ -17,7 +17,7 @@ func TestInstalledLocalResponseParser(t *testing.T) {
 	if model == "" {
 		t.Skip("OMNI_TEST_OLLAMA_PARSER_MODEL is required")
 	}
-	parser, err := NewParser(os.Getenv("OMNI_TEST_OLLAMA_PARSER_URL"), 90*time.Second, 8192)
+	parser, err := NewParser(os.Getenv("OMNI_TEST_OLLAMA_PARSER_URL"), 8192)
 	if err != nil {
 		t.Fatal(err)
 	}

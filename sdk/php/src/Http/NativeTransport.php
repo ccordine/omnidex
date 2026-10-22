@@ -13,7 +13,6 @@ final class NativeTransport implements Transport
         string $url,
         array $headers,
         ?string $body,
-        int $timeoutSeconds,
     ): Response {
         $lines = [];
         foreach ($headers as $name => $value) {
@@ -27,7 +26,7 @@ final class NativeTransport implements Transport
                 'method' => $method,
                 'header' => implode("\r\n", $lines),
                 'content' => $body ?? '',
-                'timeout' => $timeoutSeconds,
+                'timeout' => -1,
                 'ignore_errors' => true,
                 'follow_location' => 0,
                 'max_redirects' => 0,

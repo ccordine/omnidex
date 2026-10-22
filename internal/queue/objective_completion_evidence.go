@@ -71,7 +71,7 @@ func normalizeObjectiveCompletionEvidence(record evidence.Record, jobID, stepID 
 	if record.Confidence < 0 || record.Confidence > 1 {
 		return nil, fmt.Errorf("objective citation confidence must be between 0 and 1")
 	}
-	if len(record.RequirementAuthorityBindings) == 0 || len(record.RequirementAuthorityBindings) > 4 {
+	if len(record.RequirementAuthorityBindings) == 0 {
 		return nil, fmt.Errorf("objective citation requires between 1 and 4 requirement authority bindings")
 	}
 	seenBindings := make(map[string]struct{}, len(record.RequirementAuthorityBindings))
@@ -101,9 +101,7 @@ func validateExactObjectiveEvidenceText(name, value string, maximum int, require
 	if required && (value == "" || value != strings.TrimSpace(value)) {
 		return fmt.Errorf("objective citation %s must be one exact nonempty value", name)
 	}
-	if len(value) > maximum {
-		return fmt.Errorf("objective citation %s exceeds the %d-byte limit", name, maximum)
-	}
+
 	return nil
 }
 

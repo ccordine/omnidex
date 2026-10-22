@@ -10,9 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/gryph/omnidex/internal/datasource"
 	"github.com/gryph/omnidex/internal/queue"
-	"github.com/jackc/pgx/v5"
 )
 
 func (s *Server) handleDataSources(w http.ResponseWriter, r *http.Request) {
@@ -195,7 +196,7 @@ func decodeDataSourceUpsert(r *http.Request) (queue.DataSourceUpsert, error) {
 		AuthorityURL  string                   `json:"authority_url"`
 		CredentialEnv string                   `json:"credential_env"`
 	}
-	decoder := json.NewDecoder(io.LimitReader(r.Body, 64<<10))
+	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&req); err != nil {
 		return queue.DataSourceUpsert{}, fmt.Errorf("invalid data-source body: %w", err)

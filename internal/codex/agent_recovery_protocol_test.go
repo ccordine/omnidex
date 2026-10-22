@@ -18,7 +18,7 @@ func TestRecoveryReadsOriginalNativeTurnWithoutDispatch(t *testing.T) {
 				t.Run(status, func(t *testing.T) {
 					writer := &protocolWriter{}
 					responses := fmt.Sprintf("{\"id\":1,\"result\":{}}\n{\"id\":2,\"result\":{\"model\":\"fixture\",\"thread\":{\"id\":\"retained-thread\"}}}\n{\"id\":3,\"result\":{\"data\":[{\"id\":\"retained-turn\",\"status\":%q,\"items\":[{\"type\":\"agentMessage\",\"phase\":\"final_answer\",\"text\":\"Retained result.\"}]}]}}\n", status)
-					connection := &connection{input: writer, output: bufio.NewScanner(bytes.NewBufferString(responses))}
+					connection := &connection{input: writer, output: bufio.NewReader(bytes.NewBufferString(responses))}
 					call := codingagent.Assignment{Role: role, Root: t.TempDir(), Route: codingagent.Route{Model: "fixture"}, Session: &codingagent.ExecutionSession{ThreadID: "retained-thread", TurnID: "retained-turn", State: "running"}}
 					thread, _, err := connection.startAgentThread(call, "")
 					if err != nil || thread.Thread.ID != "retained-thread" {

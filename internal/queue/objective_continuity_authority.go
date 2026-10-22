@@ -115,10 +115,9 @@ func (r *Repository) ObjectiveContinuityAuthorities(
 		); err != nil {
 			return ObjectiveContinuityAuthority{}, err
 		}
-		if purpose != jobGenerationPurposeReplan || boundaryAction != expectedBoundary ||
-			len(feedback) > assemblyline.MaxObjectiveReplanFeedbackBytes {
+		if purpose != jobGenerationPurposeReplan || boundaryAction != expectedBoundary {
 			return ObjectiveContinuityAuthority{}, fmt.Errorf(
-				"current objective generation has invalid or oversized exact replan feedback",
+				"current objective generation has invalid exact replan feedback",
 			)
 		}
 		authority.Replan = &assemblyline.ObjectiveReplanAuthority{
@@ -219,13 +218,7 @@ func loadObjectiveSessionContextTx(
 			)
 		}
 		contextBytes += 2 + len(turn.ContextText)
-		if contextBytes > MaxObjectiveSessionContextBytes {
-			return ObjectiveSessionContextAuthority{}, fmt.Errorf(
-				"job %d same-session context exceeds the explicit %d-byte bound",
-				job.ID,
-				MaxObjectiveSessionContextBytes,
-			)
-		}
+
 		if replan != nil && turn.Kind == ObjectiveSessionRedirect &&
 			turn.Generation == replan.Generation && turn.Text == replan.Feedback {
 			currentReplans++
@@ -351,13 +344,7 @@ func (session ObjectiveSessionContextAuthority) validate(
 			return fmt.Errorf("same-session operation %q changed exact %s text", turn.OperationID, turn.Kind)
 		}
 		contextBytes += 2 + len(turn.ContextText)
-		if contextBytes > MaxObjectiveSessionContextBytes {
-			return fmt.Errorf(
-				"job %d same-session context exceeds the explicit %d-byte bound",
-				session.JobID,
-				MaxObjectiveSessionContextBytes,
-			)
-		}
+
 	}
 	if replan != nil {
 		if replan.JobID != session.JobID || currentReplans != 1 || session.CurrentReplanOperationID == "" {

@@ -24,7 +24,7 @@ func PortableJobOpaqueQuestion(job PortableJob, prompt string, options []string)
 	if err := job.Validate(); err != nil {
 		return "", err
 	}
-	if len(options) < 2 || len(options) > maxOpaqueModelChoices {
+	if len(options) < 2 {
 		return "", fmt.Errorf("opaque question projection requires actual model-facing choices")
 	}
 	for index, option := range options {

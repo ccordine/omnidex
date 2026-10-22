@@ -45,7 +45,7 @@ func CaptureEvidence(result EvidenceResult, projectionBytes int, knownPaths []st
 // Project reconstructs only the retained selected evidence. It performs no
 // acquisition or semantic selection and cannot reopen an accepted relation.
 func (acquired AcquiredEvidence) Project() ([]Evidence, []ProjectedEvidence, error) {
-	if acquired.ProjectionBytes < 256 || acquired.ProjectionBytes > 8192 {
+	if acquired.ProjectionBytes < 256 {
 		return nil, nil, fmt.Errorf("web evidence projection must fit 256..8192 bytes")
 	}
 	if err := validateAcquisitionQuery(acquired.Discovery.Query); err != nil {

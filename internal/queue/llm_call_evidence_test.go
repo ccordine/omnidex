@@ -196,9 +196,6 @@ func TestNormalizeLLMCallEvidenceRejectsUnboundOrInexactRecords(t *testing.T) {
 			record.ParentCallEvidenceID = 7
 		},
 		"fake success": func(record *exactLLMEvidenceFixtureRecord) { record.Generation.Content = "" },
-		"unbounded error": func(record *exactLLMEvidenceFixtureRecord) {
-			record.CallError = strings.Repeat("x", 8193)
-		},
 	} {
 		name, mutate := name, mutate
 		t.Run(name, func(t *testing.T) {
@@ -313,4 +310,13 @@ func mustLLMEvidenceScope(t *testing.T, kind assemblyline.WorkKind) string {
 		t.Fatal(err)
 	}
 	return scope
+}
+
+func TestNormalizeLLMCallEvidencePreservesLargeError(t *testing.T) {
+	record := exactLLMEvidenceFixture(t, assemblyline.WorkApplicationClassify, "Classify one value.", "A")
+	record.CallError = strings.Repeat("x", 8193)
+	_, normalized, err := normalizeExactLLMEvidenceFixture(record)
+	if err != nil || normalized.record.CallError != record.CallError {
+		t.Fatal("large error evidence was rejected or changed", err)
+	}
 }

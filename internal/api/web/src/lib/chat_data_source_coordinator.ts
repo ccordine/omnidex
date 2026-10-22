@@ -45,7 +45,7 @@ export class ChatDataSourceCoordinator {
     const selected = select.value;
     if (!selected) return undefined;
     if (select.disabled) throw new Error("The data selector is unavailable.");
-    if (!/^[a-z0-9][a-z0-9_.:-]{0,127}$/.test(selected)) {
+    if (!/^[a-z0-9][a-z0-9_.:-]*$/.test(selected)) {
       throw new Error("The selected data connection has an invalid canonical identity.");
     }
     const serverOption = [...select.options].find((option) => option.value === selected);

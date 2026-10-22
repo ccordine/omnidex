@@ -26,7 +26,7 @@ const (
 
 var (
 	codingPlanLeafIDPattern   = regexp.MustCompile(`^coding_plan_leaf_[0-9a-f]{32}$`)
-	codingLedgerItemIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$`)
+	codingLedgerItemIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:-]*$`)
 )
 
 type CodingPlanState string
@@ -159,8 +159,7 @@ func (plan CodingPlan) Validate() error {
 
 func validateCodingPlanStatement(statement string) error {
 	if statement == "" || statement != strings.TrimSpace(statement) ||
-		!utf8.ValidString(statement) || strings.ContainsRune(statement, '\x00') ||
-		len(statement) > MaxCodingPlanStatementBytes {
+		!utf8.ValidString(statement) || strings.ContainsRune(statement, '\x00') {
 		return fmt.Errorf(
 			"coding plan statement must be trimmed UTF-8 text of at most %d bytes",
 			MaxCodingPlanStatementBytes,

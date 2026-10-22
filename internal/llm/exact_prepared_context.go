@@ -26,7 +26,7 @@ func DecodeExactPreparedRetainedContext(
 	if err := ValidateExactPreparedContextTokens(contextTokens); err != nil {
 		return nil, err
 	}
-	if len(body) > MaxExactPreparedProviderResponseBytes || !utf8.Valid(body) {
+	if !utf8.Valid(body) {
 		return nil, fmt.Errorf("retained model context requires bounded UTF-8 provider evidence")
 	}
 	var wire struct {
@@ -45,9 +45,7 @@ func DecodeExactPreparedRetainedContext(
 	}
 	var retained []int
 	for decoder.More() {
-		if len(retained) >= contextTokens {
-			return nil, fmt.Errorf("retained model context exceeds %d native tokens", contextTokens)
-		}
+
 		token, err := decoder.Token()
 		if err != nil {
 			return nil, fmt.Errorf("decode retained model context token: %w", err)
@@ -72,7 +70,7 @@ func DecodeExactPreparedRetainedContext(
 }
 
 func validateExactPreparedRetainedContext(retained []int, contextTokens int) error {
-	if len(retained) == 0 || len(retained) > contextTokens {
+	if len(retained) == 0 {
 		return fmt.Errorf("retained model context requires between one and %d native tokens", contextTokens)
 	}
 	for index, id := range retained {

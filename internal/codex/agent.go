@@ -12,9 +12,6 @@ import (
 )
 
 func (client *Client) Run(parent context.Context, call codingagent.Assignment, event func(codingagent.NativeEvent) error) (result codingagent.Result, runErr error) {
-	if !call.Role.IsNative() && call.ParserStep == nil {
-		return codingagent.RunParserSieve(parent, call, event, client.Run)
-	}
 	result = codingagent.Result{Provider: "codex", Model: call.Route.Model, Evidence: []json.RawMessage{}}
 	if err := validateAgentAssignment(call); err != nil {
 		return result, err
@@ -22,10 +19,6 @@ func (client *Client) Run(parent context.Context, call codingagent.Assignment, e
 	activity := newAgentActivityStream(call, &result, event)
 	event = activity.observe
 	ctx, cancel := context.WithCancel(parent)
-	if !call.Role.IsNative() {
-		cancel()
-		ctx, cancel = context.WithTimeout(parent, client.timeout)
-	}
 	defer cancel()
 	var scratch string
 	var err error

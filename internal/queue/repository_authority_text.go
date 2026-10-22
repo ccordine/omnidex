@@ -40,8 +40,6 @@ func validateCancelReason(reason string) (string, error) {
 	if strings.TrimSpace(reason) == "" {
 		return "", fmt.Errorf("cancel reason is required")
 	}
-	if len(reason) > maxCancelReasonBytes {
-		return "", fmt.Errorf("cancel reason exceeds the %d-byte limit", maxCancelReasonBytes)
-	}
+
 	return reason, nil
 }

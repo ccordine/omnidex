@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use omnidex_integration::{
     create_delegated_authority_id, validate_delegated_authority_id, Client,
@@ -154,13 +153,7 @@ fn configuration_and_generated_authority_are_bounded() {
 }
 
 fn client(transport: Arc<FakeTransport>) -> Client {
-    Client::with_transport(
-        "https://omnidex.internal",
-        TOKEN,
-        transport,
-        Duration::from_secs(2),
-    )
-    .unwrap()
+    Client::with_transport("https://omnidex.internal", TOKEN, transport).unwrap()
 }
 
 fn json_response(status: u16, value: Value) -> HttpResponse {

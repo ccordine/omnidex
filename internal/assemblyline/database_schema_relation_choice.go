@@ -43,9 +43,7 @@ func BuildDatabaseSchemaRelationChoicePrompt(
 	if err != nil {
 		return "", err
 	}
-	if len(prompt) > maxPortablePayloadBytes {
-		return "", fmt.Errorf("database schema relation choice prompt exceeds %d bytes", maxPortablePayloadBytes)
-	}
+
 	return prompt, nil
 }
 

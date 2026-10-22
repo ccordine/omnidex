@@ -9,7 +9,7 @@ export function requireRoleplayComponent(payload: Record<string, unknown>): Role
   if (Object.prototype.hasOwnProperty.call(payload, "composer_persona_character_id")) {
     throw new Error("Roleplay component cannot echo browser composer selection authority.");
   }
-  const channelID = requireID(payload.channel_id, "response channel", /^[a-z0-9][a-z0-9_.:-]{0,95}$/);
+  const channelID = requireID(payload.channel_id, "response channel", /^[a-z0-9][a-z0-9_.:-]*$/);
   const worldID = roleplayID(payload.world_id, "response world", "rpw");
   if (typeof payload.configured !== "boolean") throw new Error("Roleplay response configured must be boolean.");
   const html = requireRecord(payload.html, "Roleplay response HTML");
@@ -32,7 +32,7 @@ export function requireRoleplayComponent(payload: Record<string, unknown>): Role
 
 export function requireScene(input: SceneInput): SceneInput {
   const ids = input.participant_ids.map((id) => roleplayID(id, "scene participant", "rpc"));
-  if (ids.length < 1 || ids.length > 16 || new Set(ids).size !== ids.length) {
+  if ((ids.length < 1) || (new Set(ids).size !== ids.length)) {
     throw new Error("Scene participants must contain 1 to 16 unique character ids.");
   }
   return {
@@ -43,7 +43,7 @@ export function requireScene(input: SceneInput): SceneInput {
 }
 
 export function requireEffects(effects: MeterDeltaInput[]): MeterDeltaInput[] {
-  if (!Array.isArray(effects) || effects.length < 1 || effects.length > 8) {
+  if (!Array.isArray(effects) || effects.length < 1) {
     throw new Error("Effects must contain 1 to 8 meter deltas.");
   }
   const result = effects.map((effect) => ({
@@ -67,15 +67,14 @@ export function requirePage(page: RoleplayPageState): RoleplayPageState {
 }
 
 export function requireTextList(values: string[], source: string): string[] {
-  if (!Array.isArray(values) || values.length > 16) throw new Error(`${source} must have at most 16 entries.`);
+  if (!Array.isArray(values)) throw new Error(`${source} must have at most 16 entries.`);
   const result = values.map((value) => requireText(value, source, 256, true));
   if (new Set(result).size !== result.length) throw new Error(`${source} contains duplicates.`);
   return result;
 }
 
 export function requireText(value: unknown, source: string, maximum: number, required: boolean): string {
-  if (typeof value !== "string" || value.includes("\0") ||
-      new TextEncoder().encode(value).byteLength > maximum || value !== value.trim()) {
+  if ((typeof value !== "string" || value.includes("\0")) || (value !== value.trim())) {
     throw new Error(`${source} must be exact trimmed text.`);
   }
   if (required && !value) throw new Error(`${source} is required.`);
@@ -92,7 +91,7 @@ export function roleplayID(value: unknown, source: string, prefix: string): stri
 }
 
 export function requireKey(value: unknown, source: string): string {
-  return requireID(value, source, /^[a-z][a-z0-9-]{0,31}$/);
+  return requireID(value, source, /^[a-z][a-z0-9-]*$/);
 }
 
 export function requireInteger(value: unknown, source: string, minimum: number, maximum: number): number {

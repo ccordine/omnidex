@@ -23,7 +23,7 @@ const validLocations = new Set<RecyclrRenderEvent["location"]>([
   "beforeend",
   "afterend",
 ]);
-const validTarget = /^[a-z][a-z0-9-]{0,63}$/;
+const validTarget = /^[a-z][a-z0-9-]*$/;
 
 export function parseRecyclrBundle(html: string): RecyclrRenderEvent[] {
   const documentFragment = new DOMParser().parseFromString(html, "text/html");

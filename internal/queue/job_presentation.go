@@ -91,12 +91,7 @@ func readCurrentPresentationSteps(ctx context.Context, tx pgx.Tx, job model.Job)
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate job %d presentation steps: %w", job.ID, err)
 	}
-	if len(steps) > maxCurrentJobPresentationSteps {
-		return nil, fmt.Errorf(
-			"%w: job %d has more than %d current steps",
-			ErrInvalidJobPresentation, job.ID, maxCurrentJobPresentationSteps,
-		)
-	}
+
 	if len(steps) == 0 {
 		return nil, fmt.Errorf("%w: job %d has no current steps", ErrInvalidJobPresentation, job.ID)
 	}

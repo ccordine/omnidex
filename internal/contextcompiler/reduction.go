@@ -136,15 +136,10 @@ func partitionContextAuthorities(
 	groups := make([][]assemblyline.ContextCandidateAuthority, 0)
 	current := make([]assemblyline.ContextCandidateAuthority, 0, maximumCount)
 	currentBytes := 0
-	for index, authority := range authorities {
+	for _, authority := range authorities {
 		entryBytes := contextAuthorityProjectionBytes(authority)
-		if entryBytes > maximumBytes {
-			return nil, fmt.Errorf(
-				"context authority %d requires %d bytes beyond the %d-byte per-call budget",
-				index, entryBytes, maximumBytes,
-			)
-		}
-		if len(current) == maximumCount || currentBytes+entryBytes > maximumBytes {
+
+		if len(current) > 0 && (len(current) == maximumCount || currentBytes+entryBytes > maximumBytes) {
 			groups = append(groups, current)
 			current = make([]assemblyline.ContextCandidateAuthority, 0, maximumCount)
 			currentBytes = 0

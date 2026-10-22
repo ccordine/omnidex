@@ -24,9 +24,7 @@ func dockerAPI(ctx context.Context, method, target string, payload, output any, 
 	if payload == nil {
 		body = nil
 	}
-	if len(body) > 256*1024 {
-		return fmt.Errorf("Docker API request exceeds its byte bound")
-	}
+
 	request, err := http.NewRequest(method, "http://docker"+target, bytes.NewReader(body))
 	if err != nil {
 		return err
@@ -86,13 +84,11 @@ func dockerAPI(ctx context.Context, method, target string, payload, output any, 
 	if consume != nil && response.StatusCode == http.StatusSwitchingProtocols {
 		return consume(response, reader, stdin)
 	}
-	content, err := io.ReadAll(io.LimitReader(response.Body, MaxStreamBytes+1))
+	content, err := io.ReadAll(response.Body)
 	if err != nil {
 		return err
 	}
-	if len(content) > MaxStreamBytes {
-		return fmt.Errorf("Docker API response exceeds its byte bound")
-	}
+
 	if consume != nil || response.StatusCode < 200 || response.StatusCode >= 300 {
 		return fmt.Errorf("Docker API %s %s returned HTTP %d: %.4000s", method, target, response.StatusCode, content)
 	}

@@ -66,7 +66,7 @@ func (s *Server) handleScrumCardItem(w http.ResponseWriter, r *http.Request, car
 }
 
 func decodeScrumCardItemRequest(w http.ResponseWriter, r *http.Request) (scrumCardItemRequest, error) {
-	r.Body = http.MaxBytesReader(w, r.Body, 16*1024)
+
 	raw, err := io.ReadAll(r.Body)
 	if err != nil {
 		return scrumCardItemRequest{}, fmt.Errorf("read Scrum card item mutation: %w", err)

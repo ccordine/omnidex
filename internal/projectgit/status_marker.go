@@ -133,12 +133,11 @@ func readMarkerLine(path string) (string, error) {
 		return "", err
 	}
 	defer file.Close()
-	reader := &io.LimitedReader{R: file, N: maxGitMarkerBytes + 1}
-	raw, err := io.ReadAll(reader)
+	raw, err := io.ReadAll(file)
 	if err != nil {
 		return "", err
 	}
-	if len(raw) > maxGitMarkerBytes || !utf8.Valid(raw) || strings.ContainsRune(string(raw), '\x00') {
+	if !utf8.Valid(raw) || strings.ContainsRune(string(raw), '\x00') {
 		return "", fmt.Errorf("marker file is not one bounded UTF-8 line")
 	}
 	line := strings.TrimSuffix(strings.TrimSuffix(string(raw), "\n"), "\r")

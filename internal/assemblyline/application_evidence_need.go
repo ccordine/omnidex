@@ -70,15 +70,13 @@ func (need ApplicationEvidenceNeed) Validate() error {
 		return fmt.Errorf("application evidence need schema must be %q", ApplicationEvidenceNeedSchemaV2)
 	}
 	if need.ID == "" || need.ID != strings.TrimSpace(need.ID) ||
-		len(need.ID) > maxApplicationEvidenceNeedIDBytes || strings.ContainsAny(need.ID, "\r\n") {
+		strings.ContainsAny(need.ID, "\r\n") {
 		return fmt.Errorf("application evidence need requires one bounded code-owned identity")
 	}
-	if need.Question == "" || need.Question != strings.TrimSpace(need.Question) ||
-		len(need.Question) > maxApplicationEvidenceQuestionBytes {
+	if need.Question == "" || need.Question != strings.TrimSpace(need.Question) {
 		return fmt.Errorf("application evidence need %q has an invalid question", need.ID)
 	}
-	if need.WhyItMatters == "" || need.WhyItMatters != strings.TrimSpace(need.WhyItMatters) ||
-		len(need.WhyItMatters) > maxApplicationEvidenceQuestionBytes {
+	if need.WhyItMatters == "" || need.WhyItMatters != strings.TrimSpace(need.WhyItMatters) {
 		return fmt.Errorf("application evidence need %q has an invalid reason", need.ID)
 	}
 	if len(need.SourceClasses) != 1 || need.SourceClasses[0] != ApplicationEvidenceRepository {
@@ -110,7 +108,7 @@ func AppendApplicationContextEvidence(
 	if err := need.Validate(); err != nil {
 		return ApplicationContext{}, err
 	}
-	if len(evidence) < 1 || len(context.Facts)+len(evidence) > MaxApplicationContextFacts {
+	if len(evidence) < 1 {
 		return ApplicationContext{}, fmt.Errorf("application context cannot admit %d acquired evidence facts", len(evidence))
 	}
 	seenSources := make(map[string]struct{}, len(context.Facts)+len(evidence))
@@ -120,8 +118,7 @@ func AppendApplicationContextEvidence(
 	result := context
 	result.Facts = append([]ApplicationContextFact(nil), context.Facts...)
 	for _, item := range evidence {
-		if item.Value == "" || item.Value != strings.TrimSpace(item.Value) ||
-			len(item.Value) > MaxApplicationContextFactBytes {
+		if item.Value == "" || item.Value != strings.TrimSpace(item.Value) {
 			return ApplicationContext{}, fmt.Errorf("application evidence need %q produced an invalid bounded fact", need.ID)
 		}
 		if item.SourceID == "" || item.SourceID != strings.TrimSpace(item.SourceID) {

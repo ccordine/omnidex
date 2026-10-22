@@ -227,7 +227,7 @@ func testOperationID(t *testing.T, part string) model.LifecycleOperationID {
 
 func testClient(t *testing.T, baseURL string) *Client {
 	t.Helper()
-	apiClient, err := New(baseURL, 2*time.Second)
+	apiClient, err := New(baseURL)
 	if err != nil {
 		t.Fatalf("create client: %v", err)
 	}
@@ -283,7 +283,7 @@ func TestClientRejectsInvalidBaseAuthority(t *testing.T) {
 	} {
 		t.Run(fmt.Sprintf("%q", value), func(t *testing.T) {
 			t.Parallel()
-			if _, err := New(value, time.Second); err == nil {
+			if _, err := New(value); err == nil {
 				t.Fatalf("New(%q) unexpectedly succeeded", value)
 			}
 		})

@@ -362,7 +362,7 @@ func validateChannelTurnMetadata(binding channelTurnMetadata) error {
 		if binding.RoleplayGenerationConfig == nil {
 			return fmt.Errorf("roleplay channel job requires frozen character generation authority")
 		}
-		if len(binding.RoleplayResponders) < 1 || len(binding.RoleplayResponders) > roleplay.MaxSceneParticipants {
+		if len(binding.RoleplayResponders) < 1 {
 			return fmt.Errorf("roleplay channel job requires a bounded ordered response round")
 		}
 		for index, responder := range binding.RoleplayResponders {

@@ -115,7 +115,7 @@ func (client *Client) OpenJobEvents(
 		}
 		return nil, fmt.Errorf("open Omnidex realtime stream: %w", err)
 	}
-	conn.SetReadLimit(maxRealtimeFrameBytes)
+
 	stream := &JobEventStream{
 		conn: conn, channelID: channelID, done: make(chan struct{}),
 	}
@@ -142,15 +142,12 @@ func (stream *JobEventStream) Read() (RealtimeEvent, error) {
 		_ = stream.Close()
 		return RealtimeEvent{}, &RealtimeProtocolError{Message: "Omnidex realtime stream returned a non-text frame"}
 	}
-	data, err := io.ReadAll(io.LimitReader(reader, maxRealtimeFrameBytes+1))
+	data, err := io.ReadAll(reader)
 	if err != nil {
 		_ = stream.Close()
 		return RealtimeEvent{}, fmt.Errorf("read Omnidex realtime frame: %w", err)
 	}
-	if len(data) > maxRealtimeFrameBytes {
-		_ = stream.Close()
-		return RealtimeEvent{}, &RealtimeProtocolError{Message: "Omnidex realtime frame exceeds its byte bound"}
-	}
+
 	var event RealtimeEvent
 	decoder := json.NewDecoder(strings.NewReader(string(data)))
 	decoder.DisallowUnknownFields()

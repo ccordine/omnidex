@@ -25,7 +25,6 @@ type Workspace struct {
 type Command struct {
 	Argv, Environment []string
 	Stdin             []byte
-	Timeout           time.Duration
 }
 
 var apiVersionPattern = regexp.MustCompile(`^1\.[0-9]{2,3}$`)
@@ -42,11 +41,11 @@ func (docker *Docker) open(parent context.Context, imageID string, input []File,
 	if docker == nil || docker.cli == nil || parent == nil {
 		return nil, fmt.Errorf("Docker workspace requires a context and initialized client")
 	}
-	request := Request{ImageID: imageID, Input: input, Argv: []string{"/bin/sh", "-c", "exec sleep 2147483647"}, Timeout: 2 * time.Minute}
+	request := Request{ImageID: imageID, Input: input, Argv: []string{"/bin/sh", "-c", "exec sleep 2147483647"}}
 	if err := validateRequest(request); err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(parent, request.Timeout)
+	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	workspace, err := docker.create(ctx, request, networkMode)
 	if err != nil {
@@ -126,11 +125,11 @@ func (workspace *Workspace) Collect(ctx context.Context, paths []string) ([]File
 	if workspace == nil || ctx == nil {
 		return nil, fmt.Errorf("Docker collection requires a workspace and context")
 	}
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	workspace.mu.Lock()
 	defer workspace.mu.Unlock()
-	if err := validateRequest(Request{ImageID: workspace.imageID, Argv: []string{"collect"}, Collect: paths, Timeout: time.Minute}); err != nil {
+	if err := validateRequest(Request{ImageID: workspace.imageID, Argv: []string{"collect"}, Collect: paths}); err != nil {
 		return nil, err
 	}
 	if err := workspace.requireRunning(ctx); err != nil {

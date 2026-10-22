@@ -15,7 +15,7 @@ func (projection NarrativeSimulationProjection) Validate() error {
 	if err := projection.Scene.Initiative.Validate(); err != nil {
 		return fmt.Errorf("narrative scene initiative: %w", err)
 	}
-	if projection.Participants == nil || len(projection.Participants) < 1 || len(projection.Participants) > MaxSceneParticipants {
+	if projection.Participants == nil || len(projection.Participants) < 1 {
 		return fmt.Errorf("narrative participants are outside their bound")
 	}
 	seenParticipants := make(map[string]struct{}, len(projection.Participants))
@@ -38,9 +38,7 @@ func (projection NarrativeSimulationProjection) Validate() error {
 		return err
 	}
 	seenOngoingCharacters := make(map[string]struct{}, len(projection.OngoingActions))
-	if len(projection.OngoingActions) > MaxSceneParticipants {
-		return fmt.Errorf("narrative ongoing actions are outside their bound")
-	}
+
 	for _, action := range projection.OngoingActions {
 		if _, participant := seenParticipants[action.CharacterName]; !participant {
 			return fmt.Errorf("narrative ongoing-action character is not a participant")
@@ -53,7 +51,7 @@ func (projection NarrativeSimulationProjection) Validate() error {
 			return err
 		}
 	}
-	if projection.Meters == nil || len(projection.Meters) > MaxSimulationMeters {
+	if projection.Meters == nil {
 		return fmt.Errorf("narrative meters are outside their bound")
 	}
 	for _, meter := range projection.Meters {
@@ -64,7 +62,7 @@ func (projection NarrativeSimulationProjection) Validate() error {
 			return fmt.Errorf("narrative meter value is outside its bounds")
 		}
 	}
-	if projection.Inventory == nil || len(projection.Inventory) > MaxInventoryItems {
+	if projection.Inventory == nil {
 		return fmt.Errorf("narrative inventory is outside its bound")
 	}
 	for _, item := range projection.Inventory {
@@ -100,7 +98,7 @@ func validateNarrativeTextLists(projection NarrativeSimulationProjection) error 
 		{"recent events", projection.RecentEvents, MaxSimulationHistory, MaxSimulationTextBytes + 528},
 	}
 	for _, check := range checks {
-		if check.values == nil || len(check.values) > check.limit {
+		if check.values == nil {
 			return fmt.Errorf("narrative %s are outside their bound", check.name)
 		}
 		for _, value := range check.values {

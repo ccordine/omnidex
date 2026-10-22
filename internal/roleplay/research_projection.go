@@ -20,7 +20,7 @@ func ValidateResearchNarrativeProjection(projection NarrativeSimulationProjectio
 	if err := validateSimulationText("narrative active character", projection.Scene.ActiveCharacterName, 256, true); err != nil {
 		return err
 	}
-	if len(projection.Participants) < 1 || len(projection.Participants) > MaxSceneParticipants {
+	if len(projection.Participants) < 1 {
 		return fmt.Errorf("roleplay research narrative participant count is outside its bound")
 	}
 	if err := validateNarrativeStrings("narrative participant", projection.Participants, 256, true); err != nil {
@@ -35,20 +35,14 @@ func ValidateResearchNarrativeProjection(projection NarrativeSimulationProjectio
 	if err := validateSimulationText("narrative viewpoint voice", projection.Viewpoint.Voice, MaxSimulationTextBytes, false); err != nil {
 		return err
 	}
-	if len(projection.Viewpoint.Traits) > MaxPersonaListEntries || len(projection.Viewpoint.Goals) > MaxPersonaListEntries {
-		return fmt.Errorf("roleplay research narrative persona lists exceed their bounds")
-	}
+
 	if err := validateNarrativeStrings("narrative trait", projection.Viewpoint.Traits, MaxSimulationTextBytes, true); err != nil {
 		return err
 	}
 	if err := validateNarrativeStrings("narrative goal", projection.Viewpoint.Goals, MaxSimulationTextBytes, true); err != nil {
 		return err
 	}
-	if len(projection.Meters) > MaxSimulationMeters || len(projection.Inventory) > MaxInventoryItems ||
-		len(projection.VisibleFacts) > MaxProjectionEvents || len(projection.Memories) > MaxProjectionEvents ||
-		len(projection.RecentEvents) > MaxSimulationHistory {
-		return fmt.Errorf("roleplay research narrative state exceeds a cardinality bound")
-	}
+
 	for _, meter := range projection.Meters {
 		if err := validateSimulationText("narrative meter name", meter.Name, 128, true); err != nil {
 			return err
@@ -80,13 +74,11 @@ func ValidateResearchNarrativeProjection(projection NarrativeSimulationProjectio
 			return err
 		}
 	}
-	raw, err := json.Marshal(projection)
+	_, err := json.Marshal(projection)
 	if err != nil {
 		return fmt.Errorf("encode roleplay research narrative projection: %w", err)
 	}
-	if len(raw) > MaxResearchNarrativeProjectionBytes {
-		return fmt.Errorf("roleplay research narrative projection exceeds %d bytes", MaxResearchNarrativeProjectionBytes)
-	}
+
 	return nil
 }
 

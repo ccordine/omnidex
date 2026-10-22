@@ -87,24 +87,18 @@ func TestTaskPacketPostgreSQLSparseFreezeClarificationReconnectResume(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Real sieve materializes a sparse patch against the PostgreSQL-loaded task.
-	sparse, err := codingagent.RunParserSieve(ctx, codingagent.Assignment{Role: codingagent.PlanningMutation, JobID: changed.JobID, PlanningBaseRevision: changed.Revision, PlanningLedger: &changed.Ledger, PlanningResponse: "Amend only this task's objective.", Route: repo.codingAgents.LedgerParser}, func(codingagent.NativeEvent) error { return nil }, func(_ context.Context, call codingagent.Assignment, event func(codingagent.NativeEvent) error) (codingagent.Result, error) {
-		content := json.RawMessage(`{"operations":[{"kind":"amend","target_id":"task","item":{"task":{"objective":"Provide the approved separate Research destination.","acceptance":null}},"rationale":"Owner objective amendment."}]}`)
-		if call.ParserStep.Stage == "scan" {
-			content = json.RawMessage(`{"units":{"unit_1":{"kind":"change","reason":"one objective amendment","group_start":"unit_1"}}}`)
-		}
-		if err := event(codingagent.NativeEvent{Frame: json.RawMessage(`{"fixture":"sparse-parser"}`)}); err != nil {
-			return codingagent.Result{}, err
-		}
-		return codingagent.Result{Provider: call.Route.Provider, Model: call.Route.Model, Completed: true, Content: content}, nil
-	})
+	// The production mapper materializes one complete sparse response against
+	// the PostgreSQL-loaded task; no scan or supporting-detail calls are involved.
+	sparse, err := codingagent.MapParserResponse(codingagent.Assignment{Role: codingagent.PlanningMutation,
+		JobID: changed.JobID, PlanningLedger: &changed.Ledger, PlanningResponse: "Amend only this task's objective."},
+		json.RawMessage(`{"operations":[{"kind":"amend","target_id":"task","item":{"task":{"objective":"Provide the approved separate Research destination.","acceptance":null}},"rationale":"Owner objective amendment."}]}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	var operations struct {
 		Operations []model.LedgerMutationOperation `json:"operations"`
 	}
-	if err = json.Unmarshal(sparse.Content, &operations); err != nil {
+	if err = json.Unmarshal(sparse, &operations); err != nil {
 		t.Fatal(err)
 	}
 	amended, err := repo.ApplyCodingLedgerMutation(ctx, ApplyCodingLedgerMutationCommand{LedgerID: changed.LedgerID, OwnerTurnText: "Amend only this task's objective.", Mutation: model.LedgerMutation{OperationID: "packet-sparse", BaseRevision: changed.Revision, OwnerTurnID: "packet-sparse-owner", OwnerTurnDisposition: model.RepresentedOwnerTurn([]model.LedgerItemID{task.ID}), Operations: operations.Operations}})

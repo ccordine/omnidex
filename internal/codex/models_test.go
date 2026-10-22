@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestModelCatalogPreservesNativeOptionsAndActualModelHandle(t *testing.T) {
@@ -88,7 +87,7 @@ func TestInstalledCodexCatalogAndVersion(t *testing.T) {
 	if command == "" {
 		t.Skip("installed Codex catalog qualification not selected")
 	}
-	client, err := New(command, ".", time.Minute)
+	client, err := New(command, ".")
 	if err != nil {
 		t.Fatal(err)
 	}

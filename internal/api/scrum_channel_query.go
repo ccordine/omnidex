@@ -19,9 +19,6 @@ func decodeScrumChannelQuery(request *http.Request) (scrumChannelQuery, error) {
 	if request == nil || request.URL == nil {
 		return scrumChannelQuery{}, fmt.Errorf("Scrum channel request URL is required")
 	}
-	if len(request.URL.RawQuery) > maxScrumChannelRawQuerySize {
-		return scrumChannelQuery{}, fmt.Errorf("Scrum channel query exceeds the %d-byte bound", maxScrumChannelRawQuerySize)
-	}
 	values, err := url.ParseQuery(request.URL.RawQuery)
 	if err != nil {
 		return scrumChannelQuery{}, fmt.Errorf("decode Scrum channel query: %w", err)

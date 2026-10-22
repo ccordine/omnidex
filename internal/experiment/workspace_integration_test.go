@@ -29,16 +29,16 @@ func TestDockerWorkspaceRetainsDependenciesAcrossCommands(t *testing.T) {
 				}
 				assertDockerFixtureRemoved(t, workspace.containerID)
 			})
-			first, err := workspace.Run(context.Background(), Command{Argv: []string{"/bin/sh", "-c", fixture.first}, Timeout: 10 * time.Second})
+			first, err := workspace.Run(context.Background(), Command{Argv: []string{"/bin/sh", "-c", fixture.first}})
 			if err != nil {
 				t.Fatal(err)
 			}
-			failed, err := workspace.Run(context.Background(), Command{Argv: []string{"/bin/sh", "-c", "exit 7"}, Timeout: 10 * time.Second})
+			failed, err := workspace.Run(context.Background(), Command{Argv: []string{"/bin/sh", "-c", "exit 7"}})
 			var exited *ExitError
 			if !errors.As(err, &exited) || exited.Code != 7 || failed.ExitCode == nil || *failed.ExitCode != 7 {
 				t.Fatalf("failed process result = %+v, %v", failed, err)
 			}
-			second, err := workspace.Run(context.Background(), Command{Argv: []string{"/bin/sh", "-c", fixture.second}, Timeout: 10 * time.Second})
+			second, err := workspace.Run(context.Background(), Command{Argv: []string{"/bin/sh", "-c", fixture.second}})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -53,7 +53,7 @@ func TestDockerWorkspaceRetainsDependenciesAcrossCommands(t *testing.T) {
 	}
 }
 
-func TestDockerWorkspaceTimeoutPreventsLaterDispatch(t *testing.T) {
+func TestDockerWorkspaceCallerCancellationPreventsLaterDispatch(t *testing.T) {
 	workspace, err := NewDocker().Open(context.Background(), dockerFixtureImage(t), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -64,11 +64,13 @@ func TestDockerWorkspaceTimeoutPreventsLaterDispatch(t *testing.T) {
 		}
 		assertDockerFixtureRemoved(t, workspace.containerID)
 	})
-	_, err = workspace.Run(context.Background(), Command{Argv: []string{"/bin/sh", "-c", "sleep 60"}, Timeout: time.Second})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_, err = workspace.Run(ctx, Command{Argv: []string{"/bin/sh", "-c", "sleep 60"}})
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("timeout = %v", err)
 	}
-	if result, err := workspace.Run(context.Background(), Command{Argv: []string{"/bin/true"}, Timeout: time.Second}); err == nil || result.ExecutionID != "" {
+	if result, err := workspace.Run(context.Background(), Command{Argv: []string{"/bin/true"}}); err == nil || result.ExecutionID != "" {
 		t.Fatalf("closed experiment dispatched another command: %+v %v", result, err)
 	}
 }

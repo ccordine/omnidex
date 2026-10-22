@@ -55,18 +55,14 @@ func (c *Client) visitModels(ctx context.Context, visit func(ModelInfo)) error {
 		return c.wrapConnectivityError(err, "/api/tags")
 	}
 	defer resp.Body.Close()
-	limited := &io.LimitedReader{R: resp.Body, N: MaxModelCatalogBodyBytes + 1}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, readErr := io.ReadAll(limited)
+		body, readErr := io.ReadAll(resp.Body)
 		if readErr != nil {
 			return readErr
 		}
-		if limited.N == 0 {
-			return fmt.Errorf("Ollama tags failure body exceeds %d bytes", MaxModelCatalogBodyBytes)
-		}
 		return fmt.Errorf("ollama tags failed: status=%d body=%s", resp.StatusCode, string(body))
 	}
-	decoder := json.NewDecoder(limited)
+	decoder := json.NewDecoder(resp.Body)
 	start, err := decoder.Token()
 	if err != nil || start != json.Delim('{') {
 		return fmt.Errorf("decode Ollama tags object: %w", exactJSONError(err))
@@ -107,9 +103,6 @@ func (c *Client) visitModels(ctx context.Context, visit func(ModelInfo)) error {
 			return fmt.Errorf("Ollama tags response contains trailing JSON")
 		}
 		return fmt.Errorf("finish Ollama tags response: %w", err)
-	}
-	if limited.N == 0 {
-		return fmt.Errorf("Ollama tags response exceeds %d bytes", MaxModelCatalogBodyBytes)
 	}
 	return nil
 }

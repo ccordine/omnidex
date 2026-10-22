@@ -13,7 +13,7 @@ import (
 // callback. PostgreSQL owns the conversation; each bounded turn is disposable.
 func (client *Client) Research(parent context.Context, root, question string, background sessionintent.ResearchContext, route codingagent.Route) (answer string, evidence json.RawMessage, runErr error) {
 	evidence = json.RawMessage(`[]`)
-	ctx, cancel := context.WithTimeout(parent, client.timeout)
+	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	connection, err := startConfiguredConnection(ctx, client.command, root, false, []string{"-c", "features.shell_tool=true", "-c", "features.unified_exec=true", "-c", `web_search="live"`})
 	if err != nil {
@@ -68,9 +68,7 @@ func (client *Client) Research(parent context.Context, root, question string, ba
 		if err != nil {
 			return "", evidence, err
 		}
-		if len(result.Evidence) > 2048 {
-			return "", evidence, fmt.Errorf("research evidence exceeds its frame budget")
-		}
+
 	}
 	if len(open) != 0 {
 		return "", evidence, fmt.Errorf("research ended with incomplete native items")

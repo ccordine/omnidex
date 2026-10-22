@@ -39,6 +39,9 @@ func TestDiscoveryAndFetchRetainActualValuesWithReportLocalReferences(t *testing
 				Resolver: observedPublicResolver{}, HTTPClient: &http.Client{Transport: observedResponseTransport(
 					func(request *http.Request) (*http.Response, error) {
 						calls++
+						if _, added := request.Context().Deadline(); added {
+							t.Fatal("active research request gained a wall-clock deadline")
+						}
 						if request.Method != http.MethodGet {
 							t.Fatalf("unexpected method %s", request.Method)
 						}

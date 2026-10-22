@@ -45,7 +45,7 @@ func decodeJobHistoryCursor(raw string, jobID int64, stream JobHistoryStream) (i
 	if raw == "" {
 		return 0, nil
 	}
-	if raw != strings.TrimSpace(raw) || len(raw) > 512 {
+	if raw != strings.TrimSpace(raw) {
 		return 0, fmt.Errorf("%w: cursor is malformed", ErrInvalidJobHistoryRequest)
 	}
 	decoded, err := base64.RawURLEncoding.Strict().DecodeString(raw)

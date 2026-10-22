@@ -19,18 +19,11 @@ const (
 )
 
 func validateHardConfigBounds(config Config) error {
-	if len(config.Providers) > maxProviderCount {
-		return boundError("provider count", len(config.Providers), maxProviderCount)
-	}
+
 	if config.Timeout > maxHTTPTimeout {
 		return fmt.Errorf("%w: timeout exceeds %s", ErrBoundExceeded, maxHTTPTimeout)
 	}
-	if config.PerDocumentBytes > maxDocumentBytes {
-		return boundError("per-document bytes", config.PerDocumentBytes, maxDocumentBytes)
-	}
-	if config.TotalDocumentBytes > maxTotalDocumentBytes {
-		return boundError("total document bytes", config.TotalDocumentBytes, maxTotalDocumentBytes)
-	}
+
 	if config.MaxCandidatesPerProvider > maxConfiguredCandidates {
 		return boundError("candidates per provider", config.MaxCandidatesPerProvider, maxConfiguredCandidates)
 	}
@@ -40,32 +33,20 @@ func validateHardConfigBounds(config Config) error {
 	if config.MaxDocuments > maxConfiguredDocuments {
 		return boundError("document count", config.MaxDocuments, maxConfiguredDocuments)
 	}
-	if config.MaxResponseBytes > maxHTTPResponseBytes {
-		return boundError64("HTTP response bytes", config.MaxResponseBytes, maxHTTPResponseBytes)
-	}
+
 	return nil
 }
 
 func validateCandidateBounds(candidate Candidate) error {
-	if len(candidate.ID) > 128 || len(candidate.URL) > maxURLBytes ||
-		len(candidate.Title) > maxCandidateTextBytes || len(candidate.Snippet) > maxCandidateTextBytes {
-		return fmt.Errorf("%w: candidate scalar field", ErrBoundExceeded)
-	}
+
 	if len(candidate.Sources) > maxProviderCount {
 		return boundError("candidate source count", len(candidate.Sources), maxProviderCount)
-	}
-	for _, source := range candidate.Sources {
-		if len(source.Provider) > 64 || len(source.SearchURL) > maxURLBytes {
-			return fmt.Errorf("%w: candidate source scalar field", ErrBoundExceeded)
-		}
 	}
 	return nil
 }
 
 func validateCandidateReportBounds(report CandidateReport, candidates, diagnostics int) error {
-	if len(report.Query) > 4_096 {
-		return boundError("report query bytes", len(report.Query), 4_096)
-	}
+
 	if len(report.Candidates) > candidates {
 		return boundError("report candidate count", len(report.Candidates), candidates)
 	}
@@ -77,12 +58,6 @@ func validateCandidateReportBounds(report CandidateReport, candidates, diagnosti
 			return err
 		}
 	}
-	for _, diagnostic := range report.Diagnostics {
-		if len(diagnostic.Provider) > 64 || len(diagnostic.SearchURL) > maxURLBytes ||
-			len(diagnostic.Failure) > maxDiagnosticFailureBytes {
-			return fmt.Errorf("%w: provider diagnostic scalar field", ErrBoundExceeded)
-		}
-	}
 	return nil
 }
 
@@ -92,19 +67,6 @@ func validateDocumentReportBounds(report DocumentReport, documents, diagnostics,
 	}
 	if len(report.Diagnostics) > diagnostics {
 		return boundError("document diagnostic count", len(report.Diagnostics), diagnostics)
-	}
-	for _, document := range report.Documents {
-		if len(document.ID) > 128 || len(document.CandidateID) > 128 || len(document.URL) > maxURLBytes ||
-			len(document.Title) > maxCandidateTextBytes || len(document.Snippet) > maxCandidateTextBytes ||
-			len(document.Content) > contentBytes {
-			return fmt.Errorf("%w: document scalar field", ErrBoundExceeded)
-		}
-	}
-	for _, diagnostic := range report.Diagnostics {
-		if len(diagnostic.CandidateID) > 128 || len(diagnostic.URL) > maxURLBytes ||
-			len(diagnostic.Failure) > maxDiagnosticFailureBytes {
-			return fmt.Errorf("%w: document diagnostic scalar field", ErrBoundExceeded)
-		}
 	}
 	return nil
 }

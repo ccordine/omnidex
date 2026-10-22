@@ -6,11 +6,8 @@ import (
 )
 
 func MapParserResponse(call Assignment, content json.RawMessage) (json.RawMessage, error) {
-	if call.ParserStep != nil {
-		if err := ValidateParserLeafResponse(call, content); err != nil {
-			return nil, err
-		}
-		return content, nil
+	if call.Role == PlanningInitial || call.Role == PlanningMutation {
+		return mapPlanningResponse(call, content)
 	}
 	if call.Role != ReviewResponse {
 		return content, nil
@@ -28,23 +25,17 @@ func DecodeReviewResponse(call Assignment, content json.RawMessage) (ReviewRespo
 	var parsed struct {
 		Kind     ExecutionResponseKind `json:"kind"`
 		Findings []struct {
-			File        *string `json:"file"`
-			Observation *string `json:"observation"`
+			File        string `json:"file"`
+			Observation string `json:"observation"`
 		} `json:"findings"`
 		Verification string `json:"verification"`
 	}
-	if err := decodeContract(content, &parsed); err != nil {
+	if err := json.Unmarshal(content, &parsed); err != nil {
 		return ReviewResponseResult{}, err
 	}
-	if parsed.Findings == nil {
-		return ReviewResponseResult{}, fmt.Errorf("review parser requires a findings array")
-	}
-	out := ReviewResponseResult{Kind: parsed.Kind, ReviewResult: ReviewResult{Findings: []Finding{}, Verification: parsed.Verification}}
+	out := ReviewResponseResult{Kind: parsed.Kind, ReviewResult: ReviewResult{Findings: []Finding{}, Verification: call.Response}}
 	for _, finding := range parsed.Findings {
-		if finding.File == nil || finding.Observation == nil {
-			return ReviewResponseResult{}, fmt.Errorf("review finding requires file and observation fields")
-		}
-		out.Findings = append(out.Findings, Finding{TaskID: call.Task.ID, File: *finding.File, Observation: *finding.Observation})
+		out.Findings = append(out.Findings, Finding{TaskID: call.Task.ID, File: finding.File, Observation: finding.Observation})
 	}
 	return out, nil
 }

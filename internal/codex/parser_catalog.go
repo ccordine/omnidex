@@ -3,10 +3,11 @@ package codex
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/pelletier/go-toml/v2"
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/pelletier/go-toml/v2"
 )
 
 // Native model metadata can force code-mode tools even when every capability
@@ -18,7 +19,7 @@ func parserCatalog(source, scratch string) (string, error) {
 		return "", fmt.Errorf("parser model catalog: %w", err)
 	}
 	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, 8<<20))
+	data, err := io.ReadAll(file)
 	if err != nil {
 		return "", err
 	}

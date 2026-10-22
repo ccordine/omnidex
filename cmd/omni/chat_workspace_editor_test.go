@@ -16,7 +16,7 @@ func workspaceEditor(t *testing.T) (*chatConsole, *io.PipeWriter, chan struct{},
 	source, input := io.Pipe()
 	t.Cleanup(func() { _ = input.Close(); _ = source.Close() })
 	reads := make(chan struct{}, 1)
-	paste := newBracketedPasteReader(composerTestReader{source, reads}, 32768)
+	paste := newBracketedPasteReader(composerTestReader{source, reads})
 	console := &chatConsole{workspace: view, output: view, pasteReader: paste, terminalFD: -1, prompt: "you> "}
 	console.terminal = term.NewTerminal(terminalReadWriter{reader: paste, writer: view}, "you> ")
 	columns, rows, _ := view.Resize(120, 28)

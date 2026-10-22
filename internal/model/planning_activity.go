@@ -2,7 +2,6 @@ package model
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 )
@@ -12,8 +11,6 @@ const (
 	MaxPlanningCandidateSubjectBytes = 1024
 	MaxPlanningSemanticSubjectBytes  = 2000
 )
-
-var ErrPlanningActivityTooLarge = errors.New("planning observation exceeds the existing realtime publication boundary")
 
 // PlanningActivity is a public observation of code-owned planning facts.
 // Candidate text is a proposal until its validated disposition is observed.
@@ -123,12 +120,10 @@ func (activity PlanningActivity) validateSemantic() error {
 	} else if activity.Result == "" || !activityText(activity.Result, MaxAgentActivityTextBytes) {
 		return fmt.Errorf("completed semantic observation lacks its validated result")
 	}
-	encoded, err := json.Marshal(activity)
+	_, err := json.Marshal(activity)
 	if err != nil {
 		return err
 	}
-	if len(encoded) > MaxPlanningActivityBytes {
-		return ErrPlanningActivityTooLarge
-	}
+
 	return nil
 }

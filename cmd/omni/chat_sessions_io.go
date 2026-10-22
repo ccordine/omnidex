@@ -95,10 +95,9 @@ func newRetainedSessionConsole(ctx context.Context, terminal *sessionTerminal, i
 		return nil, err
 	}
 	source.review = router.ReviewEnabled
-	paste := newBracketedPasteReader(router, model.MaxFreeFormTurnBytes)
+	paste := newBracketedPasteReader(router)
 	editor := term.NewTerminal(terminalReadWriter{reader: paste, writer: view}, "you> ")
 	console := &chatConsole{workspace: view, terminal: editor, pasteReader: paste, reviewInput: router, output: view, terminalFD: -1, editorMode: "infer", prompt: "you> "}
-	editor.AutoCompleteCallback = console.boundTerminalInput
 	columns, rows, _ := view.Resize(width, height)
 	console.terminalWidth, console.terminalHeight = columns, rows
 	if err := editor.SetSize(columns, rows); err != nil {

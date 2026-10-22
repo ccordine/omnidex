@@ -41,7 +41,7 @@ export async function createRoleplayUserPersona(
   channelID: string,
   name: string,
 ): Promise<RoleplayUserPersonaCreationReceipt> {
-  const id = requireID(channelID, "channel", /^[a-z0-9][a-z0-9_.:-]{0,95}$/);
+  const id = requireID(channelID, "channel", /^[a-z0-9][a-z0-9_.:-]*$/);
   const response = await fetch(
     `/v1/channels/${encodeURIComponent(id)}/roleplay/user-personas`,
     jsonRequest({ name: requireText(name, "Identity name", 256, true) }),
@@ -58,7 +58,7 @@ export async function createRoleplayUserPersona(
     throw new Error("Roleplay identity creation receipt has inexact fields.");
   }
   const receipt: RoleplayUserPersonaCreationReceipt = {
-    channel_id: requireID(payload.channel_id, "receipt channel", /^[a-z0-9][a-z0-9_.:-]{0,95}$/),
+    channel_id: requireID(payload.channel_id, "receipt channel", /^[a-z0-9][a-z0-9_.:-]*$/),
     character_id: roleplayID(payload.character_id, "created character", "rpc"),
   };
   if (receipt.channel_id !== id) {
@@ -160,7 +160,7 @@ export async function fetchRoleplayComponent(
   page: RoleplayPageState = emptyRoleplayPage,
 	composerPersonaCharacterID?: string,
 ): Promise<RoleplayComponentResponse> {
-  const id = requireID(channelID, "channel", /^[a-z0-9][a-z0-9_.:-]{0,95}$/);
+  const id = requireID(channelID, "channel", /^[a-z0-9][a-z0-9_.:-]*$/);
   const query = new URLSearchParams({ channel_id: id });
   for (const [key, value] of Object.entries(requirePage(page))) query.set(`${key}_offset`, String(value));
 	if (composerPersonaCharacterID !== undefined) {
@@ -223,8 +223,7 @@ export function updateRoleplayResponders(
   input: ResponderOrderInput,
 ): Promise<RoleplayComponentResponse> {
   const characterIDs = input.character_ids.map((id) => roleplayID(id, "responder", "rpc"));
-  if (characterIDs.length < 1 || characterIDs.length > 16 ||
-      new Set(characterIDs).size !== characterIDs.length) {
+  if ((characterIDs.length < 1) || (new Set(characterIDs).size !== characterIDs.length)) {
     throw new Error("Responders must contain 1 to 16 unique characters.");
   }
   return mutate(channelID, "/responders", jsonPut({
@@ -349,7 +348,7 @@ export function registerRoleplayItem(
 }
 
 function mutate(channelID: string, suffix: string, init: RequestInit, status: number): Promise<RoleplayComponentResponse> {
-  const id = requireID(channelID, "channel", /^[a-z0-9][a-z0-9_.:-]{0,95}$/);
+  const id = requireID(channelID, "channel", /^[a-z0-9][a-z0-9_.:-]*$/);
   return requestRoleplayComponent(`/v1/channels/${encodeURIComponent(id)}/roleplay${suffix}`, init, status, id);
 }
 

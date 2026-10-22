@@ -26,7 +26,7 @@ func decodePlanningOperations(content json.RawMessage, ledger EngineeringLedger)
 	var parsed struct {
 		Operations []planningParserOperation `json:"operations"`
 	}
-	if err := decodeContract(content, &parsed); err != nil {
+	if err := json.Unmarshal(content, &parsed); err != nil {
 		return nil, err
 	}
 	operations := make([]model.LedgerMutationOperation, 0, len(parsed.Operations))
@@ -45,7 +45,7 @@ func decodePlanningOperations(content json.RawMessage, ledger EngineeringLedger)
 				}
 			}
 			operation.Item = &model.LedgerMutationItem{}
-			if err := decodeContract(item, operation.Item); err != nil {
+			if err := json.Unmarshal(item, operation.Item); err != nil {
 				return nil, err
 			}
 			if value.Kind == model.LedgerMutationAdd {
@@ -82,15 +82,15 @@ func decodePlanningOperations(content json.RawMessage, ledger EngineeringLedger)
 }
 
 func mergePlanningPatch(ledger EngineeringLedger, id model.LedgerItemID, raw json.RawMessage) (json.RawMessage, error) {
-	var typed model.LedgerMutationItem
-	if err := decodeContract(raw, &typed); err != nil {
+	var wrapper map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &wrapper); err != nil {
 		return nil, err
 	}
-	var wrapper map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &wrapper); err != nil || len(wrapper) != 1 {
-		return nil, fmt.Errorf("planning amendment requires exactly one typed item")
+	item := retainedPlanningItem(ledger, id)
+	if item == nil {
+		return nil, fmt.Errorf("planning amendment target %s does not exist", id)
 	}
-	retained, err := json.Marshal(retainedPlanningItem(ledger, id))
+	retained, err := json.Marshal(item)
 	if err != nil {
 		return nil, err
 	}
@@ -101,16 +101,17 @@ func mergePlanningPatch(ledger EngineeringLedger, id model.LedgerItemID, raw jso
 	for kind, payload := range wrapper {
 		fields, exists := original[kind]
 		if !exists {
-			return nil, fmt.Errorf("planning amendment target %s does not exist with type %s", id, kind)
+			continue
 		}
 		var patch map[string]json.RawMessage
-		if err := json.Unmarshal(payload, &patch); err != nil || patch == nil {
-			return nil, fmt.Errorf("planning amendment requires a field patch")
+		if err := json.Unmarshal(payload, &patch); err != nil {
+			return nil, err
 		}
 		for name, value := range patch {
 			switch name {
-			case "id", "provenance", "disposition", "review_state", "rank", "required":
-				return nil, fmt.Errorf("planning amendment cannot reconstruct code-owned field %s", name)
+			case "goal", "objective", "owner_context", "constraints", "file_responsibilities", "acceptance", "read_files", "write_files", "delete_files":
+			default:
+				continue
 			}
 			if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
 				continue
@@ -128,60 +129,4 @@ func retainedPlanningItem(ledger EngineeringLedger, id model.LedgerItemID) *mode
 		}
 	}
 	return nil
-}
-
-// Supporting spans add details to their owning task. Replacing an approved
-// field is a change, not support; a later file/criterion list cannot erase the
-// preceding span merely because it was projected in a separate bounded leaf.
-func mergePlanningSupport(original, projected LedgerTask) (LedgerTask, error) {
-	projected.Goal = original.Goal
-	if original.Objective != "" {
-		if projected.Objective != "" && projected.Objective != original.Objective {
-			return projected, fmt.Errorf("task support cannot replace its owner's objective")
-		}
-		projected.Objective = original.Objective
-	}
-	projected.ReadFiles = appendDistinct(original.ReadFiles, projected.ReadFiles)
-	projected.WriteFiles = appendDistinct(original.WriteFiles, projected.WriteFiles)
-	projected.DeleteFiles = appendDistinct(original.DeleteFiles, projected.DeleteFiles)
-	projected.Constraints = appendDistinct(original.Constraints, projected.Constraints)
-	projected.OwnerContext = appendDistinct(original.OwnerContext, projected.OwnerContext)
-	projected.FileResponsibilities = appendDistinct(original.FileResponsibilities, projected.FileResponsibilities)
-	criteria := append([]model.TaskAcceptance(nil), original.Acceptance...)
-	for _, criterion := range projected.Acceptance {
-		found := false
-		for index, prior := range criteria {
-			if prior.ID != criterion.ID {
-				continue
-			}
-			if prior.Text != criterion.Text {
-				return projected, fmt.Errorf("task support reused acceptance identity %s for another criterion", criterion.ID)
-			}
-			criteria[index].Verification = appendDistinct(prior.Verification, criterion.Verification)
-			found = true
-			break
-		}
-		if !found {
-			criteria = append(criteria, criterion)
-		}
-	}
-	projected.Acceptance = criteria
-	return projected, nil
-}
-
-func appendDistinct[T comparable](original, additional []T) []T {
-	out := append([]T(nil), original...)
-	for _, value := range additional {
-		found := false
-		for _, retained := range out {
-			if retained == value {
-				found = true
-				break
-			}
-		}
-		if !found {
-			out = append(out, value)
-		}
-	}
-	return out
 }

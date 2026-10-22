@@ -38,9 +38,7 @@ func AppendTurnCanonTx(
 	if err := validateIdentity(viewpointID, characterIdentity); err != nil {
 		return nil, err
 	}
-	if len(facts) > MaxCanonFactsPerTurn {
-		return nil, fmt.Errorf("roleplay turn canon exceeds the %d-fact bound", MaxCanonFactsPerTurn)
-	}
+
 	seen := make(map[string]struct{}, len(facts))
 	for _, fact := range facts {
 		if err := ValidateCanonFact(fact); err != nil {
@@ -51,11 +49,7 @@ func AppendTurnCanonTx(
 		}
 		seen[fact] = struct{}{}
 	}
-	if len(knowledgeCharacterIDs) > MaxKnowledgeRecipientsPerTurn {
-		return nil, fmt.Errorf(
-			"roleplay turn knowledge exceeds the %d-character bound", MaxKnowledgeRecipientsPerTurn,
-		)
-	}
+
 	if len(facts) == 0 && len(knowledgeCharacterIDs) != 0 {
 		return nil, fmt.Errorf("roleplay turn knowledge requires new canon facts")
 	}

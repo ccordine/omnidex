@@ -6,7 +6,7 @@ import (
 )
 
 func TestPlanningActivitySemanticSubjectPreservesSourceGrammar(t *testing.T) {
-	for _, subject := range []string{" A valid fictional fact. ", "The left behavior.\nThe next line.", strings.Repeat("x", 2000)} {
+	for _, subject := range []string{" A valid fictional fact. ", "The left behavior.\nThe next line.", strings.Repeat("x", 2001)} {
 		activity := PlanningActivity{Schema: 1, Kind: "semantic_started", WorkKind: "capability_relation",
 			Station: "capability_relation", Model: "fixture-model", Subject: subject, Against: subject,
 			Question: "What dependency exists?", Why: "Natural language requires interpretation.",
@@ -16,7 +16,7 @@ func TestPlanningActivitySemanticSubjectPreservesSourceGrammar(t *testing.T) {
 			t.Fatalf("valid source grammar became a display gate: %v", err)
 		}
 	}
-	for _, subject := range []string{strings.Repeat("x", 2001), "invalid\x00subject", string([]byte{0xff})} {
+	for _, subject := range []string{"invalid\x00subject", string([]byte{0xff})} {
 		activity := PlanningActivity{Schema: 1, Kind: "semantic_started", WorkKind: "capability_relation",
 			Station: "capability_relation", Model: "fixture-model", Subject: subject,
 			Question: "What dependency exists?", Why: "Natural language requires interpretation.",

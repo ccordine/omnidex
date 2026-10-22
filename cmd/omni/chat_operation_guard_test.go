@@ -25,27 +25,19 @@ func TestWhitespaceInterruptUsesCanonicalDefaultReason(t *testing.T) {
 	}
 }
 
-func TestOverLimitChatInputDoesNotReservePendingOperation(t *testing.T) {
+func TestLargeChatInputReservesExactPendingOperation(t *testing.T) {
 	t.Parallel()
-
-	overLimit := strings.Repeat("x", model.MaxFreeFormTurnBytes+1)
+	text := strings.Repeat("x", model.MaxFreeFormTurnBytes+1)
 	session := &chatSession{}
-	if _, err := session.sessionTurnOperationID(overLimit); err == nil {
-		t.Fatal("over-limit ordinary turn unexpectedly reserved an operation")
-	}
-	if session.pendingTurn != nil {
-		t.Fatalf("over-limit ordinary turn retained pending operation %#v", session.pendingTurn)
+	id, err := session.sessionTurnOperationID(text)
+	if err != nil || id == "" || session.pendingTurn == nil || session.pendingTurn.exactText != text {
+		t.Fatal("large turn was rejected or changed", err)
 	}
 	for _, action := range []string{"interrupt", "redirect"} {
-		t.Run(action, func(t *testing.T) {
-			localSession := &chatSession{}
-			if _, err := localSession.control(action, overLimit, true, nil); err == nil {
-				t.Fatalf("over-limit /%s unexpectedly reserved an operation", action)
-			}
-			if localSession.pendingControl != nil {
-				t.Fatalf("over-limit /%s retained pending operation %#v", action, localSession.pendingControl)
-			}
-		})
+		got, err := validatedChatControlText(action, text)
+		if err != nil || got != text {
+			t.Fatal("large feedback was rejected or changed", err)
+		}
 	}
 }
 
@@ -141,7 +133,7 @@ func TestAmbiguousTurnFailureRetainsExactGuard(t *testing.T) {
 
 func newChatOperationTestSession(t *testing.T, baseURL string) *chatSession {
 	t.Helper()
-	apiClient, err := client.New(baseURL, 2*time.Second)
+	apiClient, err := client.New(baseURL)
 	if err != nil {
 		t.Fatalf("create test client: %v", err)
 	}

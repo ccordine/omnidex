@@ -53,10 +53,7 @@ func (input DatabaseQueryFilterLeafInput) validate() error {
 	if input.AcceptedFilters == nil || input.AcceptedValues == nil {
 		return fmt.Errorf("database query filter partial collections must be explicit")
 	}
-	if len(input.AcceptedFilters) > datasource.MaxIntentFilters ||
-		len(input.AcceptedValues) > datasource.MaxIntentFilterValues {
-		return fmt.Errorf("database query filter partial state exceeds a collection bound")
-	}
+
 	if input.ScopeRelationID != "" && !databaseQueryRelationExists(input.State, input.ScopeRelationID) {
 		return fmt.Errorf("database query filter scope relation %q was not projected", input.ScopeRelationID)
 	}
@@ -138,7 +135,7 @@ func (input DatabaseQueryExistenceLeafInput) validate() error {
 	if err := validateDatabaseQueryPurpose("database query existence purpose", input.Purpose); err != nil {
 		return err
 	}
-	if input.Filters == nil || len(input.Filters) > datasource.MaxIntentFilters {
+	if input.Filters == nil {
 		return fmt.Errorf("database query existence filters must be explicit and bounded")
 	}
 	if len(input.Filters) > 0 {

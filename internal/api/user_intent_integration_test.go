@@ -84,7 +84,7 @@ func TestUserIntentHTTPProposalReconnectAndApproval(t *testing.T) {
 				handler.ServeHTTP(w, r)
 			}))
 			defer httpServer.Close()
-			apiClient, err := client.New(httpServer.URL, 10*time.Second)
+			apiClient, err := client.New(httpServer.URL)
 			if err != nil {
 				t.Fatal(err)
 			}

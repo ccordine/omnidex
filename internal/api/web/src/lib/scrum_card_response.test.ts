@@ -38,6 +38,12 @@ function flow(overrides: Record<string, unknown> = {}): Record<string, unknown> 
 }
 
 describe("closed Scrum card response authority", () => {
+  it("accepts large reference and signal collections without changing them", () => {
+    const ref_files = Array.from({length:257},(_,i)=>`path-${i}`);
+    const signals = Array.from({length:65},(_,i)=>`signal-${i}`);
+    expect(validateScrumCardProjection(card({ref_files,flow_metrics:flow({signals})}),"card-7")).toMatchObject({ref_files,flow_metrics:{signals}});
+  });
+
   it("accepts the exact bounded card and registered flow projection", () => {
     expect(validateScrumCardProjection(card({
       checklist: [{ id: "item_1", text: "Exact item", done: false }],
@@ -52,7 +58,6 @@ describe("closed Scrum card response authority", () => {
       { id: "item_1", text: "One", done: false },
       { id: "item_1", text: "Two", done: true },
     ] }],
-    ["too many references", { ref_files: Array.from({ length: 257 }, (_, index) => `path-${index}`) }],
     ["noncanonical reference", { ref_files: ["../outside"] }],
     ["duplicate tags", { tags: ["server-authority", "server-authority"] }],
     ["noncanonical tag", { tags: ["Server Authority"] }],
@@ -71,7 +76,6 @@ describe("closed Scrum card response authority", () => {
     ["duplicate flow signal", { flow_metrics: flow({ signals: ["one", "one"] }) }],
     ["noncanonical flow signal", { flow_metrics: flow({ signals: [" padded "] }) }],
     ["Go whitespace blank flow signal", { flow_metrics: flow({ signals: ["\u0085"] }) }],
-    ["too many flow signals", { flow_metrics: flow({ signals: Array.from({ length: 65 }, (_, index) => `signal-${index}`) }) }],
     ["duplicate channel message ID", { chat: [
       { id: "message_1", role: "assistant", content: "One", created_at: "2026-08-13T12:00:00Z" },
       { id: "message_1", role: "assistant", content: "Two", created_at: "2026-08-13T12:00:01Z" },

@@ -29,7 +29,7 @@ func decodeJobItemRoute(request *http.Request) (int64, jobItemAction, error) {
 		return 0, "", fmt.Errorf("job item request URL is required")
 	}
 	path := request.URL.Path
-	if len(path) > maxJobItemPathBytes || request.URL.EscapedPath() != path {
+	if request.URL.EscapedPath() != path {
 		return 0, "", fmt.Errorf("job item path must be one exact canonical path")
 	}
 	const prefix = "/v1/jobs/"

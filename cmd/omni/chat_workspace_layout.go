@@ -216,7 +216,7 @@ func (view *chatWorkspace) frameLocked() ([]string, int, int, bool) {
 		status += fmt.Sprintf("  ·  %d lines up", view.conversationOffset)
 	}
 	frame[h-2] = view.paint(mode, "1;38;2;22;22;30;48;2;122;162;247") + view.paint(workspaceFit("  "+status, max(0, w-len(mode))), workspaceBlue)
-	hint := "  Ctrl-B ? keys · Enter send · Ctrl-B tabs · Ctrl-C interrupt"
+	hint := "  Ctrl-B ? keys · Enter send · Ctrl-B tabs · Ctrl-C clear / interrupt"
 	if view.focus != workspaceCompose {
 		hint = "  j/k scroll · PgUp/PgDn page · G latest · i compose · Ctrl-B z zoom"
 	}
@@ -270,7 +270,7 @@ func (view *chatWorkspace) helpFrameLocked(frame []string) {
 	for index := 2; index < len(frame)-2; index++ {
 		frame[index] = view.paint(workspaceFit("", view.width), workspaceMuted)
 	}
-	lines := []string{"KEYS  /  terminal workspace", "Ctrl-B f/e/l/r  Infer/Interact/Ledger/Research", "Ctrl-B Tab or [ / ]  Cycle tabs", "Ctrl-B 1   Compose your message", "Ctrl-B 2   Browse the conversation", "Ctrl-B 3   Inspect live activity", "Ctrl-B 4   Inspect the current ledger", "Ctrl-B 5   Switch sessions (background work continues)", "Ledger: j/k select; PgUp/PgDn scroll", "a agree · d discuss · x remove · s restore", "[ / ] reorder · r refresh · t retry", "Ctrl-B o   Focus the next pane", "Ctrl-B z   Zoom / restore the focused pane", "Ctrl-B ?   Show / hide this key guide", "", "j / k      Scroll the focused pane", "PgUp/PgDn  Scroll a page", "g / G      Oldest / latest", "i / Esc    Return to composing", "", "Enter      Send the current message", "↑ / ↓      Recall input history", "Ctrl-C     Interrupt using existing job controls", "Ctrl-D     Exit with an empty draft", "/help      Existing chat commands", "", "Esc closes this guide. Your draft stays intact."}
+	lines := []string{"KEYS  /  terminal workspace", "Ctrl-B f/e/l/r  Infer/Interact/Ledger/Research", "Ctrl-B Tab or [ / ]  Cycle tabs", "Ctrl-B 1   Compose your message", "Ctrl-B 2   Browse the conversation", "Ctrl-B 3   Inspect live activity", "Ctrl-B 4   Inspect the current ledger", "Ctrl-B 5   Switch sessions (background work continues)", "Ledger: j/k select; PgUp/PgDn scroll", "a agree · d discuss · x remove · s restore", "[ / ] reorder · r refresh · t retry", "Ctrl-B o   Focus the next pane", "Ctrl-B z   Zoom / restore the focused pane", "Ctrl-B ?   Show / hide this key guide", "", "j / k      Scroll the focused pane", "PgUp/PgDn  Scroll a page", "g / G      Oldest / latest", "i / Esc    Return to composing", "", "Enter      Send the current message", "↑ / ↓      Recall input history", "Ctrl-C     Clear draft; interrupt when empty", "Ctrl-D     Exit with an empty draft", "/help      Existing chat commands", "", "Esc closes this guide. Your draft stays intact."}
 	var wrapped []string
 	for _, line := range lines {
 		wrapped = append(wrapped, strings.Split(ansi.Hardwrap(line, max(1, view.width-2), true), "\n")...)

@@ -75,7 +75,7 @@ func TestCodingCombinedApprovalReviewInterruptionRecoveryRetryReconnect(t *testi
 		if err != nil {
 			t.Fatal(err)
 		}
-		native, err = codex.New(command, root, 2*time.Minute)
+		native, err = codex.New(command, root)
 		if err != nil {
 			t.Fatal(err)
 		}

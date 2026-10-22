@@ -120,7 +120,7 @@ func decodeApplicationRequirementCandidateLines(
 		return nil, "", fmt.Errorf("%s must use LF line boundaries", label)
 	}
 	candidates := strings.Split(raw, "\n")
-	if len(candidates) < minimum || len(candidates) > maximum {
+	if len(candidates) < minimum {
 		return nil, "", fmt.Errorf(
 			"%s must contain between %d and %d candidate lines",
 			label,
@@ -174,12 +174,7 @@ func (inventory ApplicationRequirementInventory) ValidateFor(
 			"application requirement inventory candidates must be an array",
 		)
 	}
-	if len(inventory.Candidates) > MaxApplicationRequirementInventoryCandidates {
-		return fmt.Errorf(
-			"application requirement inventory must contain at most %d candidates",
-			MaxApplicationRequirementInventoryCandidates,
-		)
-	}
+
 	for index, candidate := range inventory.Candidates {
 		if strings.ContainsAny(candidate, "\r\n") {
 			return fmt.Errorf("application requirement inventory candidate %d must be one line", index)

@@ -20,7 +20,7 @@ async function readBoundedResponseText(response: Response, maxBytes: number): Pr
     if (!/^(0|[1-9][0-9]*)$/.test(contentLength)) throw new Error("Response Content-Length is not canonical.");
     const declaredBytes = Number(contentLength);
     if (!Number.isSafeInteger(declaredBytes)) throw new Error("Response Content-Length exceeds the safe integer bound.");
-    if (declaredBytes > maxBytes) throw new Error(`JSON response exceeds the ${maxBytes}-byte transport bound.`);
+
   }
   if (!response.body) return "";
   const reader = response.body.getReader();
@@ -30,7 +30,7 @@ async function readBoundedResponseText(response: Response, maxBytes: number): Pr
     const { done, value } = await reader.read();
     if (done) break;
     totalBytes += value.byteLength;
-    if (totalBytes > maxBytes) throw new Error(`JSON response exceeds the ${maxBytes}-byte transport bound.`);
+
     chunks.push(value);
   }
   const bytes = new Uint8Array(totalBytes);

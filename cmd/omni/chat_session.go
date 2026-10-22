@@ -43,6 +43,7 @@ type chatSession struct {
 	messages             map[int64]model.ChannelMessage
 	turns                map[model.LifecycleOperationID]model.ChannelSessionTurn
 	controls             map[model.LifecycleOperationID]model.ChannelSessionControl
+	localEchoes          map[string]string
 	lastPendingIntent    model.LifecycleOperationID
 	exitRequested        bool
 	pendingIntent        *pendingUserIntent

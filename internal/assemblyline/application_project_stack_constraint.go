@@ -61,7 +61,7 @@ func validateApplicationProjectStackCandidates(
 	candidates []ApplicationProjectStackCandidate,
 	maximumSummaryBytes int,
 ) error {
-	if len(candidates) < 1 || len(candidates) > maxApplicationProjectStackCandidates {
+	if len(candidates) < 1 {
 		return fmt.Errorf(
 			"project stack constraint requires 1..%d bounded candidates",
 			maxApplicationProjectStackCandidates,
@@ -79,12 +79,7 @@ func validateApplicationProjectStackCandidates(
 			strings.ContainsAny(format, "\x00\r\n") {
 			return fmt.Errorf("project stack candidate %s has invalid technical format", candidate.CandidateID)
 		}
-		if len(format) > maximumSummaryBytes {
-			return fmt.Errorf(
-				"project stack candidate %s technical format exceeds %d bytes",
-				candidate.CandidateID, maximumSummaryBytes,
-			)
-		}
+
 		if err := ValidatePathFreeModelContext("project stack candidate technical format", format); err != nil {
 			return err
 		}

@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use std::io::Read;
-use std::time::Duration;
 
 use crate::Error;
 
@@ -12,7 +11,6 @@ pub struct HttpRequest {
     pub url: String,
     pub headers: BTreeMap<String, String>,
     pub body: Option<Vec<u8>>,
-    pub timeout: Duration,
 }
 
 #[derive(Debug, Clone)]
@@ -51,6 +49,7 @@ pub struct ReqwestTransport {
 impl ReqwestTransport {
     pub fn new() -> Result<Self, Error> {
         let client = reqwest::blocking::Client::builder()
+            .timeout(None)
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|error| Error::Transport(error.to_string()))?;
@@ -62,10 +61,7 @@ impl Transport for ReqwestTransport {
     fn send(&self, request: HttpRequest) -> Result<HttpResponse, Error> {
         let method = reqwest::Method::from_bytes(request.method.as_bytes())
             .map_err(|error| Error::Transport(error.to_string()))?;
-        let mut builder = self
-            .client
-            .request(method, &request.url)
-            .timeout(request.timeout);
+        let mut builder = self.client.request(method, &request.url);
         for (name, value) in request.headers {
             builder = builder.header(&name, &value);
         }

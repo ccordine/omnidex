@@ -137,12 +137,7 @@ func normalizeCompleteStepEvidenceCommand(
 			"objective evidence completion requires context key %q", "objective_result",
 		)
 	}
-	if len(command.Evidence) > maxObjectiveCompletionEvidence {
-		return CompleteStepEvidenceCommand{}, nil, fmt.Errorf(
-			"objective evidence completion exceeds the %d-record limit",
-			maxObjectiveCompletionEvidence,
-		)
-	}
+
 	records := make([]evidence.Record, len(command.Evidence))
 	payloads := make([][]byte, len(command.Evidence))
 	total := 0
@@ -156,11 +151,7 @@ func normalizeCompleteStepEvidenceCommand(
 			)
 		}
 		total += len(payload)
-		if total > maxObjectiveEvidenceSetBytes {
-			return CompleteStepEvidenceCommand{}, nil, fmt.Errorf(
-				"objective evidence set exceeds the %d-byte limit", maxObjectiveEvidenceSetBytes,
-			)
-		}
+
 		records[index] = record
 		payloads[index] = payload
 	}
@@ -293,9 +284,7 @@ func validateLifecycleText(name, value string, maximum int, allowEmpty bool) err
 	if !allowEmpty && strings.TrimSpace(value) == "" {
 		return fmt.Errorf("%s is required", name)
 	}
-	if len(value) > maximum {
-		return fmt.Errorf("%s exceeds the %d-byte limit", name, maximum)
-	}
+
 	return nil
 }
 

@@ -44,9 +44,7 @@ func (mutation *ScrumCardTicketMutation) validate() error {
 			return fmt.Errorf("Scrum card ticket %s must be valid UTF-8 without NUL", name)
 		}
 	}
-	if len(mutation.Ticket) > maxScrumCardTicketBytes {
-		return fmt.Errorf("Scrum card ticket exceeds the %d-byte bound", maxScrumCardTicketBytes)
-	}
+
 	return nil
 }
 

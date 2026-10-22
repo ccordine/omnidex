@@ -41,7 +41,11 @@ func interpretSessionUserIntent(ctx context.Context, request sessionintent.Reque
 		}
 		writable = func(candidate string) bool { return candidate == path }
 	}
-	proposed, err := userintent.Interpret(ctx, userintent.Input{Snapshot: snapshot, Contract: contract, Prompt: request.Text, Context: background, Writable: writable, Validate: sessionintent.Validate}, ask)
+	proposed, err := userintent.Interpret(ctx, userintent.Input{Snapshot: snapshot, Contract: contract, Prompt: request.Text, Context: background, Writable: writable, Validate: sessionintent.Validate,
+		Bind: func(patch []userintent.Patch) ([]userintent.Patch, error) {
+			return sessionintent.BindContent(request, current, patch)
+		},
+	}, ask)
 	if err != nil {
 		return result, err
 	}

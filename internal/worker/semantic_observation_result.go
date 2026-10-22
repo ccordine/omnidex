@@ -10,7 +10,7 @@ import (
 // observation frames, rather than silently clipping a free-form result.
 func publishSemanticResult(runtime typedWorkerRuntime, activity model.PlanningActivity) {
 	result := activity.Result
-	if len(activity.Options) > 0 && (activity.Validate() == model.ErrPlanningActivityTooLarge || len(result) > model.MaxAgentActivityTextBytes) {
+	if len(activity.Options) > 0 && len(result) > model.MaxAgentActivityTextBytes {
 		activity.OptionTotal, activity.Options = len(activity.Options), nil
 	}
 	for offset := 0; offset < len(result); {

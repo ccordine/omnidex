@@ -14,16 +14,16 @@ type providerCatalogResponse struct {
 }
 
 type providerCatalogItem struct {
-	ID                    string   `json:"id"`
-	DisplayName           string   `json:"display_name"`
-	Protocol              string   `json:"protocol"`
-	DefaultBaseURL        string   `json:"default_base_url,omitempty"`
-	ChineseService        bool     `json:"chinese_service"`
-	SupportsExactStations bool     `json:"supports_exact_stations"`
-	SupportsEmbeddings    bool     `json:"supports_embeddings"`
-	SelectedForStations   bool     `json:"selected_for_stations"`
-	SelectedForEmbeddings bool     `json:"selected_for_embeddings"`
-	EmbeddingModel        string   `json:"embedding_model,omitempty"`
+	ID                    string `json:"id"`
+	DisplayName           string `json:"display_name"`
+	Protocol              string `json:"protocol"`
+	DefaultBaseURL        string `json:"default_base_url,omitempty"`
+	ChineseService        bool   `json:"chinese_service"`
+	SupportsExactStations bool   `json:"supports_exact_stations"`
+	SupportsEmbeddings    bool   `json:"supports_embeddings"`
+	SelectedForStations   bool   `json:"selected_for_stations"`
+	SelectedForEmbeddings bool   `json:"selected_for_embeddings"`
+	EmbeddingModel        string `json:"embedding_model,omitempty"`
 }
 
 func (s *Server) handleProviderCatalog(w http.ResponseWriter, r *http.Request) {
@@ -48,7 +48,7 @@ func (s *Server) providerCatalog() providerCatalogResponse {
 		}
 		item := providerCatalogItem{
 			ID: definition.ID, DisplayName: definition.DisplayName,
-			Protocol: string(definition.Protocol),
+			Protocol:       string(definition.Protocol),
 			DefaultBaseURL: definition.DefaultBaseURL, ChineseService: definition.ChineseService,
 			SupportsExactStations: definition.SupportsExactPreparedStations,
 			SupportsEmbeddings:    definition.SupportsEmbeddings,

@@ -9,9 +9,7 @@ func validateRequirementQuote(label, quote string) error {
 	if quote == "" || quote != strings.TrimSpace(quote) {
 		return fmt.Errorf("%s requires one trimmed source quote", label)
 	}
-	if len(quote) > maxRequirementQuoteBytes {
-		return fmt.Errorf("%s source quote exceeds %d bytes", label, maxRequirementQuoteBytes)
-	}
+
 	if err := ValidatePathFreeModelContext(label, quote); err != nil {
 		return err
 	}
@@ -62,9 +60,7 @@ func validateQuoteCollection(label string, quotes []string) error {
 }
 
 func validateBoundedQuoteCollection(label string, quotes []string, limit int) error {
-	if len(quotes) > limit {
-		return fmt.Errorf("%s quotes exceed %d items", label, limit)
-	}
+
 	seen := make(map[string]struct{}, len(quotes))
 	for index, quote := range quotes {
 		if err := validateRequirementQuote(label, quote); err != nil {
@@ -86,12 +82,10 @@ func (input FragmentGenerationInput) validate() error {
 		return fmt.Errorf("fragment generation behavior is required and must be trimmed")
 	}
 	if input.Dialect == "" || input.Dialect != strings.TrimSpace(input.Dialect) ||
-		strings.ContainsAny(input.Dialect, "\x00\r\n") || len(input.Dialect) > 256 {
+		strings.ContainsAny(input.Dialect, "\x00\r\n") {
 		return fmt.Errorf("fragment generation dialect is required as one bounded label")
 	}
-	if len(input.Behavior) > maxLocalBehaviorBytes {
-		return fmt.Errorf("fragment generation behavior exceeds %d bytes", maxLocalBehaviorBytes)
-	}
+
 	return input.ValidatePathFree(ArtifactIdentityProvenance{})
 }
 
@@ -121,9 +115,7 @@ func validatePortableFragmentCore(language, signature string, capabilities, symb
 	if signature == "" || signature != strings.TrimSpace(signature) || strings.ContainsAny(signature, "\r\n") {
 		return fmt.Errorf("fragment signature must be one trimmed line")
 	}
-	if len(signature) > 1024 {
-		return fmt.Errorf("fragment signature exceeds 1024 bytes")
-	}
+
 	if err := validateBoundedPortableStringSet(
 		"capability", capabilities, MaxSourceCapabilityContextBytes,
 	); err != nil {
@@ -149,13 +141,6 @@ func validatePortableStringSet(label string, values []string) error {
 func validateBoundedPortableStringSet(label string, values []string, byteLimit int) error {
 	if err := validatePortableStringSet(label, values); err != nil {
 		return err
-	}
-	total := 0
-	for _, value := range values {
-		total += len(value)
-	}
-	if total > byteLimit {
-		return fmt.Errorf("%ss exceed %d bytes", label, byteLimit)
 	}
 	return nil
 }

@@ -199,11 +199,7 @@ func projectSimulationSlashCommandsTx(
 		}
 		seenExact[commands[index].Insertion] = struct{}{}
 	}
-	if len(commands) > MaxSimulationSlashCommands {
-		return SimulationSlashCommandProjection{}, fmt.Errorf(
-			"%w: slash commands exceed their %d-option bound", ErrSimulationNotConfigured, MaxSimulationSlashCommands,
-		)
-	}
+
 	return SimulationSlashCommandProjection{
 		Schema:  SimulationSlashCommandProjectionSchemaV1,
 		WorldID: worldID, SceneID: scene.ID, SceneRevision: scene.Revision,

@@ -137,7 +137,7 @@ func (r *Repository) Research(ctx context.Context, channel model.ChannelID, requ
 		}
 		result.Answer = text
 	}
-	if !json.Valid(evidence) || len(evidence) > 4<<20 {
+	if !json.Valid(evidence) {
 		return result, fmt.Errorf("research evidence is absent or exceeds 4 MiB")
 	}
 	contextJSON, err := json.Marshal(current)

@@ -61,9 +61,7 @@ func loadCurrentOngoingActionsTx(
 	if err := rows.Err(); err != nil {
 		return nil, nil, nil, err
 	}
-	if len(actions) > MaxSceneParticipants {
-		return nil, nil, nil, fmt.Errorf("%w: ongoing-action projection exceeds its participant bound", ErrSimulationNotConfigured)
-	}
+
 	if len(actions) == 0 {
 		return nil, nil, nil, nil
 	}

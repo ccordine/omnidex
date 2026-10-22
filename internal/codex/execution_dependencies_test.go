@@ -124,7 +124,7 @@ func TestNativeLaunchFailureCleansExecutionAndReviewDependencies(t *testing.T) {
 	for _, role := range []codingagent.Role{codingagent.Execute, codingagent.Review} {
 		t.Run(string(role), func(t *testing.T) {
 			log := fakeExecutionDocker(t)
-			client, err := New(filepath.Join(t.TempDir(), "missing-codex"), t.TempDir(), time.Second)
+			client, err := New(filepath.Join(t.TempDir(), "missing-codex"), t.TempDir())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -146,7 +146,7 @@ func TestNativeCancellationCleansRunningSessionDependencies(t *testing.T) {
 	if err := os.WriteFile(command, []byte("#!/bin/sh\nsleep 20\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	client, err := New(command, t.TempDir(), time.Second)
+	client, err := New(command, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

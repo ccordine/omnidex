@@ -31,9 +31,7 @@ func loadMeterDefinitionsTx(ctx context.Context, tx pgx.Tx, worldID string) ([]M
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	if len(values) > MaxSimulationMeters {
-		return nil, fmt.Errorf("%w: meter definitions exceed their bound", ErrSimulationNotConfigured)
-	}
+
 	return values, nil
 }
 
@@ -58,9 +56,7 @@ func loadInteractionDefinitionsTx(ctx context.Context, tx pgx.Tx, worldID string
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	if len(values) > MaxInteractionCommands {
-		return nil, fmt.Errorf("%w: interaction definitions exceed their bound", ErrSimulationNotConfigured)
-	}
+
 	for index := range values {
 		values[index].Effects, err = loadCommandEffects(ctx, tx, values[index].ID)
 		if err != nil {
@@ -107,9 +103,7 @@ func loadItemDefinitionsTx(ctx context.Context, tx pgx.Tx, worldID string) ([]It
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	if len(values) > MaxWorldItemTemplates {
-		return nil, fmt.Errorf("%w: item definitions exceed their bound", ErrSimulationNotConfigured)
-	}
+
 	for index := range values {
 		values[index].Effects, err = loadItemEffects(ctx, tx, values[index].ID)
 		if err != nil {
@@ -142,7 +136,7 @@ func loadItemEffects(ctx context.Context, query simulationQuerier, templateID st
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	if len(values) < 1 || len(values) > MaxDefinitionEffects {
+	if len(values) < 1 {
 		return nil, fmt.Errorf("%w: item effects are outside their bound", ErrSimulationNotConfigured)
 	}
 	return values, nil

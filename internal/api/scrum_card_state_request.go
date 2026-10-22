@@ -77,7 +77,7 @@ func validateOptionalScrumCardID(value, field string) error {
 		return nil
 	}
 	if !utf8.ValidString(value) || strings.ContainsRune(value, '\x00') ||
-		value != strings.TrimSpace(value) || len(value) > queue.MaxScrumCardIDBytes {
+		value != strings.TrimSpace(value) {
 		return fmt.Errorf("%s must be one canonical card ID bounded to %d bytes", field, queue.MaxScrumCardIDBytes)
 	}
 	return nil
@@ -100,7 +100,7 @@ func decodeExactScrumCardStateAction(
 	target any,
 	name string,
 ) error {
-	r.Body = http.MaxBytesReader(w, r.Body, maxScrumCardStateActionBodyBytes)
+
 	raw, err := io.ReadAll(r.Body)
 	if err != nil {
 		var tooLarge *http.MaxBytesError

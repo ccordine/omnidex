@@ -7,7 +7,6 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.time.Duration;
 import java.util.Map;
 
 public final class JdkTransport implements Transport {
@@ -26,8 +25,8 @@ public final class JdkTransport implements Transport {
     }
 
     @Override
-    public Response send(String method, URI uri, Map<String, String> headers, String body, Duration timeout) {
-        HttpRequest.Builder builder = HttpRequest.newBuilder(uri).timeout(timeout);
+    public Response send(String method, URI uri, Map<String, String> headers, String body) {
+        HttpRequest.Builder builder = HttpRequest.newBuilder(uri);
         headers.forEach(builder::header);
         builder.method(method, body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(body));
         try {

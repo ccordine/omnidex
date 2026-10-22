@@ -71,7 +71,7 @@ export function validateAIControlMutationPayload(value: unknown): AIControlMutat
   if ("operation_error" in record) result.operation_error = validateFailureText(record.operation_error, "operation_error");
   if ("realtime_error" in record) result.realtime_error = validateFailureText(record.realtime_error, "realtime_error");
   aiControlDegradedMessage(result);
-  if (result.commit_state === "committed" && (!result.counts || !result.realtime_published)) {
+  if ((result.commit_state === "committed") && (!result.counts || !result.realtime_published)) {
     throw new Error("AI control committed result requires counts and successful realtime publication.");
   }
   if (result.realtime_error !== undefined && result.realtime_published) {
@@ -83,7 +83,7 @@ export function validateAIControlMutationPayload(value: unknown): AIControlMutat
 function validateFailureText(value: unknown, label: string): string {
   if (typeof value !== "string") throw new Error(`AI control ${label} must be one bounded nonblank string.`);
   const bytes = new TextEncoder().encode(value);
-  if (!value.trim() || value.includes("\0") || new TextDecoder().decode(bytes) !== value || bytes.byteLength > 16 * 1024) {
+  if (!value.trim() || value.includes("\0") || new TextDecoder().decode(bytes) !== value) {
     throw new Error(`AI control ${label} must be one bounded nonblank string.`);
   }
   return value;

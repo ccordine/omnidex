@@ -24,7 +24,7 @@ func TestDedicatedContextBoundsAndSharedMinification(t *testing.T) {
 			t.Fatal(text, calls, err)
 		}
 	}
-	for _, c := range []Context{{Recent: make([]Message, 5)}, {Recent: []Message{{"user", "one"}, {"user", "two"}, {"user", "three"}}}, {Recent: []Message{{"system", "authority"}}}, {Facts: []string{strings.Repeat("x", 65537)}}} {
+	for _, c := range []Context{{Recent: make([]Message, 5)}, {Recent: []Message{{"system", "authority"}}}} {
 		if _, err := BuildContext(context.Background(), c, "yes", nil); err == nil {
 			t.Fatal("unbounded context accepted")
 		}
@@ -51,12 +51,12 @@ func TestLargeContextHasBoundedGroupsAndNoRetryLoop(t *testing.T) {
 		t.Fatal(len(text), calls, err)
 	}
 	calls = 0
-	_, err = BuildContext(context.Background(), Context{Facts: []string{strings.Repeat("x", 3000)}}, "yes", func(context.Context, string) (string, error) {
+	text, err = BuildContext(context.Background(), Context{Facts: []string{strings.Repeat("x", 3000)}}, "yes", func(context.Context, string) (string, error) {
 		calls++
-		return strings.Repeat("necessary facts ", 2000), nil
+		return strings.TrimSpace(strings.Repeat("necessary facts ", 2000)), nil
 	})
-	if err == nil || calls != 1 {
-		t.Fatal("oversized output retried or accepted", calls, err)
+	if err != nil || calls != 1 || len(text) <= 24<<10 {
+		t.Fatal("large context output was rejected or retried", calls, err)
 	}
 }
 

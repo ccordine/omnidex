@@ -55,7 +55,7 @@ func decodeUIProjectMapInspection(payload map[string]any) (uiProjectMapInspectio
 
 func uiRequiredInspectionString(payload map[string]any, key string, maxBytes int, allowEmpty bool) (string, error) {
 	value, ok := payload[key].(string)
-	if !ok || !utf8.ValidString(value) || strings.ContainsRune(value, '\x00') || len(value) > maxBytes || (!allowEmpty && value == "") {
+	if !ok || !utf8.ValidString(value) || strings.ContainsRune(value, '\x00') || (!allowEmpty && value == "") {
 		return "", fmt.Errorf("%s must be one bounded exact string", key)
 	}
 	return value, nil

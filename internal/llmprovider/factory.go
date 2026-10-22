@@ -2,7 +2,6 @@ package llmprovider
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/gryph/omnidex/internal/codex"
 	"github.com/gryph/omnidex/internal/config"
@@ -29,16 +28,12 @@ func newExactStationProvider(
 			definition.ID,
 		)
 	}
-	timeout, err := providerRequestTimeout(cfg, definition)
-	if err != nil {
-		return nil, err
-	}
 	switch definition.Protocol {
 	case catalog.ProtocolCodex:
-		return codex.New(cfg.CodexCommand, cfg.CodexDirectory, timeout)
+		return codex.New(cfg.CodexCommand, cfg.CodexDirectory)
 	case catalog.ProtocolOllama:
 		return ollama.New(
-			cfg.OllamaBaseURL, "", "", timeout,
+			cfg.OllamaBaseURL, "", "",
 		), nil
 	default:
 		return nil, fmt.Errorf(
@@ -59,15 +54,11 @@ func newEmbeddingProvider(
 	if model == "" {
 		return nil, fmt.Errorf("embedding model is required for provider %q", definition.ID)
 	}
-	timeout, err := providerRequestTimeout(cfg, definition)
-	if err != nil {
-		return nil, err
-	}
 
 	switch definition.Protocol {
 	case catalog.ProtocolOllama:
 		return ollama.New(
-			cfg.OllamaBaseURL, "", model, timeout,
+			cfg.OllamaBaseURL, "", model,
 		), nil
 	case catalog.ProtocolOpenAICompatible:
 		providerConfig, configured := cfg.CompatibleProviders[definition.ID]
@@ -79,20 +70,20 @@ func newEmbeddingProvider(
 		apiKeyName := definition.EnvironmentKey("API_KEY")
 		return openai.NewCompatibleEmbedding(
 			definition.ID, apiKeyName, providerConfig.BaseURL, providerConfig.APIKey,
-			model, providerConfig.Organization, providerConfig.Project, timeout,
+			model, providerConfig.Organization, providerConfig.Project,
 		)
 	case catalog.ProtocolAzure:
 		return openai.NewAzureAIEmbedding(
 			cfg.AzureAIBaseURL, cfg.AzureAIAPIKey, model, cfg.AzureAIAPIVersion,
-			cfg.AzureAIAPIStyle, timeout,
+			cfg.AzureAIAPIStyle,
 		)
 	case catalog.ProtocolGoogle:
 		return googleai.NewEmbedding(
-			cfg.GoogleBaseURL, cfg.GoogleAPIKey, model, timeout,
+			cfg.GoogleBaseURL, cfg.GoogleAPIKey, model,
 		), nil
 	case catalog.ProtocolHuggingFace:
 		return huggingface.NewEmbedding(
-			cfg.HuggingFaceBaseURL, cfg.HuggingFaceAPIKey, model, timeout,
+			cfg.HuggingFaceBaseURL, cfg.HuggingFaceAPIKey, model,
 		), nil
 	default:
 		return nil, fmt.Errorf(
@@ -100,26 +91,4 @@ func newEmbeddingProvider(
 			definition.ID, definition.Protocol,
 		)
 	}
-}
-
-func providerRequestTimeout(
-	cfg config.Config,
-	definition catalog.Definition,
-) (time.Duration, error) {
-	timeout, err := time.ParseDuration(cfg.RequestTimeout)
-	if err != nil {
-		return 0, fmt.Errorf(
-			"REQUEST_TIMEOUT must be a duration for provider %q: %w", definition.ID, err,
-		)
-	}
-	if timeout <= 0 {
-		return 0, fmt.Errorf("REQUEST_TIMEOUT must be positive for provider %q", definition.ID)
-	}
-	if timeout > llm.MaximumModelRequestDuration {
-		return 0, fmt.Errorf(
-			"REQUEST_TIMEOUT must not exceed %s for provider %q",
-			llm.MaximumModelRequestDuration, definition.ID,
-		)
-	}
-	return timeout, nil
 }

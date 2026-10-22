@@ -136,7 +136,7 @@ func TestIntegratedModesSessionsResearchCancellationReconnectAndPaste(t *testing
 	})
 	httpServer := httptest.NewServer(handler)
 	defer httpServer.Close()
-	apiClient, err := client.New(httpServer.URL, 5*time.Second)
+	apiClient, err := client.New(httpServer.URL)
 	if err != nil {
 		t.Fatal(err)
 	}

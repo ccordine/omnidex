@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/gryph/omnidex/internal/hostbridge"
 )
@@ -31,7 +30,7 @@ func (s *Server) handleHostScreenMonitors(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
 	payload, err := s.hostBridgeClient().ScreenMonitors(ctx, pageRequest)

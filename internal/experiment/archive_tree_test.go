@@ -4,7 +4,6 @@ import (
 	"archive/tar"
 	"bytes"
 	"fmt"
-	"strings"
 	"testing"
 )
 
@@ -57,10 +56,12 @@ func TestArtifactTreeCollectionRejectsMissingLinkedOrExcessiveResults(t *testing
 			if err := writer.Close(); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := readArtifactArchive(&stream, nil, "reports"); err == nil {
+			if files, err := readArtifactArchive(&stream, nil, "reports"); defect == "file count" {
+				if err != nil || len(files) != MaxFiles+1 {
+					t.Fatal("large artifact collection was rejected or changed", err)
+				}
+			} else if err == nil {
 				t.Fatal("invalid artifact tree accepted")
-			} else if defect == "file count" && !strings.Contains(err.Error(), "file count bound") {
-				t.Fatal(err)
 			}
 		})
 	}

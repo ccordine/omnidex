@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 )
 
 type Client struct {
@@ -29,15 +28,15 @@ func (err *APIError) Error() string {
 }
 
 func NewClient(baseURL, token string) (*Client, error) {
-	return NewClientWithHTTPClient(baseURL, token, &http.Client{Timeout: 30 * time.Second})
+	return NewClientWithHTTPClient(baseURL, token, &http.Client{})
 }
 
 func NewClientWithHTTPClient(baseURL, token string, httpClient *http.Client) (*Client, error) {
 	if err := validateClientConfiguration(baseURL, token); err != nil {
 		return nil, err
 	}
-	if httpClient == nil || httpClient.Timeout <= 0 {
-		return nil, fmt.Errorf("Omnidex SDK requires a bounded HTTP client")
+	if httpClient == nil {
+		return nil, fmt.Errorf("Omnidex SDK requires an HTTP client")
 	}
 	client := *httpClient
 	client.CheckRedirect = func(*http.Request, []*http.Request) error {

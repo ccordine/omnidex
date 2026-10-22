@@ -65,7 +65,7 @@ func (name *channelCreateRoleplayName) UnmarshalJSON(raw []byte) error {
 	if err := json.Unmarshal(raw, &value); err != nil {
 		return fmt.Errorf("decode roleplay creation name: %w", err)
 	}
-	if len(value) == 0 || len(value) > model.MaxChannelNameBytes || !utf8.ValidString(value) ||
+	if len(value) == 0 || !utf8.ValidString(value) ||
 		strings.IndexByte(value, 0) >= 0 || value != strings.TrimSpace(value) {
 		return fmt.Errorf("roleplay creation name must contain 1..%d exact nonblank UTF-8 bytes without NUL", model.MaxChannelNameBytes)
 	}

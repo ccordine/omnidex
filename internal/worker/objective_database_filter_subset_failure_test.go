@@ -16,7 +16,7 @@ func TestDatabaseFilterSubsetFailuresNeverOpenAnotherStation(t *testing.T) {
 	}{
 		{"empty subset", "C", "no applicable value"},
 		{"unknown choice", "Z", "unavailable"},
-		{"list response", "A, B", "exceeds"},
+		{"list response", "A, B", "unavailable"},
 	} {
 		t.Run(fixture.name, func(t *testing.T) {
 			leaf := databaseFilterSubsetInput(datasource.IntentColumnProjection{

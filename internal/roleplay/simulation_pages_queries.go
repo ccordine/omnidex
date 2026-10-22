@@ -83,7 +83,7 @@ func loadCommandEffects(ctx context.Context, query simulationQuerier, commandID 
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	if len(values) < 1 || len(values) > MaxDefinitionEffects {
+	if len(values) < 1 {
 		return nil, fmt.Errorf("%w: command effects are outside their bound", ErrSimulationNotConfigured)
 	}
 	return values, nil

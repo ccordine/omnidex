@@ -235,7 +235,7 @@ export class RoleplayCharacterEditorCoordinator {
 
   private requireSelectedChannel(): string {
     const channelID = this.host.selectedChannelID();
-    if (!/^[a-z0-9][a-z0-9_.:-]{0,95}$/.test(channelID)) {
+    if (!/^[a-z0-9][a-z0-9_.:-]*$/.test(channelID)) {
       throw new Error("Character editing requires one selected roleplay channel.");
     }
     return channelID;

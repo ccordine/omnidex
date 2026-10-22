@@ -63,7 +63,7 @@ func (l *Local) execute(data requestData) error {
 	if err := l.attest(); err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(l.ctx, transferTimeout)
+	ctx, cancel := context.WithCancel(l.ctx)
 	defer cancel()
 	reply := response{ID: data.ID, Identity: l.identity}
 	var content []byte

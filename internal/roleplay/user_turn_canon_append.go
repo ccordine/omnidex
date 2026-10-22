@@ -120,9 +120,7 @@ func AppendUserTurnCanonTx(
 }
 
 func validateUserCanonFactsAndRecipients(facts, knowledgeCharacterIDs []string) error {
-	if len(facts) > MaxCanonFactsPerTurn {
-		return fmt.Errorf("roleplay user canon exceeds the %d-fact bound", MaxCanonFactsPerTurn)
-	}
+
 	seenFacts := make(map[string]struct{}, len(facts))
 	for _, fact := range facts {
 		if err := ValidateCanonFact(fact); err != nil {
@@ -133,12 +131,7 @@ func validateUserCanonFactsAndRecipients(facts, knowledgeCharacterIDs []string) 
 		}
 		seenFacts[fact] = struct{}{}
 	}
-	if len(knowledgeCharacterIDs) > MaxKnowledgeRecipientsPerTurn {
-		return fmt.Errorf(
-			"roleplay user canon exceeds the %d-recipient bound",
-			MaxKnowledgeRecipientsPerTurn,
-		)
-	}
+
 	if len(facts) == 0 && len(knowledgeCharacterIDs) != 0 {
 		return fmt.Errorf("roleplay user canon knowledge requires new facts")
 	}

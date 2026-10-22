@@ -1,7 +1,6 @@
 package com.omnidex.integration;
 
 import java.net.URI;
-import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.List;
 import java.util.Map;
@@ -107,7 +106,7 @@ public final class SdkContractTest {
     }
 
     private static OmnidexClient client(FakeTransport transport) {
-        return new OmnidexClient("https://omnidex.internal", TOKEN, transport, Duration.ofSeconds(2));
+        return new OmnidexClient("https://omnidex.internal", TOKEN, transport);
     }
 
     private static Transport.Response jsonResponse(int status, Map<String, Object> body) {
@@ -132,7 +131,7 @@ public final class SdkContractTest {
         throw new AssertionError("Expected " + type.getSimpleName());
     }
 
-    private record Request(String method, URI uri, Map<String, String> headers, String body, Duration timeout) {}
+    private record Request(String method, URI uri, Map<String, String> headers, String body) {}
     private interface Handler { Transport.Response handle(Request request); }
 
     private static final class FakeTransport implements Transport {
@@ -144,11 +143,11 @@ public final class SdkContractTest {
         int callsRemaining() { return handlers.size(); }
 
         @Override
-        public Response send(String method, URI uri, Map<String, String> headers, String body, Duration timeout) {
+        public Response send(String method, URI uri, Map<String, String> headers, String body) {
             calls++;
             Handler handler = handlers.poll();
             if (handler == null) throw new AssertionError("Unexpected transport call");
-            return handler.handle(new Request(method, uri, headers, body, timeout));
+            return handler.handle(new Request(method, uri, headers, body));
         }
     }
 }

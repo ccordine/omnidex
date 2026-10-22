@@ -3,17 +3,14 @@ package codingagent
 import "fmt"
 
 func RenderParserPrompt(call Assignment) (string, error) {
-	if call.ParserStep != nil {
-		return renderParserStepPrompt(call)
-	}
 	var instruction string
 	switch call.Role {
 	case PlanningInitial:
-		instruction = "Extract the concrete task instructions proposed in the final planning response. Return only task records. Preserve all literal details. Questions, headings, examples and status reports are not tasks. Do not invent requirements, criteria, checks, dependencies or extra work."
+		instruction = "Extract the proposed tasks from the complete planning response. Keep each task and all its details together on one task record: its complete instructions, objective, owner context, constraints, file responsibilities, acceptance criteria and verification. Supporting paragraphs, sentences and lists are details of their task. Preserve literal details and shared instructions on the applicable tasks. Questions, headings, examples and status reports are not tasks. Do not invent requirements, criteria, checks, dependencies or extra work."
 	case PlanningMutation:
-		instruction = "Extract only the task changes proposed in this final planning response against the supplied current tasks. Use existing IDs for edits and preserve unchanged text and fields. Return empty operations for no changes. No approval, critique, review or extra planning."
+		instruction = "Extract the task changes proposed in the complete planning response against the supplied current tasks. Keep each task and all its supporting details together. Use existing IDs for edits. Omitted or null fields retain their current values; include complete changed collections. Preserve all unchanged task details. Return empty operations for no changes. Do not add approval, critique, review or extra planning."
 	case ExecutionResponse:
-		instruction = "Classify only the supplied final Codex response. Use question when it needs an answer, clarification, a decision or other input; permission when it asks for authorization; error when it reports an unresolved error, failure, blocker or incomplete work without an input request; and done only when it reports the task finished without any unresolved input request or blocker. Report the outstanding need even when the response also describes successful or completed work. Classify what the response says; do not judge the implementation."
+		instruction = "Interpret the complete final execution response against its frozen task instructions. Use question for an essential owner answer, permission for required authorization, error for an unresolved execution failure or blocker, and done for a concluded execution report. A concluded report describing incomplete implementation or failed checks is ready for independent review; do not conduct that review yourself. Subsequent independent review and acceptance are not prerequisites for execution completion. Preserve an actual outstanding owner question or permission request. Unrelated obsolete tests and unrequested work do not block the assigned task."
 	case ReviewResponse:
 		instruction = "Extract the result of the supplied final Codex review response. Classify whether the REVIEW finished, independently of whether the IMPLEMENTATION passed. A completed review that reports defects has kind done and lists those defects in findings. Use kind error only when the reviewer could not perform or finish required verification. Use question when the reviewer needs an answer and permission when the reviewer needs authorization. Extract only the concrete findings and verification stated in the response, binding findings only to the supplied task. Use an empty file string when no file is named. Do not conduct another review, infer success from silence, invent findings or filenames, or judge the implementation."
 

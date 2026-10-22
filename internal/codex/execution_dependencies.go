@@ -32,7 +32,7 @@ func prepareExecutionDependencies(ctx context.Context) (*executionDependencies, 
 	if os.Getenv("DATABASE_URL") == "" && os.Getenv("REDIS_URL") == "" && os.Getenv("OLLAMA_BASE_URL") == "" {
 		return dependencies, nil
 	}
-	startup, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	startup, cancel := context.WithCancel(ctx)
 	defer cancel()
 	fail := func(err error) (*executionDependencies, error) {
 		return nil, errors.Join(err, dependencies.close())

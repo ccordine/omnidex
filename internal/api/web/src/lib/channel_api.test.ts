@@ -171,11 +171,13 @@ describe("channel API authority", () => {
     await expect(sendChannelMessage("chat-42", "request")).rejects.toThrow("expected HTTP 202");
   });
 
-  it("enforces the user transport bound before dispatch", async () => {
-    const fetchMock = vi.fn();
+  it("submits large user turns without changing their bytes", async () => {
+    const prompt = "x".repeat(4097);
+    const receipt = { channel, user_message: { ...userMessage, content: prompt }, job: { ...job, instruction: prompt } };
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => response(receipt, 202));
     vi.stubGlobal("fetch", fetchMock);
-    await expect(sendChannelMessage("chat-42", "x".repeat(4097))).rejects.toThrow("4096 UTF-8 bytes");
-    expect(fetchMock).not.toHaveBeenCalled();
+    await expect(sendChannelMessage("chat-42", prompt)).resolves.toEqual(receipt);
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)).prompt).toBe(prompt);
   });
 
   it("rejects a turn receipt for a different pipeline or instruction", async () => {

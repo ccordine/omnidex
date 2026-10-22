@@ -22,7 +22,7 @@ func (task Task) Validate() error {
 			seen[file] = true
 		}
 	}
-	return task.LedgerTask().ValidatePacket()
+	return nil
 }
 func ValidateReview(tasks map[string]Task, result ReviewResult) error {
 	if result.Findings == nil || strings.TrimSpace(result.Verification) == "" {

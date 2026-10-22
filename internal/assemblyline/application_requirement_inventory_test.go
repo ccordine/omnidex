@@ -36,16 +36,19 @@ func TestApplicationRequirementInventoryRejectsStructurallyInvalidResponse(t *te
 			index+1,
 		)
 	}
+	large, err := DecodeApplicationRequirementInventory(input, strings.Join(tooMany, "\n"))
+	if err != nil || !reflect.DeepEqual(large.Candidates, tooMany) {
+		t.Fatal("large inventory was rejected or changed", err)
+	}
 	fixtures := map[string]string{
 		"markdown hard break before independent line": clean + "  \n" +
 			"Reports the transformed result.",
-		"leading whitespace":               " " + clean,
-		"trailing whitespace":              clean + " ",
-		"tab before line feed":             clean + "\t\n" + clean,
-		"carriage return boundary":         clean + "\r\n" + clean,
-		"blank line":                       clean + "\n\n" + clean,
-		"mixed registered absence":         clean + "\n" + ApplicationNoRuntimeRequirementCandidates,
-		"candidate count above hard bound": strings.Join(tooMany, "\n"),
+		"leading whitespace":       " " + clean,
+		"trailing whitespace":      clean + " ",
+		"tab before line feed":     clean + "\t\n" + clean,
+		"carriage return boundary": clean + "\r\n" + clean,
+		"blank line":               clean + "\n\n" + clean,
+		"mixed registered absence": clean + "\n" + ApplicationNoRuntimeRequirementCandidates,
 	}
 	for name, raw := range fixtures {
 		name, raw := name, raw

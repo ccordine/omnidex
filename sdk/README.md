@@ -10,7 +10,7 @@ The SDKs expose the same authenticated, versioned control-plane API in five lang
 | Java | [`java`](java) | Java 21 | JDK `HttpClient` |
 | Rust | [`rust`](rust) | Rust 2021 | blocking Reqwest with Rustls |
 
-Each client can register direct or delegated PostgreSQL data sources, create and fetch assistant channels, submit a message, page the typed transcript, and fetch job state. Successful responses reject unknown fields where the runtime permits exact decoding. Requests have bounded timeouts and responses have a 16 MiB hard limit. Redirects are forbidden by every built-in transport.
+Each client can register direct or delegated PostgreSQL data sources, create and fetch assistant channels, submit a message, page the typed transcript, and fetch job state. Successful responses reject unknown fields where the runtime permits exact decoding. Requests have no built-in wall-clock deadline. Redirects are forbidden by every built-in transport.
 
 ## Server configuration
 

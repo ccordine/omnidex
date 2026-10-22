@@ -49,8 +49,6 @@ func validateLifecycleControlText(
 	if strings.TrimSpace(exactText) == "" {
 		return fmt.Errorf("%s is required", name)
 	}
-	if len(exactText) > maximum {
-		return fmt.Errorf("%s exceeds the %d-byte bound", name, maximum)
-	}
+
 	return nil
 }

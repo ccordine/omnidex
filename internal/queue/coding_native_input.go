@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/codingagent"
-	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
 )
@@ -48,7 +47,7 @@ func (r *Repository) WaitForCodingNativeInput(ctx context.Context, authority mod
 	entry := codingagent.Entry{Generation: authority.Generation, Phase: "execution_native_input", TaskID: taskID,
 		CallID: callID, NativeInput: &request, Notes: []string{request.Prompt}}
 	raw, err := json.Marshal(entry)
-	if err != nil || len(raw) > llm.MaxExactPreparedProviderResponseBytes {
+	if err != nil {
 		return 0, fmt.Errorf("native input exceeds its typed transport boundary")
 	}
 	var id int64

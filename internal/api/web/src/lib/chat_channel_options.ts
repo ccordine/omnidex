@@ -1,7 +1,7 @@
 import { fetchChannelOptionsPage } from "./chat_component_api";
 
 const MAX_AUTOMATIC_CHANNEL_PAGES = 100;
-const CANONICAL_CHANNEL_ID = /^[a-z0-9][a-z0-9_.:-]{0,95}$/;
+const CANONICAL_CHANNEL_ID = /^[a-z0-9][a-z0-9_.:-]*$/;
 
 export interface ChatChannelOptionsHost {
   channelSelect(): HTMLSelectElement;

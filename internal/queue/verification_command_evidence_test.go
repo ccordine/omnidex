@@ -118,9 +118,6 @@ func TestNormalizeVerificationCommandEvidenceRejectsInexactAuthority(t *testing.
 		},
 		"shell string": func(record *VerificationCommandEvidence) { record.Argv = []string{""} },
 		"dual result":  func(record *VerificationCommandEvidence) { record.LaunchError = "failed" },
-		"oversized stdout": func(record *VerificationCommandEvidence) {
-			record.Stdout = []byte(strings.Repeat("x", maxVerificationCommandStreamBytes+1))
-		},
 	} {
 		name, mutate := name, mutate
 		t.Run(name, func(t *testing.T) {
@@ -172,5 +169,16 @@ func verificationCommandFixture() VerificationCommandEvidence {
 		FinishedAt: started.Add(125 * time.Millisecond),
 		Stdout:     []byte("ok\n"), StdoutComplete: true,
 		Stderr: []byte{}, StderrComplete: true,
+	}
+}
+
+func TestNormalizeVerificationCommandEvidencePreservesLargeOutput(t *testing.T) {
+	record := verificationCommandFixture()
+	zero := 0
+	record.ExitCode = &zero
+	record.Stdout = []byte(strings.Repeat("x", maxVerificationCommandStreamBytes+1))
+	got, err := normalizeVerificationCommandEvidence(record)
+	if err != nil || string(got.Stdout) != string(record.Stdout) {
+		t.Fatal("large verification output was rejected or changed", err)
 	}
 }

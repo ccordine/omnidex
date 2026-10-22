@@ -79,11 +79,11 @@ func TestCodingLedgerTaskDetailUsesExactActiveBindings(t *testing.T) {
 	}
 }
 
-func TestCodingLedgerFrozenProjectionRequiresTaskOwnedVerification(t *testing.T) {
+func TestCodingLedgerFrozenProjectionRetainsOptionalTaskDetails(t *testing.T) {
 	ledger := repositoryLedgerFixture()
 	ledger.Tasks[0].Acceptance[0].Verification = nil
-	if err := validateFrozenCodingAgentTasks(ledger); err == nil {
-		t.Fatal("acceptance without verification entered frozen packet")
+	if err := validateFrozenCodingAgentTasks(ledger); err != nil {
+		t.Fatal("task detail grouping became a freeze gate", err)
 	}
 	ledger = repositoryLedgerFixture()
 	second := model.LedgerTask{LedgerItem: repositoryLedgerItem("second", 3), Goal: "second task", Acceptance: []model.TaskAcceptance{{ID: "acceptance", Text: "second verified", Verification: []string{"inspect second task"}}}}
@@ -152,9 +152,9 @@ func TestCodingLedgerTaskTombstoneDoesNotResetOtherAgreements(t *testing.T) {
 	}
 }
 
-func TestCodingLedgerTaskPreservesMaximumRationale(t *testing.T) {
+func TestCodingLedgerTaskPreservesLargeRationale(t *testing.T) {
 	ledger := repositoryLedgerFixture()
-	ledger.Tasks[0].Rationale = strings.Repeat("r", 8192)
+	ledger.Tasks[0].Rationale = strings.Repeat("r", 8193)
 	repo, created := createTaskContractFixture(t, ledger)
 	if created.Ledger.Tasks[0].Rationale != ledger.Tasks[0].Rationale {
 		t.Fatal("maximum rationale lost")
@@ -168,8 +168,8 @@ func TestCodingLedgerTaskPreservesMaximumRationale(t *testing.T) {
 		t.Fatal("task tombstone lost maximum rationale", removed, err)
 	}
 	ledger.Tasks[0].Rationale += "r"
-	if err := validateLedgerForRepository(ledger); err == nil {
-		t.Fatal("oversize rationale admitted")
+	if err := validateLedgerForRepository(ledger); err != nil {
+		t.Fatal("large rationale was rejected", err)
 	}
 }
 

@@ -24,11 +24,9 @@ type ContextSearchRecord struct {
 }
 
 func validateContextSearchRequest(terms []string, limit int) error {
-	if len(terms) > maxContextSearchQueries {
-		return fmt.Errorf("context search exceeds the %d-query bound", maxContextSearchQueries)
-	}
+
 	for index, term := range terms {
-		if strings.TrimSpace(term) == "" || len(term) > model.MaxFreeFormTurnBytes ||
+		if strings.TrimSpace(term) == "" ||
 			!utf8.ValidString(term) || strings.ContainsRune(term, '\x00') {
 			return fmt.Errorf(
 				"context search query %d must contain 1..%d valid UTF-8 bytes without NUL",

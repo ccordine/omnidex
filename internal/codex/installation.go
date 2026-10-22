@@ -88,9 +88,7 @@ func (client *Client) installationCommand(ctx context.Context, environment []str
 type boundedInstallationOutput struct{ bytes []byte }
 
 func (output *boundedInstallationOutput) Write(data []byte) (int, error) {
-	if len(data)+len(output.bytes) > 64<<10 {
-		return 0, fmt.Errorf("Codex installation response exceeded its boundary")
-	}
+
 	output.bytes = append(output.bytes, data...)
 	return len(data), nil
 }

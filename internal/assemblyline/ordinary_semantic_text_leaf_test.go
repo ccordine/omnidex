@@ -118,9 +118,9 @@ func openTextDatabaseFilterInput() DatabaseQueryFilterLeafInput {
 	}
 }
 
-func TestOrdinarySemanticTextStillEnforcesTransportBounds(t *testing.T) {
-	if _, err := decodeOrdinarySemanticText("ordinary text", strings.Repeat("x", 5), 4); err == nil {
-		t.Fatal("ordinary semantic text exceeded its station byte bound")
+func TestOrdinarySemanticTextAcceptsSizeAndRejectsInvalidText(t *testing.T) {
+	if _, err := decodeOrdinarySemanticText("ordinary text", strings.Repeat("x", 5), 4); err != nil {
+		t.Fatal("ordinary semantic text was size-rejected", err)
 	}
 	if _, err := decodeOrdinarySemanticText("ordinary text", "value\x00tail", 32); err == nil {
 		t.Fatal("ordinary semantic text accepted NUL")

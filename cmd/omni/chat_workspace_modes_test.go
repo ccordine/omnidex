@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/gryph/omnidex/internal/sessionintent"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gryph/omnidex/internal/sessionintent"
 
 	"github.com/gryph/omnidex/internal/model"
 	"golang.org/x/term"
@@ -36,10 +37,9 @@ func modeEditorConsole(t *testing.T, parents ...context.Context) (*chatConsole, 
 		t.Fatal(err)
 	}
 	source.review = router.ReviewEnabled
-	paste := newBracketedPasteReader(router, model.MaxFreeFormTurnBytes)
+	paste := newBracketedPasteReader(router)
 	console := &chatConsole{workspace: view, output: view, reviewInput: router, pasteReader: paste, terminalFD: -1, editorMode: "infer", prompt: "infer> "}
 	console.terminal = term.NewTerminal(terminalReadWriter{reader: paste, writer: view}, "infer> ")
-	console.terminal.AutoCompleteCallback = console.boundTerminalInput
 	console.terminal.SetBracketedPasteMode(true)
 	columns, rows, _ := view.Resize(70, 20)
 	console.terminalWidth, console.terminalHeight = columns, rows

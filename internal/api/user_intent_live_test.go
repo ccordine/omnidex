@@ -68,7 +68,7 @@ func TestUserIntentLiveQualification(t *testing.T) {
 	}()
 	httpServer := httptest.NewServer(server.Handler())
 	defer httpServer.Close()
-	c, err := client.New(httpServer.URL, time.Minute)
+	c, err := client.New(httpServer.URL)
 	if err != nil {
 		t.Fatal(err)
 	}

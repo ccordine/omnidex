@@ -160,9 +160,7 @@ func renderChatMemoryTags(tags []string) (string, error) {
 	if len(tags) == 0 {
 		return "", nil
 	}
-	if len(tags) > 64 {
-		return "", fmt.Errorf("memory tags exceed the 64-item presentation bound")
-	}
+
 	var output strings.Builder
 	output.WriteString(`<div class="mt-3 flex flex-wrap gap-1">`)
 	for _, tag := range tags {

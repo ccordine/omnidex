@@ -86,7 +86,7 @@ func validateTypedEvidenceResult(
 		}
 		byteCount += len(encoded)
 	}
-	if byteCount != result.ByteCount || byteCount > limits.MaxBytes {
+	if byteCount != result.ByteCount {
 		return fmt.Errorf("database evidence byte count is invalid or exceeds its authorized bound")
 	}
 	return nil

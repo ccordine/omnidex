@@ -130,7 +130,7 @@ func validateSearchedRoleplayExchange(raw []byte) (string, string, error) {
 			authority.UserMessageID,
 		)
 	}
-	if len(authority.Responses) < 1 || len(authority.Responses) > roleplay.MaxSceneParticipants {
+	if len(authority.Responses) < 1 {
 		return "", "", fmt.Errorf(
 			"searched roleplay job %d has no complete bounded response round", authority.JobID,
 		)

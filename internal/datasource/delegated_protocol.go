@@ -23,9 +23,9 @@ const (
 
 var (
 	delegatedAuthorityIDPattern   = regexp.MustCompile(`^dba_[0-9a-f]{64}$`)
-	delegatedSourceIDPattern      = regexp.MustCompile(`^[a-z0-9][a-z0-9_.:-]{0,127}$`)
-	delegatedErrorCodePattern     = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
-	delegatedCredentialEnvPattern = regexp.MustCompile(`^OMNIDEX_DELEGATED_AUTHORITY_[A-Z][A-Z0-9_]{0,93}_TOKEN$`)
+	delegatedSourceIDPattern      = regexp.MustCompile(`^[a-z0-9][a-z0-9_.:-]*$`)
+	delegatedErrorCodePattern     = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+	delegatedCredentialEnvPattern = regexp.MustCompile(`^OMNIDEX_DELEGATED_AUTHORITY_[A-Z][A-Z0-9_]*_TOKEN$`)
 )
 
 type DelegatedSchemaRequest struct {
@@ -72,12 +72,10 @@ type DelegatedRelationDefinition struct {
 }
 
 type DelegatedExecutionLimits struct {
-	MaxTotalCost       float64 `json:"max_total_cost"`
-	MaxPlanRows        int64   `json:"max_plan_rows"`
-	MaxRows            int     `json:"max_rows"`
-	MaxBytes           int     `json:"max_bytes"`
-	StatementTimeoutMS int64   `json:"statement_timeout_ms"`
-	LockTimeoutMS      int64   `json:"lock_timeout_ms"`
+	MaxTotalCost float64 `json:"max_total_cost"`
+	MaxPlanRows  int64   `json:"max_plan_rows"`
+	MaxRows      int     `json:"max_rows"`
+	MaxBytes     int     `json:"max_bytes"`
 }
 
 type DelegatedEvidenceRequest struct {
@@ -129,8 +127,6 @@ func NewDelegatedExecutionLimits(limits ExecutionLimits) (DelegatedExecutionLimi
 	return DelegatedExecutionLimits{
 		MaxTotalCost: limits.MaxTotalCost, MaxPlanRows: limits.MaxPlanRows,
 		MaxRows: limits.MaxRows, MaxBytes: limits.MaxBytes,
-		StatementTimeoutMS: limits.StatementTimeout.Milliseconds(),
-		LockTimeoutMS:      limits.LockTimeout.Milliseconds(),
 	}, nil
 }
 
@@ -138,8 +134,6 @@ func (limits DelegatedExecutionLimits) ExecutionLimits() (ExecutionLimits, error
 	resolved := ExecutionLimits{
 		MaxTotalCost: limits.MaxTotalCost, MaxPlanRows: limits.MaxPlanRows,
 		MaxRows: limits.MaxRows, MaxBytes: limits.MaxBytes,
-		StatementTimeout: time.Duration(limits.StatementTimeoutMS) * time.Millisecond,
-		LockTimeout:      time.Duration(limits.LockTimeoutMS) * time.Millisecond,
 	}
 	if err := validateExecutionBounds(1, resolved); err != nil {
 		return ExecutionLimits{}, err

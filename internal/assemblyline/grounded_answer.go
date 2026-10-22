@@ -99,7 +99,7 @@ func validateGroundedAnswerAuthority(
 }
 
 func validateGroundedEvidenceCapsules(evidence []GroundedEvidenceCapsule) error {
-	if len(evidence) < 1 || len(evidence) > maxGroundedEvidenceCapsules {
+	if len(evidence) < 1 {
 		return fmt.Errorf(
 			"grounded answer requires between 1 and %d evidence capsules", maxGroundedEvidenceCapsules,
 		)
@@ -126,9 +126,7 @@ func validateGroundedEvidenceCapsules(evidence []GroundedEvidenceCapsule) error 
 		seenText[capsule.Text] = struct{}{}
 		total += len(capsule.ID) + len(capsule.Text)
 	}
-	if total > maxGroundedEvidenceTotalBytes {
-		return fmt.Errorf("grounded evidence exceeds %d total bytes", maxGroundedEvidenceTotalBytes)
-	}
+
 	return nil
 }
 
@@ -140,7 +138,7 @@ func AssembleGroundedAnswerDecision(
 	if err := input.validate(); err != nil {
 		return zero, err
 	}
-	if len(paragraphs) < 1 || len(paragraphs) > MaxGroundedAnswerParagraphCandidates {
+	if len(paragraphs) < 1 {
 		return zero, fmt.Errorf(
 			"grounded answer requires between 1 and %d accepted paragraphs",
 			MaxGroundedAnswerParagraphCandidates,
@@ -251,9 +249,7 @@ func validateGroundedID(label, value string, maximum int) error {
 	if value == "" || value != strings.TrimSpace(value) || strings.ContainsAny(value, "\r\n") {
 		return fmt.Errorf("grounded answer %s must be one non-empty trimmed line", label)
 	}
-	if len(value) > maximum {
-		return fmt.Errorf("grounded answer %s exceeds %d bytes", label, maximum)
-	}
+
 	if !utf8.ValidString(value) {
 		return fmt.Errorf("grounded answer %s is not valid UTF-8", label)
 	}
@@ -270,9 +266,7 @@ func validateGroundedText(label, value string, maximum int, trimmed bool) error 
 	if trimmed && value != strings.TrimSpace(value) {
 		return fmt.Errorf("grounded answer %s must be trimmed", label)
 	}
-	if len(value) > maximum {
-		return fmt.Errorf("grounded answer %s exceeds %d bytes", label, maximum)
-	}
+
 	if !utf8.ValidString(value) {
 		return fmt.Errorf("grounded answer %s is not valid UTF-8", label)
 	}

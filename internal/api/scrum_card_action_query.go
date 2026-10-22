@@ -13,9 +13,6 @@ func decodeScrumCardActionProjectID(request *http.Request, action string) (int64
 	if request == nil || request.URL == nil || action == "" {
 		return 0, fmt.Errorf("%s request URL is required", action)
 	}
-	if len(request.URL.RawQuery) > maxScrumCardActionQueryBytes {
-		return 0, fmt.Errorf("%s query exceeds the %d-byte bound", action, maxScrumCardActionQueryBytes)
-	}
 	values, err := url.ParseQuery(request.URL.RawQuery)
 	if err != nil {
 		return 0, fmt.Errorf("decode %s query: %w", action, err)

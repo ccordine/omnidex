@@ -142,7 +142,7 @@ func TestWorkspaceLiveStatusUsesOnlyObservedEvents(t *testing.T) {
 	}
 	frame, _, _, _ := workspaceFrame(view)
 	rendered := ansi.Strip(strings.Join(frame, "\n"))
-	for _, text := range []string{"Executing task", "go test ./...", "exit 1", "Job #41", "Checking the selected task"} {
+	for _, text := range []string{"Executing task", "go test ./...", "Command exited 1", "Job #41", "Checking the selected task"} {
 		if !strings.Contains(rendered, text) {
 			t.Fatalf("missing observed %q: %s", text, rendered)
 		}

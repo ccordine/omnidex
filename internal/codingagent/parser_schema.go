@@ -1,9 +1,6 @@
 package codingagent
 
 func ParserOutputSchema(call Assignment) map[string]any {
-	if call.ParserStep != nil {
-		return parserStepSchema(call)
-	}
 	if call.Role == Execute || call.Role == Plan || call.Role == Review {
 		return nil // Ordinary Codex conversation, not a structured-output station.
 	}

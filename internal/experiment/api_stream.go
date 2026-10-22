@@ -36,9 +36,6 @@ func startDockerExec(ctx context.Context, target string, input []byte, result *R
 		})
 	result.Stdout, result.Stderr = stdout.Bytes(), stderr.Bytes()
 	result.StdoutComplete, result.StderrComplete = !stdout.overflow && err == nil, !stderr.overflow && err == nil
-	if stdout.overflow || stderr.overflow {
-		return fmt.Errorf("Docker exec output exceeded the %d-byte stream bound", MaxStreamBytes)
-	}
 	return err
 }
 

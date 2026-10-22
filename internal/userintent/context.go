@@ -18,9 +18,7 @@ func BuildContext(ctx context.Context, c Context, message string, minify Ask) (s
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	if len(c.Recent) > 4 || len(c.Facts) > 32 {
-		return "", fmt.Errorf("user context permits two recent exchanges and 32 scoped facts")
-	}
+
 	for _, fact := range c.Facts {
 		if err := boundedText(fact, 64<<10); err != nil {
 			return "", err
@@ -31,14 +29,9 @@ func BuildContext(ctx context.Context, c Context, message string, minify Ask) (s
 			return "", err
 		}
 	}
-	roles := map[string]int{}
 	for _, turn := range c.Recent {
 		if turn.Role != "user" && turn.Role != "assistant" {
 			return "", fmt.Errorf("unregistered conversation role")
-		}
-		roles[turn.Role]++
-		if roles[turn.Role] > 2 {
-			return "", fmt.Errorf("context exceeds two recent exchanges")
 		}
 		if err := boundedText(turn.Text, 64<<10); err != nil {
 			return "", err
@@ -48,14 +41,9 @@ func BuildContext(ctx context.Context, c Context, message string, minify Ask) (s
 	if err != nil {
 		return "", err
 	}
-	if len(encoded) > 128<<10 {
-		return "", fmt.Errorf("relevant context input exceeds 128 KiB")
-	}
-	if len(encoded) <= assemblyline.ContextMinificationThresholdBytes {
+
+	if len(encoded) <= assemblyline.ContextMinificationThresholdBytes || minify == nil {
 		return string(encoded), nil
-	}
-	if minify == nil {
-		return "", fmt.Errorf("large relevant context requires minification")
 	}
 	// Session chunks may repeat verbatim; retain their distinct positions rather
 	// than treating repeated persisted text as duplicate independent authorities.
@@ -85,13 +73,11 @@ func BuildContext(ctx context.Context, c Context, message string, minify Ask) (s
 	if err != nil {
 		return "", err
 	}
-	if len(encoded) > 24<<10 {
-		return "", fmt.Errorf("dedicated user context exceeds 24 KiB after minification")
-	}
+
 	return string(encoded), nil
 }
 func boundedText(value string, maximum int) error {
-	if strings.TrimSpace(value) == "" || len(value) > maximum || !utf8.ValidString(value) || strings.ContainsRune(value, 0) {
+	if strings.TrimSpace(value) == "" || !utf8.ValidString(value) || strings.ContainsRune(value, 0) {
 		return fmt.Errorf("semantic text must be nonblank UTF-8 within %d bytes", maximum)
 	}
 	return nil

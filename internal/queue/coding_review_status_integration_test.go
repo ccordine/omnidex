@@ -32,7 +32,7 @@ const reviewStatusFinding = "fixture.txt omits the required beta line; exact-byt
 
 func (p *reviewStatusRuntime) Run(ctx context.Context, call codingagent.Assignment, event func(codingagent.NativeEvent) error) (codingagent.Result, error) {
 	if !call.Role.IsNative() {
-		result, err := codingagent.RunParserSieve(ctx, call, event, func(ctx context.Context, leaf codingagent.Assignment, emit func(codingagent.NativeEvent) error) (codingagent.Result, error) {
+		result, err := func(ctx context.Context, leaf codingagent.Assignment, emit func(codingagent.NativeEvent) error) (codingagent.Result, error) {
 			p.semanticCalls++
 			prompt, err := codingagent.RenderParserPrompt(leaf)
 			if err != nil {
@@ -52,7 +52,7 @@ func (p *reviewStatusRuntime) Run(ctx context.Context, call codingagent.Assignme
 				p.t.Fatal(saveErr)
 			}
 			return out, err
-		})
+		}(ctx, call, event)
 		if err == nil && call.Role == codingagent.ReviewResponse && p.reviews == 1 {
 			var parsed codingagent.ReviewResponseResult
 			if decodeErr := json.Unmarshal(result.Content, &parsed); decodeErr != nil {
@@ -114,7 +114,7 @@ func TestReviewStatusLiveAutomaticCorrectionPostgres(t *testing.T) {
 	}
 	pool, repo := freshUserIntentRepository(t)
 	ctx := t.Context()
-	parser, err := codex.New(os.Getenv("OMNI_TEST_CODEX_COMMAND"), t.TempDir(), 45*time.Second)
+	parser, err := codex.New(os.Getenv("OMNI_TEST_CODEX_COMMAND"), t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

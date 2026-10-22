@@ -7,7 +7,7 @@ import (
 )
 
 func canonicalizeRelationDefinitions(input []RelationDefinition) ([]RelationDefinition, error) {
-	if len(input) == 0 || len(input) > MaxSchemaRelations {
+	if len(input) == 0 {
 		return nil, fmt.Errorf("schema snapshot requires 1..%d relations", MaxSchemaRelations)
 	}
 	definitions := cloneRelationDefinitions(input)
@@ -21,7 +21,7 @@ func canonicalizeRelationDefinitions(input []RelationDefinition) ([]RelationDefi
 		definition.Schema = strings.TrimSpace(definition.Schema)
 		definition.Name = strings.TrimSpace(definition.Name)
 		key := relationDefinitionKey(definition.Schema, definition.Name)
-		if definition.Schema == "" || definition.Name == "" || len(definition.Schema) > 256 || len(definition.Name) > 256 || strings.ContainsRune(definition.Schema, '\x00') || strings.ContainsRune(definition.Name, '\x00') {
+		if definition.Schema == "" || definition.Name == "" || strings.ContainsRune(definition.Schema, '\x00') || strings.ContainsRune(definition.Name, '\x00') {
 			return nil, fmt.Errorf("relation %d requires valid schema and name", index)
 		}
 		if !validRelationKind(definition.Kind) {
@@ -53,7 +53,7 @@ func canonicalizeRelationDefinition(definition *RelationDefinition) error {
 		column := &definition.Columns[index]
 		column.Name = strings.TrimSpace(column.Name)
 		column.DataType = strings.TrimSpace(column.DataType)
-		if column.Name == "" || len(column.Name) > 256 || column.Ordinal <= 0 || column.DataType == "" || len(column.DataType) > 256 || strings.ContainsRune(column.Name, '\x00') || strings.ContainsRune(column.DataType, '\x00') || !validTypeCategory(column.TypeCategory) {
+		if column.Name == "" || column.Ordinal <= 0 || column.DataType == "" || strings.ContainsRune(column.Name, '\x00') || strings.ContainsRune(column.DataType, '\x00') || !validTypeCategory(column.TypeCategory) {
 			return fmt.Errorf("column %d has invalid name, ordinal, data type, or category", index)
 		}
 		if _, exists := columns[column.Name]; exists {
@@ -70,9 +70,7 @@ func canonicalizeRelationDefinition(definition *RelationDefinition) error {
 	if err := validatePrimaryKeyDefinition(definition, columns); err != nil {
 		return err
 	}
-	if len(definition.ForeignKeys) > 256 || len(definition.UniqueConstraints) > 256 || len(definition.CheckConstraints) > 256 || len(definition.Indexes) > 256 {
-		return fmt.Errorf("relation metadata exceeds 256 entries of one kind")
-	}
+
 	metadataNames := map[string]string{}
 	if definition.PrimaryKeyName != "" {
 		if err := registerSchemaMetadataName(metadataNames, "constraint", definition.PrimaryKeyName); err != nil {
@@ -90,13 +88,11 @@ func canonicalizeRelationDefinition(definition *RelationDefinition) error {
 }
 
 func canonicalizeAllowedValues(column *ColumnDefinition) error {
-	if len(column.AllowedValues) > 256 {
-		return fmt.Errorf("column %q exceeds 256 allowed values", column.Name)
-	}
+
 	seen := map[string]struct{}{}
 	for index := range column.AllowedValues {
 		value := strings.TrimSpace(column.AllowedValues[index])
-		if value == "" || len(value) > 256 || strings.ContainsRune(value, '\x00') {
+		if value == "" || strings.ContainsRune(value, '\x00') {
 			return fmt.Errorf("column %q has an invalid allowed value", column.Name)
 		}
 		if _, duplicate := seen[value]; duplicate {
@@ -113,7 +109,7 @@ func validatePrimaryKeyDefinition(definition *RelationDefinition, columns map[st
 		return err
 	}
 	definition.PrimaryKeyName = strings.TrimSpace(definition.PrimaryKeyName)
-	if len(definition.PrimaryKeyName) > 256 || strings.ContainsRune(definition.PrimaryKeyName, '\x00') {
+	if strings.ContainsRune(definition.PrimaryKeyName, '\x00') {
 		return fmt.Errorf("primary key name is invalid")
 	}
 	if len(definition.PrimaryKey) == 0 && definition.PrimaryKeyName != "" {
@@ -130,7 +126,7 @@ func canonicalizeForeignKeys(definition *RelationDefinition, columns map[string]
 	for index := range definition.ForeignKeys {
 		fk := &definition.ForeignKeys[index]
 		fk.Name, fk.ReferencedSchema, fk.ReferencedRelation = strings.TrimSpace(fk.Name), strings.TrimSpace(fk.ReferencedSchema), strings.TrimSpace(fk.ReferencedRelation)
-		if fk.Name == "" || len(fk.Name) > 256 || fk.ReferencedSchema == "" || len(fk.ReferencedSchema) > 256 || fk.ReferencedRelation == "" || len(fk.ReferencedRelation) > 256 || strings.ContainsRune(fk.Name+fk.ReferencedSchema+fk.ReferencedRelation, '\x00') || len(fk.Columns) != len(fk.ReferencedColumns) {
+		if fk.Name == "" || fk.ReferencedSchema == "" || fk.ReferencedRelation == "" || strings.ContainsRune(fk.Name+fk.ReferencedSchema+fk.ReferencedRelation, '\x00') || len(fk.Columns) != len(fk.ReferencedColumns) {
 			return fmt.Errorf("foreign key %d has invalid identity or column cardinality", index)
 		}
 		if err := validateColumnNames("foreign key "+fk.Name, fk.Columns, columns, false); err != nil {
@@ -150,7 +146,7 @@ func canonicalizeConstraintsAndIndexes(definition *RelationDefinition, columns m
 	for index := range definition.UniqueConstraints {
 		unique := &definition.UniqueConstraints[index]
 		unique.Name = strings.TrimSpace(unique.Name)
-		if unique.Name == "" || len(unique.Name) > 256 || strings.ContainsRune(unique.Name, '\x00') {
+		if unique.Name == "" || strings.ContainsRune(unique.Name, '\x00') {
 			return fmt.Errorf("unique constraint requires a valid name")
 		}
 		if err := validateColumnNames("unique constraint "+unique.Name, unique.Columns, columns, false); err != nil {
@@ -164,7 +160,7 @@ func canonicalizeConstraintsAndIndexes(definition *RelationDefinition, columns m
 	for index := range definition.CheckConstraints {
 		check := &definition.CheckConstraints[index]
 		check.Name, check.Expression = strings.TrimSpace(check.Name), strings.TrimSpace(check.Expression)
-		if check.Name == "" || len(check.Name) > 256 || check.Expression == "" || len(check.Expression) > 8192 || strings.ContainsRune(check.Expression, '\x00') {
+		if check.Name == "" || check.Expression == "" || strings.ContainsRune(check.Expression, '\x00') {
 			return fmt.Errorf("check constraint requires a valid name and expression")
 		}
 		if err := registerSchemaMetadataName(metadataNames, "constraint", check.Name); err != nil {
@@ -174,7 +170,7 @@ func canonicalizeConstraintsAndIndexes(definition *RelationDefinition, columns m
 	for index := range definition.Indexes {
 		schemaIndex := &definition.Indexes[index]
 		schemaIndex.Name, schemaIndex.Expression, schemaIndex.Predicate = strings.TrimSpace(schemaIndex.Name), strings.TrimSpace(schemaIndex.Expression), strings.TrimSpace(schemaIndex.Predicate)
-		if schemaIndex.Name == "" || len(schemaIndex.Name) > 256 || len(schemaIndex.Expression) > 8192 || len(schemaIndex.Predicate) > 8192 || strings.ContainsRune(schemaIndex.Expression+schemaIndex.Predicate, '\x00') {
+		if schemaIndex.Name == "" || strings.ContainsRune(schemaIndex.Expression+schemaIndex.Predicate, '\x00') {
 			return fmt.Errorf("index requires valid bounded metadata")
 		}
 		if err := validateColumnNames("index "+schemaIndex.Name, schemaIndex.Columns, columns, true); err != nil {

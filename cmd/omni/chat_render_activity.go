@@ -93,15 +93,6 @@ func renderJobActivity(destination *strings.Builder, details model.JobDetails, p
 	if previous == nil || previous.Job.ID != details.Job.ID || activityForJob(*previous).Label != activity.Label {
 		fmt.Fprintf(destination, "[omni] job %d · %s\n", activity.JobID, activity.Label)
 	}
-	if (previous == nil || previous.Job.ID != details.Job.ID) && details.Job.Instruction != "" {
-		preview := strings.TrimSpace(strings.SplitN(details.Job.Instruction, "\n", 2)[0])
-		characters := []rune(preview)
-		const previewRunes = 120
-		if len(characters) > previewRunes {
-			preview = string(characters[:previewRunes-1]) + "…"
-		}
-		renderBlock(destination, "task>", preview)
-	}
 }
 
 func renderJobErrors(destination *strings.Builder, details model.JobDetails, previous *model.JobDetails) {

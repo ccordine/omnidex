@@ -30,7 +30,7 @@ export type JobDetails = { job: Job; steps: Record<string, unknown>[]; contexts:
 export type RequestOptions = { signal?: AbortSignal };
 export class OmnidexApiError extends Error { readonly status: number; readonly apiMessage: string; }
 export class OmnidexClient {
-  constructor(options: { baseUrl: string; token: string; timeoutMs?: number; fetch?: typeof fetch });
+  constructor(options: { baseUrl: string; token: string; fetch?: typeof fetch });
   registerDirectDataSource(input: DirectDataSourceInput, options?: RequestOptions): Promise<DataSource>;
   registerDelegatedDataSource(input: DelegatedDataSourceInput, options?: RequestOptions): Promise<DataSource>;
   createChannel(input: CreateChannelInput, options?: RequestOptions): Promise<Channel>;

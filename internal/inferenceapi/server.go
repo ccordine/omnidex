@@ -35,20 +35,19 @@ type Result struct {
 type Server struct {
 	client       Provider
 	model, token string
-	timeout      time.Duration
 	slots        chan struct{}
 }
 
-func New(client Provider, model, token string, timeout time.Duration) (*Server, error) {
-	if client == nil || strings.TrimSpace(model) == "" || len(token) < 32 || timeout <= 0 || timeout > time.Minute {
-		return nil, fmt.Errorf("inference requires a generator, model, integration token, and timeout up to one minute")
+func New(client Provider, model, token string) (*Server, error) {
+	if client == nil || strings.TrimSpace(model) == "" || len(token) < 32 {
+		return nil, fmt.Errorf("inference requires a generator, model, integration token")
 	}
 	for _, char := range token {
 		if char < 33 || char > 126 {
 			return nil, fmt.Errorf("integration token must contain visible ASCII characters")
 		}
 	}
-	return &Server{client: client, model: model, token: token, timeout: timeout, slots: make(chan struct{}, 2)}, nil
+	return &Server{client: client, model: model, token: token, slots: make(chan struct{}, 2)}, nil
 }
 
 func (s *Server) Handler() http.Handler {
@@ -68,7 +67,7 @@ func (s *Server) infer(w http.ResponseWriter, r *http.Request) {
 		respond(w, 401, map[string]string{"error": "integration API authentication failed"})
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 24*1024)
+
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	var input Request
@@ -83,11 +82,11 @@ func (s *Server) infer(w http.ResponseWriter, r *http.Request) {
 		respond(w, 429, map[string]string{"error": "local inference is busy"})
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), s.timeout)
+	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	started := time.Now()
 	result, err := s.client.Predict(ctx, input)
-	if err != nil || strings.TrimSpace(result) == "" || len(result) > 16384 || !utf8.ValidString(result) || strings.ContainsRune(result, 0) {
+	if err != nil || strings.TrimSpace(result) == "" || !utf8.ValidString(result) || strings.ContainsRune(result, 0) {
 		// Provider errors can contain input/output; neither log nor return them.
 		respond(w, 502, map[string]string{"error": "local model did not return a complete bounded result"})
 		return
@@ -96,7 +95,7 @@ func (s *Server) infer(w http.ResponseWriter, r *http.Request) {
 }
 
 func validate(input Request) error {
-	if strings.TrimSpace(input.Question) == "" || len(input.Question) > 4096 || len(input.Context) > 12000 || !utf8.ValidString(input.Question) || !utf8.ValidString(input.Context) || strings.ContainsRune(input.Question+input.Context, 0) || input.MaxOutputTokens < 1 || input.MaxOutputTokens > 1024 {
+	if strings.TrimSpace(input.Question) == "" || !utf8.ValidString(input.Question) || !utf8.ValidString(input.Context) || strings.ContainsRune(input.Question+input.Context, 0) || input.MaxOutputTokens < 1 {
 		return fmt.Errorf("invalid semantic request")
 	}
 	return nil

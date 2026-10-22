@@ -44,6 +44,7 @@ func (session *chatSession) reconcileSnapshot(
 	entries := make([]chatSnapshotEntry, 0)
 	enqueued := enqueuedTurnsByJob(snapshot.Turns)
 	for _, message := range snapshot.Messages {
+		localEcho := session.consumeLocalEcho(fmt.Sprintf("message:%020d", message.ID), message.Content)
 		previous, seen := session.messages[message.ID]
 		if seen {
 			changed, err := changedMessageTurn(previous, message)
@@ -54,7 +55,7 @@ func (session *chatSession) reconcileSnapshot(
 				entries = append(entries, terminalSnapshotEntry(message))
 			}
 		} else {
-			if !session.suppressLocalEnqueuedMessage(message, enqueued) {
+			if !localEcho && !session.suppressLocalEnqueuedMessage(message, enqueued) {
 				entries = append(entries, chatSnapshotEntry{
 					createdAt: message.CreatedAt,
 					key:       fmt.Sprintf("message:%020d", message.ID),
@@ -69,6 +70,7 @@ func (session *chatSession) reconcileSnapshot(
 		session.messages[message.ID] = message
 	}
 	for _, turn := range snapshot.Turns {
+		localEcho := session.consumeLocalEcho("turn:"+string(turn.OperationID), turn.Text)
 		previous, seen := session.turns[turn.OperationID]
 		if seen && previous != turn {
 			before, after := previous, turn
@@ -77,7 +79,7 @@ func (session *chatSession) reconcileSnapshot(
 				return fmt.Errorf("persisted session turn %q changed", turn.OperationID)
 			}
 		}
-		if !seen && !session.suppressSessionTurn(turn, snapshot.Messages) {
+		if !seen && !localEcho && !session.suppressSessionTurn(turn, snapshot.Messages) {
 			entries = append(entries, chatSnapshotEntry{
 				createdAt: turn.CreatedAt,
 				key:       "turn:" + string(turn.OperationID),
@@ -88,11 +90,12 @@ func (session *chatSession) reconcileSnapshot(
 		session.turns[turn.OperationID] = turn
 	}
 	for _, control := range snapshot.Controls {
+		localEcho := session.consumeLocalEcho("control:"+string(control.OperationID), control.Text)
 		previous, seen := session.controls[control.OperationID]
 		if seen && previous != control {
 			return fmt.Errorf("persisted session control %q changed", control.OperationID)
 		}
-		if !seen && !session.suppressSessionControl(control) {
+		if !seen && !localEcho && !session.suppressSessionControl(control) {
 			entries = append(entries, chatSnapshotEntry{
 				createdAt: control.CreatedAt,
 				key:       "control:" + string(control.OperationID),
@@ -132,7 +135,20 @@ func (session *chatSession) reconcileSnapshot(
 		case chatSnapshotControl:
 			err = session.renderer.sessionControl(entry.control)
 		case chatSnapshotTerminal:
-			err = session.renderer.messageTurnState(entry.terminal)
+			message := entry.terminal
+			if message.Turn.Status == model.JobStatusCanceled {
+				for _, control := range snapshot.Controls {
+					if control.JobID == message.Turn.JobID && control.Kind == model.ChannelSessionControlCancel && control.Text == message.Turn.Error {
+						// The exact cancellation control already presents this reason.
+						// Keep the persisted terminal state intact; omit only its echo.
+						turn := *message.Turn
+						turn.Error = ""
+						message.Turn = &turn
+						break
+					}
+				}
+			}
+			err = session.renderer.messageTurnState(message)
 		default:
 			err = fmt.Errorf("session snapshot contains an unknown presentation entry")
 		}

@@ -87,7 +87,7 @@ func TestExactPreparedRequestUsesProviderNativeUnlimitedNumPredict(t *testing.T)
 	}
 }
 
-func TestValidateExactPreparedNativeUsageEnforcesProviderTokenAuthorities(t *testing.T) {
+func TestValidateExactPreparedNativeUsageDoesNotRejectTokenSizes(t *testing.T) {
 	t.Parallel()
 	if err := ValidateExactPreparedNativeUsage(8192, 512, ProviderGenerationUsage{
 		PromptEvalCount: 7681,
@@ -98,14 +98,14 @@ func TestValidateExactPreparedNativeUsageEnforcesProviderTokenAuthorities(t *tes
 	if err := ValidateExactPreparedNativeUsage(8192, 512, ProviderGenerationUsage{
 		PromptEvalCount: 128,
 		EvalCount:       513,
-	}); err == nil {
-		t.Fatal("usage exceeding the explicit output budget was accepted")
+	}); err != nil {
+		t.Fatal("native usage was size-rejected", err)
 	}
 	if err := ValidateExactPreparedNativeUsage(8192, 512, ProviderGenerationUsage{
 		PromptEvalCount: 7681,
 		EvalCount:       512,
-	}); err == nil {
-		t.Fatal("usage exceeding the aggregate native context was accepted")
+	}); err != nil {
+		t.Fatal("native usage was size-rejected", err)
 	}
 	if err := ValidateExactPreparedNativeUsage(8192, -1, ProviderGenerationUsage{
 		PromptEvalCount: 1024,

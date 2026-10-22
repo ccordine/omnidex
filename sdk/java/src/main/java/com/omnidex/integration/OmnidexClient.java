@@ -1,7 +1,6 @@
 package com.omnidex.integration;
 
 import java.net.URI;
-import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -11,22 +10,17 @@ public final class OmnidexClient {
     private final String baseUrl;
     private final String token;
     private final Transport transport;
-    private final Duration timeout;
 
     public OmnidexClient(String baseUrl, String token) {
-        this(baseUrl, token, new JdkTransport(), Duration.ofSeconds(30));
+        this(baseUrl, token, new JdkTransport());
     }
 
-    public OmnidexClient(String baseUrl, String token, Transport transport, Duration timeout) {
+    public OmnidexClient(String baseUrl, String token, Transport transport) {
         Validation.configuration(baseUrl, token);
         if (transport == null) throw new IllegalArgumentException("Omnidex transport is required.");
-        if (timeout == null || timeout.isZero() || timeout.isNegative()) {
-            throw new IllegalArgumentException("HTTP timeout must be positive.");
-        }
         this.baseUrl = baseUrl;
         this.token = token;
         this.transport = transport;
-        this.timeout = timeout;
     }
 
     public DataSource registerDirectDataSource(DirectDataSourceInput input) {
@@ -126,7 +120,7 @@ public final class OmnidexClient {
         headers.put("Authorization", "Bearer " + token);
         headers.put("Accept", "application/json");
         if (body != null) headers.put("Content-Type", "application/json");
-        Transport.Response response = transport.send(method, URI.create(baseUrl + path), Map.copyOf(headers), encoded, timeout);
+        Transport.Response response = transport.send(method, URI.create(baseUrl + path), Map.copyOf(headers), encoded);
         byte[] raw = response.body();
         if (raw.length > MAX_RESPONSE_BYTES) {
             throw new IllegalStateException("Omnidex integration response exceeds 16777216 bytes.");

@@ -11,11 +11,7 @@ func (r *remote) call(ctx context.Context, data requestData, observe func(worksp
 	if ctx == nil {
 		return responseData{}, fmt.Errorf("workspace operation requires context")
 	}
-	timeout := transferTimeout
-	if data.Kind == opAttest {
-		timeout = operationTimeout
-	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	select {
 	case <-r.done:

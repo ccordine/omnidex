@@ -27,9 +27,7 @@ func BuildRequirementGraph(request string, statements []string) (RequirementGrap
 	if len(statements) == 0 {
 		return RequirementGraph{}, fmt.Errorf("requirement graph requires at least one grounded statement")
 	}
-	if len(statements) > maxRequirementCount {
-		return RequirementGraph{}, fmt.Errorf("requirement graph exceeds the %d-requirement limit", maxRequirementCount)
-	}
+
 	seen := make(map[string]struct{}, len(statements))
 	requirements := make([]Requirement, 0, len(statements))
 	for index, statement := range statements {

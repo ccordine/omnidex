@@ -7,8 +7,7 @@ func validateNarrativeOngoingActions(
 	authority SimulationNarrativeAuthority,
 ) error {
 	if len(projection.OngoingActions) != len(authority.OngoingActionStateIDs) ||
-		len(projection.OngoingActions) != len(authority.OngoingActionCharacterIDs) ||
-		len(projection.OngoingActions) > MaxSceneParticipants {
+		len(projection.OngoingActions) != len(authority.OngoingActionCharacterIDs) {
 		return fmt.Errorf("narrative ongoing actions differ from their exact source identities")
 	}
 	if len(projection.Participants) != len(authority.ParticipantIDs) {

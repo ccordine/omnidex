@@ -63,7 +63,7 @@ func persistSimulationTransitionTx(
 }
 
 func validateSimulationTransitionObservers(observerCharacterIDs []string, actorCharacterID string) error {
-	if len(observerCharacterIDs) < 1 || len(observerCharacterIDs) > MaxSceneParticipants {
+	if len(observerCharacterIDs) < 1 {
 		return fmt.Errorf("simulation transition observer count is outside its bound")
 	}
 	seen := make(map[string]struct{}, len(observerCharacterIDs))
@@ -95,8 +95,8 @@ func decodeSimulationTransitionResult(payload []byte) (SimulationTransitionResul
 		validateIdentity(result.SceneID, sceneIdentity) != nil ||
 		validateIdentity(result.ActorCharacterID, characterIdentity) != nil ||
 		result.BeforeRevision < 1 || result.AfterRevision != result.BeforeRevision+1 ||
-		len(result.Effects) < 1 || len(result.Effects) > MaxTransitionEffects ||
-		len(result.NarrativeEvents) < 1 || len(result.NarrativeEvents) > 2 || result.CreatedAt.IsZero() {
+		len(result.Effects) < 1 ||
+		len(result.NarrativeEvents) < 1 || result.CreatedAt.IsZero() {
 		return SimulationTransitionResult{}, fmt.Errorf("persisted simulation transition is invalid")
 	}
 	for _, event := range result.NarrativeEvents {

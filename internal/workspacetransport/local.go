@@ -64,7 +64,7 @@ func (l *Local) initialize(root string) error {
 	if err != nil {
 		return err
 	}
-	l.conn.SetReadLimit(MaxFrameBytes)
+
 	if err := l.conn.SetReadDeadline(time.Now().Add(operationTimeout)); err != nil {
 		return err
 	}

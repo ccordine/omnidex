@@ -34,8 +34,7 @@ func (evidence SourceBodyCorrectionEvidence) Validate(modelInput string) error {
 	}
 	question := strings.TrimSpace(evidence.Question)
 	if question == "" || question != evidence.Question || !utf8.ValidString(question) ||
-		strings.ContainsRune(question, '\x00') ||
-		len(question) > MaxSourceBodyCorrectionQuestionBytes {
+		strings.ContainsRune(question, '\x00') {
 		return fmt.Errorf("source-body correction evidence question is invalid")
 	}
 	wanted := evidence.Question + "\n\n" +
@@ -54,8 +53,7 @@ func (correction SourceBodyCorrection) Validate() error {
 	}
 	question := strings.TrimSpace(correction.question)
 	if question == "" || question != correction.question || !utf8.ValidString(question) ||
-		strings.ContainsRune(question, '\x00') ||
-		len(question) > MaxSourceBodyCorrectionQuestionBytes {
+		strings.ContainsRune(question, '\x00') {
 		return fmt.Errorf("source-body correction question must be exact bounded UTF-8 text")
 	}
 	if len(correction.replacements) > 0 {
@@ -89,9 +87,7 @@ func (correction SourceBodyCorrection) ModelInput() (string, error) {
 		return "", err
 	}
 	prompt := question + "\n\n" + correction.Mutable()
-	if len(prompt) > maxPortableResourceBytes {
-		return "", fmt.Errorf("source-body correction input exceeds %d bytes", maxPortableResourceBytes)
-	}
+
 	return prompt, nil
 }
 
@@ -112,12 +108,7 @@ func (correction SourceBodyCorrection) modelQuestion() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if len(rendered) > MaxSourceBodyCorrectionQuestionBytes {
-		return "", fmt.Errorf(
-			"source-body correction question exceeds %d bytes",
-			MaxSourceBodyCorrectionQuestionBytes,
-		)
-	}
+
 	return rendered, nil
 }
 
@@ -246,14 +237,12 @@ func (correction SourceBodyCorrection) applyReplacement(replacement string) (str
 	}
 	result := correction.base[:correction.startByte] + replacement +
 		correction.base[correction.endByte:]
-	if len(result) > MaxSourceBodyResponseBytes {
-		return "", fmt.Errorf("corrected source body exceeds %d bytes", MaxSourceBodyResponseBytes)
-	}
+
 	return result, nil
 }
 
 func validateSourceBodySpan(source string, startByte, endByte int) error {
-	if source == "" || len(source) > MaxSourceBodyResponseBytes || !utf8.ValidString(source) ||
+	if source == "" || !utf8.ValidString(source) ||
 		strings.ContainsRune(source, '\x00') {
 		return fmt.Errorf("source-body span requires bounded code-owned UTF-8 source")
 	}

@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/gryph/omnidex/internal/hostbridge"
 )
@@ -45,7 +44,7 @@ func (s *Server) scrumProjectFilePage(
 		return result, nil
 	}
 	if client := s.hostBridgeClient(); client != nil {
-		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+		ctx, cancel := context.WithCancel(r.Context())
 		defer cancel()
 		rel, err := filepath.Rel(filepath.Clean(projectRoot), filepath.Clean(path))
 		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {

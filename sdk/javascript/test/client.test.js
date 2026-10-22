@@ -151,3 +151,42 @@ function jsonResponse(status, value) {
     status, headers: { "content-type": "application/json" },
   });
 }
+
+test("an active request survives the former default deadline", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let resolveResponse;
+  let requestSignal;
+  const client = new OmnidexClient({
+    baseUrl: "https://omnidex.internal", token,
+    fetch: (_, init) => {
+      requestSignal = init.signal;
+      return new Promise((resolve, reject) => {
+        resolveResponse = resolve;
+        init.signal.addEventListener("abort", () => reject(init.signal.reason), { once: true });
+      });
+    },
+  });
+  const pending = client.getChannel("clinical-chat");
+  void pending.catch(() => undefined);
+  t.mock.timers.tick(60 * 60 * 1000);
+  assert.equal(requestSignal.aborted, false);
+  resolveResponse(jsonResponse(200, { channel: { id: "clinical-chat", scope: "user", mode: "assistant" } }));
+  assert.equal((await pending).id, "clinical-chat");
+});
+
+test("explicit caller cancellation still aborts active and undispatched requests", async () => {
+  for (const alreadyCanceled of [false, true]) {
+    const controller = new AbortController();
+    const client = new OmnidexClient({
+      baseUrl: "https://omnidex.internal", token,
+      fetch: (_, init) => new Promise((_, reject) => {
+        if (init.signal.aborted) reject(init.signal.reason);
+        else init.signal.addEventListener("abort", () => reject(init.signal.reason), { once: true });
+      }),
+    });
+    if (alreadyCanceled) controller.abort(new Error("Caller canceled"));
+    const pending = client.getChannel("clinical-chat", { signal: controller.signal });
+    if (!alreadyCanceled) controller.abort(new Error("Caller canceled"));
+    await assert.rejects(pending, /Caller canceled/);
+  }
+});

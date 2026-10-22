@@ -13,7 +13,7 @@ import (
 var (
 	ErrCodingLedgerRevision   = errors.New("coding ledger revision conflict")
 	ErrCodingLedgerState      = errors.New("coding ledger state conflict")
-	codingLedgerItemIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$`)
+	codingLedgerItemIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:-]*$`)
 )
 
 func validateCodingLedgerRoutes(routes []CodingLedgerRoute, revision int64) error {
@@ -39,7 +39,7 @@ func validateCodingLedgerRoutes(routes []CodingLedgerRoute, revision int64) erro
 			return fmt.Errorf("coding ledger routes require one configuration revision")
 		}
 		for _, value := range []string{route.Provider, route.Model, route.ReasoningEffort, route.ServiceTier} {
-			if value == "" || len(value) > 64 || value != strings.TrimSpace(value) || strings.ContainsAny(value, "\x00\r\n") {
+			if value == "" || value != strings.TrimSpace(value) || strings.ContainsAny(value, "\x00\r\n") {
 				return fmt.Errorf("coding ledger route %s contains an invalid option", route.Role)
 			}
 		}
@@ -89,9 +89,7 @@ func validateLedgerForRepository(ledger model.EngineeringLedger) error {
 		if !codingLedgerItemIDPattern.MatchString(string(record.item.ID)) {
 			return fmt.Errorf("coding ledger item %q has an invalid or reserved stable identity", record.item.ID)
 		}
-		if len(record.item.Rationale) > 8192 {
-			return fmt.Errorf("coding ledger item %s rationale exceeds 8192 bytes", record.item.ID)
-		}
+
 	}
 	return validateCodingLedgerExactDuplicates(ledger)
 }
@@ -223,7 +221,7 @@ func validateMutationOwnerTurnDisposition(
 }
 
 func validateCodingLedgerOperationID(value string) error {
-	if value == "" || value != strings.TrimSpace(value) || len(value) > 256 ||
+	if value == "" || value != strings.TrimSpace(value) ||
 		strings.ContainsAny(value, "\x00\r\n") {
 		return fmt.Errorf("coding ledger operation requires a trimmed identity of at most 256 bytes")
 	}

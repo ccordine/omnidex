@@ -85,7 +85,7 @@ func (r request) validate() error {
 		allowed.Lease = r.Lease
 		if r.Kind == opPrepare {
 			allowed.DesiredCount, allowed.ExpectedCount = r.DesiredCount, r.ExpectedCount
-			if r.DesiredCount < 0 || r.ExpectedCount < 0 || r.DesiredCount > workspace.MaxReconciliationFiles || r.ExpectedCount > workspace.MaxReconciliationFiles {
+			if r.DesiredCount < 0 || r.ExpectedCount < 0 {
 				return fmt.Errorf("workspace preparation exceeds its file count bound")
 			}
 		}
@@ -128,7 +128,7 @@ func (r response) validate(req request) error {
 			if err := r.Entry.Validate(req.Path); err != nil {
 				return err
 			}
-			if req.Kind == opReadFile && (r.Entry.Kind != workspace.EntryFile || r.Entry.Size > workspace.MaxReconciliationFileBytes) {
+			if req.Kind == opReadFile && (r.Entry.Kind != workspace.EntryFile) {
 				return fmt.Errorf("workspace response is not a bounded regular file")
 			}
 		case opReadDirectory:

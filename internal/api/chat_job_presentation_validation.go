@@ -15,7 +15,7 @@ func validateChatJobPresentation(presentation queue.JobPresentation) error {
 	if presentation.Job.CurrentGeneration <= 0 {
 		return fmt.Errorf("chat job presentation has invalid current-generation authority")
 	}
-	if len(presentation.Steps) == 0 || len(presentation.Steps) > 128 {
+	if len(presentation.Steps) == 0 {
 		return fmt.Errorf("chat job presentation requires between 1 and 128 current steps")
 	}
 	var priorSortIndex = -1

@@ -6,19 +6,19 @@ import (
 )
 
 type Project struct {
-	ID           int64           `json:"id"`
-	Name         string          `json:"name"`
-	Location     string          `json:"location"`
-	Description  string          `json:"description,omitempty"`
-	Settings     json.RawMessage `json:"settings,omitempty"`
-	LastSeenAt   time.Time       `json:"last_seen_at"`
-	CreatedAt    time.Time       `json:"created_at"`
-	UpdatedAt    time.Time       `json:"updated_at"`
+	ID          int64           `json:"id"`
+	Name        string          `json:"name"`
+	Location    string          `json:"location"`
+	Description string          `json:"description,omitempty"`
+	Settings    json.RawMessage `json:"settings,omitempty"`
+	LastSeenAt  time.Time       `json:"last_seen_at"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
 }
 
 type ProjectPatch struct {
-	Name         *string          `json:"name,omitempty"`
-	Location     *string          `json:"location,omitempty"`
-	Description  *string          `json:"description,omitempty"`
-	Settings     *json.RawMessage `json:"settings,omitempty"`
+	Name        *string          `json:"name,omitempty"`
+	Location    *string          `json:"location,omitempty"`
+	Description *string          `json:"description,omitempty"`
+	Settings    *json.RawMessage `json:"settings,omitempty"`
 }

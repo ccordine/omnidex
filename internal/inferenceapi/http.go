@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 )
 
 // Native HTTP providers consume the bounded primary input and context directly.
@@ -20,9 +19,9 @@ type HTTPProvider struct {
 	client                *http.Client
 }
 
-func NewHTTPProvider(baseURL, token, model string, timeout time.Duration) (*HTTPProvider, error) {
+func NewHTTPProvider(baseURL, token, model string) (*HTTPProvider, error) {
 	u, err := url.Parse(baseURL)
-	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || len(token) < 32 || strings.TrimSpace(model) == "" || timeout <= 0 || timeout > time.Minute {
+	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || len(token) < 32 || strings.TrimSpace(model) == "" {
 		return nil, fmt.Errorf("invalid native inference provider configuration")
 	}
 	ip := net.ParseIP(u.Hostname())
@@ -35,7 +34,7 @@ func NewHTTPProvider(baseURL, token, model string, timeout time.Duration) (*HTTP
 		}
 	}
 	return &HTTPProvider{baseURL: strings.TrimRight(baseURL, "/"), token: token, model: model,
-		client: &http.Client{Timeout: timeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
+		client: &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
 
 func (p *HTTPProvider) Check(ctx context.Context) error {
@@ -63,7 +62,7 @@ func (p *HTTPProvider) Predict(ctx context.Context, input Request) (string, erro
 	if err := p.request(ctx, "POST", "/infer", body, &result, 24*1024, true); err != nil {
 		return "", err
 	}
-	if result.Model != p.model || result.FinishReason != "stop" || result.OutputTokens < 1 || result.OutputTokens > input.MaxOutputTokens || strings.TrimSpace(result.Text) == "" || len(result.Text) > 16384 {
+	if result.Model != p.model || result.FinishReason != "stop" || result.OutputTokens < 1 || result.OutputTokens > input.MaxOutputTokens || strings.TrimSpace(result.Text) == "" {
 		return "", fmt.Errorf("native model did not return a complete bounded result")
 	}
 	return result.Text, nil
@@ -84,8 +83,8 @@ func (p *HTTPProvider) request(ctx context.Context, method, path string, body []
 	if response.StatusCode != 200 {
 		return fmt.Errorf("native inference returned an error")
 	}
-	raw, err := io.ReadAll(io.LimitReader(response.Body, limit+1))
-	if err != nil || int64(len(raw)) > limit {
+	raw, err := io.ReadAll(response.Body)
+	if err != nil {
 		return fmt.Errorf("native inference response exceeded its bound")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))

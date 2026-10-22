@@ -35,15 +35,7 @@ func (buffer *boundedBuffer) Bytes() []byte { return buffer.buffer.Bytes() }
 func (buffer *boundedBuffer) Len() int { return buffer.buffer.Len() }
 
 func (buffer *boundedBuffer) Write(value []byte) (int, error) {
-	remaining := MaxStreamBytes - buffer.Len()
-	if remaining > 0 {
-		_, _ = buffer.buffer.Write(value[:min(remaining, len(value))])
-	}
-	if len(value) > remaining {
-		buffer.overflow = true
-		buffer.cancel()
-	}
-	return len(value), nil
+	return buffer.buffer.Write(value)
 }
 
 func (docker *Docker) capture(ctx context.Context, argv []string, stdin io.Reader) ([]byte, []byte, error) {
@@ -51,9 +43,6 @@ func (docker *Docker) capture(ctx context.Context, argv []string, stdin io.Reade
 	defer cancel()
 	stdout, stderr := &boundedBuffer{cancel: cancel}, &boundedBuffer{cancel: cancel}
 	err := docker.cli(ctx, argv, stdin, stdout, stderr)
-	if stdout.overflow || stderr.overflow {
-		err = fmt.Errorf("Docker command output exceeded the %d-byte stream bound", MaxStreamBytes)
-	}
 	return stdout.Bytes(), stderr.Bytes(), err
 }
 

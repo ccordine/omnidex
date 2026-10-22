@@ -31,7 +31,7 @@ func (r *Repository) WriteMemoryCandidates(
 	ctx context.Context,
 	candidates []model.MemoryCandidate,
 ) ([]int64, error) {
-	if len(candidates) == 0 || len(candidates) > maxMemoryCandidateBatchItems {
+	if len(candidates) == 0 {
 		return nil, fmt.Errorf(
 			"memory candidate batch must contain 1..%d candidates",
 			maxMemoryCandidateBatchItems,
@@ -190,8 +190,7 @@ func validateNewMemoryCandidate(candidate model.MemoryCandidate) (string, error)
 		return "", err
 	}
 	if candidate.Content == "" || candidate.Content != strings.TrimSpace(candidate.Content) ||
-		!utf8.ValidString(candidate.Content) || strings.ContainsRune(candidate.Content, '\x00') ||
-		len(candidate.Content) > maxMemoryCandidateContentBytes {
+		!utf8.ValidString(candidate.Content) || strings.ContainsRune(candidate.Content, '\x00') {
 		return "", fmt.Errorf("memory candidate content must be exact PostgreSQL-compatible text of at most %d bytes", maxMemoryCandidateContentBytes)
 	}
 	if math.IsNaN(candidate.Confidence) || math.IsInf(candidate.Confidence, 0) ||
@@ -205,7 +204,7 @@ func validateNewMemoryCandidate(candidate model.MemoryCandidate) (string, error)
 	if provenance == "" {
 		provenance = `{}`
 	}
-	if len(provenance) > maxMemoryCandidateProvenanceBytes || !json.Valid([]byte(provenance)) {
+	if !json.Valid([]byte(provenance)) {
 		return "", fmt.Errorf("memory candidate provenance must be valid JSON of at most %d bytes", maxMemoryCandidateProvenanceBytes)
 	}
 	var object map[string]json.RawMessage

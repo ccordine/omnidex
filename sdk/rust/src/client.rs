@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Duration;
 
 use serde::Serialize;
 
@@ -18,33 +17,25 @@ pub struct Client {
     base_url: String,
     token: String,
     transport: Arc<dyn Transport>,
-    timeout: Duration,
 }
 
 impl Client {
     pub fn new(base_url: &str, token: &str) -> Result<Self, Error> {
         validation::configuration(base_url, token)?;
         let transport = Arc::new(ReqwestTransport::new()?);
-        Self::with_transport(base_url, token, transport, Duration::from_secs(30))
+        Self::with_transport(base_url, token, transport)
     }
 
     pub fn with_transport(
         base_url: &str,
         token: &str,
         transport: Arc<dyn Transport>,
-        timeout: Duration,
     ) -> Result<Self, Error> {
         validation::configuration(base_url, token)?;
-        if timeout.is_zero() {
-            return Err(Error::InvalidArgument(
-                "HTTP timeout must be positive.".into(),
-            ));
-        }
         Ok(Self {
             base_url: base_url.into(),
             token: token.into(),
             transport,
-            timeout,
         })
     }
 
@@ -199,7 +190,6 @@ impl Client {
             url: format!("{}{}", self.base_url, path),
             headers,
             body,
-            timeout: self.timeout,
         })?;
         if response.body.len() > MAX_RESPONSE_BYTES {
             return Err(Error::Protocol(format!(

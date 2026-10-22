@@ -11,16 +11,14 @@ func (file File) Validate() error {
 		return err
 	}
 	if file.Entry.Kind != EntryFile || file.Entry.Path == "." ||
-		file.Entry.Size != int64(len(file.Content)) || len(file.Content) > MaxReconciliationFileBytes {
+		file.Entry.Size != int64(len(file.Content)) {
 		return fmt.Errorf("workspace file differs from its exact regular-file data")
 	}
 	return nil
 }
 
 func cloneExpectedFiles(files []File) ([]File, error) {
-	if len(files) > MaxReconciliationFiles {
-		return nil, fmt.Errorf("too many expected workspace files")
-	}
+
 	result := make([]File, len(files))
 	seen := make(map[string]bool, len(files))
 	total := 0
@@ -33,9 +31,7 @@ func cloneExpectedFiles(files []File) ([]File, error) {
 		}
 		seen[file.Entry.Path] = true
 		total += len(file.Content)
-		if total > MaxReconciliationTotalBytes {
-			return nil, fmt.Errorf("expected workspace content exceeds its byte bound")
-		}
+
 		result[index] = File{Entry: file.Entry, Content: bytes.Clone(file.Content)}
 	}
 	return result, nil

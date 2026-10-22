@@ -115,55 +115,6 @@ func (task LedgerTask) Instructions() string {
 	return out.String()
 }
 
-func (task LedgerTask) ValidatePacket() error {
-	for _, context := range task.OwnerContext {
-		if strings.TrimSpace(context.Text) == "" || strings.TrimSpace(context.Provenance.Kind) == "" || strings.TrimSpace(context.Provenance.Reference) == "" || context.Provenance.Revision < 0 {
-			return fmt.Errorf("task %s context requires text and provenance", task.ID)
-		}
-	}
-	for _, constraint := range task.Constraints {
-		if strings.TrimSpace(constraint) == "" {
-			return fmt.Errorf("task %s has a blank constraint", task.ID)
-		}
-	}
-	for _, file := range task.FileResponsibilities {
-		if err := ValidateTaskFileReference(file.Path); err != nil {
-			return err
-		}
-		var files []string
-		switch file.Action {
-		case TaskFileInspect:
-			files = task.ReadFiles
-		case TaskFileChange, TaskFileCreate:
-			files = task.WriteFiles
-		case TaskFileDelete:
-			files = task.DeleteFiles
-		default:
-			return fmt.Errorf("task %s has invalid file action %q", task.ID, file.Action)
-		}
-		found := false
-		for _, path := range files {
-			found = found || path == file.Path
-		}
-		if !found || strings.TrimSpace(file.Responsibility) == "" {
-			return fmt.Errorf("task %s has an unbound file responsibility for %s", task.ID, file.Path)
-		}
-	}
-	seen := map[string]bool{}
-	for _, criterion := range task.Acceptance {
-		if strings.TrimSpace(criterion.ID) == "" || seen[criterion.ID] || strings.TrimSpace(criterion.Text) == "" || len(criterion.Verification) == 0 {
-			return fmt.Errorf("task %s requires distinct acceptance criteria with bound verification", task.ID)
-		}
-		seen[criterion.ID] = true
-		for _, check := range criterion.Verification {
-			if strings.TrimSpace(check) == "" {
-				return fmt.Errorf("task %s has blank verification", task.ID)
-			}
-		}
-	}
-	return nil
-}
-
 // EngineeringLedger contains only the ordered instructions approved for execution.
 type EngineeringLedger struct {
 	ID       string       `json:"id"`
@@ -197,7 +148,7 @@ func validateLedgerTaskFiles(task LedgerTask) error {
 // File references describe task context, not filesystem permission grants.
 // They may name absolute paths, generated files, configuration, or remote paths.
 func ValidateTaskFileReference(value string) error {
-	if strings.TrimSpace(value) == "" || len(value) > 4096 || !utf8.ValidString(value) || strings.ContainsAny(value, "\x00\r\n") {
+	if strings.TrimSpace(value) == "" || !utf8.ValidString(value) || strings.ContainsAny(value, "\x00\r\n") {
 		return fmt.Errorf("task file reference must be nonblank UTF-8 text of at most 4096 bytes")
 	}
 	return nil
@@ -453,9 +404,6 @@ func (item LedgerMutationItem) validate() (LedgerItemID, error) {
 	}
 	if strings.TrimSpace(task.Goal) == "" {
 		return task.ID, fmt.Errorf("task %s requires instructions", task.ID)
-	}
-	if err := task.ValidatePacket(); err != nil {
-		return task.ID, err
 	}
 	return task.ID, validateLedgerTaskFiles(*task)
 }

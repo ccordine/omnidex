@@ -59,8 +59,7 @@ func readCollectedArchive(reader io.Reader, paths []string) ([]File, error) {
 }
 
 func readArtifactArchive(reader io.Reader, paths []string, subtree string) ([]File, error) {
-	limited := &io.LimitedReader{R: reader, N: MaxArchiveBytes + 1}
-	archive := tar.NewReader(limited)
+	archive := tar.NewReader(reader)
 	wanted := make(map[string]struct{}, len(paths))
 	parents := map[string]struct{}{"workspace": {}}
 	if subtree != "" {
@@ -85,9 +84,6 @@ func readArtifactArchive(reader io.Reader, paths []string, subtree string) ([]Fi
 		if err != nil {
 			return nil, fmt.Errorf("read experiment artifact archive: %w", err)
 		}
-		if count >= 100_000 {
-			return nil, fmt.Errorf("experiment archive exceeds its entry bound")
-		}
 		name := strings.TrimSuffix(header.Name, "/")
 		if err := validatePath(name); err != nil {
 			return nil, err
@@ -103,9 +99,7 @@ func readArtifactArchive(reader io.Reader, paths []string, subtree string) ([]Fi
 			if header.Typeflag == tar.TypeDir {
 				parents[name] = struct{}{}
 			} else {
-				if len(wanted) >= MaxFiles {
-					return nil, fmt.Errorf("experiment artifact tree exceeds its file count bound")
-				}
+
 				wanted[name] = struct{}{}
 				for parent := path.Dir(name); parent != "."; parent = path.Dir(parent) {
 					parents[parent] = struct{}{}
@@ -118,14 +112,12 @@ func readArtifactArchive(reader io.Reader, paths []string, subtree string) ([]Fi
 		if _, collect := wanted[name]; !collect {
 			continue
 		}
-		if header.Typeflag != tar.TypeReg || header.Size < 0 || header.Size > MaxFileBytes ||
+		if header.Typeflag != tar.TypeReg || header.Size < 0 ||
 			header.Mode <= 0 || header.Mode&^int64(0o777) != 0 {
 			return nil, fmt.Errorf("experiment artifact %q is not a bounded regular file", name)
 		}
 		bytes += header.Size
-		if bytes > MaxInputBytes {
-			return nil, fmt.Errorf("collected experiment artifacts exceed their byte bound")
-		}
+
 		content, err := io.ReadAll(archive)
 		if err != nil {
 			return nil, fmt.Errorf("experiment artifact %q has incomplete content: %w", name, err)
@@ -135,11 +127,8 @@ func readArtifactArchive(reader io.Reader, paths []string, subtree string) ([]Fi
 		}
 		files[name] = File{Path: strings.TrimPrefix(name, "workspace/"), Content: content, Mode: uint32(header.Mode)}
 	}
-	if _, err := io.Copy(io.Discard, limited); err != nil {
+	if _, err := io.Copy(io.Discard, reader); err != nil {
 		return nil, fmt.Errorf("finish experiment archive observation: %w", err)
-	}
-	if limited.N == 0 {
-		return nil, fmt.Errorf("experiment archive exceeds its total byte bound")
 	}
 	for parent := range parents {
 		if kind, exists := observed[parent]; !exists || kind != tar.TypeDir {

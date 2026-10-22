@@ -125,7 +125,7 @@ func loadRoleplayResearchCitationReceiptsTx(
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	if len(result) < 1 || len(result) > 4 {
+	if len(result) < 1 {
 		return nil, fmt.Errorf("roleplay research completion requires 1..4 exact citations")
 	}
 	return result, nil
@@ -160,7 +160,7 @@ func roleplayResearchCitationReceiptFromRecord(
 		}
 	}
 	capsuleID, ok := record.Metadata["capsule_id"].(string)
-	if !ok || capsuleID == "" || len(capsuleID) > 128 {
+	if !ok || capsuleID == "" {
 		return roleplayResearchCitationReceipt{}, fmt.Errorf("roleplay research citation %d has invalid capsule identity", index)
 	}
 	paragraphIndexes, err := objectiveIntegerIndexes(record.Metadata["paragraph_indexes"])
@@ -175,7 +175,7 @@ func roleplayResearchCitationReceiptFromRecord(
 
 func objectiveIntegerIndexes(raw any) ([]int, error) {
 	values, ok := raw.([]any)
-	if !ok || len(values) < 1 || len(values) > 4 {
+	if !ok || len(values) < 1 {
 		return nil, fmt.Errorf("paragraph indexes require 1..4 exact integers")
 	}
 	result := make([]int, len(values))

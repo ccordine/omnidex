@@ -54,7 +54,7 @@ func newChatJobStateResponse(presentation queue.JobPresentation) (chatJobStateRe
 			UpdatedAt:         presentation.Job.UpdatedAt, CompletedAt: presentation.Job.CompletedAt,
 		},
 		Steps: steps,
-		HTML: chatComponentHTML{Bundle: bundle},
+		HTML:  chatComponentHTML{Bundle: bundle},
 	}, nil
 }
 

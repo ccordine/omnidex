@@ -157,7 +157,7 @@ func (partition ApplicationRequirementCandidatePartition) ValidateFor(
 		)
 	}
 	minimum, maximum := applicationRequirementCandidatePartitionBounds(input)
-	if len(partition.Candidates) < minimum || len(partition.Candidates) > maximum {
+	if len(partition.Candidates) < minimum {
 		return fmt.Errorf(
 			"application requirement candidate partition must contain between %d and %d children",
 			minimum,

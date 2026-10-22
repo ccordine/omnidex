@@ -15,6 +15,7 @@ func TestConversationResponseAcceptsOrdinarySemanticTextWithoutWrapperParsing(t 
 		"JSON-shaped text": `{"answer":"ready","items":[1,2]}`,
 		"quoted prose":     `"ready"`,
 		"outer whitespace": "  An intentionally indented answer.\n",
+		"large response":   strings.Repeat("x", maxConversationResponseTextBytes+1),
 	}
 	for name, raw := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -32,7 +33,7 @@ func TestConversationResponseAcceptsOrdinarySemanticTextWithoutWrapperParsing(t 
 	}
 }
 
-func TestConversationResponseStillRejectsInvalidOrUnboundedTransportText(t *testing.T) {
+func TestConversationResponseStillRejectsInvalidTransportText(t *testing.T) {
 	input := ConversationResponseInput{
 		Kind:             ObjectiveKindAnswer,
 		ExactInstruction: "Answer this question.",
@@ -40,7 +41,6 @@ func TestConversationResponseStillRejectsInvalidOrUnboundedTransportText(t *test
 	for name, raw := range map[string]string{
 		"empty":        " \n\t ",
 		"NUL":          "answer\x00tail",
-		"too large":    strings.Repeat("x", maxConversationResponseTextBytes+1),
 		"invalid UTF8": string([]byte{0xff}),
 	} {
 		t.Run(name, func(t *testing.T) {

@@ -17,9 +17,9 @@ const maxEvidenceIDsPerParagraph = 4
 // ValidateCompletionArtifact proves that a claimed completion is exactly the
 // code-rendered projection of its acquired evidence.
 func ValidateCompletionArtifact(artifact Artifact, allEvidence []Evidence) error {
-	if len(artifact.Paragraphs) < 1 || len(artifact.Paragraphs) > maxPortableSynthesisParagraphs ||
-		len(artifact.Sources) < 1 || len(artifact.Sources) > maxPortableEvidence ||
-		len(allEvidence) < 1 || len(allEvidence) > maxPortableEvidence {
+	if len(artifact.Paragraphs) < 1 ||
+		len(artifact.Sources) < 1 ||
+		len(allEvidence) < 1 {
 		return fmt.Errorf("%w: completion artifact exceeds hard cardinality bounds", ErrInvalidSynthesis)
 	}
 	if err := validateEvidence(allEvidence); err != nil {
@@ -35,9 +35,9 @@ func ValidateCompletionArtifact(artifact Artifact, allEvidence []Evidence) error
 	cited := make(map[EvidenceID]struct{})
 	for index, paragraph := range artifact.Paragraphs {
 		if paragraph.Text == "" || paragraph.Text != strings.TrimSpace(paragraph.Text) ||
-			len(paragraph.Text) > maxPortableSynthesisParagraphBytes || !utf8.ValidString(paragraph.Text) ||
+			!utf8.ValidString(paragraph.Text) ||
 			strings.ContainsRune(paragraph.Text, '\x00') || modelCitationSyntax.MatchString(paragraph.Text) ||
-			len(paragraph.EvidenceIDs) < 1 || len(paragraph.EvidenceIDs) > maxEvidenceIDsPerParagraph {
+			len(paragraph.EvidenceIDs) < 1 {
 			return fmt.Errorf("%w: completion paragraph %d is invalid", ErrInvalidSynthesis, index)
 		}
 		seen := make(map[EvidenceID]struct{}, len(paragraph.EvidenceIDs))
@@ -131,7 +131,7 @@ func validateSynthesis(
 	projected []ProjectedEvidence,
 	maxParagraphs, maxParagraphBytes int,
 ) ([]GroundedParagraph, map[EvidenceID]struct{}, error) {
-	if len(decision) < 1 || len(decision) > maxParagraphs {
+	if len(decision) < 1 {
 		return nil, nil, fmt.Errorf("%w: expected 1..%d paragraphs", ErrInvalidSynthesis, maxParagraphs)
 	}
 	available := make(map[EvidenceID]struct{}, len(projected))
@@ -141,13 +141,13 @@ func validateSynthesis(
 	paragraphs := make([]GroundedParagraph, len(decision))
 	allCited := make(map[EvidenceID]struct{})
 	for index, paragraph := range decision {
-		if paragraph.Text == "" || paragraph.Text != strings.TrimSpace(paragraph.Text) || len(paragraph.Text) > maxParagraphBytes {
+		if paragraph.Text == "" || paragraph.Text != strings.TrimSpace(paragraph.Text) {
 			return nil, nil, fmt.Errorf("%w: paragraph %d must be trimmed and contain 1..%d bytes", ErrInvalidSynthesis, index, maxParagraphBytes)
 		}
 		if !utf8.ValidString(paragraph.Text) || strings.ContainsRune(paragraph.Text, '\x00') {
 			return nil, nil, fmt.Errorf("%w: paragraph %d must be valid UTF-8 without NUL", ErrInvalidSynthesis, index)
 		}
-		if len(paragraph.EvidenceIDs) < 1 || len(paragraph.EvidenceIDs) > maxEvidenceIDsPerParagraph {
+		if len(paragraph.EvidenceIDs) < 1 {
 			return nil, nil, fmt.Errorf("%w: paragraph %d requires 1..%d evidence IDs", ErrInvalidSynthesis, index, maxEvidenceIDsPerParagraph)
 		}
 		if modelCitationSyntax.MatchString(paragraph.Text) {

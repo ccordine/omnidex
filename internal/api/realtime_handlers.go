@@ -11,10 +11,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/gorilla/websocket"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
-	"github.com/jackc/pgx/v5"
 )
 
 var realtimeUpgrader = websocket.Upgrader{
@@ -161,7 +162,7 @@ func (s *Server) handleRealtimeWS(w http.ResponseWriter, r *http.Request) {
 	log.Printf("realtime websocket connected client=%d remote=%q topics=%s cursor=%s replay=%d sync_required=%t", subscription.ID, r.RemoteAddr, strings.Join(topics, ","), cursor, subscription.ReplayCount, subscription.ReplayGap)
 	defer log.Printf("realtime websocket disconnected client=%d remote=%q", subscription.ID, r.RemoteAddr)
 	deadline := time.Now().Add(streamMaxAge)
-	conn.SetReadLimit(4096)
+
 	if err := conn.SetReadDeadline(time.Now().Add(heartbeat * 3)); err != nil {
 		log.Printf("realtime websocket read deadline failed client=%d: %v", subscription.ID, err)
 		return

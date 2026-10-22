@@ -45,7 +45,7 @@ func TestReviewStatusLiveBoundary(t *testing.T) {
 			call := codingagent.Assignment{JobID: 26, Generation: 1, Role: tc.Role, Root: t.TempDir(), Route: route, Task: &tc.Task, Response: tc.Source}
 			calls := 0
 			start := time.Now()
-			result, runErr := codingagent.RunParserSieve(t.Context(), call, func(codingagent.NativeEvent) error { return nil }, func(ctx context.Context, leaf codingagent.Assignment, event func(codingagent.NativeEvent) error) (codingagent.Result, error) {
+			result, runErr := func(ctx context.Context, leaf codingagent.Assignment, event func(codingagent.NativeEvent) error) (codingagent.Result, error) {
 				calls++
 				prompt, err := codingagent.RenderParserPrompt(leaf)
 				if err != nil {
@@ -65,7 +65,7 @@ func TestReviewStatusLiveBoundary(t *testing.T) {
 					t.Fatal(saveErr)
 				}
 				return out, err
-			})
+			}(t.Context(), call, func(codingagent.NativeEvent) error { return nil })
 			errText := ""
 			if runErr != nil {
 				errText = runErr.Error()

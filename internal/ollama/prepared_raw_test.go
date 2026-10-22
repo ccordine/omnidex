@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/gryph/omnidex/internal/llm"
 )
@@ -16,7 +15,7 @@ func TestPreparedRawCaptureAllowsJSONEscapingBeyondDecodedContentBound(t *testin
 	const escapedByte = `\u0001`
 	decodedBytes := (llm.MaxExactPreparedModelContentBytes / len(escapedByte)) + 1
 	writes := make(chan error, 1)
-	client := New("http://ollama.invalid", "", "", time.Minute)
+	client := New("http://ollama.invalid", "", "")
 	client.httpClient.Transport = preparedRawRoundTripper(func(request *http.Request) (*http.Response, error) {
 		if request.Method != http.MethodPost || request.URL.Path != "/api/generate" {
 			return nil, fmt.Errorf("unexpected request %s %s", request.Method, request.URL.Path)

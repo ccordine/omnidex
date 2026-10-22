@@ -108,7 +108,7 @@ func DecodeRoleplayGroundedParagraphInventory(
 		return zero, fmt.Errorf("roleplay grounded paragraph inventory must use LF line boundaries")
 	}
 	candidates := strings.Split(leaf, "\n")
-	if len(candidates) < 1 || len(candidates) > maxRoleplayGroundedParagraphs {
+	if len(candidates) < 1 {
 		return zero, fmt.Errorf(
 			"roleplay grounded paragraph inventory must contain 1..%d candidates",
 			maxRoleplayGroundedParagraphs,
@@ -151,7 +151,7 @@ func (inventory RoleplayGroundedParagraphInventory) ValidateFor(
 			RoleplayGroundedParagraphInventorySchemaV1,
 		)
 	}
-	if len(inventory.Candidates) < 1 || len(inventory.Candidates) > maxRoleplayGroundedParagraphs {
+	if len(inventory.Candidates) < 1 {
 		return fmt.Errorf(
 			"roleplay grounded paragraph inventory must contain 1..%d candidates",
 			maxRoleplayGroundedParagraphs,

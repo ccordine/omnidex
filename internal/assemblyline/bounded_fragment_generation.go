@@ -38,11 +38,6 @@ func BuildBoundedSourceFragmentGenerationPrompt(
 		)
 	}
 	prompt := strings.Join(parts, "\n\n")
-	if len(prompt) > maxPortableResourceBytes {
-		return "", fmt.Errorf(
-			"%s fragment generation prompt exceeds %d bytes",
-			language.display, maxPortableResourceBytes,
-		)
-	}
+
 	return prompt, nil
 }

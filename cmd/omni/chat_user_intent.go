@@ -15,6 +15,7 @@ import (
 type userMessageOutcome struct {
 	proposalID model.LifecycleOperationID
 	text       string
+	receipt    sessionintent.Receipt
 	executed   bool
 	quit       bool
 }
@@ -97,6 +98,7 @@ func (session *chatSession) acceptUserMessage(text string) (resultErr error) {
 		}
 		return err
 	}
+	session.rememberUserIntentEcho(summary.receipt, text)
 	session.pendingIntent = nil
 	session.exitRequested = summary.quit
 	session.lastPendingIntent = summary.proposalID
@@ -135,7 +137,7 @@ func (session *chatSession) submitUserIntent(ctx context.Context, pending *pendi
 	if err != nil {
 		return userMessageOutcome{}, err
 	}
-	return userMessageOutcome{text: userIntentReceiptText(receipt), executed: true, quit: receipt.ExitClient}, nil
+	return userMessageOutcome{text: userIntentReceiptText(receipt), receipt: receipt, executed: true, quit: receipt.ExitClient}, nil
 }
 
 func (session *chatSession) resolvePendingUserIntent() error {
@@ -146,6 +148,7 @@ func (session *chatSession) resolvePendingUserIntent() error {
 	if err != nil {
 		return err
 	}
+	session.rememberUserIntentEcho(receipt, pending.request.Text)
 	session.pendingIntent = nil
 	if session.planNoteEditing {
 		if err := session.endPlanReviewNoteInput(); err != nil {

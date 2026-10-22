@@ -3,7 +3,6 @@ package projectgit
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os/exec"
 	"strings"
 	"sync"
@@ -37,9 +36,6 @@ func (execCommandRunner) Output(ctx context.Context, dir string, args ...string)
 	cmd.Stdout = output
 	cmd.Stderr = output
 	err := cmd.Run()
-	if output.Exceeded() {
-		return "", fmt.Errorf("git command output exceeds the %d-byte limit", maxGitCommandOutputBytes)
-	}
 	value := output.String()
 	if err == nil {
 		return value, nil
@@ -66,17 +62,6 @@ type boundedCommandBuffer struct {
 func (buffer *boundedCommandBuffer) Write(value []byte) (int, error) {
 	buffer.mu.Lock()
 	defer buffer.mu.Unlock()
-	if buffer.exceeded {
-		return 0, fmt.Errorf("command output exceeds its bound")
-	}
-	remaining := buffer.limit - len(buffer.data)
-	if len(value) > remaining {
-		if remaining > 0 {
-			buffer.data = append(buffer.data, value[:remaining]...)
-		}
-		buffer.exceeded = true
-		return remaining, fmt.Errorf("command output exceeds its bound")
-	}
 	buffer.data = append(buffer.data, value...)
 	return len(value), nil
 }

@@ -121,12 +121,7 @@ func reduceObjectiveDatabaseCandidates(
 		for _, id := range decision.RelationIDs {
 			selected = append(selected, byID[id])
 		}
-		if len(selected) > databaseSchemaSelectionLimit {
-			return nil, total, fmt.Errorf(
-				"database schema selection found more than %d necessary relations without reopening accepted selections",
-				databaseSchemaSelectionLimit,
-			)
-		}
+
 	}
 	return selected, total, nil
 }

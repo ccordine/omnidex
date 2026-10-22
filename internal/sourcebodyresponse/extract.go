@@ -31,9 +31,6 @@ func ExtractCandidates(raw string, maximumBytes int) ([]Candidate, error) {
 	if normalized == "" {
 		return nil, fmt.Errorf("source response is empty")
 	}
-	if len(normalized) > maximumBytes {
-		return nil, fmt.Errorf("source response exceeds %d bytes", maximumBytes)
-	}
 
 	lines := strings.Split(normalized, "\n")
 	var blocks []string
@@ -75,9 +72,7 @@ func ExtractCandidates(raw string, maximumBytes int) ([]Candidate, error) {
 	}
 	candidates := make([]Candidate, 0, len(blocks))
 	for _, block := range blocks {
-		if len(block) > maximumBytes {
-			return nil, fmt.Errorf("fenced source response exceeds %d bytes", maximumBytes)
-		}
+
 		candidates = append(candidates, Candidate{Source: block, Fenced: true})
 	}
 	return candidates, nil

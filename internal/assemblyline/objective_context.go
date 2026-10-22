@@ -66,9 +66,7 @@ func renderObjectiveContextForModel(context ObjectiveContext) (string, error) {
 }
 
 func (context ObjectiveContext) Validate() error {
-	if len(context.Capsules) > MaxObjectiveContextCapsules {
-		return fmt.Errorf("objective context exceeds the %d-capsule bound", MaxObjectiveContextCapsules)
-	}
+
 	seenSources := make(map[string]struct{})
 	for capsuleIndex, capsule := range context.Capsules {
 		if len(capsule.Sources) < 1 {
@@ -123,8 +121,6 @@ func validateObjectiveContextText(label, value string, maximum int) error {
 		strings.ContainsRune(value, '\x00') {
 		return fmt.Errorf("objective %s must be exact non-blank UTF-8 text without NUL", label)
 	}
-	if maximum > 0 && len(value) > maximum {
-		return fmt.Errorf("objective %s exceeds %d bytes", label, maximum)
-	}
+
 	return nil
 }

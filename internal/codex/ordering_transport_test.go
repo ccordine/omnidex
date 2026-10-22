@@ -8,7 +8,7 @@ import (
 func TestOrderingUsesScopedInstructionIsolatedParser(t *testing.T) {
 	fixture, _, cancel := parserFixture(t, true)
 	defer cancel()
-	native, err := New(fixture.command, fixture.directory, fixture.timeout)
+	native, err := New(fixture.command, fixture.directory)
 	if err != nil {
 		t.Fatal(err)
 	}

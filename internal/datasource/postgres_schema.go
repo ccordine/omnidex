@@ -97,9 +97,7 @@ ORDER BY n.nspname, c.relname`)
 			return nil, fmt.Errorf("PostgreSQL catalog repeated relation OID %d", oid)
 		}
 		relations[oid] = &inspectedRelation{oid: oid, definition: RelationDefinition{Schema: schema, Name: name, Kind: kind, RowEstimate: estimate}}
-		if len(relations) > MaxSchemaRelations {
-			return nil, fmt.Errorf("PostgreSQL catalog exceeds %d relations", MaxSchemaRelations)
-		}
+
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate PostgreSQL relations: %w", err)

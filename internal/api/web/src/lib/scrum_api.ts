@@ -273,9 +273,7 @@ export async function fetchScrumTags(
   if (new TextDecoder().decode(encodedQuery) !== query) {
     throw new Error("Scrum tag catalog search must be valid Unicode.");
   }
-  if (encodedQuery.byteLength > 256) {
-    throw new Error("Scrum tag catalog search exceeds the 256-byte bound.");
-  }
+
   const params = new URLSearchParams({ project_id: String(projectID) });
   if (query !== "") params.set("q", query);
   params.set("limit", String(limit));

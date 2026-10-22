@@ -32,10 +32,10 @@ func (workspace *Workspace) run(parent context.Context, command Command, acquisi
 	if workspace.acquiring != acquisition {
 		return result, fmt.Errorf("Docker command differs from its acquisition network authority")
 	}
-	if err := validateRequest(Request{ImageID: workspace.imageID, Argv: command.Argv, Environment: command.Environment, Stdin: command.Stdin, Timeout: command.Timeout}); err != nil {
+	if err := validateRequest(Request{ImageID: workspace.imageID, Argv: command.Argv, Environment: command.Environment, Stdin: command.Stdin}); err != nil {
 		return result, err
 	}
-	ctx, cancel := context.WithTimeout(parent, command.Timeout)
+	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	result = Result{ContainerID: workspace.containerID, ImageID: workspace.imageID, Argv: append([]string(nil), command.Argv...), WorkingDirectory: WorkingDirectory, StartedAt: time.Now().UTC()}
 	defer func() { result.FinishedAt = time.Now().UTC() }()
@@ -43,7 +43,7 @@ func (workspace *Workspace) run(parent context.Context, command Command, acquisi
 	if resultErr != nil {
 		return result, resultErr
 	}
-	if err := validateRequest(Request{ImageID: workspace.imageID, Argv: command.Argv, Environment: result.Environment, Stdin: command.Stdin, Timeout: command.Timeout}); err != nil {
+	if err := validateRequest(Request{ImageID: workspace.imageID, Argv: command.Argv, Environment: result.Environment, Stdin: command.Stdin}); err != nil {
 		return result, err
 	}
 	if err := workspace.requireRunning(ctx); err != nil {

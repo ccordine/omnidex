@@ -168,7 +168,7 @@ function integerField(form: HTMLFormElement, name: string): number {
 
 function orderedSceneParticipants(form: HTMLFormElement): string[] {
 	const values = new FormData(form).getAll("participant_id");
-	if (values.length < 1 || values.length > 16 || values.some((value) => typeof value !== "string" || !/^rpc_[0-9a-f]{32}$/.test(value))) {
+	if ((values.length < 1) || (values.some((value) => typeof value !== "string" || !/^rpc_[0-9a-f]{32}$/.test(value)))) {
 		throw new Error("The server-rendered scene draft must contain 1 to 16 exact character identities.");
 	}
 	const participants = values as string[];

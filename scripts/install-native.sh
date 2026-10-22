@@ -42,7 +42,7 @@ if [[ ! -e "$config_root/runtime.env" ]]; then
     printf 'DATABASE_URL=postgresql:///omnidex?host=%s/socket&port=15432\nDATABASE_SCHEMA=omnidex_runtime\n' "$state_root"
     printf 'LLM_PROVIDER=codex\nCODEX_COMMAND=%s\nCODEX_DIRECTORY=%s\n' "$codex_command" "$repo"
     printf 'HOST_DIRECTORY_ACCESS_ROOT=%s\n' "$repo"
-    printf 'INFERENCE_CONTEXT_TOKENS=131072\nREQUEST_TIMEOUT=30m\n'
+    printf 'INFERENCE_CONTEXT_TOKENS=131072\n'
     printf 'REDIS_URL=redis://:%s@127.0.0.1:16379/0\n' "$secret"
     printf 'OMNIDEX_INTEGRATION_API_TOKEN=%s\n' "$(openssl rand -hex 32)"
     "$repo/bin/omni" model-env "$model"

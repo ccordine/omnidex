@@ -115,12 +115,7 @@ func (service *Service) validateFetchRequest(request FetchRequest) ([]Candidate,
 	if len(request.CandidateIDs) == 0 {
 		return nil, fmt.Errorf("%w: explicit candidate IDs are required", ErrInvalidFetch)
 	}
-	if len(request.Candidates) > service.config.MaxCandidates {
-		return nil, fmt.Errorf("%w: %d candidate definitions exceed max candidates %d", ErrInvalidFetch, len(request.Candidates), service.config.MaxCandidates)
-	}
-	if len(request.CandidateIDs) > service.config.MaxDocuments {
-		return nil, fmt.Errorf("%w: %d candidate IDs exceed max documents %d", ErrInvalidFetch, len(request.CandidateIDs), service.config.MaxDocuments)
-	}
+
 	byID := make(map[CandidateID]Candidate, len(request.Candidates))
 	for _, candidate := range request.Candidates {
 		if err := ValidateCandidate(candidate); err != nil {
@@ -136,7 +131,7 @@ func (service *Service) validateFetchRequest(request FetchRequest) ([]Candidate,
 	selected := make([]Candidate, 0, len(request.CandidateIDs))
 	seen := make(map[CandidateID]struct{}, len(request.CandidateIDs))
 	for _, id := range request.CandidateIDs {
-		if len(id) == 0 || len(id) > 128 {
+		if len(id) == 0 {
 			return nil, fmt.Errorf("%w: candidate ID must contain 1..128 bytes", ErrInvalidFetch)
 		}
 		if _, duplicate := seen[id]; duplicate {

@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestStreamLimitAppliesToReaderFromCopyOptimization(t *testing.T) {
+func TestStreamCopyPreservesLargeOutput(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	buffer := &boundedBuffer{cancel: cancel}
@@ -17,7 +17,7 @@ func TestStreamLimitAppliesToReaderFromCopyOptimization(t *testing.T) {
 	if _, err := io.Copy(buffer, reader); err != nil {
 		t.Fatal(err)
 	}
-	if buffer.Len() != MaxStreamBytes || !buffer.overflow || ctx.Err() != context.Canceled {
-		t.Fatalf("stream copy escaped the bound: bytes=%d overflow=%t context=%v", buffer.Len(), buffer.overflow, ctx.Err())
+	if buffer.Len() != MaxStreamBytes+1 || buffer.overflow || ctx.Err() != nil {
+		t.Fatalf("stream copy lost output or canceled: bytes=%d overflow=%t context=%v", buffer.Len(), buffer.overflow, ctx.Err())
 	}
 }

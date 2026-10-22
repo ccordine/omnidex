@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/client"
 	"github.com/gryph/omnidex/internal/model"
@@ -40,19 +39,19 @@ func TestChatRendererDefaultSuppressesInternalRealtime(t *testing.T) {
 	}
 }
 
-func TestChatRendererJobShowsTaskAndDeduplicatesPhase(t *testing.T) {
+func TestChatRendererJobShowsPhaseWithoutRepeatingRequest(t *testing.T) {
 	console, output := planReviewTestConsole(t)
 	renderer := chatRenderer{console: console}
 	details := renderActivityJob()
 	if err := renderer.job(details, nil); err != nil {
 		t.Fatal(err)
 	}
-	for _, required := range []string{"Working", "Preserve this task"} {
+	for _, required := range []string{"Working"} {
 		if !strings.Contains(output.String(), required) {
 			t.Errorf("task presentation omitted %q: %q", required, output.String())
 		}
 	}
-	for _, forbidden := range []string{"generation", "stage", "v3_coding", "step 12"} {
+	for _, forbidden := range []string{"generation", "stage", "v3_coding", "step 12", "Preserve this task", "task>"} {
 		if strings.Contains(output.String(), forbidden) {
 			t.Errorf("ordinary task presentation contains diagnostic %q: %q", forbidden, output.String())
 		}
@@ -169,21 +168,6 @@ func TestChatRendererStatusShowsFullTaskWithoutInternalStages(t *testing.T) {
 	}
 	if strings.Contains(output.String(), "v3_coding") || strings.Contains(output.String(), "generation") {
 		t.Fatalf("default status exposed internal stages: %q", output.String())
-	}
-}
-
-func TestChatRendererTaskPreviewIsBoundedAndPreservesUnicode(t *testing.T) {
-	console, output := planReviewTestConsole(t)
-	details := renderActivityJob()
-	details.Job.Instruction = strings.Repeat("界", 200) + "\nsecond line"
-	if err := (chatRenderer{console: console}).job(details, nil); err != nil {
-		t.Fatal(err)
-	}
-	if !utf8.ValidString(output.String()) || strings.Count(output.String(), "界") > 120 || strings.Contains(output.String(), "second line") {
-		t.Fatalf("task preview was not bounded valid Unicode: %q", output.String())
-	}
-	if !strings.Contains(output.String(), "界") {
-		t.Fatalf("task preview was omitted: %q", output.String())
 	}
 }
 

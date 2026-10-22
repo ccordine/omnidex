@@ -18,7 +18,6 @@ const (
 	// with up to six JSON bytes for each escaped path byte.
 	MaxFrameBytes    = 8 * 1024 * 1024
 	operationTimeout = 10 * time.Second
-	transferTimeout  = 2 * time.Minute
 )
 
 type binding struct {
@@ -42,7 +41,7 @@ func readExact(conn *websocket.Conn, target any) error {
 	if err != nil {
 		return err
 	}
-	if kind != websocket.TextMessage || len(data) > MaxFrameBytes {
+	if kind != websocket.TextMessage {
 		return fmt.Errorf("workspace connection requires bounded text frames")
 	}
 	if err := exactjson.ValidateObject(data, target, "workspace frame"); err != nil {
@@ -64,9 +63,7 @@ func writeExact(conn *websocket.Conn, value any) error {
 	if err != nil {
 		return err
 	}
-	if len(data) > MaxFrameBytes {
-		return fmt.Errorf("workspace text frame exceeds its byte bound")
-	}
+
 	if err := conn.SetWriteDeadline(time.Now().Add(operationTimeout)); err != nil {
 		return err
 	}

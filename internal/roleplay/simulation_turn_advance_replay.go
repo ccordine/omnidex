@@ -107,7 +107,7 @@ func validateAdvanceReplayResult(result SimulationTurnAdvanceResult, userTurn Us
 		result.CreatedAt.IsZero() {
 		return fmt.Errorf("persisted simulation turn advance is invalid")
 	}
-	if len(result.ParticipantCharacterIDs) < 1 || len(result.ParticipantCharacterIDs) > MaxSceneParticipants {
+	if len(result.ParticipantCharacterIDs) < 1 {
 		return fmt.Errorf("persisted simulation turn advance participant count is invalid")
 	}
 	seen := make(map[string]struct{}, len(result.ParticipantCharacterIDs))

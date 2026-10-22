@@ -23,7 +23,7 @@ func TestChunkedContextArtifactBindingsAreNotLimitedToOneStationEnvelope(t *test
 	if err != nil || decodeErr != nil || text != source.String() {
 		t.Fatalf("context identities were not restored exactly: %v", err)
 	}
-	if _, _, err := RedactArtifactIdentities(source.String(), ArtifactIdentityProvenance{}); err == nil {
-		t.Fatal("context batching weakened the ordinary per-envelope safeguard")
+	if _, directBindings, err := RedactArtifactIdentities(source.String(), ArtifactIdentityProvenance{}); err != nil || len(directBindings) != 100 {
+		t.Fatal("ordinary artifact input was size-rejected", err)
 	}
 }

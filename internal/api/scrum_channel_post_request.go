@@ -29,7 +29,7 @@ func decodeScrumChannelPostRequest(
 	if r == nil || r.Body == nil {
 		return scrumChannelPostRequest{}, fmt.Errorf("Scrum channel POST body is required")
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxScrumChannelPostBodyBytes)
+
 	raw, err := io.ReadAll(r.Body)
 	if err != nil {
 		var tooLarge *http.MaxBytesError

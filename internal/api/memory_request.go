@@ -62,7 +62,7 @@ func decodeExactMemoryJSON(
 	maxBytes int64,
 	destination any,
 ) error {
-	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+
 	raw, err := io.ReadAll(r.Body)
 	if err != nil {
 		var tooLarge *http.MaxBytesError
@@ -81,7 +81,7 @@ func decodeExactMemoryJSON(
 }
 
 func validateMemoryBatchRequest(request memoryBatchRequest) ([]model.MemoryInput, error) {
-	if len(request.Memories) == 0 || len(request.Memories) > maxMemoryBatchItems {
+	if len(request.Memories) == 0 {
 		return nil, fmt.Errorf("memory batch must contain 1..%d items", maxMemoryBatchItems)
 	}
 	inputs := make([]model.MemoryInput, len(request.Memories))

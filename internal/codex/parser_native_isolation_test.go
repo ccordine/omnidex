@@ -51,7 +51,7 @@ func TestParserNativeInstructionIsolation(t *testing.T) {
 	if err := os.WriteFile(wrapper, []byte(script+"\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	client, err := NewParser(context.Background(), wrapper, root, 15*time.Second)
+	client, err := NewParser(context.Background(), wrapper, root)
 	if err != nil {
 		t.Fatal(err)
 	}

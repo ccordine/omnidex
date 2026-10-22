@@ -1,8 +1,6 @@
 package llm
 
 import (
-	"fmt"
-
 	"github.com/gryph/omnidex/internal/exactjson"
 )
 
@@ -63,8 +61,6 @@ func ExactPreparedRequestBytes(prepared PreparedModel) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(raw) > MaxExactPreparedProviderRequestBytes {
-		return nil, fmt.Errorf("exact provider request exceeds its byte ceiling")
-	}
+
 	return raw, nil
 }

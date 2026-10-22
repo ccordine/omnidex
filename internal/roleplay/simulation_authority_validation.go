@@ -31,7 +31,7 @@ func (authority SimulationTurnAuthority) Validate() error {
 		(authority.InputKind != SimulationTurnProse && authority.UserTurn.ContributionKind != UserContributionCommand) {
 		return fmt.Errorf("simulation turn input kind differs from user contribution authority")
 	}
-	if len(authority.ParticipantCharacterIDs) < 1 || len(authority.ParticipantCharacterIDs) > MaxSceneParticipants {
+	if len(authority.ParticipantCharacterIDs) < 1 {
 		return fmt.Errorf("simulation turn authority participant count is outside its bound")
 	}
 	seen := make(map[string]struct{}, len(authority.ParticipantCharacterIDs))

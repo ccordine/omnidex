@@ -77,7 +77,7 @@ func TestNativeAgentCommandShowsObservedStartExitAndFailure(t *testing.T) {
 	if err := console.SetActivity(chatActivity{JobID: 41, StepID: 12, Label: "Working", Working: true}); err != nil {
 		t.Fatal(err)
 	}
-	renderer := chatRenderer{console: console}
+	renderer := chatRenderer{console: console, verbosity: chatVerbose}
 	started := nativeRenderActivity(model.AgentActivityCommand, model.AgentActivityStarted, "")
 	started.Command, started.CWD = "go test ./cmd/omni", "/client/project"
 	if err := renderer.realtime(nativeRenderEvent(started)); err != nil {
@@ -108,7 +108,7 @@ func TestNativeAgentCommandShowsObservedStartExitAndFailure(t *testing.T) {
 	if err := renderer.realtime(nativeRenderEvent(declined)); err != nil {
 		t.Fatal(err)
 	}
-	for _, required := range []string{"failed", "exit 7", "declined"} {
+	for _, required := range []string{"Command exited 7", "declined"} {
 		if !strings.Contains(output.String(), required) {
 			t.Errorf("quiet mode hid command error %q: %q", required, output.String())
 		}

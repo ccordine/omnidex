@@ -245,7 +245,7 @@ func validateRoleplaySimulationComponentState(state roleplaySimulationComponentS
 			return fmt.Errorf("roleplay component latest user turn is not a reusable composer selection")
 		}
 	}
-	if len(state.AllParticipants) < 1 || len(state.AllParticipants) > roleplay.MaxSceneParticipants {
+	if len(state.AllParticipants) < 1 {
 		return fmt.Errorf("roleplay component requires its bounded complete participant authority")
 	}
 	for index, participant := range state.AllParticipants {

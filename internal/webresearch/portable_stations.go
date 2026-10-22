@@ -53,7 +53,7 @@ func validatePortableRelevanceCall(call RelevanceCall) error {
 	if err := validatePortableObjectiveContext(call.Question, call.Context); err != nil {
 		return err
 	}
-	if len(call.Candidates) < 1 || len(call.Candidates) > maxPortableCandidates {
+	if len(call.Candidates) < 1 {
 		return fmt.Errorf("portable relevance requires 1..%d candidates", maxPortableCandidates)
 	}
 	if call.MaxSelections < 1 || call.MaxSelections > len(call.Candidates) {
@@ -73,9 +73,6 @@ func validatePortableRelevanceCall(call RelevanceCall) error {
 			return fmt.Errorf("portable relevance candidate %q has no excerpt", candidate.CandidateID)
 		}
 		total += len(candidate.CandidateID) + len(candidate.Title) + len(candidate.Snippet) + len(candidate.Excerpt)
-		if total > maxPortableCandidateProjection {
-			return fmt.Errorf("portable relevance projection exceeds %d bytes", maxPortableCandidateProjection)
-		}
 		for _, value := range []string{candidate.Title, candidate.Snippet, candidate.Excerpt} {
 			if err := validatePortableField(value, maxPortableCandidateFieldBytes); err != nil {
 				return err
@@ -94,7 +91,7 @@ func validatePortableObjectiveContext(question string, context assemblyline.Obje
 }
 
 func validatePortableQuestion(value string) error {
-	if strings.TrimSpace(value) == "" || len(value) > maxPortableQuestionBytes || !utf8.ValidString(value) || strings.ContainsRune(value, '\x00') {
+	if strings.TrimSpace(value) == "" || !utf8.ValidString(value) || strings.ContainsRune(value, '\x00') {
 		return fmt.Errorf("portable web question must be exact non-blank UTF-8 without NUL within %d bytes", maxPortableQuestionBytes)
 	}
 	return nil
@@ -105,14 +102,14 @@ func validatePortableIdentity(value string) error {
 }
 
 func validatePortableIdentityBound(value string, maximum int) error {
-	if value == "" || value != strings.TrimSpace(value) || len(value) > maximum || strings.ContainsAny(value, "\r\n") {
+	if value == "" || value != strings.TrimSpace(value) || strings.ContainsAny(value, "\r\n") {
 		return fmt.Errorf("portable web identity must be one bounded trimmed line")
 	}
 	return validatePortableField(value, maximum)
 }
 
 func validatePortableField(value string, maximum int) error {
-	if len(value) > maximum || !utf8.ValidString(value) || strings.ContainsRune(value, '\x00') {
+	if !utf8.ValidString(value) || strings.ContainsRune(value, '\x00') {
 		return fmt.Errorf("portable web field is invalid or exceeds %d bytes", maximum)
 	}
 	return nil

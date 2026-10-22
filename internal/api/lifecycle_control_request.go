@@ -107,7 +107,7 @@ func decodeLifecycleControlObject(
 	if r == nil || r.Body == nil {
 		return fmt.Errorf("%s body is required", name)
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxLifecycleControlBodyBytes)
+
 	raw, err := io.ReadAll(r.Body)
 	if err != nil {
 		var tooLarge *http.MaxBytesError
@@ -140,9 +140,7 @@ func validateLifecycleControlText(value, name string) error {
 	if strings.TrimSpace(value) == "" {
 		return fmt.Errorf("%s is required", name)
 	}
-	if len(value) > maxLifecycleControlTextBytes {
-		return fmt.Errorf("%s exceeds the %d-byte limit", name, maxLifecycleControlTextBytes)
-	}
+
 	return nil
 }
 

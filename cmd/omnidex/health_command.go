@@ -98,13 +98,11 @@ func verifyRunningCoreHealth(
 		return fmt.Errorf("reach running core health endpoint: %w", err)
 	}
 	defer response.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(response.Body, localCoreHealthMaxBytes+1))
+	body, err := io.ReadAll(response.Body)
 	if err != nil {
 		return fmt.Errorf("read running core health response: %w", err)
 	}
-	if len(body) > localCoreHealthMaxBytes {
-		return fmt.Errorf("running core health response exceeds %d bytes", localCoreHealthMaxBytes)
-	}
+
 	if response.StatusCode != http.StatusOK {
 		return fmt.Errorf("running core health returned HTTP %d", response.StatusCode)
 	}
@@ -117,13 +115,11 @@ func verifyRunningCoreHealthDocument(
 	if document == nil {
 		return fmt.Errorf("running core health document is unavailable")
 	}
-	body, err := io.ReadAll(io.LimitReader(document, localCoreHealthMaxBytes+1))
+	body, err := io.ReadAll(document)
 	if err != nil {
 		return fmt.Errorf("read running core health document: %w", err)
 	}
-	if len(body) > localCoreHealthMaxBytes {
-		return fmt.Errorf("running core health document exceeds %d bytes", localCoreHealthMaxBytes)
-	}
+
 	var health runningCoreHealth
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.DisallowUnknownFields()

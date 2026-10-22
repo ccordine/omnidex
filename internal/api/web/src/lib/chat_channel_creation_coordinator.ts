@@ -17,7 +17,7 @@ export class ChatChannelCreationCoordinator {
   synchronize(): void {
     if (!this.host.hasMode()) return;
     const roleplay = this.selectedMode() === "roleplay";
-    if (roleplay && (!this.host.hasRoleplayFields() || !this.host.hasWorldName() || !this.host.hasViewpointName())) {
+    if ((roleplay) && (!this.host.hasRoleplayFields() || !this.host.hasWorldName() || !this.host.hasViewpointName())) {
       throw new Error("The server-rendered roleplay creation fields are incomplete.");
     }
     if (this.host.hasRoleplayFields()) this.host.roleplayFields().classList.toggle("hidden", !roleplay);
@@ -55,7 +55,7 @@ export class ChatChannelCreationCoordinator {
 }
 
 function exactName(value: string, source: string): string {
-  if (!value.trim() || value !== value.trim() || value.includes("\0") || new TextEncoder().encode(value).byteLength > 256) {
+  if (!value.trim() || value !== value.trim() || value.includes("\0")) {
     throw new Error(`${source} must be exact nonblank text of at most 256 UTF-8 bytes.`);
   }
   return value;

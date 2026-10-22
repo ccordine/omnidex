@@ -18,7 +18,7 @@ func validateBoundedSourceFragment(
 ) (string, error) {
 	signature = strings.TrimSpace(signature)
 	if signature == "" || strings.ContainsAny(signature, "\x00\r\n") ||
-		!utf8.ValidString(signature) || len(signature) > 1024 {
+		!utf8.ValidString(signature) {
 		return "", fmt.Errorf("%s fragment signature must be one trimmed line", language.display)
 	}
 	normalizedBody, err := extractBoundedSourceBodyResponse(
@@ -189,11 +189,7 @@ func projectBoundedSourceDeclaration(
 	if !utf8.ValidString(content) || strings.ContainsRune(content, '\x00') {
 		return "", "", fmt.Errorf("%s fragment must be valid UTF-8 without NUL bytes", language.display)
 	}
-	if len(content) > maxPortableCandidateBytes {
-		return "", "", fmt.Errorf(
-			"%s fragment exceeds %d bytes", language.display, maxPortableCandidateBytes,
-		)
-	}
+
 	actual, err := boundedSourceDeclarationShape(language, content)
 	if err != nil {
 		return "", "", err

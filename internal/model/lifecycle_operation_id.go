@@ -7,7 +7,7 @@ import (
 	"regexp"
 )
 
-var lifecycleOperationIDPattern = regexp.MustCompile(`^lifecycle_operation_[a-z0-9_]{1,128}$`)
+var lifecycleOperationIDPattern = regexp.MustCompile(`^lifecycle_operation_[a-z0-9_]+$`)
 
 type LifecycleOperationID string
 

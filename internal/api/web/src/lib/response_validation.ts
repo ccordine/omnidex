@@ -35,9 +35,7 @@ export function exactString(value: unknown, label: string, options: {
   }
   const bytes = encoder.encode(value);
   if (decoder.decode(bytes) !== value) throw new Error(`${label} must contain valid Unicode.`);
-  if (bytes.byteLength > (options.maxBytes ?? SCRUM_CHANNEL_RESPONSE_MAX_BYTES)) {
-    throw new Error(`${label} exceeds its response bound.`);
-  }
+
   const trimmed = trimGoUnicodeWhitespace(value);
   if (options.nonblank && !trimmed) throw new Error(`${label} must not be blank.`);
   if (options.canonical && value !== trimmed) throw new Error(`${label} must be canonical.`);
@@ -62,7 +60,7 @@ export function exactTimestamp(value: unknown, label: string): string {
 export function exactMicrosecondTimestamp(value: unknown, label: string): string {
   const timestamp = exactTimestamp(value, label);
   const match = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.[0-9]{1,6})?Z$/.exec(timestamp);
-  if (!match || (match[1]?.endsWith("0") ?? false)) {
+  if ((!match) || (match[1]?.endsWith("0") ?? false)) {
     throw new Error(`${label} must be one canonical UTC microsecond timestamp.`);
   }
   const parsed = new Date(timestamp);

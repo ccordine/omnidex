@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/roleplay"
@@ -168,7 +167,7 @@ func (s *Server) writeRoleplayCharacterGeneration(
 		if modelName == "" {
 			continue
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		ctx, cancel := context.WithCancel(r.Context())
 		installed, err := s.hasInstalledOllamaModel(ctx, modelName)
 		cancel()
 		if err != nil {

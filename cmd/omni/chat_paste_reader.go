@@ -17,11 +17,8 @@ var (
 // owns the complete text, including typed prefixes, suffixes and corrections.
 type bracketedPasteReader struct {
 	source           io.Reader
-	maxBytes         int
 	paste            bool
 	linePasted       bool
-	lineBytes        int
-	overflow         bool
 	invalidUTF8      bool
 	unsafeText       bool
 	pasteRune        []byte
@@ -37,8 +34,8 @@ type bracketedPasteReader struct {
 	buffer           [512]byte
 }
 
-func newBracketedPasteReader(source io.Reader, maxBytes int) *bracketedPasteReader {
-	return &bracketedPasteReader{source: source, maxBytes: maxBytes}
+func newBracketedPasteReader(source io.Reader) *bracketedPasteReader {
+	return &bracketedPasteReader{source: source}
 }
 
 func (reader *bracketedPasteReader) Read(destination []byte) (int, error) {
@@ -179,11 +176,7 @@ func (reader *bracketedPasteReader) finishTypedRune() {
 }
 
 func (reader *bracketedPasteReader) consumePasteByte(value byte) {
-	reader.lineBytes++
-	if reader.lineBytes > reader.maxBytes {
-		reader.overflow = true
-		return
-	}
+
 	reader.pasteRune = append(reader.pasteRune, value)
 	if !utf8.FullRune(reader.pasteRune) {
 		return
@@ -210,23 +203,20 @@ func (reader *bracketedPasteReader) finishPastePayload() {
 	}
 }
 
-func (reader *bracketedPasteReader) consumeLineState() (bool, bool, bool, bool, terminalInputAuthority) {
+func (reader *bracketedPasteReader) consumeLineState() (bool, bool, bool, terminalInputAuthority) {
 	reader.finishTypedRune()
 	pasted := reader.linePasted
-	overflow := reader.overflow
 	invalidUTF8 := reader.invalidUTF8
 	unsafeText := reader.unsafeText
 	authority := reader.lineAuthority
 	reader.linePasted = false
-	reader.lineBytes = 0
-	reader.overflow = false
 	reader.invalidUTF8 = false
 	reader.unsafeText = false
 	reader.pasteRune = reader.pasteRune[:0]
 	reader.typedRune = reader.typedRune[:0]
 	reader.lineAuthority = terminalInputAuthority{}
 	reader.lineAuthoritySet = false
-	return pasted, overflow, invalidUTF8, unsafeText, authority
+	return pasted, invalidUTF8, unsafeText, authority
 }
 
 func (reader *bracketedPasteReader) mergeLineAuthority(authority terminalInputAuthority) {

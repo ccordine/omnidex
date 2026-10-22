@@ -10,9 +10,39 @@ import (
 	"github.com/gryph/omnidex/internal/sessionintent"
 	"github.com/gryph/omnidex/internal/userintent"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestUserIntentContentPreservesOriginalThroughPersistenceAndReplay(t *testing.T) {
+	pool, repository := freshUserIntentRepository(t)
+	command, fixture := userIntentFixture(t, repository, "Preserve the original owner message.")
+	original := "  " + strings.Repeat("Keep this exact line: café 世界.\n", 1200) + "\"quoted\"  "
+	request, result := saveIntent(t, repository, command, fixture.created.Revision, original,
+		statePatch("/message", sessionintent.Content{Text: "a shortened model copy", Recipient: "planner"}))
+	var stored sessionintent.Result
+	var raw []byte
+	if err := pool.QueryRow(t.Context(), `SELECT result_json FROM channel_user_intents WHERE operation_id=$1`, request.OperationID).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &stored); err != nil {
+		t.Fatal(err)
+	}
+	for _, candidate := range []sessionintent.Result{result, stored} {
+		var content sessionintent.Content
+		if len(candidate.Patch) != 1 || json.Unmarshal(candidate.Patch[0].Value, &content) != nil || content.Text != original || content.Recipient != "planner" {
+			t.Fatal("original content was not bound before persistence")
+		}
+	}
+	replay, err := repository.InterpretUserIntent(t.Context(), request, func(context.Context, sessionintent.Context) (sessionintent.Result, json.RawMessage, error) {
+		t.Fatal("replay invoked interpretation")
+		return sessionintent.Result{}, nil, nil
+	})
+	if err != nil || !reflect.DeepEqual(stored, replay) {
+		t.Fatalf("replay changed original content: %v", err)
+	}
+}
 
 func TestUserIntentApprovalStartsExactRevisionAndReplays(t *testing.T) {
 	for _, goal := range []string{"Present a bounded text report.", "Record one independently supplied value."} {

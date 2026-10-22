@@ -127,9 +127,7 @@ func runObjectiveDatabaseEvidenceWorkflow(
 		return result, err
 	}
 	result.Evidence = append(result.Evidence, evidence...)
-	if len(result.Evidence) > maxDatabaseEvidenceCapsules {
-		return result, fmt.Errorf("database cognition exceeded %d evidence capsules", maxDatabaseEvidenceCapsules)
-	}
+
 	return result, nil
 }
 

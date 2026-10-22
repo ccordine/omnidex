@@ -23,7 +23,7 @@ func PortableResponseMaximumBytesForJob(job PortableJob) (int, error) {
 	if contract.openText {
 		return 0, nil
 	}
-	if maximum < 1 || maximum > MaxPortableRawCandidateBytes {
+	if maximum < 1 {
 		return 0, fmt.Errorf(
 			"portable work kind %q produced invalid response maximum %d",
 			job.Kind, maximum,

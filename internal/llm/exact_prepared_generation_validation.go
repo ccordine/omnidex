@@ -32,10 +32,8 @@ func (failure ExactPreparedOutputLimitReachedError) Validate() error {
 	if failure.DoneReason != "length" || failure.PromptTokens < 1 ||
 		failure.OutputTokens < 1 || failure.ContextTokens < 1 ||
 		(failure.MaxOutputTokens != -1 &&
-			(failure.MaxOutputTokens < 1 || failure.MaxOutputTokens > failure.ContextTokens)) ||
-		failure.PromptTokens+failure.OutputTokens > failure.ContextTokens ||
-		failure.ContentBytes < 1 ||
-		failure.ContentBytes > MaxExactPreparedModelContentBytes {
+			(failure.MaxOutputTokens < 1)) ||
+		failure.ContentBytes < 1 {
 		return fmt.Errorf("exact prepared output limit evidence is invalid")
 	}
 	return nil

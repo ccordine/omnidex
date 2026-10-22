@@ -31,7 +31,7 @@ func (metadata JobMetadata) Validate() error {
 		"scrum_card_description": metadata.CardDescription, "scrum_checklist": metadata.Checklist,
 		"scrum_test_criteria": metadata.TestCriteria, "scrum_return_column": metadata.ReturnColumn,
 	} {
-		if !utf8.ValidString(value) || strings.ContainsRune(value, '\x00') || len(value) > 1<<20 {
+		if !utf8.ValidString(value) || strings.ContainsRune(value, '\x00') {
 			return fmt.Errorf("Scrum job metadata %s is outside the exact text bound", name)
 		}
 	}
@@ -144,7 +144,7 @@ func FormatChecklist(items []ChecklistItem) (string, error) {
 	seen := make(map[string]struct{}, len(items))
 	for index, item := range items {
 		if !utf8.ValidString(item.ID) || strings.ContainsRune(item.ID, '\x00') ||
-			item.ID == "" || item.ID != strings.TrimSpace(item.ID) || len(item.ID) > 256 {
+			item.ID == "" || item.ID != strings.TrimSpace(item.ID) {
 			return "", fmt.Errorf("Scrum checklist item %d has a noncanonical ID", index+1)
 		}
 		if _, exists := seen[item.ID]; exists {
@@ -152,7 +152,7 @@ func FormatChecklist(items []ChecklistItem) (string, error) {
 		}
 		seen[item.ID] = struct{}{}
 		if !utf8.ValidString(item.Text) || strings.ContainsRune(item.Text, '\x00') ||
-			strings.TrimSpace(item.Text) == "" || len(item.Text) > 1<<20 {
+			strings.TrimSpace(item.Text) == "" {
 			return "", fmt.Errorf("Scrum checklist item %q has invalid text", item.ID)
 		}
 		state := "[ ]"

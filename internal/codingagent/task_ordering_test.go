@@ -23,6 +23,7 @@ func TestTaskOrderingPermutations(t *testing.T) {
 	for _, sequence := range [][]string{{"a", "b", "c"}, {"c", "a", "b"}, {"b", "c", "a"}, {"c", "b", "a"}, {"a", "c", "b"}, {"b", "a", "c"}} {
 		t.Run(strings.Join(sequence, ""), func(t *testing.T) {
 			tasks := orderingTasks()
+			tasks[0].Goal = strings.Repeat("Required instruction. ", 10000)
 			original, _ := json.Marshal(tasks)
 			var before []LedgerTask
 			json.Unmarshal(original, &before)
@@ -95,11 +96,10 @@ func TestTaskOrderingNoInferenceForZeroOrOne(t *testing.T) {
 	}
 }
 
-func TestTaskOrderingBoundsAndCancellation(t *testing.T) {
+func TestTaskOrderingInvalidIdentitiesAndCancellation(t *testing.T) {
 	for _, change := range []func([]LedgerTask) []LedgerTask{
 		func(tasks []LedgerTask) []LedgerTask { tasks[1].ID = tasks[0].ID; return tasks },
 		func(tasks []LedgerTask) []LedgerTask { tasks[0].ID = ""; return tasks },
-		func(tasks []LedgerTask) []LedgerTask { tasks[0].Goal = strings.Repeat("x", 128<<10); return tasks },
 		func(tasks []LedgerTask) []LedgerTask { return make([]LedgerTask, 129) },
 	} {
 		tasks := change(orderingTasks())

@@ -13,10 +13,10 @@ func NewSchemaSnapshot(
 	capturedAt time.Time,
 ) (SchemaSnapshot, error) {
 	sourceID = strings.TrimSpace(sourceID)
-	if sourceID == "" || len(sourceID) > 256 || strings.ContainsRune(sourceID, '\x00') {
+	if sourceID == "" || strings.ContainsRune(sourceID, '\x00') {
 		return SchemaSnapshot{}, fmt.Errorf("schema snapshot requires a non-blank source ID")
 	}
-	if strings.TrimSpace(sourceName) == "" || len(strings.TrimSpace(sourceName)) > 256 || strings.ContainsRune(sourceName, '\x00') {
+	if strings.TrimSpace(sourceName) == "" || strings.ContainsRune(sourceName, '\x00') {
 		return SchemaSnapshot{}, fmt.Errorf("schema snapshot requires a non-blank source name")
 	}
 	if capturedAt.IsZero() {

@@ -12,10 +12,7 @@ func TestAgentCommandTruncationIsExplicitForNativeAndVerification(t *testing.T) 
 		for _, status := range []model.AgentActivityStatus{model.AgentActivityStarted, model.AgentActivityCompleted, model.AgentActivityFailed, model.AgentActivityDeclined} {
 			t.Run(string(source)+"/"+string(status), func(t *testing.T) {
 				console, output := planReviewTestConsole(t)
-				renderer := chatRenderer{console: console}
-				if status == model.AgentActivityFailed || status == model.AgentActivityDeclined {
-					renderer.verbosity = chatQuiet
-				}
+				renderer := chatRenderer{console: console, verbosity: chatVerbose}
 				activity := nativeRenderActivity(model.AgentActivityCommand, status, "")
 				activity.Source, activity.Command, activity.CWD, activity.Truncated = source, "command-preview", "/client/project", true
 				if source == model.AgentActivityVerification {

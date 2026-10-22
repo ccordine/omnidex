@@ -3,9 +3,6 @@ package codingagent
 import "encoding/json"
 
 func RenderParserContext(call Assignment) (string, error) {
-	if call.ParserStep != nil {
-		return renderParserStepContext(call)
-	}
 	encoded := call.Context
 	if encoded == "" {
 		raw, err := json.Marshal(PromptContext(call))

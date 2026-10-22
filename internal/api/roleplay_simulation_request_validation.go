@@ -14,7 +14,7 @@ var (
 	roleplayCharacterIdentityPattern = regexp.MustCompile(`^rpc_[0-9a-f]{32}$`)
 	roleplayLibraryIdentityPattern   = regexp.MustCompile(`^rpl_[0-9a-f]{32}$`)
 	roleplayWorldIdentityPattern     = regexp.MustCompile(`^rpw_[0-9a-f]{32}$`)
-	roleplaySimulationKeyPattern     = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
+	roleplaySimulationKeyPattern     = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 )
 
 func validateRoleplayCharacterRequest(request roleplayCharacterRequest) error {
@@ -53,7 +53,7 @@ func validateRoleplaySceneRequest(request roleplaySceneRequest, update bool) err
 	if err := validateRoleplayText("scene description", request.Description, roleplay.MaxSimulationTextBytes, true); err != nil {
 		return err
 	}
-	if len(request.ParticipantIDs) < 1 || len(request.ParticipantIDs) > roleplay.MaxSceneParticipants {
+	if len(request.ParticipantIDs) < 1 {
 		return fmt.Errorf("scene requires 1 to %d participants", roleplay.MaxSceneParticipants)
 	}
 	seen := make(map[string]struct{}, len(request.ParticipantIDs))
@@ -73,7 +73,7 @@ func validateRoleplayResponderOrderRequest(request roleplayResponderOrderRequest
 	if request.ExpectedRevision == nil || *request.ExpectedRevision < 1 {
 		return fmt.Errorf("responder order requires a positive expected_revision")
 	}
-	if len(request.CharacterIDs) < 1 || len(request.CharacterIDs) > roleplay.MaxSceneParticipants {
+	if len(request.CharacterIDs) < 1 {
 		return fmt.Errorf("responder order requires 1 to %d characters", roleplay.MaxSceneParticipants)
 	}
 	seen := make(map[string]struct{}, len(request.CharacterIDs))
@@ -176,7 +176,7 @@ func validateRoleplayItemDefinition(definition roleplay.ItemTemplateDefinition) 
 }
 
 func validateRoleplayEffects(effects []roleplay.MeterDelta) error {
-	if len(effects) < 1 || len(effects) > roleplay.MaxDefinitionEffects {
+	if len(effects) < 1 {
 		return fmt.Errorf("definition requires 1 to %d meter effects", roleplay.MaxDefinitionEffects)
 	}
 	seen := make(map[string]struct{}, len(effects))
@@ -194,7 +194,7 @@ func validateRoleplayEffects(effects []roleplay.MeterDelta) error {
 }
 
 func validateRoleplayText(field, value string, maximum int, required bool) error {
-	if !utf8.ValidString(value) || strings.ContainsRune(value, '\x00') || value != strings.TrimSpace(value) || len([]byte(value)) > maximum {
+	if !utf8.ValidString(value) || strings.ContainsRune(value, '\x00') || value != strings.TrimSpace(value) {
 		return fmt.Errorf("%s must be exact trimmed UTF-8 of at most %d bytes", field, maximum)
 	}
 	if required && value == "" {
@@ -204,9 +204,7 @@ func validateRoleplayText(field, value string, maximum int, required bool) error
 }
 
 func validateRoleplayTextList(field string, values []string) error {
-	if len(values) > roleplay.MaxPersonaListEntries {
-		return fmt.Errorf("%s exceeds %d entries", field, roleplay.MaxPersonaListEntries)
-	}
+
 	seen := make(map[string]struct{}, len(values))
 	for _, value := range values {
 		if err := validateRoleplayText(field+" entry", value, 256, true); err != nil {

@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"os"
 	"reflect"
-	"time"
 
 	"github.com/gryph/omnidex/internal/datasource"
 	"github.com/gryph/omnidex/internal/queue"
@@ -111,7 +110,7 @@ func (r *nativeRuntimeV3) acquireDelegatedDatabaseEvidence(
 		return objectiveEvidenceAcquisition{}, err
 	}
 	client, err := datasource.NewDelegatedClient(
-		record.AuthorityURL, token, &http.Client{Timeout: 30 * time.Second},
+		record.AuthorityURL, token, &http.Client{},
 	)
 	if err != nil {
 		return objectiveEvidenceAcquisition{}, fmt.Errorf("configure delegated database authority: %w", err)

@@ -133,7 +133,7 @@ func decodeScrumCardEditRequest(
 	w http.ResponseWriter,
 	r *http.Request,
 ) (scrumCardEditRequest, error) {
-	r.Body = http.MaxBytesReader(w, r.Body, maxScrumCardEditBodyBytes)
+
 	raw, err := io.ReadAll(r.Body)
 	if err != nil {
 		return scrumCardEditRequest{}, newScrumCardEditBodyError(err)

@@ -1,12 +1,11 @@
 package com.omnidex.integration;
 
 import java.net.URI;
-import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
 public interface Transport {
-    Response send(String method, URI uri, Map<String, String> headers, String body, Duration timeout);
+    Response send(String method, URI uri, Map<String, String> headers, String body);
 
     record Response(int status, Map<String, List<String>> headers, byte[] body) {
         public Response {

@@ -17,7 +17,7 @@ components:
         use_dsn: {type: boolean}
         dsn: {type: string}
         authority_url: {type: string}
-        credential_env: {type: string, pattern: "^(|OMNIDEX_DELEGATED_AUTHORITY_[A-Z][A-Z0-9_]{0,93}_TOKEN)$"}
+        credential_env: {type: string, pattern: "^(|OMNIDEX_DELEGATED_AUTHORITY_[A-Z][A-Z0-9_]*_TOKEN)$"}
     CreateChannelRequest:
       type: object
       additionalProperties: false
@@ -27,18 +27,17 @@ components:
         name: {type: string, minLength: 1}
         tags:
           type: array
-          maxItems: 32
           uniqueItems: true
-          items: {type: string, minLength: 1, maxLength: 64}
+          items: {type: string, minLength: 1}
         workspace_root: {type: string, minLength: 1}
-        data_source_id: {type: string, pattern: "^[a-z0-9][a-z0-9_.:-]{0,127}$"}
+        data_source_id: {type: string, pattern: "^[a-z0-9][a-z0-9_.:-]*$"}
         mode: {const: assistant}
     SendMessageRequest:
       type: object
       additionalProperties: false
       required: [prompt]
       properties:
-        prompt: {type: string, minLength: 1, maxLength: 4096}
+        prompt: {type: string, minLength: 1}
         delegated_data_authority_id:
           type: string
           pattern: "^dba_[0-9a-f]{64}$"
@@ -185,4 +184,4 @@ components:
         error: {type: string, minLength: 1}
     ChannelID:
       type: string
-      pattern: "^[a-z0-9][a-z0-9_.:-]{0,95}$"
+      pattern: "^[a-z0-9][a-z0-9_.:-]*$"

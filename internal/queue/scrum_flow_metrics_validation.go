@@ -39,13 +39,11 @@ func validateScrumFlowMetrics(metrics ScrumFlowMetrics) error {
 	default:
 		return fmt.Errorf("Scrum flow completion status %q is not registered", metrics.CompletionStatus)
 	}
-	if len(metrics.Signals) > maxScrumFlowSignals {
-		return fmt.Errorf("Scrum flow signals exceed %d items", maxScrumFlowSignals)
-	}
+
 	seen := make(map[string]struct{}, len(metrics.Signals))
 	for index, signal := range metrics.Signals {
 		if !utf8.ValidString(signal) || strings.ContainsRune(signal, '\x00') ||
-			strings.TrimSpace(signal) != signal || signal == "" || len(signal) > maxScrumFlowSignalBytes {
+			strings.TrimSpace(signal) != signal || signal == "" {
 			return fmt.Errorf("Scrum flow signal %d is outside its registered text domain", index+1)
 		}
 		if _, exists := seen[signal]; exists {

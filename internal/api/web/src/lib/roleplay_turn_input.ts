@@ -51,12 +51,8 @@ export function roleplayTurnSubmission(
   const parts = queuedParts.map((part, index) => validatePart(part, index));
   if (exactDraft) parts.push({ kind: "message", text: exactDraft });
   if (parts.length < 1) throw new Error("Add a message, action, or event before sending.");
-  if (parts.length > MAX_PARTS) throw new Error(`A roleplay turn can contain at most ${MAX_PARTS} ordered parts.`);
 
   const prompt = composeRoleplayTurn(parts);
-  if (new TextEncoder().encode(prompt).byteLength > MAX_PROMPT_BYTES) {
-    throw new Error(`The composed roleplay turn exceeds ${MAX_PROMPT_BYTES} UTF-8 bytes.`);
-  }
 
   const personaKind = selectedPersonaKind(persona);
   if (personaKind === "character") {
@@ -107,9 +103,7 @@ export function restoredRoleplayTurnParts(
   if (candidate.length === 0) {
     throw new Error("This historical failed turn has no exact ordered parts, so its original modality cannot be restored safely.");
   }
-  if (candidate.length > MAX_PARTS) {
-    throw new Error(`Failed roleplay turn recovery exceeds ${MAX_PARTS} persisted parts.`);
-  }
+
   const parts = candidate.map((part, index) => persistedPart(part, index));
   if (composeRoleplayTurn(parts) !== prompt) {
     throw new Error("Failed roleplay turn recovery parts differ from its exact prompt bytes.");

@@ -75,6 +75,17 @@ func (renderer *chatRenderer) nativeActivity(event client.RealtimeEvent) error {
 		if err := renderer.finishCommandOutput(activity); err != nil {
 			return err
 		}
+		if renderer.verbosity == chatNormal || renderer.verbosity == chatQuiet {
+			if activity.Status == model.AgentActivityStarted {
+				return renderer.console.SetActivityDetail(event.JobID, event.StepID, "Running: "+shortAgentExcerpt(command))
+			}
+			if activity.Status == model.AgentActivityFailed || activity.Status == model.AgentActivityDeclined {
+				if err := renderer.system("%s · %s", commandOutcome(activity), shortAgentExcerpt(command)); err != nil {
+					return err
+				}
+			}
+			return renderer.console.SetActivityDetail(event.JobID, event.StepID, agentActivityRoleLabel(activity))
+		}
 		var rendered strings.Builder
 		if activity.Status == model.AgentActivityStarted {
 			renderBlock(&rendered, "command>", command)
@@ -120,6 +131,13 @@ func (renderer *chatRenderer) nativeActivity(event client.RealtimeEvent) error {
 		}
 	}
 	return nil
+}
+
+func commandOutcome(activity model.AgentActivity) string {
+	if activity.ExitCode != nil {
+		return fmt.Sprintf("Command exited %d", *activity.ExitCode)
+	}
+	return "Command " + string(activity.Status)
 }
 
 func (renderer *chatRenderer) observeWorkspaceFile(event client.RealtimeEvent) {

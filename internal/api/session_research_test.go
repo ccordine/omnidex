@@ -7,7 +7,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/gryph/omnidex/internal/client"
 	"github.com/gryph/omnidex/internal/codingagent"
@@ -31,7 +30,7 @@ func TestResearchHTTPForkReplayReconnectAndWorkspaceBinding(t *testing.T) {
 	}
 	httpServer := httptest.NewServer(server.Handler())
 	defer httpServer.Close()
-	apiClient, err := client.New(httpServer.URL, 10*time.Second)
+	apiClient, err := client.New(httpServer.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +110,7 @@ func TestResearchHTTPForkReplayReconnectAndWorkspaceBinding(t *testing.T) {
 		}
 		response.Body.Close()
 	}
-	reconnected, err := client.New(httpServer.URL, 10*time.Second)
+	reconnected, err := client.New(httpServer.URL)
 	if err != nil {
 		t.Fatal(err)
 	}

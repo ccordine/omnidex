@@ -13,7 +13,7 @@ import (
 
 // Fixed provider text verifies execution and value consumption, not live
 // language quality or an autonomous application build.
-func TestSharedStationUsageRecordsActualValuesAndRejections(t *testing.T) {
+func TestSharedStationUsageRecordsExactValuesIncludingLargeResults(t *testing.T) {
 	databaseURL := strings.TrimSpace(os.Getenv("OMNI_TEST_DATABASE_URL"))
 	if databaseURL == "" {
 		t.Skip("OMNI_TEST_DATABASE_URL is required for shared station usage evidence")
@@ -23,11 +23,8 @@ func TestSharedStationUsageRecordsActualValuesAndRejections(t *testing.T) {
 		{"Which display language is preferred?", "Use French for display text.", "Ivo", "Ivo starts kneading the dough.", "Kneading the dough."},
 	} {
 		for _, mode := range []string{"conversation", "ongoing action"} {
-			for _, reject := range []bool{false, true} {
-				name := fixture.question + "/" + mode
-				if reject {
-					name += "/oversized"
-				}
+			for _, variant := range []string{"ordinary", "large"} {
+				name := fixture.question + "/" + mode + "/" + variant
 				t.Run(name, func(t *testing.T) {
 					pool, _ := freshWorkerEvidenceRepository(t, databaseURL)
 					config, err := modelconfig.Freeze(modelconfig.Config{
@@ -54,8 +51,9 @@ func TestSharedStationUsageRecordsActualValuesAndRejections(t *testing.T) {
 						kinds = []assemblyline.WorkKind{assemblyline.WorkRoleplayOngoingActionRelation, assemblyline.WorkRoleplayOngoingActionValue}
 						modelName, expected, maximum = "fixture-action", fixture.action, roleplay.MaxOngoingActionBytes
 					}
-					if reject {
-						responses[len(responses)-1] = strings.Repeat("x", maximum+1)
+					if variant == "large" {
+						expected = strings.Repeat("x", maximum+1)
+						responses[len(responses)-1] = expected
 					}
 					provider := &exactEvidenceStationClient{}
 					for _, raw := range responses {
@@ -82,11 +80,7 @@ func TestSharedStationUsageRecordsActualValuesAndRejections(t *testing.T) {
 						if calls != len(responses)*(1-attempt) || provider.calls != len(responses) {
 							t.Fatalf("attempt=%d actual calls=%d provider=%d / %v", attempt, calls, provider.calls, err)
 						}
-						if reject {
-							if err == nil || value != "" || complete {
-								t.Fatalf("rejection accepted a semantic value: %q complete=%t / %v", value, complete, err)
-							}
-						} else if err != nil || value != expected || !complete {
+						if err != nil || value != expected || !complete {
 							t.Fatalf("valid result was not consumed: %q complete=%t / %v", value, complete, err)
 						}
 					}
@@ -95,11 +89,7 @@ func TestSharedStationUsageRecordsActualValuesAndRejections(t *testing.T) {
 						t.Fatalf("recorded calls=%d / %v", len(calls), err)
 					}
 					for index, recorded := range calls {
-						if reject && index == len(calls)-1 {
-							assertPortableLeafRejectedCall(t, recorded, provider.prepared[index], kinds[index], responses[index], modelName)
-						} else {
-							assertPortableLeafRecordedCall(t, recorded, provider.prepared[index], kinds[index], responses[index], modelName)
-						}
+						assertPortableLeafRecordedCall(t, recorded, provider.prepared[index], kinds[index], responses[index], modelName)
 						assertGroundedCallOmits(t, recorded.ModelInput, string(kinds[index]), `"schema"`, "call_evidence_id")
 						if mode == "conversation" {
 							assertGroundedCallContains(t, recorded.ModelInput, fixture.question)

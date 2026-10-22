@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/model"
@@ -15,15 +14,14 @@ import (
 type Client struct {
 	command   string
 	directory string
-	timeout   time.Duration
 	parser    *parserProcess
 }
 
-func New(command, directory string, timeout time.Duration) (*Client, error) {
-	if command == "" || directory == "" || timeout <= 0 {
-		return nil, fmt.Errorf("Codex transport requires an executable, working directory, and timeout")
+func New(command, directory string) (*Client, error) {
+	if command == "" || directory == "" {
+		return nil, fmt.Errorf("Codex transport requires an executable, working directory")
 	}
-	return &Client{command: resolveCodexExecutable(command), directory: directory, timeout: timeout}, nil
+	return &Client{command: resolveCodexExecutable(command), directory: directory}, nil
 }
 
 func (client *Client) PrepareExactRequest(prepared llm.PreparedModel) (llm.PreparedModel, error) {
@@ -59,7 +57,7 @@ func (client *Client) GeneratePreparedExactWithActivity(parent context.Context, 
 	if err := json.Unmarshal(encoded, &request); err != nil {
 		return result, err
 	}
-	ctx, cancel := context.WithTimeout(parent, client.timeout)
+	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	connection, release, err := client.generationConnection(ctx)
 	if err != nil {

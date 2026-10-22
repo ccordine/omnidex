@@ -35,7 +35,7 @@ func (hub *Hub) Serve(ctx context.Context, conn *websocket.Conn) error {
 	defer conn.Close()
 	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
 	defer stop()
-	conn.SetReadLimit(MaxFrameBytes)
+
 	if err := conn.SetReadDeadline(time.Now().Add(operationTimeout)); err != nil {
 		return err
 	}

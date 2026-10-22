@@ -111,6 +111,10 @@ func (r *Repository) InterpretUserIntent(ctx context.Context, request sessionint
 	result.RequiresApproval = false
 	result.Pitch = ""
 	if result.Error == "" && result.Clarification == "" {
+		result.Patch, err = sessionintent.BindContent(request, displayed, result.Patch)
+		if err != nil {
+			return sessionintent.Result{}, err
+		}
 		if err := sessionintent.ValidateRoutedPatch(request, displayed, result.Patch); err != nil {
 			return sessionintent.Result{}, err
 		}
@@ -139,7 +143,7 @@ func (r *Repository) InterpretUserIntent(ctx context.Context, request sessionint
 	if err != nil {
 		return result, err
 	}
-	if len(evidence) == 0 || !json.Valid(evidence) || len(evidence) > 4<<20 {
+	if len(evidence) == 0 || !json.Valid(evidence) {
 		return result, fmt.Errorf("user intent model evidence is absent or exceeds 4 MiB")
 	}
 	if result.RequiresApproval {

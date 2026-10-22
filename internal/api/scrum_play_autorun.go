@@ -6,10 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"time"
 )
-
-const scrumPlayAutoRunTimeout = 2 * time.Minute
 
 func scrumRequestFromContext(ctx context.Context) *http.Request {
 	if ctx == nil {
@@ -53,7 +50,7 @@ func (s *Server) refreshScrumPlayQueueForProjectAsync(projectID int64, reason st
 		return fmt.Errorf("Scrum play queue refresh lifecycle ended: %w", err)
 	}
 	go func() {
-		ctx, cancel := context.WithTimeout(s.lifecycleContext, scrumPlayAutoRunTimeout)
+		ctx, cancel := context.WithCancel(s.lifecycleContext)
 		defer cancel()
 		if !advanceAutoWork {
 			ctx = context.WithValue(ctx, scrumAutoWorkHandoffSuppressedKey{}, true)

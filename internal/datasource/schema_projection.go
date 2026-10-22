@@ -48,7 +48,7 @@ func ProjectSchemaForIntent(snapshot SchemaSnapshot, relationIDs []string) (Inte
 	if err := snapshot.ValidateIntegrity(); err != nil {
 		return IntentSchemaProjection{}, fmt.Errorf("intent schema projection requires a valid snapshot: %w", err)
 	}
-	if len(relationIDs) == 0 || len(relationIDs) > MaxProjectedRelations {
+	if len(relationIDs) == 0 {
 		return IntentSchemaProjection{}, fmt.Errorf("intent schema projection requires 1..%d relation IDs", MaxProjectedRelations)
 	}
 	projection := IntentSchemaProjection{Schema: IntentSchemaProjectionV1, SourceID: snapshot.SourceID}
@@ -81,12 +81,10 @@ func ProjectSchemaForIntent(snapshot SchemaSnapshot, relationIDs []string) (Inte
 		}
 		projection.Relations = append(projection.Relations, projected)
 	}
-	encoded, err := json.Marshal(projection)
+	_, err := json.Marshal(projection)
 	if err != nil {
 		return IntentSchemaProjection{}, fmt.Errorf("encode intent schema projection: %w", err)
 	}
-	if len(encoded) > MaxIntentSchemaProjectionBytes {
-		return IntentSchemaProjection{}, fmt.Errorf("intent schema projection exceeds %d bytes", MaxIntentSchemaProjectionBytes)
-	}
+
 	return projection, nil
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/gryph/omnidex/internal/modelref"
 	"github.com/gryph/omnidex/internal/ollama"
@@ -71,6 +70,6 @@ func (s *Server) loadInstalledRoleplayModelNames(ctx context.Context) ([]string,
 }
 
 func (s *Server) installedRoleplayModelPageLoader() func(context.Context, int, int) (ollama.ModelPage, error) {
-	client := s.ollamaClientWithTimeout(10 * time.Second)
+	client := s.ollamaClient()
 	return client.ListModelPage
 }

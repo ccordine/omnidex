@@ -1,7 +1,7 @@
 import { fetchSlashCommandComponent, type SlashCommandComponent } from "./chat_slash_palette_api";
 
-const CANONICAL_CHANNEL_ID = /^[a-z0-9][a-z0-9_.:-]{0,95}$/;
-const CANONICAL_COMMAND_PREFIX = /^\/[a-z][a-z0-9-]{0,31}$/;
+const CANONICAL_CHANNEL_ID = /^[a-z0-9][a-z0-9_.:-]*$/;
+const CANONICAL_COMMAND_PREFIX = /^\/[a-z][a-z0-9-]*$/;
 const TYPED_COMMAND_PREFIX = /^\/[a-z0-9-]*$/;
 const COMMAND_KINDS = new Set(["interaction", "give", "take", "research"]);
 

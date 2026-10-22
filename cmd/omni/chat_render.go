@@ -61,7 +61,9 @@ func (renderer chatRenderer) messageTurnState(message model.ChannelMessage) erro
 	}
 	var rendered strings.Builder
 	fmt.Fprintf(&rendered, "[omni] job %d · %s\n", message.Turn.JobID, message.Turn.Status)
-	renderBlock(&rendered, statusErrorLabel(message.Turn.Status), message.Turn.Error)
+	if message.Turn.Error != "" {
+		renderBlock(&rendered, statusErrorLabel(message.Turn.Status), message.Turn.Error)
+	}
 	return renderer.console.WriteError(rendered.String())
 }
 

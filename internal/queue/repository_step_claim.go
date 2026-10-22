@@ -13,7 +13,7 @@ import (
 )
 
 func (r *Repository) ClaimNextStep(ctx context.Context, workerID string) (*model.ClaimedStep, error) {
-	if workerID == "" || workerID != strings.TrimSpace(workerID) || len(workerID) > 256 ||
+	if workerID == "" || workerID != strings.TrimSpace(workerID) ||
 		!utf8.ValidString(workerID) || strings.ContainsRune(workerID, '\x00') {
 		return nil, fmt.Errorf("worker identity must be exact PostgreSQL-compatible text of at most 256 bytes")
 	}

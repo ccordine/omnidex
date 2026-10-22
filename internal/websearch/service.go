@@ -162,14 +162,12 @@ func (service *Service) getWithClient(ctx context.Context, rawURL string, client
 		return "", fmt.Errorf("execute HTTP request: %w", err)
 	}
 	defer response.Body.Close()
-	reader := io.LimitReader(response.Body, service.config.MaxResponseBytes+1)
+	reader := response.Body
 	body, err := io.ReadAll(reader)
 	if err != nil {
 		return "", fmt.Errorf("read HTTP response: %w", err)
 	}
-	if int64(len(body)) > service.config.MaxResponseBytes {
-		return "", fmt.Errorf("HTTP response exceeds %d bytes", service.config.MaxResponseBytes)
-	}
+
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}

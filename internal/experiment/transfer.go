@@ -36,9 +36,6 @@ func (docker *Docker) collect(parent context.Context, id string, paths []string,
 	}
 	_ = reader.CloseWithError(err)
 	commandErr := <-finished
-	if stderr.overflow {
-		commandErr = errors.Join(commandErr, errors.New("Docker archive diagnostic exceeded its byte bound"))
-	}
 	if err != nil || commandErr != nil {
 		return nil, errors.Join(err, dockerOperationError("collect declared artifacts", stderr.Bytes(), commandErr))
 	}

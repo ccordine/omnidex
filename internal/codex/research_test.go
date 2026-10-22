@@ -12,7 +12,7 @@ import (
 func TestResearchTransportReadOnlyDiskAndLiveWeb(t *testing.T) {
 	writer := &protocolWriter{}
 	responses := "{\"id\":1,\"result\":{}}\n{\"id\":2,\"result\":{\"config\":{\"mcp_servers\":{\"external\":{}}}}}\n{\"id\":3,\"result\":{\"model\":\"fixture\",\"thread\":{\"id\":\"research-thread\"}}}\n{\"id\":4,\"result\":{\"turn\":{\"id\":\"research-turn\"}}}\n"
-	connection := &connection{input: writer, output: bufio.NewScanner(bytes.NewBufferString(responses))}
+	connection := &connection{input: writer, output: bufio.NewReader(bytes.NewBufferString(responses))}
 	route := codingagent.Route{Provider: "codex", Model: "fixture"}
 	thread, err := connection.startResearchThread("/workspace", route)
 	if err != nil {

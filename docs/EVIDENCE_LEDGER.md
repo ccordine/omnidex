@@ -8490,3 +8490,354 @@ mode/Sessions controls; shutdown limitation explicit. No remote push requested.
 Cleanup: private compiler/npm caches already retired; approved SQL/staging plan
 and remaining task staging are removed after this record. Final git hygiene and
 service check follow, then stop this delivery task.
+
+
+## Remove application size rejection limits — 2026-10-21
+
+Authoritative root: /home/gryph/Projects/tools/omnidex, main at9bbe1514.
+Owner requested removal of the parser24KiB rejection, then all error-throwing
+size limits, and explicitly directed immediate implementation after the workflow
+exception question. Source changes only; no installed service, schema or identity
+mutation, deployment, commit, push or PR.
+
+Implemented: removed application-owned text/byte, collection and token size
+rejections from intake, semantic/context/source validation, terminal/browser
+input, provider/workspace transports and the fresh PostgreSQL schema. Preserved
+nonempty/UTF-8/NUL validation, grammar, fixed identities, authorization, real
+incomplete-provider failures, exact accounting and caller-requested result bounds.
+Codex frames use buffered line reads; transport reads retain complete data.
+Removed terminal overflow state and obsolete publication-size recovery. Research
+forks use the existing unpaged transaction reader to retain the full selected
+ledger after removal of its100-item rejection. SDK/HTML contracts match acceptance.
+
+Verified (disposable isolated fixtures; scripted providers, not live autonomy):
+- Complete production build: go build -p1 ./internal/... ./cmd/... PASS.
+- Complete affected codingagent, assemblyline, llm, userintent, contextcompiler,
+  experiment, roleplay, websearch, webresearch, datasource, workspace,
+  workspacetransport, openai, api, config, inferenceapi, client, googleai and
+  projectroot suites PASS. Affected model tests PASS using production GoFiles
+  and current planning/activity/path tests.
+- Complete PostgreSQL queue/worker suites PASS with the private test socket:
+ok  	github.com/gryph/omnidex/internal/queue	43.055s
+ok  	github.com/gryph/omnidex/internal/worker	20.262s
+- Production db.ConnectRuntime bootstraps the schema; oversized channel names,
+  user/assistant messages and lifecycle feedback persist. Queue checks also prove
+  large rationale, launch/verification/error evidence and semantic values persist
+  and replay without size rejection, with actual invalid-input checks retained.
+- Complete native Codex protocol suite PASS in a disposable namespace-capable
+  runner. Default Docker namespace restrictions blocked the initial helper run;
+  SYS_ADMIN and unconfined seccomp/AppArmor applied only inside the test container.
+- Complete CLI suite PASS37.529s, excluding the existing unrelated
+  TestCLIProductionDependenciesExcludeServerExecutionAndTestHelpers failure.
+  Large input/paste and mode switching are included.
+- Current Ollama transport/context/timeout/ordering tests PASS0.804s using all
+  production GoFiles; two historical parser tests still reference removed ledger
+  fields and cannot compile. The historical model/coding_ledger_test.go has the
+  same unrelated obsolete-type limitation. Those tests were not rewritten.
+- Browser typecheck PASS; all69 test files and515 tests PASS.
+- git diff --check PASS. Source/test/SDK diff SHA256 excluding this record:
+  9ac5ee5e872d4cf8241d123957a48475c6feca90eab3a5239d74aeb68a8f8c70
+
+Resources: read-only source/modules, networkless fixtures, checker2CPU/3GiB,
+DB1CPU/2GiB with1GiB tmpfs, UI/native runners2CPU/2GiB. Repeated schema suites
+exhausted the first DB's retained WAL; retired it and reran successfully on a
+fresh fixture with128MiB max WAL/32MiB min WAL/30s checkpoints. Observed DB419MiB,
+WAL128MiB. No host security setting, cache, service or installed data was changed.
+
+Delivered: reviewable changes in the authoritative working tree. Cleanup removes
+only omnidex-size-limit-check/db/ui/native and .tmp/size-limit-removal, including
+private caches, test executable, logs and tools. Existing bin, shared caches and
+.tmp/installed-gauntlet-socket are preserved. Cleanup verified: task container listing empty; .tmp0, bin692MiB; task scratch removed; final git diff --check PASS.
+
+## Remove active-work duration deadlines — 2026-10-21
+
+Workspace: /home/gryph/Projects/tools/omnidex, main, HEAD9bbe151497ca.
+Owner requested no elapsed-time errors while work continues; prior size-removal
+changes are preserved. Implemented: removed provider request timeout configuration,
+30-minute station ceilings, command/collection deadlines, active API work timers,
+SQL evidence statement/lock timeouts, browser completion timer, and SDK request
+deadlines. Parent cancellation, ownership expiry, connection/heartbeat checks,
+health probes, and bounded shutdown/cleanup remain. Automatic review rejected the
+broader removal of network liveness deadlines; the implemented alternative keeps
+those checks and removes total work-duration deadlines.
+
+Verified in disposable Docker fixtures:
+- Affected Go suites PASS (llm/providers, inference API, clients, experiment,
+  datasource, workspace transport, API, worker, configuration and CLI). CLI excludes
+  its existing failing dependency-architecture assertion. Production runtime build
+  PASS; runtime tests still cannot compile their existing obsolete ledger fields.
+- Codex full isolated suite PASS; dependency startup/cancellation/cleanup tests
+  rerun after the final startup-deadline removal PASS. Ollama suite PASS using all
+  source and tests except its two pre-existing obsolete parser test files.
+- PostgreSQL query with a session statement_timeout of1000ms executes pg_sleep(1.1)
+  successfully; transaction-local overrides restore afterward PASS.
+- Browser typecheck and69 files/516 tests PASS, including one simulated hour of
+  active job observation. JavaScript SDK10 tests, Java SDK, PHP SDK (delayed headers
+  and body beyond a one-second runtime default), Rust SDK5 tests PASS. Rust's old
+  1.85 fixture cannot compile locked dependencies; disposable1.95 fixture passes.
+- Real Docker experiment execute/collect, retained-workspace commands, caller
+  cancellation, and container-removal fixtures PASS with immutable Alpine3.22
+  image14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce.
+- git diff --check PASS. Combined source/test diff SHA256 (excluding this record,
+  including the new PostgreSQL regression):
+  c8e0281614f77e3dcf7d70c7df4135497691eac1609edff62ac7bd695bc67bfc
+
+Delivered: reviewable changes in the authoritative working tree; no commit/push or
+installed service/database change. Resources were bounded to2CPU/3GiB checker,
+2CPU/2GiB web/Rust/native fixtures,768MiB PostgreSQL with512MiB disposable data,
+read-only source/cache mounts and disposable output. Cleanup covers only
+omnidex-active-timeouts resources, .tmp/active-timeouts and the newly fetched
+rust:1.95-slim image; existing images/shared caches/bin and installed-gauntlet-socket
+remain untouched.
+Cleaned: verified task/experiment container listings empty, fetched image absent,
+.tmp/active-timeouts absent, .tmp0 and existing bin692MiB unchanged. Final diff
+hash matches the verified source above; final git diff --check PASS.
+
+## Ctrl+C clears the current draft first — 2026-10-21
+
+Implemented in the authoritative working tree (main, HEAD9bbe151497ca): selected
+session Ctrl+C probes the existing line editor and clears nonempty draft text,
+cursor and paste provenance without submitting text or sending a job interrupt.
+Empty/inactive prompts retain the existing signal path; SIGTERM and other
+sessions/editors are preserved. Terminal key hints describe the behavior.
+Verified: final CLI suite PASS40.740s, excluding only the previously documented
+unrelated dependency-architecture assertion. Focused race tests PASS3.338s.
+Tests cover typed/Unicode/whitespace/pasted/unfinished-paste drafts, partial key
+sequences, repeat Ctrl+C, fresh input, history, mode/session isolation and SIGTERM.
+Evidence is terminal-editor/component and CLI regression testing, not an installed
+interactive run. Six changed CLI source/test files SHA256 (sorted path + NUL +
+contents): a810f820396f480587757876ca515ae90d323d1e31508ee1912b4096caa96f70.
+Delivered as reviewable source changes; no commit/push or installed binary change.
+Task checker used2CPU/3GiB with disposable bounded compiler caches, read-only
+source/modules and .tmp/ctrl-c-draft logs; cleanup removes only those task resources.
+Cleaned: task container listing empty and scratch removed; existing .tmp reports0,
+bin692MiB unchanged, shared caches and installed-gauntlet-socket preserved.
+Final git diff --check PASS.
+
+## Observational project-building pilot — 2026-10-21
+
+Owner requested piloting Omnidex to observe behavior and operator effort, without
+fixing it mid-run. Installed Oct20 CLI/core used ordinary chat in the empty
+bin/observational-pilot-20261021T190346Z/project workspace. One unchanged request
+asked for a local reading-list app with add/status/filter/delete, persistence,
+instructions and tests. Job31 produced a draft but no authoritative coding ledger
+rows or files. Four automatic planning attempts failed identically:
+`block_2/scan: source unit unit_2 has an invalid or noncontiguous semantic group`.
+The UI and /status hid the cause; service logs were needed. History API also failed
+decoding evidence field generation. Operator canceled after338.070302s; final job
+and steps canceled. No clarification/approval requests, source/config fixes or
+implementation hints. /exit left CLI open; Ctrl+D closed it normally after about
+114s. Task-owned CLI exited0; no forced kill or service change.
+Delivered report and scoped terminal/API/DB/journal evidence under
+bin/observational-pilot-20261021T190346Z. Failed observational pilot, not a completed
+autonomy benchmark; no application available for functional verification. Recent
+source-only size/deadline/Ctrl+C changes were not installed and remain outside this
+pilot's evidence. Existing source edits preserved. Empty requested project and
+necessary evidence retained; no disposable service/container created.
+
+## Remove task-detail parser stages — 2026-10-22
+
+Owner directed removal of the added multistep classification/grouping/extraction
+machinery and its structure/grouping errors while retaining details on ledger
+items. Authoritative tree main, HEAD9bbe151497ca; prior size/deadline/Ctrl+C edits
+preserved. Implemented: direct complete-response extraction, task-owned details,
+code-supplied task metadata, and affected parser/transport regressions. No schema
+change, source copy, second ledger or benchmark implementation is introduced.
+Verification resources: task-owned omnidex-direct-parser-check container using an
+existing Go builder image;2CPU,3GiB memory,256PIDs, read-only source/modules,
+disposable compiler/test output, maximum30min lifetime. Remove it and task scratch
+before completion. Initial available memory24GiB, swap15GiB used, disk38GiB free;
+.tmp0 and retained bin693MiB. Only one heavy verification operation at a time.
+Persistence verification adds only omnidex-direct-parser-db (existing PostgreSQL16
+image,1CPU/512MiB/128PIDs,512MiB disposable data, no host port or credentials),
+sharing the check container's isolated network namespace. Both containers are
+retired after the task-owned round-trip checks. Executable test outputs use the
+check container's disposable /var/tmp/omnidex-direct-parser directory because
+the original tmpfs mount is noexec; no host filesystem policy was changed.
+
+Implemented: removed source-unit scanning, semantic grouping, repeated task-detail
+extraction, exact-quote review gates and mandatory task-detail cross-references.
+Complete tasks enter the ledger in one extraction. Code supplies identities and
+provenance; sparse amendments preserve retained details and ignore presentation
+fields. Native execution and independent task review remain unchanged.
+Verified on final source: full codingagent suite PASS; Codex suite PASS excluding
+two existing private-mount tests unsupported by the container's namespace policy
+(TestOrderingUsesScopedInstructionIsolatedParser and
+TestParserProcessReuseAndThreadIsolation). Ollama tests PASS excluding the existing
+agent_parser_live_test.go, which does not compile against current ledger types.
+Disposable PostgreSQL task-packet, task-ledger and frozen-projection checks PASS.
+Both cmd/omni and cmd/omnidex build PASS. Diff whitespace check PASS; removed parser
+stage symbols absent. These are controller, protocol and persistence checks;
+no live-model pilot or installed-runtime result is claimed.
+Delivered: working-tree source and tests only; no commit, installation or service
+restart. Cleaned: both task-owned containers and their compiler caches, binaries
+and PostgreSQL data removed; no new image or network retained. .tmp remains0 and
+retained bin remains693MiB. Existing pilot evidence and unrelated edits preserved.
+
+## Current-build usability gauntlet — 2026-10-22
+
+Completed observational pilot: owner requested actual-software observation of functionality and
+friction. Authoritative source main/9bbe151497ca, existing edits included.
+Task resources and scenarios: bin/usability-gauntlet-20261022T043948Z/evidence/run.json.
+Fresh native CLI/core, disposable PostgreSQL/Valkey, existing model sign-in;
+private manifest mount changes only the pilot endpoint. Preserve installed
+services, user configuration and data. No framework/workload source edits during
+evidence runs. Retain observations and generated workloads; remove task scratch,
+binaries and fixture processes/containers after exporting evidence.
+
+Observed: initial reading-list job completed first attempt in 726.073s; ordinary
+search follow-up completed in 256.706s. Two requests, two normal approvals, zero
+rescue prompts or manual framework/workload fixes. Fresh native executables used
+gpt-6.1-sol (planner/reviewer xhigh, executor/parser low). Initial three tasks and
+follow-up one task passed their independent product reviews. Independent Chromium
+passes confirmed add, both status directions, all filters, delete, reload
+persistence, title/author search, combined search/status filtering, desktop/mobile
+layouts, and no JavaScript errors. No recurrence of the earlier semantic-group
+failure. Continued work beyond ten minutes had no elapsed-work timeout failure.
+
+Draft Ctrl+C passed for Unicode, 36,000 pasted bytes, and active planning. Empty
+Ctrl+C during execution paused the same job and stopped its worker; /cancel then
+canceled it. A race with waiting_input instead produced an authority error.
+Disconnect/reconnect preserved background work and restored the active job.
+/exit stopped display updates but left the CLI process open; Ctrl+D exited.
+Normal ten-minute realtime expiration reconnected automatically with a noisy
+warning. Evidence-history API returned HTTP500 for unknown phase; generation and
+step history worked. Progress repeatedly exposed commands/scripts and misleading
+failed labels. Initial native reviews consumed 298.915s versus 283.786s execution.
+
+Large submitted-input boundary accepted 33,299 bytes and reached normal work;
+the test was deliberately canceled, not a completed large-workload proof. The
+generated terminal input was 33,691 bytes: seven repeated lines were missing before
+server message storage. Terminal-injection versus product attribution remains
+unresolved; no exact byte-preservation claim. One application plus follow-up is
+limited evidence, not a general reliability benchmark. Omnidex web UI untested.
+
+Report, exact prompts, API/native-call evidence, timings, screenshots and generated
+app retained under bin/usability-gauntlet-20261022T043948Z (about11MiB). Both tested
+executable hashes matched before cleanup. Initial source fingerprint encoding
+could not be reproduced after context compaction; no framework source modification
+timestamp occurred during the pilot, and no framework edits were made. See report
+and preservation.json for this harness limitation.
+
+Cleanup verified: native core scope, CLIs, independent app server, both labeled
+PostgreSQL/Valkey containers, runtime binaries and scratch/compiler caches removed;
+task ports closed. Original installed service remained active at PID1553438;
+saved manifest unchanged. Generated app retained as files with run instructions,
+not a hosted service. No installation, commit, or framework repair in this task.
+
+## Usability friction goal and repeat gauntlet — 2026-10-22
+
+Completed owner-requested goal: address redundant task/verification work, noisy CLI
+progress, /exit shutdown, heterogeneous evidence history, Ctrl+C at approval-state
+transitions, and large-input fidelity; then repeat the actual-software gauntlet.
+Preserve the finite approved ledger and independent per-task review architecture.
+Working directly in main/9bbe151497ca with all existing edits preserved. Baseline
+per-file digests and task artifacts: bin/usability-friction-20261022/evidence.
+One heavy operation at a time, native checks/build/runtime at2CPU/3GiB, scoped
+disposable PostgreSQL/Valkey when needed, task disk budget3GiB. Initial available
+RAM25GiB, disk38GiB free, swap17GiB used. Preserve installed services and manifest;
+remove task processes/containers, binaries and compiler scratch after final pilot.
+
+Implemented: session-scoped CLI input lifetime fixes /exit; long-line handling
+removes the terminal's silent 4096-rune truncation. Code binds original request
+text before intent storage and persists it with provenance on ledger items before
+approval, preserving prior source through amendments. Execution/review consume the
+same frozen persisted packet. Ctrl+C reconciles waiting-state races. Normal command
+progress is compact and normal stream renewal is quiet. Public evidence history
+projects native coding journal rows without the unknown-phase decoding failure.
+Planning keeps cohesive behavior and verification together; native instructions
+recognize automated actual-software verification and preserve shared tool caches.
+
+Actual-software repeat: fresh native CLI/core, real gpt-6.1-sol providers, disposable
+PostgreSQL/Valkey, ordinary requests and one approval each. Initial reading-list app
+completed in424.750s (previous726.073s), one execution/review instead of three each.
+Search follow-up completed in423.277s (previous256.706s), one execution/review.
+Both successful runs needed zero rescue prompts or manual workload changes.
+Independent Chromium passes verified all requested actions, persistence, combined
+filters/search, mobile layout and no JavaScript errors. Review remains expensive:
+107.028s initially and208.960s for the follow-up. Slowness is not claimed solved.
+
+Two intermediate runs exposed failures and were canceled: an invented human-operated
+verification requirement, then a task referring to owner source without retaining
+its bytes. Task-neutral fixes were made between fresh runs. Final build job5
+completed the same33691-byte source request in231.746s with one execution/review,
+one approval and zero corrective prompts. Exact bytes matched intake, persisted
+ledger context, execution/review assignments and the only generated file, sample.txt
+(33600 content bytes,600 lines including final newline). Approval interpretation
+itself took about73s to reach execution, a remaining friction point.
+
+Seven /exit checks returned code0 in~0.10s, including exit during background planning.
+Reconnect restored the same job. Ctrl+C cleared Unicode,33691-byte pasted and4218-
+character typed drafts without canceling background work. Empty Ctrl+C at approval
+was calm; active planning interruption paused job6 and advanced its existing
+generation1→2, then /cancel canceled it. Frequent30s test stream renewals were quiet.
+All197 evidence-history pages (9664 records) returned successfully. Duplicate user
+echoes remain. Omnidex web UI untested; this is a limited observational gauntlet.
+
+Automated affected package and real-PostgreSQL checks passed, including exact-source
+persistence/amendment with unrelated Unicode-text and CRLF-table fixtures. Fresh
+builds and diff whitespace checks passed. The known preexisting CLI dependency
+boundary assertion still fails and alone was excluded from the final CLI run;
+its assertion remains intact. No clean full-repository-suite claim.
+
+The first executor's Playwright install removed shared Chromium1223. The same
+revision and headless shell were restored, later hashes verified, and only task-
+created Chromium1248/ffmpeg1013/link entries removed. A long fixture TMPDIR caused
+recoverable browser socket failures and confounds timing. These incidents and
+model-call evidence are retained in bin/usability-friction-20261022/report.md.
+
+Delivery: source/tests only, no commit or installation. App measurements used the
+revised build; final source-retention and controls used the final build. Final source
+and executable hashes matched across the pilot. Task core/CLIs/app server/containers,
+binaries and scratch removed; task ports closed. Evidence and generated workloads
+retained (~26MiB). Installed service still PID1553438 on its previous build; manifest
+unchanged. No owner service restart, alternate source tree or workload hand-edit.
+
+## Duplicate CLI message echoes — 2026-10-22
+
+Owner-requested follow-up: remove duplicate submitted-message echoes. The editor
+already keeps submitted input; intent completion then reloads the same persisted
+message without linking its identity to that local echo. Automatic job progress
+also repeats the request as a task preview. Fix the presentation/receipt boundary,
+keep distinct identical submissions and reconnect history, then pilot fresh native
+CLI/core with real providers and isolated dependencies. Task evidence and baseline
+file digests: bin/echo-fix-20261022/evidence. Installed service/manifest preserved;
+task resources limited to2CPU/3GiB with disposable PostgreSQL/Valkey fixtures.
+
+Completed: execution receipts retain the committed message/turn/control identities;
+the CLI associates those identities with input already displayed by its editor.
+Snapshot reconciliation consumes only that exact local echo, preserving independent
+submissions with identical text, remote entries, authoritative state and reconnect
+history. The automatic task preview is removed; explicit /status retains the full
+request. Cancellation reasons already presented by the same job's exact cancellation
+control are not echoed again. Different reasons and genuine errors remain visible.
+
+Automated checks: focused CLI rendering/reconnect/identical-message tests and real-
+PostgreSQL receipt/replay checks PASS. Affected cmd/omni, queue, sessionintent and
+client package checks PASS, excluding only the previously documented unrelated CLI
+dependency-boundary assertion. That assertion was not changed. After the first live
+pass exposed the repeated cancellation reason, affected CLI checks and build passed
+again before a fresh final pilot. No framework source edits occurred within a run.
+
+Actual-software acceptance PASS: fresh native CLI/core with actual gpt-6.1-sol
+providers (planner/reviewer xhigh, executor/parsers low), real terminal and isolated
+PostgreSQL/Valkey. New request displayed once; two identical Interact submissions
+while planning displayed twice, with distinct persisted operation IDs. Refresh and
+reconnect retained exactly those three submissions. Explicit /status still showed
+the full request. Natural-language cancellation and its ordinary confirmation were
+each displayed once; no repeated or empty reason label. Reopening the canceled
+conversation also showed each persisted entry once. Final job2 remained the same
+job through cancellation. These were deliberate interaction tests; no application
+completion or autonomy claim. The two pilot jobs were intentionally canceled before
+execution, with no manual workload edits or corrective prompts to make echo checks
+pass. Five normal exits returned code0 in~0.102s each.
+
+Evidence: bin/echo-fix-20261022/evidence includes exact terminal input/output and
+rendered screens, display-count assertions, message/receipt/provider records, test
+logs and build hashes. Final CLI SHA256
+7ccfa37af5307d31a0ac731efe46e72051ae56a1468b2121fb951f13e6a01088;
+core025ea53cf7c67f35948e01d0a4febf4e9becc0ea8940947dfd07311dcc493bda.
+Final source and executable fingerprints matched across the pilot. Task core/CLIs,
+containers, binaries and compiler scratch removed; ports18091/25432/26379 closed.
+Installed service remains PID1553438 on its previous build, manifest unchanged.
+Delivered source/tests only; no installation, service replacement or commit.

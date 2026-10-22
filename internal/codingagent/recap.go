@@ -20,9 +20,6 @@ func TaskLedgerCompletionRecap(entries []Entry, taskCount, maxBytes int) (string
 	}
 	files = uniqueFiles(files)
 	header := fmt.Sprintf("Tasks completed: %d. Independent task reviews passed.\n", taskCount)
-	if maxBytes < len(header)+96 {
-		return "", fmt.Errorf("completion recap output boundary is too small")
-	}
 	var output strings.Builder
 	output.WriteString(header)
 	for index, file := range files {

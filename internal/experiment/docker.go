@@ -17,14 +17,14 @@ func (docker *Docker) Run(parent context.Context, request Request) (result Resul
 	if parent == nil {
 		return result, fmt.Errorf("Docker experiment requires a context")
 	}
-	ctx, cancel := context.WithTimeout(parent, request.Timeout)
+	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	workspace, err := docker.Open(ctx, request.ImageID, request.Input)
 	if err != nil {
 		return result, err
 	}
 	defer func() { resultErr = errors.Join(resultErr, workspace.Close()) }()
-	result, err = workspace.Run(ctx, Command{Argv: request.Argv, Environment: request.Environment, Stdin: request.Stdin, Timeout: request.Timeout})
+	result, err = workspace.Run(ctx, Command{Argv: request.Argv, Environment: request.Environment, Stdin: request.Stdin})
 	if err != nil {
 		return result, err
 	}

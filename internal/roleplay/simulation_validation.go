@@ -38,7 +38,7 @@ func validateSceneSetup(setup SceneSetup) error {
 	if err := validateSimulationText("scene description", setup.Description, MaxSimulationTextBytes, true); err != nil {
 		return err
 	}
-	if len(setup.ParticipantIDs) < 1 || len(setup.ParticipantIDs) > MaxSceneParticipants {
+	if len(setup.ParticipantIDs) < 1 {
 		return fmt.Errorf("scene requires 1 to %d participants", MaxSceneParticipants)
 	}
 	seen := make(map[string]struct{}, len(setup.ParticipantIDs))
@@ -141,7 +141,7 @@ func validateItemDefinition(definition ItemTemplateDefinition) error {
 }
 
 func validateMeterDeltas(effects []MeterDelta) error {
-	if len(effects) < 1 || len(effects) > MaxDefinitionEffects {
+	if len(effects) < 1 {
 		return fmt.Errorf("definition requires 1 to %d meter effects", MaxDefinitionEffects)
 	}
 	seen := make(map[string]struct{}, len(effects))
@@ -168,7 +168,7 @@ func validateSimulationKey(field, value string) error {
 }
 
 func validateSimulationText(field, value string, maximum int, required bool) error {
-	if !utf8.ValidString(value) || strings.ContainsRune(value, '\x00') || value != strings.TrimSpace(value) || len([]byte(value)) > maximum {
+	if !utf8.ValidString(value) || strings.ContainsRune(value, '\x00') || value != strings.TrimSpace(value) {
 		return fmt.Errorf("%s must be exact trimmed UTF-8 of at most %d bytes", field, maximum)
 	}
 	if required && value == "" {
@@ -178,9 +178,7 @@ func validateSimulationText(field, value string, maximum int, required bool) err
 }
 
 func validateSimulationTextList(field string, values []string) error {
-	if len(values) > MaxPersonaListEntries {
-		return fmt.Errorf("%s exceeds %d entries", field, MaxPersonaListEntries)
-	}
+
 	seen := make(map[string]struct{}, len(values))
 	for _, value := range values {
 		if err := validateSimulationText(field+" entry", value, 256, true); err != nil {

@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/gryph/omnidex/internal/llm"
 )
@@ -24,7 +23,7 @@ func TestParserLightweightOrderingTransport(t *testing.T) {
 		json.NewEncoder(w).Encode(map[string]any{"created_at": "2026-10-20T12:00:00Z", "response": `["b","a"]`, "done": true, "done_reason": "stop", "prompt_eval_count": 40, "eval_count": 12})
 	}))
 	defer server.Close()
-	parser, err := NewParser(server.URL, time.Second, 32768)
+	parser, err := NewParser(server.URL, 32768)
 	if err != nil {
 		t.Fatal(err)
 	}

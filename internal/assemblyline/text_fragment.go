@@ -31,9 +31,7 @@ func BuildTextFragmentGenerationPrompt(input FragmentGenerationInput) (string, e
 		return "", fmt.Errorf("text fragment generation cannot receive source capabilities or symbols")
 	}
 	prompt := "Write text that fulfills this request.\n\n" + input.Behavior
-	if len(prompt) > maxPortableResourceBytes {
-		return "", fmt.Errorf("text fragment generation prompt exceeds %d bytes", maxPortableResourceBytes)
-	}
+
 	return prompt, nil
 }
 
@@ -44,9 +42,7 @@ func NormalizeTextFragmentResponse(raw string) (string, error) {
 	if raw == "" || !utf8.ValidString(raw) || strings.ContainsRune(raw, '\x00') {
 		return "", fmt.Errorf("text response must be non-empty UTF-8 without NUL bytes")
 	}
-	if len(raw) > maxPortableCandidateBytes {
-		return "", fmt.Errorf("text response exceeds %d bytes", maxPortableCandidateBytes)
-	}
+
 	normalized := strings.ReplaceAll(raw, "\r\n", "\n")
 	normalized = strings.ReplaceAll(normalized, "\r", "\n")
 	normalized = strings.TrimRight(normalized, "\n") + "\n"
@@ -62,9 +58,7 @@ func ValidateTextFragment(raw string) error {
 	if raw == "" {
 		return fmt.Errorf("text fragment is empty")
 	}
-	if len(raw) > maxPortableCandidateBytes {
-		return fmt.Errorf("text fragment exceeds %d bytes", maxPortableCandidateBytes)
-	}
+
 	if !utf8.ValidString(raw) {
 		return fmt.Errorf("text fragment must be valid UTF-8")
 	}

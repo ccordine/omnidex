@@ -11,8 +11,6 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
-	"github.com/gryph/omnidex/internal/llm"
 )
 
 type Client struct {
@@ -63,24 +61,17 @@ type embeddingsResponse struct {
 	Embeddings [][]float64 `json:"embeddings"`
 }
 
-func New(baseURL, defaultModel, embeddingModel string, timeout time.Duration) *Client {
-	return newClient(baseURL, defaultModel, embeddingModel, timeout)
+func New(baseURL, defaultModel, embeddingModel string) *Client {
+	return newClient(baseURL, defaultModel, embeddingModel)
 }
 
 func newClient(
 	baseURL, defaultModel, embeddingModel string,
-	timeout time.Duration,
 ) *Client {
-	timeout = llm.BoundedModelRequestDuration(timeout)
-	dialTimeout := 5 * time.Second
-	if timeout > 0 && timeout < dialTimeout {
-		dialTimeout = timeout
-	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.DisableCompression = true
-	transport.MaxResponseHeaderBytes = maxExactProviderResponseHeaderBytes
 	transport.DialContext = (&net.Dialer{
-		Timeout:   dialTimeout,
+		Timeout:   5 * time.Second,
 		KeepAlive: 30 * time.Second,
 	}).DialContext
 	return &Client{
@@ -88,7 +79,7 @@ func newClient(
 		defaultModel:   defaultModel,
 		embeddingModel: embeddingModel,
 		httpClient: &http.Client{
-			Timeout:   timeout,
+
 			Transport: transport,
 		},
 	}

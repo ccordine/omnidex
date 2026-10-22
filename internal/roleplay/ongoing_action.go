@@ -66,7 +66,7 @@ type NarrativeOngoingAction struct {
 // text.
 func ValidateOngoingActionText(value string) error {
 	if value == "" || value != strings.TrimSpace(value) ||
-		len(value) > MaxOngoingActionBytes || !utf8.ValidString(value) ||
+		!utf8.ValidString(value) ||
 		strings.ContainsRune(value, '\x00') {
 		return fmt.Errorf(
 			"roleplay ongoing action must be 1 to %d trimmed UTF-8 bytes without NUL",

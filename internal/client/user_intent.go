@@ -4,12 +4,10 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/projectroot"
 	"github.com/gryph/omnidex/internal/sessionintent"
-	"github.com/gryph/omnidex/internal/userintent"
 )
 
 func (client *Client) InterpretUserMessage(ctx context.Context, channel model.Channel, request sessionintent.Request) (sessionintent.Result, error) {
@@ -19,17 +17,12 @@ func (client *Client) InterpretUserMessage(ctx context.Context, channel model.Ch
 	if _, err := model.ParseLifecycleOperationID(string(request.OperationID)); err != nil {
 		return sessionintent.Result{}, err
 	}
-	// A request-local deadline never mutates shared client/model routing.
-	scoped := *client
-	transport := *client.httpClient
-	transport.Timeout = 120 * time.Second
-	scoped.httpClient = &transport
 	var result sessionintent.Result
-	err := scoped.doJSON(ctx, http.MethodPost, "/v1/channels/"+string(channel.ID)+"/session/intent", request, &result, http.StatusOK)
+	err := client.doJSON(ctx, http.MethodPost, "/v1/channels/"+string(channel.ID)+"/session/intent", request, &result, http.StatusOK)
 	if err != nil {
 		return result, err
 	}
-	if result.Error != "" || result.Clarification == "" && (result.Patch == nil || len(result.Patch) > userintent.MaxPatchOperations) || result.OperationID != request.OperationID || result.Clarification != "" && len(result.Patch) > 0 || result.RequiresApproval && result.Pitch == "" {
+	if result.Error != "" || result.Clarification == "" && (result.Patch == nil) || result.OperationID != request.OperationID || result.Clarification != "" && len(result.Patch) > 0 || result.RequiresApproval && result.Pitch == "" {
 		return result, fmt.Errorf("user interpretation differs from its exact message authority")
 	}
 	return result, nil

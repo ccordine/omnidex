@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/gryph/omnidex/internal/hostbridge"
 )
@@ -36,7 +35,7 @@ func (s *Server) handleUIScreenMonitors(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	page, err := s.hostBridgeClient().ScreenMonitors(ctx, pageRequest)
 	if err != nil {

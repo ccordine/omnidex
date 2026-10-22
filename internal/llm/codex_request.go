@@ -48,16 +48,14 @@ func validateCodexPreparedRequest(prepared PreparedModel) error {
 
 func ParseCodexContinuation(encoded []byte) (CodexContinuation, error) {
 	var result CodexContinuation
-	if len(encoded) > 2048 {
-		return result, fmt.Errorf("Codex continuation exceeds its bound")
-	}
+
 	if err := exactjson.ValidateCompatibleObject(encoded, result, "Codex continuation"); err != nil {
 		return result, err
 	}
 	if err := json.Unmarshal(encoded, &result); err != nil {
 		return result, err
 	}
-	if result.ThreadID == "" || len(result.ThreadID) > 256 || result.TurnID == "" || len(result.TurnID) > 256 || result.Model == "" || len(result.Model) > 512 {
+	if result.ThreadID == "" || result.TurnID == "" || result.Model == "" {
 		return result, fmt.Errorf("Codex continuation is incomplete")
 	}
 	return result, nil

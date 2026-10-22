@@ -18,7 +18,7 @@ func (probe *exactStationDeadlineProbe) GeneratePreparedExact(
 	_ llm.PreparedModel,
 ) (llm.PreparedGeneration, error) {
 	deadline, present := ctx.Deadline()
-	if !present {
+	if present {
 		return llm.PreparedGeneration{}, context.DeadlineExceeded
 	}
 	probe.deadline = deadline
@@ -26,21 +26,16 @@ func (probe *exactStationDeadlineProbe) GeneratePreparedExact(
 	return llm.PreparedGeneration{}, nil
 }
 
-func TestExactStationDirectProviderCallHasThirtyMinuteHardDeadline(t *testing.T) {
+func TestExactStationDirectProviderCallHasNoArtificialDeadline(t *testing.T) {
 	t.Parallel()
 	probe := &exactStationDeadlineProbe{}
-	earliest := time.Now().Add(llm.MaximumModelRequestDuration)
-	if _, err := generatePreparedExactWithinMaximumDuration(
+	if _, err := generatePreparedExact(
 		context.Background(), probe, llm.PreparedModel{},
 	); err != nil {
 		t.Fatal(err)
 	}
-	latest := time.Now().Add(llm.MaximumModelRequestDuration)
-	if probe.deadline.Before(earliest) || probe.deadline.After(latest) {
-		t.Fatalf(
-			"provider deadline=%s want within [%s,%s]",
-			probe.deadline, earliest, latest,
-		)
+	if !probe.deadline.IsZero() {
+		t.Fatal("provider gained an artificial deadline")
 	}
 	select {
 	case <-probe.ctx.Done():

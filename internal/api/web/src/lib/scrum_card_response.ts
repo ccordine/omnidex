@@ -44,12 +44,12 @@ const REQUIRED_CARD_FIELDS = [
 ] as const;
 
 function exactStringArray(value: unknown, label: string, maximum: number, itemBytes: number, aggregateBytes: number): string[] {
-  if (!Array.isArray(value) || value.length > maximum) throw new Error(`${label} exceeds its item bound.`);
+  if (!Array.isArray(value)) throw new Error(`${label} exceeds its item bound.`);
   const result = value.map((item, index) => exactString(item, `${label}[${index}]`, {
     maxBytes: itemBytes, nonblank: true, canonical: true,
   }));
   if (new Set(result).size !== result.length) throw new Error(`${label} must not contain duplicates.`);
-  if (encoder.encode(JSON.stringify(result)).byteLength > aggregateBytes) throw new Error(`${label} exceeds its aggregate bound.`);
+
   return result;
 }
 
@@ -80,8 +80,8 @@ function validateTags(value: unknown): string[] {
 }
 
 function exactChecklist(value: unknown, label: string): Array<{ id: string; text: string; done: boolean }> {
-  if (!Array.isArray(value) || value.length > CARD_ARRAY_MAX_ITEMS) throw new Error(`${label} exceeds its item bound.`);
-  if (encoder.encode(JSON.stringify(value)).byteLength > CARD_PRESENTATION_AGGREGATE_MAX_BYTES) throw new Error(`${label} exceeds its aggregate bound.`);
+  if (!Array.isArray(value)) throw new Error(`${label} exceeds its item bound.`);
+
   const items = value.map((item, index) => {
     const record = exactRecord(item, `${label}[${index}]`, ["id", "text", "done"]);
     if (typeof record.done !== "boolean") throw new Error(`${label}[${index}].done must be boolean.`);
@@ -114,19 +114,14 @@ function validateFlowMetrics(value: unknown): Record<string, unknown> {
   if (!["likely_complete", "likely_incomplete", "uncertain"].includes(String(record.completion_status))) {
     throw new Error("Scrum card response.flow_metrics.completion_status is not registered.");
   }
-  if (!Array.isArray(record.signals) || record.signals.length > FLOW_SIGNAL_MAX_ITEMS) {
+  if (!Array.isArray(record.signals)) {
     throw new Error("Scrum card response.flow_metrics.signals exceeds its item bound.");
   }
   const signals = record.signals.map((signal, index) => exactString(signal, `Scrum card response.flow_metrics.signals[${index}]`, {
     maxBytes: FLOW_SIGNAL_MAX_BYTES, nonblank: true, canonical: true,
   }));
   if (new Set(signals).size !== signals.length) throw new Error("Scrum card response.flow_metrics.signals contains duplicates.");
-  if (encoder.encode(JSON.stringify(signals)).byteLength > FLOW_SIGNALS_AGGREGATE_MAX_BYTES) {
-    throw new Error("Scrum card response.flow_metrics.signals exceeds its aggregate bound.");
-  }
-  if (encoder.encode(JSON.stringify(record)).byteLength > FLOW_SIGNALS_AGGREGATE_MAX_BYTES) {
-    throw new Error("Scrum card response.flow_metrics exceeds its aggregate bound.");
-  }
+
   if ("last_play_outcome" in record && !["success", "failed"].includes(String(record.last_play_outcome))) {
     throw new Error("Scrum card response.flow_metrics.last_play_outcome is not registered.");
   }
@@ -180,7 +175,7 @@ export function validateScrumMessages(value: unknown, label: string, limit = CHA
     }
     return result;
   });
-  if (contentBytes > CHANNEL_PAGE_MAX_BYTES) throw new Error(`${label} exceeds its byte bound.`);
+
   const ids = messages.flatMap((message) => message.id ? [message.id] : []);
   if (new Set(ids).size !== ids.length) throw new Error(`${label} contains duplicate message IDs.`);
   return messages;
@@ -192,7 +187,7 @@ export function validateScrumCardProjection(
   options: { summary?: "required" | "forbidden" } = { summary: "forbidden" },
 ): ScrumCard {
   const encoded = encoder.encode(JSON.stringify(value));
-  if (encoded.byteLength > SCRUM_CHANNEL_RESPONSE_MAX_BYTES) throw new Error("Scrum card response exceeds its byte bound.");
+
   const record = exactRecord(value, "Scrum card response", CARD_FIELDS, REQUIRED_CARD_FIELDS);
   const id = exactString(record.id, "Scrum card response.id", { maxBytes: 256, nonblank: true, canonical: true });
   if (expectedCardID !== undefined && id !== expectedCardID) throw new Error("Scrum card response does not match the requested card.");
@@ -227,15 +222,14 @@ export function validateScrumCardProjection(
       throw new Error("Scrum board summary card has_card_ticket must be boolean.");
     }
   }
-  if (options.summary === "required" && (card.checklist.length || card.ref_files.length || card.chat.length || card.test_criteria.length ||
+  if ((options.summary === "required") && (card.checklist.length || card.ref_files.length || card.chat.length || card.test_criteria.length ||
       "card_ticket" in record || "card_prompt" in record || record.channel_before_cursor !== "" || record.channel_has_more !== false)) {
     throw new Error("Scrum board summary card must not embed operational histories or content.");
   }
   for (const field of ["checklist_done", "checklist_total", "ref_file_count", "chat_count", "test_criteria_done", "test_criteria_total", "queue_order", "board_order"] as const) {
     if (field in record) (card as Record<string, unknown>)[field] = exactInteger(record[field], `Scrum card response.${field}`);
   }
-  if (options.summary === "required" &&
-      ((card.checklist_done as number) > (card.checklist_total as number) ||
+  if ((options.summary === "required") && ((card.checklist_done as number) > (card.checklist_total as number) ||
        (card.test_criteria_done as number) > (card.test_criteria_total as number))) {
     throw new Error("Scrum board summary card completed counts exceed their totals.");
   }

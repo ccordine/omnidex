@@ -12,6 +12,5 @@ interface Transport
         string $url,
         array $headers,
         ?string $body,
-        int $timeoutSeconds,
     ): Response;
 }

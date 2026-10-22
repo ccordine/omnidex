@@ -43,7 +43,7 @@ func TestManifestRoleSettingsReachNativeProtocol(t *testing.T) {
 		t.Run(string(fixture.role), func(t *testing.T) {
 			writer := &protocolWriter{}
 			responses := fmt.Sprintf("{\"id\":1,\"result\":{}}\n{\"id\":2,\"result\":{\"model\":%q,\"thread\":{\"id\":\"exact-thread\"}}}\n{\"id\":3,\"result\":{\"turn\":{\"id\":\"exact-turn\"}}}\n", fixture.route.Model)
-			connection := &connection{input: writer, output: bufio.NewScanner(bytes.NewBufferString(responses))}
+			connection := &connection{input: writer, output: bufio.NewReader(bytes.NewBufferString(responses))}
 			call := codingagent.Assignment{Role: fixture.role, Root: t.TempDir(), Route: fixture.route,
 				Objective: &codingagent.Objective{Instruction: "Exact current owner request."}, Task: &codingagent.Task{Goal: "Exact frozen task."}}
 			thread, _, err := connection.startAgentThread(call, "")

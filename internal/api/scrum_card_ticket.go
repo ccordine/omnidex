@@ -62,7 +62,7 @@ func decodeScrumCardTicketActionRequest(
 	w http.ResponseWriter,
 	r *http.Request,
 ) (scrumCardTicketActionRequest, error) {
-	r.Body = http.MaxBytesReader(w, r.Body, maxScrumCardTicketActionBodyBytes)
+
 	raw, err := io.ReadAll(r.Body)
 	if err != nil {
 		var tooLarge *http.MaxBytesError
@@ -219,9 +219,7 @@ func assembleScrumCardTicket(card ScrumCard) (string, error) {
 	writeTicketValues(&ticket, "## Tags", card.Tags, false)
 	writeTicketExactSection(&ticket, "## Elaboration", card.CardPrompt)
 	result := ticket.String() + "\n"
-	if len(result) > maxAssembledScrumCardTicketBytes {
-		return "", fmt.Errorf("assembled Scrum card ticket exceeds the %d-byte bound", maxAssembledScrumCardTicketBytes)
-	}
+
 	return result, nil
 }
 

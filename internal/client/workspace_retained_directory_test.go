@@ -48,7 +48,7 @@ func TestWorkspaceConnectionRejectsDirectoryReplacementDuringHandshake(t *testin
 		_ = hub.Serve(r.Context(), conn)
 	}))
 	defer server.Close()
-	client, err := New(server.URL, time.Second)
+	client, err := New(server.URL)
 	if err != nil {
 		t.Fatal(err)
 	}

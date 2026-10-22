@@ -43,11 +43,7 @@ func (input ConversationObjectiveKindInput) validate() error {
 	if strings.TrimSpace(input.ExactInstruction) == "" {
 		return fmt.Errorf("conversation objective kind requires one non-blank exact instruction")
 	}
-	if len(input.ExactInstruction) > maxConversationInstructionBytes {
-		return fmt.Errorf(
-			"conversation exact instruction exceeds %d bytes", maxConversationInstructionBytes,
-		)
-	}
+
 	if !utf8.ValidString(input.ExactInstruction) {
 		return fmt.Errorf("conversation exact instruction is not valid UTF-8")
 	}

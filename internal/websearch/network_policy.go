@@ -61,7 +61,7 @@ func (policy outboundPolicy) validateURL(ctx context.Context, rawURL string) err
 }
 
 func parseOutboundURL(rawURL string) (*url.URL, error) {
-	if rawURL == "" || rawURL != strings.TrimSpace(rawURL) || len(rawURL) > maxURLBytes {
+	if rawURL == "" || rawURL != strings.TrimSpace(rawURL) {
 		return nil, fmt.Errorf("%w: URL must contain 1..%d exact bytes", ErrUnsafeURL, maxURLBytes)
 	}
 	parsed, err := url.Parse(rawURL)
@@ -182,7 +182,7 @@ func newSafeHTTPClient(config Config) (*http.Client, error) {
 		base = clone
 	}
 	client.Transport = policyRoundTripper{policy: policy, next: base}
-	client.Timeout = config.Timeout
+	client.Timeout = 0
 	client.Jar = nil
 	client.CheckRedirect = func(request *http.Request, via []*http.Request) error {
 		if err := policy.validateURL(request.Context(), request.URL.String()); err != nil {

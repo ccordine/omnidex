@@ -10,18 +10,15 @@ const (
 )
 
 type ExecutionLimits struct {
-	MaxTotalCost     float64
-	MaxPlanRows      int64
-	MaxRows          int
-	MaxBytes         int
-	StatementTimeout time.Duration
-	LockTimeout      time.Duration
+	MaxTotalCost float64
+	MaxPlanRows  int64
+	MaxRows      int
+	MaxBytes     int
 }
 
 func DefaultExecutionLimits() ExecutionLimits {
 	return ExecutionLimits{
 		MaxTotalCost: 100000, MaxPlanRows: 1000000, MaxRows: 200, MaxBytes: 256 * 1024,
-		StatementTimeout: 15 * time.Second, LockTimeout: 2 * time.Second,
 	}
 }
 

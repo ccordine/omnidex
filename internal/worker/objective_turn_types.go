@@ -175,9 +175,9 @@ func newObjectiveEvidence(
 	if err := validateObjectiveEvidenceLine("ID", id, maxObjectiveEvidenceIDBytes); err != nil {
 		return objectiveEvidence{}, err
 	}
-	if strings.TrimSpace(text) == "" || len(text) > maxObjectiveEvidenceTextBytes ||
+	if strings.TrimSpace(text) == "" ||
 		!utf8.ValidString(text) || strings.ContainsRune(text, '\x00') {
-		return objectiveEvidence{}, fmt.Errorf("objective evidence text is blank, oversized, invalid UTF-8, or contains NUL")
+		return objectiveEvidence{}, fmt.Errorf("objective evidence text is blank, invalid UTF-8, or contains NUL")
 	}
 	if err := validateObjectiveEvidenceLine(
 		"source type", sourceType, maxObjectiveEvidenceSourceTypeBytes,
@@ -197,7 +197,7 @@ func newObjectiveEvidence(
 
 func validateObjectiveEvidenceLine(label, value string, maximum int) error {
 	if value == "" || value != strings.TrimSpace(value) || strings.ContainsAny(value, "\r\n") ||
-		len(value) > maximum || !utf8.ValidString(value) || strings.ContainsRune(value, '\x00') {
+		!utf8.ValidString(value) || strings.ContainsRune(value, '\x00') {
 		return fmt.Errorf("objective evidence %s must be one bounded trimmed UTF-8 line", label)
 	}
 	return nil
@@ -298,7 +298,7 @@ func newTurnAuthority(job model.Job) (turnAuthority, error) {
 		if metadata.RoleplayGenerationConfig == nil {
 			return turnAuthority{}, fmt.Errorf("conversation turn requires frozen character generation authority")
 		}
-		if len(metadata.RoleplayResponders) < 1 || len(metadata.RoleplayResponders) > roleplay.MaxSceneParticipants {
+		if len(metadata.RoleplayResponders) < 1 {
 			return turnAuthority{}, fmt.Errorf("conversation turn requires a bounded ordered roleplay response round")
 		}
 		for index, responder := range metadata.RoleplayResponders {

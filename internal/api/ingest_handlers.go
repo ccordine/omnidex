@@ -64,7 +64,7 @@ func (s *Server) handleIngestDocuments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	files := r.MultipartForm.File["files"]
-	if len(files) == 0 || len(files) > maxIngestFiles {
+	if len(files) == 0 {
 		writeError(w, http.StatusBadRequest, "upload 1..12 files in the files field")
 		return
 	}
@@ -108,15 +108,11 @@ func prepareIngestDocument(
 		return preparedIngestDocument{}, err
 	}
 	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, maxIngestFileBytes+1))
+	data, err := io.ReadAll(file)
 	if err != nil {
 		return preparedIngestDocument{}, err
 	}
-	if len(data) > maxIngestFileBytes {
-		return preparedIngestDocument{}, fmt.Errorf(
-			"%s exceeds %d MiB limit", header.Filename, maxIngestFileBytes>>20,
-		)
-	}
+
 	parsed, err := ingest.ParseUpload(header.Filename, data)
 	if err != nil {
 		return preparedIngestDocument{}, fmt.Errorf("%s: %w", header.Filename, err)
@@ -169,9 +165,6 @@ func (s *Server) persistPreparedIngest(
 	totalChunks := 0
 	for _, document := range documents {
 		totalChunks += len(document.Chunks)
-	}
-	if totalChunks > maxMemoryBatchItems {
-		return nil, fmt.Errorf("document ingest exceeds the %d-chunk batch bound", maxMemoryBatchItems)
 	}
 	candidates := make([]model.MemoryCandidate, 0, totalChunks)
 	writes := make([]queue.MemoryChunkWrite, 0, totalChunks)

@@ -116,12 +116,7 @@ func (r *Repository) RoleplayConversationCandidateAuthorities(
 			return ConversationCandidateAuthoritySet{}, err
 		}
 		totalBytes += resultBytes
-		if totalBytes > maxRoleplayConversationCandidateBytes {
-			return ConversationCandidateAuthoritySet{}, fmt.Errorf(
-				"roleplay conversation candidates exceed the %d-byte bound",
-				maxRoleplayConversationCandidateBytes,
-			)
-		}
+
 		for _, result := range results {
 			set.Turns = append(set.Turns, ConversationCandidateTurn{
 				MessageID: result.MessageID, Role: ConversationCandidateAssistant,
@@ -292,7 +287,7 @@ func loadRoleplayConversationResponseRoundTx(
 	if err := rows.Err(); err != nil {
 		return nil, 0, err
 	}
-	if len(results) == 0 || len(results) > roleplay.MaxSceneParticipants ||
+	if len(results) == 0 ||
 		(completionKind == "research" && len(results) != 1) ||
 		strings.Join(contents, "\n\n") != exchange.JobResult {
 		return nil, 0, fmt.Errorf(

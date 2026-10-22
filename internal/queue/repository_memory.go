@@ -53,7 +53,7 @@ func (r *Repository) AddMemoryChunks(
 	ctx context.Context,
 	writes []MemoryChunkWrite,
 ) ([]model.MemoryChunk, error) {
-	if len(writes) == 0 || len(writes) > maxMemoryBatchItems {
+	if len(writes) == 0 {
 		return nil, fmt.Errorf("%w: memory batch must contain 1..%d writes", ErrInvalidMemoryWrite, maxMemoryBatchItems)
 	}
 	totalBytes := 0
@@ -62,9 +62,7 @@ func (r *Repository) AddMemoryChunks(
 			return nil, fmt.Errorf("%w: memory batch item %d: %v", ErrInvalidMemoryWrite, index+1, err)
 		}
 		totalBytes += len(write.Input.Content)
-		if totalBytes > maxMemoryBatchContentBytes {
-			return nil, fmt.Errorf("%w: memory batch content exceeds %d bytes", ErrInvalidMemoryWrite, maxMemoryBatchContentBytes)
-		}
+
 	}
 	if r == nil || r.pool == nil {
 		return nil, fmt.Errorf("memory writes require PostgreSQL")

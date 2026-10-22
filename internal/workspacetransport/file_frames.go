@@ -16,8 +16,8 @@ type desiredHeader struct {
 }
 
 func readContent(conn *websocket.Conn, size int64) ([]byte, error) {
-	if size < 0 || size > workspace.MaxReconciliationFileBytes {
-		return nil, fmt.Errorf("workspace file content exceeds its byte bound")
+	if size < 0 {
+		return nil, fmt.Errorf("workspace file content size must be nonnegative")
 	}
 	content := make([]byte, int(size))
 	for offset := 0; offset < len(content); {
@@ -36,9 +36,7 @@ func readContent(conn *websocket.Conn, size int64) ([]byte, error) {
 }
 
 func writeContent(conn *websocket.Conn, content []byte) error {
-	if len(content) > workspace.MaxReconciliationFileBytes {
-		return fmt.Errorf("workspace file content exceeds its byte bound")
-	}
+
 	for offset := 0; offset < len(content); {
 		count := min(contentChunkBytes, len(content)-offset)
 		if err := conn.SetWriteDeadline(time.Now().Add(operationTimeout)); err != nil {
@@ -126,8 +124,8 @@ func writeRequestData(conn *websocket.Conn, data requestData) error {
 }
 
 func admitContentBytes(total *int64, size int64) error {
-	if size < 0 || size > workspace.MaxReconciliationFileBytes || *total > workspace.MaxReconciliationTotalBytes-size {
-		return fmt.Errorf("workspace preparation exceeds its content byte bound")
+	if size < 0 {
+		return fmt.Errorf("workspace content size must be nonnegative")
 	}
 	*total += size
 	return nil

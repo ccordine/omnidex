@@ -122,7 +122,7 @@ func parserFixture(t *testing.T, instructions bool) (*Client, string, context.Ca
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	client, err := NewParser(ctx, command, root, 3*time.Second)
+	client, err := NewParser(ctx, command, root)
 	if err != nil {
 		t.Fatal(err)
 	}

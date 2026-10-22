@@ -38,7 +38,7 @@ func ExecuteEvidence(
 		return EvidenceResult{}, fmt.Errorf("begin read-only evidence transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
-	if err := setExecutionTimeouts(ctx, tx, limits); err != nil {
+	if err := setExecutionTimeouts(ctx, tx); err != nil {
 		return EvidenceResult{}, err
 	}
 	plan, err := explainCompiledQuery(ctx, tx, compiled)
@@ -77,14 +77,8 @@ func validateExecutionLimits(query CompiledQuery, limits ExecutionLimits) error 
 }
 
 func validateExecutionBounds(limit int, limits ExecutionLimits) error {
-	if math.IsNaN(limits.MaxTotalCost) || math.IsInf(limits.MaxTotalCost, 0) || limits.MaxTotalCost <= 0 || limits.MaxTotalCost > MaxEvidencePlanCost || limits.MaxPlanRows <= 0 || limits.MaxPlanRows > MaxEvidencePlanRows || limits.MaxRows <= 0 || limits.MaxRows > MaxIntentRows || limits.MaxBytes <= 0 || limits.MaxBytes > MaxEvidenceResultBytes {
+	if math.IsNaN(limits.MaxTotalCost) || math.IsInf(limits.MaxTotalCost, 0) || limits.MaxTotalCost <= 0 || limits.MaxTotalCost > MaxEvidencePlanCost || limits.MaxPlanRows <= 0 || limits.MaxPlanRows > MaxEvidencePlanRows || limits.MaxRows <= 0 || limits.MaxRows > MaxIntentRows || limits.MaxBytes <= 0 {
 		return fmt.Errorf("execution cost, plan-row, result-row, or byte limit is outside its hard bound")
-	}
-	if limits.StatementTimeout < time.Millisecond || limits.StatementTimeout > time.Minute {
-		return fmt.Errorf("statement timeout must be within 1ms..1m")
-	}
-	if limits.LockTimeout < time.Millisecond || limits.LockTimeout > 10*time.Second {
-		return fmt.Errorf("lock timeout must be within 1ms..10s")
 	}
 	if limit <= 0 || limit > limits.MaxRows {
 		return fmt.Errorf("query limit %d exceeds execution row limit %d", limit, limits.MaxRows)
@@ -92,10 +86,8 @@ func validateExecutionBounds(limit int, limits ExecutionLimits) error {
 	return nil
 }
 
-func setExecutionTimeouts(ctx context.Context, tx pgx.Tx, limits ExecutionLimits) error {
-	statement := fmt.Sprintf("%dms", limits.StatementTimeout.Milliseconds())
-	lock := fmt.Sprintf("%dms", limits.LockTimeout.Milliseconds())
-	if _, err := tx.Exec(ctx, `SELECT pg_catalog.set_config('statement_timeout', $1, true), pg_catalog.set_config('lock_timeout', $2, true)`, statement, lock); err != nil {
+func setExecutionTimeouts(ctx context.Context, tx pgx.Tx) error {
+	if _, err := tx.Exec(ctx, `SELECT pg_catalog.set_config('statement_timeout', '0', true), pg_catalog.set_config('lock_timeout', '0', true)`); err != nil {
 		return fmt.Errorf("set transaction-local evidence timeouts: %w", err)
 	}
 	return nil
@@ -172,9 +164,6 @@ func executeCompiledQuery(ctx context.Context, tx pgx.Tx, query CompiledQuery, l
 			return TypedEvidenceResult{}, fmt.Errorf("encode evidence row: %w", err)
 		}
 		byteCount += len(encoded)
-		if byteCount > limits.MaxBytes {
-			return TypedEvidenceResult{}, fmt.Errorf("evidence result exceeds %d bytes", limits.MaxBytes)
-		}
 		resultRows = append(resultRows, row)
 	}
 	if err := rows.Err(); err != nil {

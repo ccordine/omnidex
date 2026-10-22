@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/gryph/omnidex/internal/hostbridge"
 )
@@ -138,7 +137,7 @@ func uiBrowsePagination(result hostbridge.BrowseResult) (string, error) {
 func (s *Server) uiBrowseDirectories(ctx context.Context, path string, offset int) (hostbridge.BrowseResult, error) {
 	opts := hostbridge.BrowseOptions{Limit: browseUIPageSize, Offset: offset, DirectoriesOnly: true}
 	if client := s.hostBridgeClient(); client != nil {
-		timeout, cancel := context.WithTimeout(ctx, 15*time.Second)
+		timeout, cancel := context.WithCancel(ctx)
 		defer cancel()
 		result, err := client.Browse(timeout, path, opts)
 		if err != nil {

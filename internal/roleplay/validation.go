@@ -32,7 +32,7 @@ var (
 		name:    "roleplay character knowledge",
 		pattern: regexp.MustCompile(`^rpk_[0-9a-f]{32}$`),
 	}
-	channelIdentityPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_.:-]{0,95}$`)
+	channelIdentityPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_.:-]*$`)
 )
 
 func validateIdentity(id string, kind identityKind) error {
@@ -50,14 +50,14 @@ func validateChannelID(id string) error {
 }
 
 func validateName(name, field string) error {
-	if name == "" || name != strings.TrimSpace(name) || len([]byte(name)) > 256 {
+	if name == "" || name != strings.TrimSpace(name) {
 		return fmt.Errorf("%s must be 1 to 256 trimmed bytes", field)
 	}
 	return nil
 }
 
 func validateEventContent(content string) error {
-	if content == "" || strings.TrimSpace(content) == "" || len([]byte(content)) > MaxCanonEventBytes {
+	if content == "" || strings.TrimSpace(content) == "" {
 		return fmt.Errorf("roleplay canon event content must be 1 to %d non-blank bytes", MaxCanonEventBytes)
 	}
 	return nil

@@ -46,11 +46,7 @@ func normalizeVerificationCommandEvidence(
 		record.StartedAt.Nanosecond()%1000 != 0 || record.FinishedAt.Nanosecond()%1000 != 0 {
 		return VerificationCommandEvidence{}, fmt.Errorf("verification timestamps must be canonical PostgreSQL-precision UTC")
 	}
-	if len(record.Stdin) > maxVerificationCommandStreamBytes ||
-		len(record.Stdout) > maxVerificationCommandStreamBytes ||
-		len(record.Stderr) > maxVerificationCommandStreamBytes {
-		return VerificationCommandEvidence{}, fmt.Errorf("verification command stream exceeds the 1 MiB evidence bound")
-	}
+
 	if (!record.StdoutComplete || !record.StderrComplete) && record.LaunchError == "" {
 		return VerificationCommandEvidence{}, fmt.Errorf("incomplete verification output requires one terminal launch error")
 	}
@@ -98,11 +94,11 @@ func normalizeVerificationCommandEvidence(
 }
 
 func validateVerificationCommandArgv(argv []string) error {
-	if len(argv) < 1 || len(argv) > maxVerificationCommandArguments || argv[0] == "" {
+	if len(argv) < 1 || argv[0] == "" {
 		return fmt.Errorf("verification command requires 1..%d argv values", maxVerificationCommandArguments)
 	}
-	raw, err := json.Marshal(argv)
-	if err != nil || len(raw) > maxVerificationCommandArrayBytes {
+	_, err := json.Marshal(argv)
+	if err != nil {
 		return fmt.Errorf("verification argv exceeds its exact evidence bound")
 	}
 	for _, value := range argv {
@@ -114,11 +110,11 @@ func validateVerificationCommandArgv(argv []string) error {
 }
 
 func validateVerificationEnvironment(environment []string) error {
-	if len(environment) > 64 || !sort.StringsAreSorted(environment) {
+	if !sort.StringsAreSorted(environment) {
 		return fmt.Errorf("verification environment overrides must be bounded and sorted")
 	}
-	raw, err := json.Marshal(environment)
-	if err != nil || len(raw) > maxVerificationCommandArrayBytes {
+	_, err := json.Marshal(environment)
+	if err != nil {
 		return fmt.Errorf("verification environment exceeds its exact evidence bound")
 	}
 	prior := ""

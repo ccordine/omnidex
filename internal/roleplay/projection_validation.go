@@ -34,9 +34,7 @@ func (projection CharacterProjection) Validate() error {
 	if projection.Schema != CharacterProjectionSchemaV1 || projection.Authority != AuthorityCharacterKnowledge {
 		return fmt.Errorf("roleplay character projection has invalid schema or authority")
 	}
-	if len(projection.Facts) > MaxProjectionEvents {
-		return fmt.Errorf("roleplay character projection exceeds the event bound")
-	}
+
 	if err := validateProjectionAuthority(
 		World{ID: projection.WorldID, Name: projection.WorldName},
 		Character{ID: projection.CharacterID, WorldID: projection.WorldID, Name: projection.CharacterName},
@@ -76,9 +74,7 @@ func (projection CanonProjection) Validate() error {
 	if projection.Schema != CanonProjectionSchemaV1 || projection.Authority != AuthorityFictionalCanon {
 		return fmt.Errorf("roleplay canon projection has invalid schema or authority")
 	}
-	if len(projection.Facts) > MaxProjectionEvents {
-		return fmt.Errorf("roleplay canon projection exceeds the event bound")
-	}
+
 	if err := validateIdentity(projection.WorldID, worldIdentity); err != nil {
 		return err
 	}
@@ -107,9 +103,7 @@ func validateProjectionFacts(facts []ContextFact, label string) error {
 		}
 		total += len(fact.Content)
 	}
-	if total > MaxProjectionContentBytes {
-		return fmt.Errorf("roleplay %s exceeds %d content bytes", label, MaxProjectionContentBytes)
-	}
+
 	return nil
 }
 

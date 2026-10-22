@@ -78,9 +78,7 @@ func appendRecentAssistantTurn(
 		return fmt.Errorf("recent assistant message %d carries user-turn authority", turn.MessageID)
 	}
 	if exchange.roleplay {
-		if len(exchange.assistantIDs) >= roleplay.MaxSceneParticipants {
-			return fmt.Errorf("recent roleplay exchange exceeds the bounded response round")
-		}
+
 		if strings.TrimSpace(turn.SpeakerName) == "" {
 			return fmt.Errorf("recent roleplay assistant message %d has no speaker", turn.MessageID)
 		}

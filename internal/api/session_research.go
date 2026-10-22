@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/gryph/omnidex/internal/codex"
 	"github.com/gryph/omnidex/internal/model"
@@ -74,7 +73,7 @@ func (s *Server) sessionResearch(w http.ResponseWriter, r *http.Request, channel
 		if err != nil {
 			return "", json.RawMessage(`[]`), err
 		}
-		provider, err := codex.New(s.providerConfig.CodexCommand, current.State.WorkspaceRoot, 2*time.Minute)
+		provider, err := codex.New(s.providerConfig.CodexCommand, current.State.WorkspaceRoot)
 		if err != nil {
 			return "", json.RawMessage(`[]`), err
 		}

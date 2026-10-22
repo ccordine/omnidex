@@ -81,9 +81,7 @@ func parseProviderCandidates(
 		if len(match) < 3 {
 			continue
 		}
-		if len(match[1]) > maxURLBytes || len(match[2]) > maxCandidateTextBytes {
-			return nil, fmt.Errorf("%w: provider result fields exceed pre-normalization bounds", ErrBoundExceeded)
-		}
+
 		rawURL := unwrapProviderURL(definition.id, searchURL, html.UnescapeString(strings.TrimSpace(match[1])))
 		canonical, err := CanonicalizeURL(rawURL)
 		if err != nil || isProviderOwnedURL(definition.id, canonical) {

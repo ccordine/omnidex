@@ -8,14 +8,13 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestUnboundCreateResponseNeverAuthorizesContainerRemoval(t *testing.T) {
 	for _, mismatch := range []string{"name", "label"} {
 		t.Run(mismatch, func(t *testing.T) {
 			foreignID, ownedID := strings.Repeat("b", 64), strings.Repeat("c", 64)
-			request := Request{ImageID: "sha256:" + strings.Repeat("a", 64), Argv: []string{"/bin/true"}, Timeout: time.Second}
+			request := Request{ImageID: "sha256:" + strings.Repeat("a", 64), Argv: []string{"/bin/true"}}
 			name, removed := "", false
 			docker := &Docker{cli: func(_ context.Context, argv []string, _ io.Reader, stdout, _ io.Writer) error {
 				switch argv[1] {

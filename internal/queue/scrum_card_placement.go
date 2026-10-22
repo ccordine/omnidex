@@ -25,14 +25,14 @@ type ScrumCardMove struct {
 // transaction. Neither the browser nor API materializes or rewrites a column.
 func (r *Repository) MoveScrumCard(ctx context.Context, move ScrumCardMove) (DBScrumCard, DBScrumCard, error) {
 	if move.CardID == "" || !utf8.ValidString(move.CardID) || strings.ContainsRune(move.CardID, '\x00') ||
-		move.CardID != strings.TrimSpace(move.CardID) || len(move.CardID) > MaxScrumCardIDBytes {
+		move.CardID != strings.TrimSpace(move.CardID) {
 		return DBScrumCard{}, DBScrumCard{}, fmt.Errorf("Scrum card move requires one canonical card ID")
 	}
 	if _, err := ParseScrumCardColumn(string(move.Column)); err != nil {
 		return DBScrumCard{}, DBScrumCard{}, err
 	}
 	if !utf8.ValidString(move.BeforeCardID) || strings.ContainsRune(move.BeforeCardID, '\x00') ||
-		move.BeforeCardID != strings.TrimSpace(move.BeforeCardID) || len(move.BeforeCardID) > MaxScrumCardIDBytes {
+		move.BeforeCardID != strings.TrimSpace(move.BeforeCardID) {
 		return DBScrumCard{}, DBScrumCard{}, fmt.Errorf("Scrum card move requires one canonical before-card ID")
 	}
 	if move.ExpectedUpdatedAt.IsZero() {

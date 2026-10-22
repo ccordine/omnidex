@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/llm"
@@ -23,14 +22,14 @@ type Parser struct {
 	contextTokens int
 }
 
-func NewParser(endpoint string, timeout time.Duration, contextTokens int) (*Parser, error) {
+func NewParser(endpoint string, contextTokens int) (*Parser, error) {
 	if strings.TrimSpace(endpoint) == "" {
 		return nil, fmt.Errorf("local response parser requires an Ollama endpoint")
 	}
 	if err := llm.ValidateInferenceContextTokens(contextTokens); err != nil {
 		return nil, err
 	}
-	return &Parser{client: New(endpoint, "", "", timeout), contextTokens: contextTokens}, nil
+	return &Parser{client: New(endpoint, "", ""), contextTokens: contextTokens}, nil
 }
 
 type parserRequest struct {
@@ -61,9 +60,6 @@ type parserResponse struct {
 }
 
 func (parser *Parser) Run(ctx context.Context, call codingagent.Assignment, event func(codingagent.NativeEvent) error) (codingagent.Result, error) {
-	if !call.Role.IsNative() && call.ParserStep == nil {
-		return codingagent.RunParserSieve(ctx, call, event, parser.Run)
-	}
 	result := codingagent.Result{Provider: "ollama", Model: call.Route.Model}
 	if event == nil {
 		return result, fmt.Errorf("local response parser requires an evidence sink")
@@ -87,9 +83,7 @@ func (parser *Parser) Run(ctx context.Context, call codingagent.Assignment, even
 		Format: codingagent.ParserOutputSchema(call), Options: parserOptions{
 			ContextTokens: parser.contextTokens, OutputTokens: parser.contextTokens / 2,
 		}}
-	if len(request.Prompt) > parser.contextTokens*8 {
-		return result, fmt.Errorf("response parser input exceeds its local context byte boundary")
-	}
+
 	payload, err := json.Marshal(request)
 	if err != nil {
 		return result, err
@@ -107,13 +101,11 @@ func (parser *Parser) Run(ctx context.Context, call codingagent.Assignment, even
 		return result, err
 	}
 	defer response.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(response.Body, maxParserResponseBytes+1))
+	body, err := io.ReadAll(response.Body)
 	if err != nil {
 		return result, err
 	}
-	if len(body) > maxParserResponseBytes {
-		return result, fmt.Errorf("local parser response exceeds %d bytes", maxParserResponseBytes)
-	}
+
 	if !json.Valid(body) {
 		return result, fmt.Errorf("local parser returned invalid provider JSON (HTTP %d)", response.StatusCode)
 	}
@@ -128,8 +120,8 @@ func (parser *Parser) Run(ctx context.Context, call codingagent.Assignment, even
 		return result, err
 	}
 	if !MatchesOllamaModel(call.Route.Model, parsed.Model) || !parsed.Done || parsed.DoneReason != "stop" ||
-		parsed.PromptEvalCount < 1 || parsed.EvalCount < 1 || parsed.PromptEvalCount+parsed.EvalCount > parser.contextTokens {
-		return result, fmt.Errorf("local parser returned an incomplete, truncated, oversized or different-model result")
+		parsed.PromptEvalCount < 1 || parsed.EvalCount < 1 {
+		return result, fmt.Errorf("local parser returned an incomplete, truncated or different-model result")
 	}
 	if !json.Valid([]byte(parsed.Response)) {
 		return result, fmt.Errorf("local parser output does not contain one JSON result")

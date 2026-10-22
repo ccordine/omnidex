@@ -144,15 +144,13 @@ func (s *Server) userIntentModel(ctx context.Context, current sessionintent.Cont
 		if s.ollamaEndpoint() == "" {
 			return nil, nil, fmt.Errorf("user interpreter has no configured Ollama endpoint")
 		}
-		provider = ollama.New(s.ollamaEndpoint(), route.Model, "", 45*time.Second)
+		provider = ollama.New(s.ollamaEndpoint(), route.Model, "")
 	default:
 		return nil, nil, fmt.Errorf("user interpreter provider %q is unavailable", route.Provider)
 	}
 	evidence := []userIntentModelEvidence{}
 	ask := func(ctx context.Context, prompt string) (string, error) {
-		if len(prompt) > 128<<10 {
-			return "", fmt.Errorf("user semantic question exceeds 128 KiB")
-		}
+
 		prepared, err := llm.PrepareNativeRequest(provider, llm.PreparedModel{Protocol: llm.ExactPreparedProtocolPlainCompletionV4, BaseModel: route.Model, ContextModel: route.Model, Prompt: prompt, MaxOutputTokens: 2048, OutputLimitMode: llm.ExactPreparedOutputLimitExplicit, ContextTokens: 32768})
 		if err != nil {
 			return "", err
@@ -177,7 +175,7 @@ func (s *Server) userIntentProvider() (*codex.Client, error) {
 	if s.userParser != nil {
 		return s.userParser, nil
 	}
-	client, err := codex.NewParser(s.lifecycleContext, s.providerConfig.CodexCommand, s.providerConfig.CodexDirectory, 45*time.Second)
+	client, err := codex.NewParser(s.lifecycleContext, s.providerConfig.CodexCommand, s.providerConfig.CodexDirectory)
 	if err != nil {
 		return nil, err
 	}

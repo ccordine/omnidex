@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/gryph/omnidex/internal/hostbridge"
 )
@@ -15,7 +14,7 @@ func (s *Server) hostBridgeClient() *hostbridge.Client {
 	if strings.TrimSpace(s.hostAgentURL) == "" {
 		return nil
 	}
-	return hostbridge.NewClient(s.hostAgentURL, s.hostAgentToken, 10*time.Second)
+	return hostbridge.NewClient(s.hostAgentURL, s.hostAgentToken)
 }
 
 func (s *Server) handleHostBridgeStatus(w http.ResponseWriter, r *http.Request) {
@@ -23,7 +22,7 @@ func (s *Server) handleHostBridgeStatus(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
+	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	status := s.collectHostBridgeStatus(ctx)
 	bundle, err := renderChatHostBridgeStatusBundle(status)
@@ -48,11 +47,11 @@ func (s *Server) handleHostPickDirectory(w http.ResponseWriter, r *http.Request)
 	var req struct {
 		StartPath string `json:"start_path"`
 	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil && err != io.EOF {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
 		writeError(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Minute)
+	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	result, err := client.PickDirectory(ctx, req.StartPath)
 	if err != nil {

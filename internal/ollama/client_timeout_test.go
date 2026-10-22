@@ -17,29 +17,16 @@ func (transport timeoutRoundTripper) RoundTrip(
 	return transport(request)
 }
 
-func TestClientCannotDisableOrExceedModelRequestTimeout(t *testing.T) {
-	for _, test := range []struct {
-		name      string
-		requested time.Duration
-		want      time.Duration
-	}{
-		{name: "shorter", requested: 9 * time.Minute, want: 9 * time.Minute},
-		{name: "maximum", requested: llm.MaximumModelRequestDuration, want: llm.MaximumModelRequestDuration},
-		{name: "over maximum", requested: 45 * time.Minute, want: llm.MaximumModelRequestDuration},
-		{name: "zero", requested: 0, want: llm.MaximumModelRequestDuration},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			client := newClient("http://localhost:11434", "", "", test.requested)
-			if got := client.httpClient.Timeout; got != test.want {
-				t.Fatalf("http timeout=%s, want %s", got, test.want)
-			}
-		})
+func TestClientHasNoRequestDeadline(t *testing.T) {
+	client := newClient("http://localhost:11434", "", "")
+	if client.httpClient.Timeout != 0 {
+		t.Fatal("provider imposes a wall-clock deadline")
 	}
 }
 
-func TestExactGenerationCancelsAtConfiguredRequestTimeout(t *testing.T) {
+func TestExactGenerationObeysCallerCancellation(t *testing.T) {
 	requestCanceled := make(chan struct{})
-	client := New("http://fixture.invalid", "", "", 20*time.Millisecond)
+	client := New("http://fixture.invalid", "", "")
 	client.httpClient.Transport = timeoutRoundTripper(func(
 		request *http.Request,
 	) (*http.Response, error) {
@@ -59,12 +46,15 @@ func TestExactGenerationCancelsAtConfiguredRequestTimeout(t *testing.T) {
 		ContextTokens:   llm.MinInferenceContextTokens,
 		Temperature:     &temperature,
 	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	time.AfterFunc(20*time.Millisecond, cancel)
 	started := time.Now()
 	_, err := client.GeneratePreparedExact(
-		context.Background(), prepared,
+		ctx, prepared,
 	)
 	if err == nil {
-		t.Fatal("generation unexpectedly outlived its request timeout")
+		t.Fatal("generation ignored caller cancellation")
 	}
 	if elapsed := time.Since(started); elapsed >= time.Second {
 		t.Fatalf("request cancellation took %s, want less than one second", elapsed)

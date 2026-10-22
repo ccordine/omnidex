@@ -72,18 +72,7 @@ func (surface FragmentPublicInteractionSurface) Validate() error {
 			FragmentPublicInteractionSurfaceSchemaV1,
 		)
 	}
-	if len(surface.Controls) > MaxFragmentPublicInteractionControls {
-		return fmt.Errorf(
-			"fragment public interaction surface exceeds %d controls",
-			MaxFragmentPublicInteractionControls,
-		)
-	}
-	if len(surface.Outputs) > MaxFragmentPublicInteractionOutputs {
-		return fmt.Errorf(
-			"fragment public interaction surface exceeds %d outputs",
-			MaxFragmentPublicInteractionOutputs,
-		)
-	}
+
 	roleCounts := make(map[FragmentPublicInteractionRole]int)
 	for index, control := range surface.Controls {
 		if !validFragmentPublicRoleValueKind(control.Role, control.ValueKind) {
@@ -137,13 +126,7 @@ func (surface FragmentPublicInteractionSurface) Validate() error {
 		}
 		outputNames[output.AccessibleName] = struct{}{}
 	}
-	if len(renderValidatedFragmentPublicInteractionSurface(surface)) >
-		MaxFragmentPublicInteractionReceiptBytes {
-		return fmt.Errorf(
-			"fragment public interaction receipt exceeds %d bytes",
-			MaxFragmentPublicInteractionReceiptBytes,
-		)
-	}
+
 	return nil
 }
 
@@ -203,9 +186,7 @@ func validFragmentPublicRoleValueKind(
 }
 
 func validateFragmentPublicLiteral(value string) error {
-	if len(value) > MaxFragmentPublicInteractionLiteralBytes {
-		return fmt.Errorf("literal exceeds %d bytes", MaxFragmentPublicInteractionLiteralBytes)
-	}
+
 	if !utf8.ValidString(value) {
 		return fmt.Errorf("literal is not valid UTF-8")
 	}

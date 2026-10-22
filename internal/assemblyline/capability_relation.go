@@ -40,10 +40,7 @@ func (input CapabilityRelationInput) validate() error {
 			return fmt.Errorf("capability relation requires one trimmed %s", label)
 		}
 	}
-	if len(input.LocalContext) > maxCapabilityRelationContext ||
-		len(input.LeftNeed) > maxCapabilityRelationNeed || len(input.RightNeed) > maxCapabilityRelationNeed {
-		return fmt.Errorf("capability relation input exceeds its hard context limit")
-	}
+
 	if input.LeftNeed == input.RightNeed {
 		return fmt.Errorf("capability relation requires two distinct local needs")
 	}

@@ -221,7 +221,7 @@ func normalizeScrumCardMessageAppend(message ScrumCardMessageAppend) (ScrumCardM
 	if !utf8.ValidString(message.Content) || strings.ContainsRune(message.Content, '\x00') {
 		return ScrumCardMessageAppend{}, fmt.Errorf("Scrum message content must be valid UTF-8 without NUL")
 	}
-	if message.Content == "" || len(message.Content) > MaxScrumChannelMessageBytes {
+	if message.Content == "" {
 		return ScrumCardMessageAppend{}, fmt.Errorf(
 			"Scrum message content must contain 1..%d bytes", MaxScrumChannelMessageBytes,
 		)
@@ -246,7 +246,7 @@ func ValidateScrumCardMessageAppend(message ScrumCardMessageAppend) (ScrumCardMe
 }
 
 func validScrumMessageID(value string) bool {
-	if len(value) < 1 || len(value) > 256 {
+	if len(value) < 1 {
 		return false
 	}
 	for index := range value {

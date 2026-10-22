@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestAcquisitionSealsNetworkBeforeOrdinaryExecution(t *testing.T) {
@@ -25,13 +24,13 @@ func TestAcquisitionSealsNetworkBeforeOrdinaryExecution(t *testing.T) {
 				}
 				assertDockerFixtureRemoved(t, workspace.containerID)
 			})
-			if result, err := workspace.Run(ctx, Command{Argv: []string{"/bin/true"}, Timeout: time.Second}); err == nil || result.ExecutionID != "" {
+			if result, err := workspace.Run(ctx, Command{Argv: []string{"/bin/true"}}); err == nil || result.ExecutionID != "" {
 				t.Fatalf("ordinary execution borrowed acquisition network: %+v %v", result, err)
 			}
 			if err := workspace.Write(ctx, []File{{Path: "unaccepted", Content: []byte("content"), Mode: 0o600}}); err == nil {
 				t.Fatal("source transfer used acquisition network")
 			}
-			acquired, err := workspace.Acquire(ctx, Command{Argv: []string{"/bin/sh", "-c", "test -e /sys/class/net/eth0 && " + fixture.prepare}, Timeout: 10 * time.Second})
+			acquired, err := workspace.Acquire(ctx, Command{Argv: []string{"/bin/sh", "-c", "test -e /sys/class/net/eth0 && " + fixture.prepare}})
 			if err != nil || acquired.NetworkEnabled == nil || !*acquired.NetworkEnabled {
 				t.Fatalf("acquisition = %+v %v", acquired, err)
 			}
@@ -41,14 +40,14 @@ func TestAcquisitionSealsNetworkBeforeOrdinaryExecution(t *testing.T) {
 			if err := workspace.SealNetwork(ctx); err != nil {
 				t.Fatalf("already sealed workspace changed: %v", err)
 			}
-			result, err := workspace.Run(ctx, Command{Argv: []string{"/bin/sh", "-c", "test ! -e /sys/class/net/eth0 && " + fixture.finish}, Timeout: 10 * time.Second})
+			result, err := workspace.Run(ctx, Command{Argv: []string{"/bin/sh", "-c", "test ! -e /sys/class/net/eth0 && " + fixture.finish}})
 			if err != nil || string(result.Stdout) != fixture.want || result.NetworkEnabled == nil || *result.NetworkEnabled {
 				t.Fatalf("sealed execution = %+v %v", result, err)
 			}
 			if acquired.ContainerID != result.ContainerID {
 				t.Fatal("network sealing lost acquired files")
 			}
-			if _, err := workspace.Acquire(ctx, Command{Argv: []string{"/bin/true"}, Timeout: time.Second}); err == nil || !strings.Contains(err.Error(), "acquisition") {
+			if _, err := workspace.Acquire(ctx, Command{Argv: []string{"/bin/true"}}); err == nil || !strings.Contains(err.Error(), "acquisition") {
 				t.Fatalf("sealed acquisition was reopened: %v", err)
 			}
 		})

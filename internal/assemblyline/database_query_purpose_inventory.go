@@ -131,9 +131,7 @@ func BuildDatabaseQueryPurposeInventoryPrompt(
 		fmt.Sprintf("Write between 1 and %d concise candidate purposes, one per line. If there are none, answer %s.", MaxDatabaseQueryPurposeCandidates, DatabaseNoQueryPurposeCandidates),
 		"Database query context:\n" + authority,
 	}, "\n\n")
-	if len(prompt) > maxPortablePayloadBytes {
-		return "", fmt.Errorf("database query purpose inventory prompt exceeds %d bytes", maxPortablePayloadBytes)
-	}
+
 	return prompt, nil
 }
 
@@ -179,9 +177,7 @@ func (inventory DatabaseQueryPurposeInventory) ValidateFor(
 	if inventory.Candidates == nil {
 		return fmt.Errorf("database query purpose inventory candidates must be an explicit array")
 	}
-	if len(inventory.Candidates) > MaxDatabaseQueryPurposeCandidates {
-		return fmt.Errorf("database query purpose inventory must contain 0..%d candidates", MaxDatabaseQueryPurposeCandidates)
-	}
+
 	for index, candidate := range inventory.Candidates {
 		if candidate == DatabaseNoQueryPurposeCandidates {
 			return fmt.Errorf("database query purpose inventory candidate %d cannot mix the registered absence result with positive candidates", index)

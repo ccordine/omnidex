@@ -39,9 +39,8 @@ func (console *chatConsole) observeWorkspaceEvent(event client.RealtimeEvent) er
 		text := ""
 		switch activity.Kind {
 		case model.AgentActivityCommand:
-			text = fmt.Sprintf("%s · %s\n%s", agentActivityRoleLabel(*activity), activity.Status, activity.Command)
-			if activity.ExitCode != nil {
-				text += fmt.Sprintf("\nexit %d", *activity.ExitCode)
+			if activity.Status != model.AgentActivityStarted {
+				text = fmt.Sprintf("%s\n%s", commandOutcome(*activity), shortAgentExcerpt(activity.Command))
 			}
 		case model.AgentActivityFileEdit:
 			text = string(activity.Status) + "\n" + strings.Join(activity.Paths, "\n")

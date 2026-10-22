@@ -52,13 +52,13 @@ func (s *Server) projectSummary(ctx context.Context, project model.Project) (map
 
 func projectCoreProjection(project model.Project) map[string]any {
 	return map[string]any{
-		"id":            project.ID,
-		"name":          project.Name,
-		"location":      project.Location,
-		"description":   project.Description,
-		"last_seen_at":  project.LastSeenAt,
-		"created_at":    project.CreatedAt,
-		"updated_at":    project.UpdatedAt,
+		"id":           project.ID,
+		"name":         project.Name,
+		"location":     project.Location,
+		"description":  project.Description,
+		"last_seen_at": project.LastSeenAt,
+		"created_at":   project.CreatedAt,
+		"updated_at":   project.UpdatedAt,
 	}
 }
 

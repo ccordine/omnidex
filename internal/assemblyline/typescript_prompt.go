@@ -26,7 +26,7 @@ func BuildTypeScriptFragmentPrompt(input TypeScriptFragmentPrompt) (string, erro
 	if contract == "" {
 		return "", fmt.Errorf("TypeScript fragment prompt requires a local behavior contract")
 	}
-	if dialect == "" || dialect != input.Dialect || strings.ContainsAny(dialect, "\x00\r\n") || len(dialect) > 256 {
+	if dialect == "" || dialect != input.Dialect || strings.ContainsAny(dialect, "\x00\r\n") {
 		return "", fmt.Errorf("TypeScript fragment prompt requires one bounded source dialect")
 	}
 	parts := []string{
@@ -43,11 +43,6 @@ func BuildTypeScriptFragmentPrompt(input TypeScriptFragmentPrompt) (string, erro
 		parts = append(parts, "These additional identifiers are available:\n"+strings.Join(input.Globals, ", "))
 	}
 	prompt := strings.Join(parts, "\n\n")
-	if len(prompt) > maxTypeScriptInitialEnvelopeBytes {
-		return "", fmt.Errorf(
-			"TypeScript fragment initial envelope exceeds %d bytes",
-			maxTypeScriptInitialEnvelopeBytes,
-		)
-	}
+
 	return prompt, nil
 }

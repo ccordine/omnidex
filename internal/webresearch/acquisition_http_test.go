@@ -22,7 +22,7 @@ func TestHTTPAcquisitionFailureReturnsObservedSourcesWithoutSemanticWork(t *test
 		for _, phase := range []string{"discovery", "fetch"} {
 			failures := []string{"cancelled", "invalid_text"}
 			if phase == "discovery" {
-				failures = append(failures, "parse_bounds")
+				// Large valid source text is accepted; malformed text remains a failure.
 			} else {
 				failures = append(failures, "redirect")
 			}

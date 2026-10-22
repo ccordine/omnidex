@@ -109,7 +109,7 @@ func validateRoute(route Route) error {
 		return fmt.Errorf("provider and model are required")
 	}
 	for _, option := range []string{route.Effort, route.ServiceTier} {
-		if len(option) > 64 || strings.TrimSpace(option) != option || strings.ContainsAny(option, "\x00\r\n") {
+		if strings.TrimSpace(option) != option || strings.ContainsAny(option, "\x00\r\n") {
 			return fmt.Errorf("inference option must be an exact supported value")
 		}
 	}

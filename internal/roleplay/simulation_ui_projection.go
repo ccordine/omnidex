@@ -79,9 +79,7 @@ func validateSimulationUIPage(worldID string, page SimulationUIPageRequest) erro
 			return fmt.Errorf("simulation UI page offset cannot be negative")
 		}
 	}
-	if len(page.NamedCharacterIDs) > MaxSceneParticipants {
-		return fmt.Errorf("simulation UI named-character projection exceeds its bound")
-	}
+
 	seen := make(map[string]struct{}, len(page.NamedCharacterIDs))
 	for _, characterID := range page.NamedCharacterIDs {
 		if err := validateIdentity(characterID, characterIdentity); err != nil {

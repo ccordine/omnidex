@@ -2,7 +2,9 @@ package main
 
 import (
 	"errors"
+	"net/http"
 
+	"github.com/gryph/omnidex/internal/client"
 	"github.com/gryph/omnidex/internal/model"
 )
 
@@ -88,6 +90,9 @@ func (session *chatSession) resolveOperationError(err error) (quit bool, resultE
 		}
 		return false, session.renderer.system("no active server job remains to interrupt")
 	}
+	if session.active.Job.Status == model.JobStatusWaiting {
+		return false, session.renderer.system("job %d is already waiting for you; no work is running", session.active.Job.ID)
+	}
 	targetJobID := session.active.Job.ID
 	if resolution != nil {
 		targetJobID = resolution.jobID
@@ -113,6 +118,16 @@ func (session *chatSession) resolveOperationError(err error) (quit bool, resultE
 			return false, session.renderer.system(
 				"interrupt request was itself interrupted; press Ctrl-C to retry",
 			)
+		}
+		// Planning can finish between the authoritative read and the interrupt.
+		// Only a definitive state rejection permits dropping this operation;
+		// transport uncertainty and authorization failures retain their errors.
+		if client.IsHTTPStatus(err, http.StatusBadRequest) || client.IsHTTPStatus(err, http.StatusConflict) {
+			if reloadErr := session.reloadSnapshotAuthoritatively(); reloadErr == nil && session.active != nil &&
+				session.active.Job.ID == targetJobID && session.active.Job.Status == model.JobStatusWaiting {
+				session.pendingControl = nil
+				return false, session.renderer.system("job %d is already waiting for you; no work is running", targetJobID)
+			}
 		}
 		return false, err
 	}

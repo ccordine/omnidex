@@ -32,9 +32,7 @@ func projectObjectiveDatabaseEvidence(record queue.DatabaseEvidenceRecord) ([]ob
 	if err != nil {
 		return nil, err
 	}
-	if len(groups) > maxDatabaseEvidenceCapsules {
-		return nil, fmt.Errorf("database evidence requires %d capsules; maximum is %d", len(groups), maxDatabaseEvidenceCapsules)
-	}
+
 	projected := make([]objectiveEvidence, 0, len(groups))
 	total, rowStart := 0, 0
 	for index, rows := range groups {
@@ -48,9 +46,7 @@ func projectObjectiveDatabaseEvidence(record queue.DatabaseEvidenceRecord) ([]ob
 			return nil, fmt.Errorf("encode database evidence capsule: %w", err)
 		}
 		total += len(encoded)
-		if total > maxDatabaseEvidenceContextBytes {
-			return nil, fmt.Errorf("database evidence projection exceeds %d context bytes", maxDatabaseEvidenceContextBytes)
-		}
+
 		item, err := newObjectiveEvidence(fmt.Sprintf("DB-%02d", index+1), string(encoded), "postgres_query", record.SourceRef())
 		if err != nil {
 			return nil, err
@@ -81,18 +77,15 @@ func splitObjectiveDatabaseRows(
 		if err != nil {
 			return nil, err
 		}
-		if len(encoded) <= maxObjectiveEvidenceTextBytes {
+		if len(encoded) <= maxObjectiveEvidenceTextBytes || len(current) == 0 {
 			current = candidate
 			continue
-		}
-		if len(current) == 0 {
-			return nil, fmt.Errorf("one database evidence row exceeds %d context bytes", maxObjectiveEvidenceTextBytes)
 		}
 		groups = append(groups, current)
 		current = [][]datasource.EvidenceValue{row}
 		probe.Rows = current
 		encoded, err = json.Marshal(probe)
-		if err != nil || len(encoded) > maxObjectiveEvidenceTextBytes {
+		if err != nil {
 			return nil, fmt.Errorf("one database evidence row cannot fit the bounded context projection")
 		}
 	}
@@ -101,7 +94,7 @@ func splitObjectiveDatabaseRows(
 }
 
 func validateDatabaseEvidenceNeed(value string) error {
-	if value == "" || value != strings.TrimSpace(value) || len(value) > maxDatabaseEvidenceNeedBytes {
+	if value == "" || value != strings.TrimSpace(value) {
 		return fmt.Errorf("database evidence need must be one bounded trimmed semantic value")
 	}
 	return nil

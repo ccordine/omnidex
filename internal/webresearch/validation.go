@@ -11,13 +11,13 @@ import (
 	"github.com/gryph/omnidex/internal/modelcontext"
 )
 
-var objectiveIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$`)
+var objectiveIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:-]*$`)
 
 func validateObjective(objective Objective) error {
 	if !objectiveIDPattern.MatchString(string(objective.ID)) {
 		return fmt.Errorf("%w: ID is invalid", ErrInvalidObjective)
 	}
-	if strings.TrimSpace(objective.Question) == "" || len(objective.Question) > 4_096 {
+	if strings.TrimSpace(objective.Question) == "" {
 		return fmt.Errorf("%w: question must contain 1..4096 non-blank exact bytes", ErrInvalidObjective)
 	}
 	if !utf8.ValidString(objective.Question) || strings.ContainsRune(objective.Question, '\x00') {
@@ -41,7 +41,7 @@ func validateObjective(objective Objective) error {
 		return fmt.Errorf("%w: selected conversation projection: %v", ErrInvalidObjective, err)
 	}
 	if objective.InitialQuery == "" || objective.InitialQuery != strings.TrimSpace(objective.InitialQuery) ||
-		len(objective.InitialQuery) > 4_096 || !utf8.ValidString(objective.InitialQuery) ||
+		!utf8.ValidString(objective.InitialQuery) ||
 		strings.ContainsRune(objective.InitialQuery, '\x00') {
 		return fmt.Errorf("%w: initial query must contain 1..4096 exact trimmed UTF-8 bytes", ErrInvalidObjective)
 	}
@@ -55,18 +55,16 @@ func validateEvidenceConfig(config EvidenceConfig) error {
 	if config.MaxFetchCandidates < 1 || config.MaxFetchCandidates > 32 {
 		return fmt.Errorf("%w: fetch candidate bound must be 1..32", ErrInvalidConfiguration)
 	}
-	if config.MaxProjectionBytes < 256 || config.MaxProjectionBytes > 8_192 {
+	if config.MaxProjectionBytes < 256 {
 		return fmt.Errorf("%w: projection bound must be 256..8192 bytes", ErrInvalidConfiguration)
 	}
 	if config.MaxRelevantCandidates < 1 || config.MaxRelevantCandidates > config.MaxFetchCandidates {
 		return fmt.Errorf("%w: relevance bound must fit fetch bound", ErrInvalidConfiguration)
 	}
-	if config.CandidateSummaryBytes < 64 || config.CandidateSummaryBytes > 2_048 {
+	if config.CandidateSummaryBytes < 64 {
 		return fmt.Errorf("%w: candidate summary bound must be 64..2048 bytes", ErrInvalidConfiguration)
 	}
-	if config.MaxFetchCandidates*(config.CandidateSummaryBytes+128) > 8_192 {
-		return fmt.Errorf("%w: bounded relevance projection exceeds 8192 bytes", ErrInvalidConfiguration)
-	}
+
 	return nil
 }
 

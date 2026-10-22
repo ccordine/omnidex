@@ -37,12 +37,12 @@ func run() error {
 		if baseURL == "" || os.Getenv("OMNIDEX_INFERENCE_BACKEND_URL") != "" || os.Getenv("OMNIDEX_INFERENCE_BACKEND_TOKEN") != "" {
 			return fmt.Errorf("Ollama inference requires only OLLAMA_BASE_URL as its provider configuration")
 		}
-		client = inferenceapi.NewOllamaProvider(ollama.New(baseURL, model, "", 45*time.Second), model)
+		client = inferenceapi.NewOllamaProvider(ollama.New(baseURL, model, ""), model)
 	case "http":
 		if os.Getenv("OLLAMA_BASE_URL") != "" {
 			return fmt.Errorf("native HTTP inference does not accept OLLAMA_BASE_URL")
 		}
-		provider, err := inferenceapi.NewHTTPProvider(os.Getenv("OMNIDEX_INFERENCE_BACKEND_URL"), os.Getenv("OMNIDEX_INFERENCE_BACKEND_TOKEN"), model, 45*time.Second)
+		provider, err := inferenceapi.NewHTTPProvider(os.Getenv("OMNIDEX_INFERENCE_BACKEND_URL"), os.Getenv("OMNIDEX_INFERENCE_BACKEND_TOKEN"), model)
 		if err != nil {
 			return err
 		}
@@ -50,7 +50,7 @@ func run() error {
 	default:
 		return fmt.Errorf("OMNIDEX_INFERENCE_PROVIDER must explicitly select ollama or http")
 	}
-	app, err := inferenceapi.New(client, model, os.Getenv("OMNIDEX_INTEGRATION_API_TOKEN"), 45*time.Second)
+	app, err := inferenceapi.New(client, model, os.Getenv("OMNIDEX_INTEGRATION_API_TOKEN"))
 	if err != nil {
 		return err
 	}

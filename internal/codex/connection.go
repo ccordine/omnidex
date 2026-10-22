@@ -2,6 +2,7 @@ package codex
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,11 +10,7 @@ import (
 	"os/exec"
 	"strconv"
 	"time"
-
-	"github.com/gryph/omnidex/internal/llm"
 )
-
-const maximumFrameBytes = llm.MaxExactPreparedProviderResponseBytes
 
 type rpcFrame struct {
 	ID     json.RawMessage `json:"id,omitempty"`
@@ -29,7 +26,7 @@ type rpcFrame struct {
 type connection struct {
 	process        *exec.Cmd
 	input          io.WriteCloser
-	output         *bufio.Scanner
+	output         *bufio.Reader
 	sequence       int
 	initialized    bool
 	isolatedParser bool
@@ -100,9 +97,7 @@ func launchConnection(ctx context.Context, command, directory string, agent bool
 		_ = input.Close()
 		return nil, err
 	}
-	scanner := bufio.NewScanner(output)
-	scanner.Buffer(make([]byte, 64<<10), maximumFrameBytes)
-	return &connection{process: process, input: input, output: scanner}, nil
+	return &connection{process: process, input: input, output: bufio.NewReader(output)}, nil
 }
 
 func (connection *connection) close() {
@@ -147,13 +142,14 @@ func (connection *connection) next() (rpcFrame, error) {
 func (connection *connection) nextAgent() (rpcFrame, error) { return connection.readFrame(true) }
 
 func (connection *connection) readFrame(agent bool) (rpcFrame, error) {
-	if !connection.output.Scan() {
-		if err := connection.output.Err(); err != nil {
-			return rpcFrame{}, err
-		}
+	line, err := connection.output.ReadBytes('\n')
+	if err == io.EOF && len(line) == 0 {
 		return rpcFrame{}, io.ErrUnexpectedEOF
 	}
-	connection.lastFrame = append(json.RawMessage(nil), connection.output.Bytes()...)
+	if err != nil && err != io.EOF {
+		return rpcFrame{}, err
+	}
+	connection.lastFrame = append(json.RawMessage(nil), bytes.TrimSpace(line)...)
 	var frame rpcFrame
 	if err := json.Unmarshal(connection.lastFrame, &frame); err != nil {
 		return frame, err

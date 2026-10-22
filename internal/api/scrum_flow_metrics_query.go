@@ -24,12 +24,7 @@ func decodeScrumFlowMetricsQuery(request *http.Request) (scrumFlowMetricsQuery, 
 	if request == nil || request.URL == nil {
 		return scrumFlowMetricsQuery{}, fmt.Errorf("Scrum flow metrics request URL is required")
 	}
-	if len(request.URL.RawQuery) > maxScrumFlowMetricsRawQuerySize {
-		return scrumFlowMetricsQuery{}, fmt.Errorf(
-			"Scrum flow metrics query exceeds the %d-byte bound",
-			maxScrumFlowMetricsRawQuerySize,
-		)
-	}
+
 	values, err := url.ParseQuery(request.URL.RawQuery)
 	if err != nil {
 		return scrumFlowMetricsQuery{}, fmt.Errorf("decode Scrum flow metrics query: %w", err)

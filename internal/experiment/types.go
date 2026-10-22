@@ -37,7 +37,6 @@ type Request struct {
 	Stdin       []byte
 	Input       []File
 	Collect     []string
-	Timeout     time.Duration
 }
 
 type Result struct {
@@ -66,10 +65,7 @@ func validateRequest(request Request) error {
 	if !imageIDPattern.MatchString(request.ImageID) {
 		return fmt.Errorf("experiment requires one observed immutable Docker image ID")
 	}
-	if request.Timeout <= 0 || request.Timeout > 10*time.Minute {
-		return fmt.Errorf("experiment timeout must be positive and at most ten minutes")
-	}
-	if len(request.Argv) == 0 || len(request.Argv) > 128 || request.Argv[0] == "" {
+	if len(request.Argv) == 0 || request.Argv[0] == "" {
 		return fmt.Errorf("experiment requires one bounded exact command")
 	}
 	bytes := 0
@@ -79,10 +75,8 @@ func validateRequest(request Request) error {
 		}
 		bytes += len(argument)
 	}
-	if bytes > 64*1024 || len(request.Stdin) > MaxStreamBytes {
-		return fmt.Errorf("experiment command or stdin exceeds its byte bound")
-	}
-	if len(request.Environment) > 64 || !sort.StringsAreSorted(request.Environment) {
+
+	if !sort.StringsAreSorted(request.Environment) {
 		return fmt.Errorf("experiment environment must be bounded and sorted")
 	}
 	names := make(map[string]struct{})
@@ -98,12 +92,7 @@ func validateRequest(request Request) error {
 		names[name] = struct{}{}
 		bytes += len(entry)
 	}
-	if bytes > 64*1024 {
-		return fmt.Errorf("experiment environment exceeds its byte bound")
-	}
-	if len(request.Input) > MaxFiles || len(request.Collect) > MaxFiles {
-		return fmt.Errorf("experiment exceeds its file count bound")
-	}
+
 	input := make(map[string]struct{})
 	bytes = 0
 	for _, file := range request.Input {
@@ -114,12 +103,10 @@ func validateRequest(request Request) error {
 			return fmt.Errorf("experiment repeats input file %q", file.Path)
 		}
 		input[file.Path] = struct{}{}
-		if file.Mode == 0 || file.Mode&^uint32(0o777) != 0 || len(file.Content) > MaxFileBytes {
+		if file.Mode == 0 || file.Mode&^uint32(0o777) != 0 {
 			return fmt.Errorf("experiment input %q has invalid permissions or size", file.Path)
 		}
-		if bytes > MaxInputBytes-len(file.Content) {
-			return fmt.Errorf("experiment input exceeds its total byte bound")
-		}
+
 		bytes += len(file.Content)
 	}
 	for name := range input {
@@ -154,15 +141,10 @@ func validText(value string) bool {
 }
 
 func validatePath(value string) error {
-	if !validText(value) || value == "" || value != strings.TrimSpace(value) || len(value) > 4096 ||
+	if !validText(value) || value == "" || value != strings.TrimSpace(value) ||
 		strings.Contains(value, "\\") || path.IsAbs(value) || path.Clean(value) != value || value == "." ||
 		value == ".." || strings.HasPrefix(value, "../") {
 		return fmt.Errorf("experiment path %q must be one exact relative slash path", value)
-	}
-	for _, segment := range strings.Split(value, "/") {
-		if len(segment) > 255 {
-			return fmt.Errorf("experiment path %q contains an oversized basename", value)
-		}
 	}
 	return nil
 }

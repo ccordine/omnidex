@@ -197,7 +197,7 @@ func validateCodingPlanMutation(
 }
 
 func validateCodingPlanDecisionChanges(changes []CodingPlanDecisionChange) error {
-	if len(changes) == 0 || len(changes) > model.MaxCodingPlanLeaves {
+	if len(changes) == 0 {
 		return fmt.Errorf(
 			"coding plan decision mutation requires between 1 and %d changes",
 			model.MaxCodingPlanLeaves,

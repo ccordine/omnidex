@@ -194,14 +194,7 @@ func (state DatabaseQueryIntentLeafState) validate() error {
 		state.Exists == nil || state.Having == nil || state.OrderBy == nil {
 		return fmt.Errorf("database query partial collections must be explicit")
 	}
-	if len(state.Projections) > datasource.MaxIntentProjections ||
-		len(state.Filters) > datasource.MaxIntentFilters ||
-		len(state.TemporalWindows) > datasource.MaxIntentFilters ||
-		len(state.Exists) > datasource.MaxIntentExistenceChecks ||
-		len(state.Having) > datasource.MaxIntentGroups ||
-		len(state.OrderBy) > datasource.MaxIntentOrderTerms {
-		return fmt.Errorf("database query partial state exceeds a collection bound")
-	}
+
 	if len(state.Projections)+len(state.Filters)+len(state.TemporalWindows)+
 		len(state.Exists)+len(state.Having)+len(state.OrderBy) > 0 {
 		if state.FromRelationID == "" || state.Shape == "" {

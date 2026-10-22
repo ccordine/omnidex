@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/gryph/omnidex/internal/projectgit"
 )
@@ -19,13 +18,11 @@ type Client struct {
 	Token      string
 }
 
-func NewClient(baseURL, token string, timeout time.Duration) *Client {
+func NewClient(baseURL, token string) *Client {
 	return &Client{
-		BaseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
-		Token:   strings.TrimSpace(token),
-		HTTPClient: &http.Client{
-			Timeout: timeout,
-		},
+		BaseURL:    strings.TrimRight(strings.TrimSpace(baseURL), "/"),
+		Token:      strings.TrimSpace(token),
+		HTTPClient: &http.Client{},
 	}
 }
 

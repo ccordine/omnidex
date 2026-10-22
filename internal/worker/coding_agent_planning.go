@@ -158,6 +158,9 @@ func createCodingLedgerPlanningTransaction(
 	if err != nil {
 		return queue.CodingLedgerRevision{}, err
 	}
+	for index := range proposal.Ledger.Tasks {
+		bindPlanningTaskSource(&proposal.Ledger.Tasks[index], nil, turn, 1)
+	}
 	created, err := repository.CreateCodingLedger(ctx, queue.CreateCodingLedgerCommand{
 		JobID: jobID, OperationID: turn.OperationID, OwnerTurnID: turn.OwnerTurnID,
 		OwnerTurnText: turn.Text, OwnerTurnDisposition: proposal.OwnerTurnDisposition,
@@ -207,6 +210,22 @@ func applyCodingLedgerPlanningTransaction(
 			})
 		}
 		return current, nil
+	}
+	if direct == nil {
+		for index := range mutation.Operations {
+			op := &mutation.Operations[index]
+			if (op.Kind != model.LedgerMutationAdd && op.Kind != model.LedgerMutationAmend) || op.Item == nil || op.Item.Task == nil {
+				continue
+			}
+			var retained *model.LedgerTask
+			for taskIndex := range current.Ledger.Tasks {
+				if current.Ledger.Tasks[taskIndex].ID == op.Item.Task.ID {
+					retained = &current.Ledger.Tasks[taskIndex]
+					break
+				}
+			}
+			bindPlanningTaskSource(op.Item.Task, retained, turn, current.Revision+1)
+		}
 	}
 	applied, err := repository.ApplyCodingLedgerMutation(ctx, queue.ApplyCodingLedgerMutationCommand{
 		LedgerID: ledgerID, OwnerTurnText: turn.Text, Mutation: mutation,

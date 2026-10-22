@@ -25,11 +25,6 @@ func decodeScrumBoardQuery(request *http.Request) (scrumBoardQuery, error) {
 	if request == nil || request.URL == nil {
 		return scrumBoardQuery{}, fmt.Errorf("Scrum board request URL is required")
 	}
-	if len(request.URL.RawQuery) > maxScrumBoardRawQuerySize {
-		return scrumBoardQuery{}, fmt.Errorf(
-			"Scrum board query exceeds the %d-byte bound", maxScrumBoardRawQuerySize,
-		)
-	}
 	values, err := url.ParseQuery(request.URL.RawQuery)
 	if err != nil {
 		return scrumBoardQuery{}, fmt.Errorf("decode Scrum board query: %w", err)

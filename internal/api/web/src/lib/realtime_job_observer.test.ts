@@ -98,4 +98,24 @@ describe("observeRealtimeJob", () => {
     expect(onUpdate).not.toHaveBeenCalled();
     await expect(completion).resolves.toMatchObject({ message: "Modal closed." });
   });
+  it("continues observing active work after the former ten-minute deadline", async () => {
+    vi.useFakeTimers();
+    const load = vi.fn<() => Promise<RealtimeJobSnapshot<JobData>>>()
+      .mockResolvedValueOnce({ status: "running", data: {} })
+      .mockResolvedValueOnce({ status: "completed", data: { result: "finished" } });
+    const observation = observeRealtimeJob({ jobID: 41, load });
+    observations.push(observation);
+    let settled = false;
+    void observation.completion.then(() => { settled = true; }, () => { settled = true; });
+    try {
+      await observation.initial;
+      await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+      expect(settled).toBe(false);
+      await observation.refresh();
+      await expect(observation.completion).resolves.toMatchObject({ status: "completed" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
 });

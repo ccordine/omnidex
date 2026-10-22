@@ -33,7 +33,7 @@ func TestDockerExperimentsExecuteAndCollectWithoutHostMounts(t *testing.T) {
 			[]File{{Path: "values.txt", Content: []byte("3\n9\n-2\n"), Mode: 0o644}}, []string{"total.txt"}, nil, []byte("10\n"), nil, []byte("10\n")},
 	} {
 		t.Run(fixture.name, func(t *testing.T) {
-			result, err := NewDocker().Run(context.Background(), Request{ImageID: image, Argv: fixture.argv, Input: fixture.input, Collect: fixture.collect, Stdin: fixture.stdin, Timeout: 30 * time.Second})
+			result, err := NewDocker().Run(context.Background(), Request{ImageID: image, Argv: fixture.argv, Input: fixture.input, Collect: fixture.collect, Stdin: fixture.stdin})
 			if err != nil {
 				t.Fatalf("%v; stdout=%q stderr=%q", err, result.Stdout, result.Stderr)
 			}
@@ -69,7 +69,9 @@ func TestDockerExperimentFailuresAreObservedAndCleanedUp(t *testing.T) {
 		{"linked_parent", "ln -s /etc result", []string{"result/passwd"}, 30 * time.Second},
 	} {
 		t.Run(fixture.name, func(t *testing.T) {
-			result, err := NewDocker().Run(context.Background(), Request{ImageID: image, Argv: []string{"/bin/sh", "-c", fixture.script}, Collect: fixture.collect, Timeout: fixture.timeout})
+			ctx, cancel := context.WithTimeout(context.Background(), fixture.timeout)
+			defer cancel()
+			result, err := NewDocker().Run(ctx, Request{ImageID: image, Argv: []string{"/bin/sh", "-c", fixture.script}, Collect: fixture.collect})
 			if err == nil || len(result.Files) != 0 {
 				t.Fatalf("failed experiment returned artifacts: %+v %v", result, err)
 			}

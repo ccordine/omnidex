@@ -8,12 +8,9 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 	"unicode"
-	"unicode/utf8"
 
-	"github.com/gryph/omnidex/internal/model"
 	"golang.org/x/term"
 )
 
@@ -53,8 +50,9 @@ type chatConsole struct {
 	terminalFD     int
 	terminalState  *term.State
 	closeOnce      sync.Once
-	inputOverflow  atomic.Bool
 	presentationMu sync.Mutex
+	readingDraft   bool
+	draftInterrupt chan bool
 	reviewActive   bool
 	reviewView     string
 	promptMu       sync.Mutex
@@ -110,7 +108,7 @@ func newChatConsole(
 		return nil, fmt.Errorf("construct plan-review terminal input: %w", err)
 	}
 	source.review = reviewInput.ReviewEnabled
-	pasteReader := newBracketedPasteReader(reviewInput, model.MaxFreeFormTurnBytes)
+	pasteReader := newBracketedPasteReader(reviewInput)
 	interactive := term.NewTerminal(
 		terminalReadWriter{
 			reader: pasteReader,
@@ -118,7 +116,6 @@ func newChatConsole(
 		},
 		"you> ",
 	)
-	interactive.AutoCompleteCallback = console.boundTerminalInput
 	interactive.SetBracketedPasteMode(true)
 	columns, rows, _ := workspace.Resize(width, height)
 	_ = interactive.SetSize(columns, rows)
@@ -183,7 +180,6 @@ func (console *chatConsole) ReadLine() (string, bool, terminalInputAuthority, er
 		return "", false, terminalInputAuthority{}, fmt.Errorf("interactive console is unavailable")
 	}
 	if console.terminal != nil {
-		console.inputOverflow.Store(false)
 		if console.workspace != nil {
 			console.workspace.beginInput()
 		}
@@ -191,17 +187,11 @@ func (console *chatConsole) ReadLine() (string, bool, terminalInputAuthority, er
 		if console.workspace != nil {
 			console.workspace.endInput()
 		}
-		pasted, pasteOverflow, invalidUTF8, unsafeText, authority := console.pasteReader.consumeLineState()
+		pasted, invalidUTF8, unsafeText, authority := console.pasteReader.consumeLineState()
 		composed := restorePasteProjection.Replace(line)
 		pasted = pasted || composed != line
 		line = composed
-		if console.inputOverflow.Load() || pasteOverflow || len(line) > model.MaxFreeFormTurnBytes {
-			return "", false, authority, fmt.Errorf(
-				"%w: input exceeded the %d-byte terminal boundary and was not submitted",
-				errChatInputRejected,
-				model.MaxFreeFormTurnBytes,
-			)
-		}
+
 		if invalidUTF8 {
 			return "", false, authority, fmt.Errorf(
 				"%w: terminal input was not valid UTF-8 and was not submitted",
@@ -226,25 +216,6 @@ func (console *chatConsole) ReadLine() (string, bool, terminalInputAuthority, er
 		return line, false, authority, err
 	}
 	return "", false, terminalInputAuthority{}, fmt.Errorf("interactive terminal is unavailable")
-}
-
-func (console *chatConsole) boundTerminalInput(
-	line string,
-	position int,
-	key rune,
-) (string, int, bool) {
-	if !utf8.ValidRune(key) || key < ' ' {
-		return "", 0, false
-	}
-	if console.inputOverflow.Load() {
-		return line, position, true
-	}
-	keyBytes := utf8.RuneLen(key)
-	if keyBytes > 0 && len(restorePasteProjection.Replace(line))+keyBytes <= model.MaxFreeFormTurnBytes {
-		return "", 0, false
-	}
-	console.inputOverflow.Store(true)
-	return line, position, true
 }
 
 func (console *chatConsole) IsTerminal() bool {

@@ -21,7 +21,7 @@ export function validateScrumChannelCursor(value: unknown, label: string, allowE
     throw new Error(`${label} requires one exact canonical cursor.`);
   }
   const bytes = encoder.encode(value);
-  if (bytes.byteLength > 128 || decoder.decode(bytes) !== value) {
+  if (decoder.decode(bytes) !== value) {
     throw new Error(`${label} requires one exact canonical cursor.`);
   }
   if (value === "") {

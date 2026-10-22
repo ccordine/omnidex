@@ -222,7 +222,7 @@ func readExactProjectBody(w http.ResponseWriter, r *http.Request, name string) (
 	if r == nil || r.Body == nil {
 		return nil, fmt.Errorf("%s body is required", name)
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxProjectMutationBodyBytes)
+
 	raw, err := io.ReadAll(r.Body)
 	if err != nil {
 		var tooLarge *http.MaxBytesError
@@ -250,9 +250,7 @@ func validateProjectText(name, value string, maxBytes int, allowBlank bool) erro
 	if !utf8.ValidString(value) || strings.ContainsRune(value, '\x00') {
 		return fmt.Errorf("project %s must be valid UTF-8 without NUL", name)
 	}
-	if len(value) > maxBytes {
-		return fmt.Errorf("project %s exceeds the %d-byte bound", name, maxBytes)
-	}
+
 	if !allowBlank && strings.TrimSpace(value) == "" {
 		return fmt.Errorf("project %s must not be blank", name)
 	}

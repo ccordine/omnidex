@@ -9,9 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
-
-	"github.com/gryph/omnidex/internal/llm"
 )
 
 const (
@@ -49,11 +46,10 @@ func NewEmbedding(
 	embeddingModel string,
 	organization string,
 	project string,
-	timeout time.Duration,
 ) (*Client, error) {
 	return NewCompatibleEmbedding(
 		"openai", "OPENAI_API_KEY", baseURL, apiKey, embeddingModel,
-		organization, project, timeout,
+		organization, project,
 	)
 }
 
@@ -65,7 +61,6 @@ func NewCompatibleEmbedding(
 	embeddingModel string,
 	organization string,
 	project string,
-	timeout time.Duration,
 ) (*Client, error) {
 	providerName = strings.TrimSpace(providerName)
 	if providerName == "" {
@@ -87,17 +82,11 @@ func NewCompatibleEmbedding(
 	if embeddingModel == "" {
 		return nil, fmt.Errorf("embedding model is required for provider %s", providerName)
 	}
-	if timeout <= 0 || timeout > llm.MaximumModelRequestDuration {
-		return nil, fmt.Errorf(
-			"request timeout for provider %s must be positive and no greater than %s",
-			providerName, llm.MaximumModelRequestDuration,
-		)
-	}
 	return &Client{
 		baseURL: normalizedBaseURL, apiKey: apiKey, embeddingModel: embeddingModel,
 		organization: strings.TrimSpace(organization), project: strings.TrimSpace(project),
 		providerName: providerName, apiKeyName: apiKeyName, apiStyle: "openai",
-		httpClient: &http.Client{Timeout: timeout},
+		httpClient: &http.Client{},
 	}, nil
 }
 
@@ -107,7 +96,6 @@ func NewAzureAIEmbedding(
 	embeddingModel string,
 	apiVersion string,
 	apiStyle string,
-	timeout time.Duration,
 ) (*Client, error) {
 	apiStyle = normalizeAzureAIStyle(apiStyle, baseURL)
 	if strings.TrimSpace(apiVersion) == "" {
@@ -132,17 +120,11 @@ func NewAzureAIEmbedding(
 	if embeddingModel == "" {
 		return nil, fmt.Errorf("embedding model is required for provider azure")
 	}
-	if timeout <= 0 || timeout > llm.MaximumModelRequestDuration {
-		return nil, fmt.Errorf(
-			"request timeout for provider azure must be positive and no greater than %s",
-			llm.MaximumModelRequestDuration,
-		)
-	}
 	return &Client{
 		baseURL: baseURL, apiKey: apiKey, embeddingModel: embeddingModel,
 		providerName: "azure", apiKeyName: "AZURE_AI_API_KEY",
 		apiStyle: apiStyle, apiVersion: strings.TrimSpace(apiVersion),
-		httpClient: &http.Client{Timeout: timeout},
+		httpClient: &http.Client{},
 	}, nil
 }
 
@@ -209,13 +191,11 @@ func (c *Client) doJSON(
 		return fmt.Errorf("%s request: %w", c.providerName, err)
 	}
 	defer resp.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxProviderResponseBytes+1))
+	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("read %s response: %w", c.providerName, err)
 	}
-	if len(data) > maxProviderResponseBytes {
-		return fmt.Errorf("%s response exceeded %d bytes", c.providerName, maxProviderResponseBytes)
-	}
+
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return c.providerError(resp.StatusCode, data)
 	}

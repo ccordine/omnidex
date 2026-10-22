@@ -69,13 +69,10 @@ func decodeResponseBody(raw []byte, statusCode int) (map[string]any, error) {
 }
 
 func readResponseBody(r io.Reader) ([]byte, error) {
-	limited := &io.LimitedReader{R: r, N: maxResponseBodyBytes + 1}
-	raw, err := io.ReadAll(limited)
+	raw, err := io.ReadAll(r)
 	if err != nil {
 		return nil, err
 	}
-	if len(raw) > maxResponseBodyBytes {
-		return nil, fmt.Errorf("host bridge response exceeds the %d-byte limit", maxResponseBodyBytes)
-	}
+
 	return raw, nil
 }

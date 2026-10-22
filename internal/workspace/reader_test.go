@@ -38,7 +38,7 @@ func TestWorkspaceReaderReturnsExactBytesAndBoundedOrderedPages(t *testing.T) {
 	}
 }
 
-func TestWorkspaceReaderRejectsEscapesLinksAndOversizedContents(t *testing.T) {
+func TestWorkspaceReaderRejectsEscapesAndLinksAndReadsLargeContents(t *testing.T) {
 	root := t.TempDir()
 	outside := t.TempDir()
 	if err := os.WriteFile(filepath.Join(outside, "outside.txt"), []byte("outside"), 0o644); err != nil {
@@ -62,10 +62,14 @@ func TestWorkspaceReaderRejectsEscapesLinksAndOversizedContents(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer opened.Close()
-	for _, name := range []string{"../outside.txt", "linked/outside.txt", "large.bin"} {
+	for _, name := range []string{"../outside.txt", "linked/outside.txt"} {
 		if _, err := ReadFile(context.Background(), opened, name); err == nil {
 			t.Errorf("accepted invalid read %q", name)
 		}
+	}
+	content, err := ReadFile(context.Background(), opened, "large.bin")
+	if err != nil || len(content.Content) != MaxReconciliationFileBytes+1 {
+		t.Fatal("large read was rejected or truncated", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

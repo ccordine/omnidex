@@ -7,7 +7,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/codingagent"
-	"github.com/gryph/omnidex/internal/llm"
 )
 
 const nativeItemStateSeparator = "\x00"
@@ -160,9 +159,7 @@ func recordAgentFrame(result *codingagent.Result, raw json.RawMessage, event fun
 			count += len(frame)
 		}
 	}
-	if count > llm.MaxExactPreparedProviderResponseBytes {
-		return fmt.Errorf("native agent evidence exceeds its transport boundary")
-	}
+
 	owned := append(json.RawMessage(nil), raw...)
 	if event != nil {
 		if err := event(codingagent.NativeEvent{Frame: owned}); err != nil {

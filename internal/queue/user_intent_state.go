@@ -26,6 +26,7 @@ func (r *Repository) applyUserIntentTx(ctx context.Context, tx pgx.Tx, saved sto
 		}
 		receipt.JobID, receipt.Generation, receipt.Status, receipt.Revision = outcome.JobID, outcome.Generation, outcome.Status, outcome.Revision
 		receipt.Summary, receipt.ExitClient = outcome.Summary, outcome.ExitClient
+		receipt.MessageID, receipt.TurnOperationID, receipt.ControlOperationID = outcome.MessageID, outcome.TurnOperationID, outcome.ControlOperationID
 		applyUserPresentation(after, &receipt)
 		return receipt, nil
 	}
@@ -113,6 +114,7 @@ func (r *Repository) applyUserJobStateTx(ctx context.Context, tx pgx.Tx, saved s
 			}
 		}
 		receipt.Status = result.Job.Status
+		receipt.ControlOperationID = request.OperationID
 		return "Job canceled.", nil
 	case model.JobStatusWaiting:
 		command, err := normalizeInterruptJobCommand(ReplanJobCommand{OperationID: request.OperationID, JobID: current.JobID, Feedback: request.Text, WorkspaceRoot: current.State.WorkspaceRoot, WorkspaceIdentity: current.State.WorkspaceIdentity})
@@ -128,6 +130,7 @@ func (r *Repository) applyUserJobStateTx(ctx context.Context, tx pgx.Tx, saved s
 			return "", err
 		}
 		receipt.Status, receipt.Generation = result.Job.Status, result.Job.CurrentGeneration
+		receipt.ControlOperationID = request.OperationID
 		return "Job interrupted; waiting for your direction.", nil
 	default:
 		return "", fmt.Errorf("unsupported job state")
@@ -181,6 +184,7 @@ func (r *Repository) persistUserContentTx(ctx context.Context, tx pgx.Tx, saved 
 		return "", err
 	}
 	receipt.JobID, receipt.Generation, receipt.Status = result.Job.ID, result.Job.CurrentGeneration, result.Job.Status
+	receipt.TurnOperationID = result.OperationID
 	if result.UserMessage != nil {
 		receipt.MessageID = result.UserMessage.ID
 	}

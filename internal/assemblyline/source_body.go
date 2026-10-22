@@ -20,9 +20,7 @@ func NormalizeSourceBodyResponse(raw string) (string, error) {
 	if raw == "" || !utf8.ValidString(raw) || strings.ContainsRune(raw, '\x00') {
 		return "", fmt.Errorf("source-body response must be non-empty UTF-8 without NUL bytes")
 	}
-	if len(raw) > MaxSourceBodyResponseBytes {
-		return "", fmt.Errorf("source-body response exceeds %d bytes", MaxSourceBodyResponseBytes)
-	}
+
 	normalized := strings.ReplaceAll(raw, "\r\n", "\n")
 	normalized = strings.ReplaceAll(normalized, "\r", "\n")
 	normalized = strings.TrimSpace(normalized)
@@ -75,8 +73,7 @@ func NewSourceBodyDefect(
 		return nil, err
 	}
 	question = strings.TrimSpace(question)
-	if question == "" || !utf8.ValidString(question) || strings.ContainsRune(question, '\x00') ||
-		len(question) > MaxSourceBodyCorrectionQuestionBytes {
+	if question == "" || !utf8.ValidString(question) || strings.ContainsRune(question, '\x00') {
 		return nil, fmt.Errorf("source-body defect question must be bounded non-empty UTF-8 text")
 	}
 	message := strings.TrimSpace(validationErr.Error())

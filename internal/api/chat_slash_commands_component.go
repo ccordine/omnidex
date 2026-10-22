@@ -52,11 +52,6 @@ func renderChatSlashCommandsComponent(
 	default:
 		return chatSlashCommandsComponent{}, fmt.Errorf("slash command channel mode is unsupported")
 	}
-	if len(commands) > roleplay.MaxSimulationSlashCommands {
-		return chatSlashCommandsComponent{}, fmt.Errorf(
-			"slash command component exceeds its %d-option bound", roleplay.MaxSimulationSlashCommands,
-		)
-	}
 
 	var markup strings.Builder
 	markup.WriteString(`<div id="` + chatSlashCommandListID + `" role="listbox" aria-label="Available slash commands" data-slash-command-list data-slash-command-channel-id="` +
@@ -94,11 +89,6 @@ func renderChatSlashCommandsComponent(
 	}
 	markup.WriteString(`<p data-slash-command-no-match role="status"` + emptyHidden +
 		` class="rounded-md px-3 py-4 text-center text-xs text-zinc-500">` + html.EscapeString(emptyText) + `</p></div>`)
-	if markup.Len() > maxChatSlashCommandBundleBytes {
-		return chatSlashCommandsComponent{}, fmt.Errorf(
-			"slash command component exceeds its %d-byte render bound", maxChatSlashCommandBundleBytes,
-		)
-	}
 
 	return chatSlashCommandsComponent{
 		ChannelID: channel.ID, CommandCount: len(commands),

@@ -30,7 +30,7 @@ func TestNativeMultilinePresentationRetainsIndentationBlankLinesAndQuotes(t *tes
 
 func TestCommandOutcomeKeepsMultilineCommandAndExit(t *testing.T) {
 	console, output := planReviewTestConsole(t)
-	renderer := chatRenderer{console: console}
+	renderer := chatRenderer{console: console, verbosity: chatVerbose}
 	activity := nativeRenderActivity(model.AgentActivityCommand, model.AgentActivityFailed, "")
 	activity.Command = "printf '%s\\n' 'a  b'\n\n  exit 7"
 	exit := 7

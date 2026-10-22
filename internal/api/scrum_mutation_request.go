@@ -178,9 +178,7 @@ func decodeScrumCardCreateRequest(w http.ResponseWriter, r *http.Request) (scrum
 		if !utf8.ValidString(field.value) || strings.ContainsRune(field.value, '\x00') {
 			return scrumCardCreateRequest{}, fmt.Errorf("Scrum card create %s must be valid UTF-8 without NUL", name)
 		}
-		if len(field.value) > field.limit {
-			return scrumCardCreateRequest{}, fmt.Errorf("Scrum card create %s exceeds the %d-byte bound", name, field.limit)
-		}
+
 	}
 	column, err := queue.ParseScrumCardColumn(body.Column.Value)
 	if err != nil {
@@ -195,9 +193,7 @@ func decodeScrumMutationProjectID(r *http.Request, name string) (int64, error) {
 	if r == nil || r.URL == nil {
 		return 0, fmt.Errorf("%s request URL is required", name)
 	}
-	if len(r.URL.RawQuery) > maxScrumMutationRawQueryBytes {
-		return 0, fmt.Errorf("%s query exceeds the %d-byte bound", name, maxScrumMutationRawQueryBytes)
-	}
+
 	values, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil {
 		return 0, fmt.Errorf("decode %s query: %w", name, err)
@@ -225,7 +221,7 @@ func readExactScrumMutationBody(w http.ResponseWriter, r *http.Request, name str
 	if r == nil || r.Body == nil {
 		return nil, fmt.Errorf("%s body is required", name)
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+
 	raw, err := io.ReadAll(r.Body)
 	if err != nil {
 		var tooLarge *http.MaxBytesError

@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestPreparedGenerationContentAndRawBoundsAreIndependent(t *testing.T) {
+func TestPreparedGenerationOwnsLargeContentAndRawEvidence(t *testing.T) {
 	const oldConflatedRawLimit = 16 * 1024 * 1024
 	wantRaw := (6 * MaxExactPreparedModelContentBytes) +
 		(21 * MaxInferenceContextTokens) + (64 * 1024)
@@ -36,12 +36,12 @@ func TestPreparedGenerationContentAndRawBoundsAreIndependent(t *testing.T) {
 	content := strings.Repeat("x", MaxExactPreparedModelContentBytes+1)
 	if _, err := OwnBoundedPreparedGeneration(PreparedGeneration{
 		Content: content,
-	}); err == nil {
-		t.Fatal("decoded model content exceeded its independent 16 MiB authority")
+	}); err != nil {
+		t.Fatal("large decoded model content was rejected", err)
 	}
 }
 
-func TestOutputLimitEvidenceUsesDecodedContentBound(t *testing.T) {
+func TestOutputLimitEvidenceAcceptsLargeContentCount(t *testing.T) {
 	valid := ExactPreparedOutputLimitReachedError{
 		DoneReason: "length", PromptTokens: 1, OutputTokens: 1,
 		ContextTokens: MinInferenceContextTokens, MaxOutputTokens: 1,
@@ -51,8 +51,8 @@ func TestOutputLimitEvidenceUsesDecodedContentBound(t *testing.T) {
 		t.Fatalf("content at decoded bound was rejected: %v", err)
 	}
 	valid.ContentBytes++
-	if err := valid.Validate(); err == nil {
-		t.Fatal("output-limit evidence exceeded decoded model content authority")
+	if err := valid.Validate(); err != nil {
+		t.Fatal("large output-limit evidence was rejected", err)
 	}
 }
 

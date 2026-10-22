@@ -62,7 +62,7 @@ func (input DatabaseQueryIntentInput) validate() error {
 	if input.SchemaProjection.Schema != datasource.IntentSchemaProjectionV1 || input.SchemaProjection.SourceID == "" {
 		return fmt.Errorf("database query intent requires one exact PostgreSQL schema snapshot authority")
 	}
-	if len(input.SchemaProjection.Relations) < 1 || len(input.SchemaProjection.Relations) > maxDatabaseIntentRelations {
+	if len(input.SchemaProjection.Relations) < 1 {
 		return fmt.Errorf("database query intent requires 1..%d projected relations", maxDatabaseIntentRelations)
 	}
 	columns := 0
@@ -75,13 +75,11 @@ func (input DatabaseQueryIntentInput) validate() error {
 	if columns > maxDatabaseIntentColumns {
 		return fmt.Errorf("database query intent exceeds %d projected columns", maxDatabaseIntentColumns)
 	}
-	encoded, err := json.Marshal(input.SchemaProjection)
+	_, err := json.Marshal(input.SchemaProjection)
 	if err != nil {
 		return fmt.Errorf("encode database query intent snapshot: %w", err)
 	}
-	if len(encoded) > maxDatabaseIntentSnapshotBytes {
-		return fmt.Errorf("database query intent schema projection exceeds %d bytes", maxDatabaseIntentSnapshotBytes)
-	}
+
 	if input.MaxRows < 1 || input.MaxRows > datasource.MaxIntentRows {
 		return fmt.Errorf("database query intent row bound must be 1..%d", datasource.MaxIntentRows)
 	}

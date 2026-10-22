@@ -8,7 +8,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/gryph/omnidex/internal/client"
 	"github.com/gryph/omnidex/internal/codingagent"
@@ -31,7 +30,7 @@ func TestCLISessionsRealHTTPObservesRunningWaitingAndRetainsWorkspaceConnections
 	}
 	httpServer := httptest.NewServer(server.Handler())
 	defer httpServer.Close()
-	apiClient, err := client.New(httpServer.URL, 5*time.Second)
+	apiClient, err := client.New(httpServer.URL)
 	if err != nil {
 		t.Fatal(err)
 	}

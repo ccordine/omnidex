@@ -140,7 +140,7 @@ func (s *Server) handleIntegrationJobByID(w http.ResponseWriter, r *http.Request
 }
 
 func exactIntegrationPathParts(r *http.Request, prefix string, maximum int) ([]string, error) {
-	if r == nil || r.URL == nil || len(r.URL.Path) > maxIntegrationItemPathBytes ||
+	if r == nil || r.URL == nil ||
 		r.URL.EscapedPath() != r.URL.Path || !strings.HasPrefix(r.URL.Path, prefix) {
 		return nil, fmt.Errorf("integration path must be one exact canonical path")
 	}

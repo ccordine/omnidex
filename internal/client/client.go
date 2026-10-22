@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 )
 
 const maxResponseBytes int64 = 4 * 1024 * 1024
@@ -58,21 +57,16 @@ func IsDefinitiveMutationRejection(err error) bool {
 	}
 }
 
-func New(baseURL string, timeout time.Duration) (*Client, error) {
+func New(baseURL string) (*Client, error) {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	parsed, err := url.Parse(baseURL)
 	if err != nil || parsed.Host == "" || parsed.RawQuery != "" || parsed.Fragment != "" ||
 		(parsed.Scheme != "http" && parsed.Scheme != "https") {
 		return nil, fmt.Errorf("CORE_URL must be one absolute HTTP or HTTPS URL")
 	}
-	if timeout <= 0 {
-		return nil, fmt.Errorf("client request timeout must be positive")
-	}
 	return &Client{
-		baseURL: baseURL,
-		httpClient: &http.Client{
-			Timeout: timeout,
-		},
+		baseURL:    baseURL,
+		httpClient: &http.Client{},
 	}, nil
 }
 
@@ -128,13 +122,11 @@ func (client *Client) doJSONBounded(
 		return fmt.Errorf("send Omnidex request: %w", err)
 	}
 	defer response.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(response.Body, responseLimit+1))
+	data, err := io.ReadAll(response.Body)
 	if err != nil {
 		return fmt.Errorf("read Omnidex response: %w", err)
 	}
-	if int64(len(data)) > responseLimit {
-		return fmt.Errorf("Omnidex response exceeds %d bytes", responseLimit)
-	}
+
 	if response.StatusCode != expectedStatus {
 		var body struct {
 			Error string `json:"error"`

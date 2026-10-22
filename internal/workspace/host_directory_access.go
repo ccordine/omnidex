@@ -77,7 +77,7 @@ func (access HostDirectoryAccess) captureWorkspaceRoot(exactRoot string) (os.Fil
 }
 
 func validateHostAccessPath(value, label string) error {
-	if value == "" || len(value) > maxHostDirectoryAccessPathBytes || !utf8.ValidString(value) ||
+	if value == "" || !utf8.ValidString(value) ||
 		strings.IndexByte(value, 0) >= 0 || value != strings.TrimSpace(value) {
 		return fmt.Errorf("%s must contain one exact nonblank path of at most %d bytes", label, maxHostDirectoryAccessPathBytes)
 	}

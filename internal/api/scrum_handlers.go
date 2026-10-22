@@ -213,14 +213,14 @@ func splitScrumCardPath(path string) (cardID, action string) {
 		return "", ""
 	}
 	parts := strings.Split(rest, "/")
-	if len(parts) == 0 || len(parts) > 2 || parts[0] == "" || len(parts[0]) > maxScrumCardPathIDBytes ||
+	if len(parts) == 0 || len(parts) > 2 || parts[0] == "" ||
 		parts[0] != strings.TrimSpace(parts[0]) || !utf8.ValidString(parts[0]) ||
 		strings.ContainsRune(parts[0], '\x00') {
 		return "", ""
 	}
 	cardID = parts[0]
 	if len(parts) > 1 {
-		if parts[1] == "" || len(parts[1]) > maxScrumCardPathActionBytes || parts[1] != strings.TrimSpace(parts[1]) ||
+		if parts[1] == "" || parts[1] != strings.TrimSpace(parts[1]) ||
 			!utf8.ValidString(parts[1]) || strings.ContainsRune(parts[1], '\x00') {
 			return "", ""
 		}

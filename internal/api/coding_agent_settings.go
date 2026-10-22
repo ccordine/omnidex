@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 
 	"github.com/gryph/omnidex/internal/codex"
 	"github.com/gryph/omnidex/internal/codingagent"
@@ -26,11 +25,7 @@ type codingAgentModel struct {
 }
 
 func (server *Server) codingAgentClient() (*codex.Client, error) {
-	timeout, err := time.ParseDuration(server.providerConfig.RequestTimeout)
-	if err != nil {
-		return nil, err
-	}
-	return codex.New(server.providerConfig.CodexCommand, server.providerConfig.CodexDirectory, timeout)
+	return codex.New(server.providerConfig.CodexCommand, server.providerConfig.CodexDirectory)
 }
 
 func (server *Server) codingAgentSettings(ctx context.Context, client *codex.Client) (codingAgentSettingsResponse, error) {
@@ -71,7 +66,7 @@ func (server *Server) handleCodingAgentSettings(w http.ResponseWriter, r *http.R
 		return
 	}
 	if r.Method == http.MethodPut {
-		raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 16<<10))
+		raw, err := io.ReadAll(r.Body)
 		if err != nil {
 			writeError(w, 400, "settings exceed their input boundary")
 			return

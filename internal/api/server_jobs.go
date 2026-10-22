@@ -427,9 +427,7 @@ func Run(ctx context.Context, addr string, handler http.Handler) error {
 		Addr:              addr,
 		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       15 * time.Second,
 		IdleTimeout:       30 * time.Second,
-		MaxHeaderBytes:    1 << 20,
 	}
 
 	errCh := make(chan error, 1)

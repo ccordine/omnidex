@@ -54,7 +54,7 @@ func (input DatabaseSchemaSelectionInput) validate() error {
 }
 
 func validateDatabaseSchemaCandidates(candidates []DatabaseSchemaCandidate) error {
-	if len(candidates) < 1 || len(candidates) > maxDatabaseSchemaCandidates {
+	if len(candidates) < 1 {
 		return fmt.Errorf("database schema selection requires 1..%d relation candidates", maxDatabaseSchemaCandidates)
 	}
 	seen := make(map[string]struct{}, len(candidates))
@@ -72,9 +72,7 @@ func validateDatabaseSchemaCandidates(candidates []DatabaseSchemaCandidate) erro
 		}
 		total += len(candidate.RelationID) + len(candidate.Descriptor)
 	}
-	if total > maxDatabaseSchemaCandidateSetBytes {
-		return fmt.Errorf("database schema candidate set exceeds %d bytes", maxDatabaseSchemaCandidateSetBytes)
-	}
+
 	return nil
 }
 

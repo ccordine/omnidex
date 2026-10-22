@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/gryph/omnidex/internal/codex"
 )
@@ -25,9 +24,7 @@ func (server *Server) codingAgentModelCatalog(ctx context.Context, native []code
 				ID: model.Name, DisplayName: model.Name + " (local)", Efforts: []codex.EffortOption{}, ServiceTiers: []codex.ServiceTier{},
 			}})
 		}
-		if len(catalog) > 512 {
-			return nil, fmt.Errorf("agent model catalog exceeds its 512-model boundary")
-		}
+
 		if !page.HasMore {
 			return catalog, nil
 		}

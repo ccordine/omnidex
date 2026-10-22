@@ -37,7 +37,8 @@ const (
 )
 
 type Config struct {
-	Providers                []ProviderID
+	Providers []ProviderID
+	// Timeout bounds connection establishment; an active response follows the caller context.
 	Timeout                  time.Duration
 	PerDocumentBytes         int
 	TotalDocumentBytes       int

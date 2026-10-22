@@ -21,7 +21,7 @@ export async function createRoleplayLibraryCharacter(name: string, channelID: st
 }
 
 function exactChannelID(value: string): string {
-  if (!/^[a-z0-9][a-z0-9_.:-]{0,95}$/.test(value)) {
+  if (!/^[a-z0-9][a-z0-9_.:-]*$/.test(value)) {
     throw new Error("Selected roleplay world lacks a canonical channel identity.");
   }
   return value;
@@ -59,7 +59,7 @@ function pageOffset(value: unknown): number {
 }
 
 function exactName(value: string): string {
-  if (!value || value !== value.trim() || value.includes("\0") || new TextEncoder().encode(value).byteLength > 256) {
+  if (!value || value !== value.trim() || value.includes("\0")) {
     throw new Error("Character name must be exact nonblank text of at most 256 UTF-8 bytes.");
   }
   return value;

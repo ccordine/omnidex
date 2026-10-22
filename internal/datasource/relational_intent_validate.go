@@ -21,9 +21,7 @@ func (intent RelationalIntent) Validate(snapshot SchemaSnapshot) error {
 	if intent.Limit <= 0 || intent.Limit > MaxIntentRows {
 		return fmt.Errorf("relational intent limit must be within 1..%d", MaxIntentRows)
 	}
-	if len(intent.Projections) > MaxIntentProjections || len(intent.Filters) > MaxIntentFilters || len(intent.TemporalWindows) > MaxIntentFilters || len(intent.Exists) > MaxIntentExistenceChecks || len(intent.GroupBy) > MaxIntentGroups || len(intent.Having) > MaxIntentGroups || len(intent.OrderBy) > MaxIntentOrderTerms {
-		return fmt.Errorf("relational intent exceeds a bounded collection limit")
-	}
+
 	for index, projection := range intent.Projections {
 		if err := validateProjection(snapshot, projection); err != nil {
 			return fmt.Errorf("projection %d: %w", index, err)
@@ -139,9 +137,7 @@ func validateExistence(snapshot SchemaSnapshot, exists ExistencePredicate) error
 	if _, err := snapshot.Relation(exists.RelationID); err != nil {
 		return err
 	}
-	if len(exists.Filters) > MaxIntentFilters {
-		return fmt.Errorf("existence predicate exceeds %d filters", MaxIntentFilters)
-	}
+
 	for _, predicate := range exists.Filters {
 		if err := validatePredicate(snapshot, predicate, exists.RelationID); err != nil {
 			return err

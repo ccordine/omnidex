@@ -19,13 +19,13 @@ func TestSemanticOptionsFitWireWithoutOmittingAnyOfferedChoice(t *testing.T) {
 	if err := publishSemanticOpening(runtime, opened); err != nil {
 		t.Fatal(err)
 	}
-	if len(emitted) < 2 {
-		t.Fatal("oversized options were not split at the existing wire boundary")
+	if len(emitted) != 1 {
+		t.Fatal("large options were not published together")
 	}
 	var got []string
 	for _, page := range emitted {
-		encoded, err := json.Marshal(page)
-		if err != nil || page.Validate() != nil || len(encoded) > model.MaxPlanningActivityBytes || page.WorkKind != opened.WorkKind || page.Station != opened.Station || page.Model != opened.Model || page.OptionOffset != len(got) || page.OptionTotal != len(opened.Options) {
+		_, err := json.Marshal(page)
+		if err != nil || page.Validate() != nil || page.WorkKind != opened.WorkKind || page.Station != opened.Station || page.Model != opened.Model || page.OptionOffset != len(got) || page.OptionTotal != 0 {
 			t.Fatal("option page lost original scope, sequence or wire bound")
 		}
 		got = append(got, page.Options...)
@@ -35,7 +35,7 @@ func TestSemanticOptionsFitWireWithoutOmittingAnyOfferedChoice(t *testing.T) {
 	}
 	completeSemanticObservation(runtime, &opened, "A", 17)
 	last := emitted[len(emitted)-1]
-	if last.Kind != "semantic_completed" || last.CallID != 17 || last.Result != "A" || last.Validate() != nil || last.OptionTotal != len(opened.Options) {
+	if last.Kind != "semantic_completed" || last.CallID != 17 || last.Result != "A" || last.Validate() != nil || last.OptionTotal != 0 || !reflect.DeepEqual(last.Options, opened.Options) {
 		t.Fatal("large option inventory lost its completed result")
 	}
 }

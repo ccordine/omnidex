@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 )
 
 func (workspace *Workspace) Run(ctx context.Context, command Command) (Result, error) {
@@ -22,7 +21,7 @@ func (workspace *Workspace) SealNetwork(parent context.Context) error {
 	if workspace == nil || parent == nil {
 		return fmt.Errorf("network sealing requires a workspace and context")
 	}
-	ctx, cancel := context.WithTimeout(parent, 30*time.Second)
+	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	workspace.mu.Lock()
 	defer workspace.mu.Unlock()

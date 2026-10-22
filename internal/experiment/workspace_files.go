@@ -3,7 +3,6 @@ package experiment
 import (
 	"context"
 	"fmt"
-	"time"
 )
 
 // Write transfers code-owned files after the caller's explicit source reset.
@@ -12,14 +11,14 @@ func (workspace *Workspace) Write(ctx context.Context, files []File) error {
 	if workspace == nil || ctx == nil {
 		return fmt.Errorf("Docker source transfer requires a workspace and context")
 	}
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	workspace.mu.Lock()
 	defer workspace.mu.Unlock()
 	if workspace.acquiring {
 		return fmt.Errorf("source transfer requires completed acquisition and a sealed network")
 	}
-	if err := validateRequest(Request{ImageID: workspace.imageID, Argv: []string{"write"}, Input: files, Timeout: time.Minute}); err != nil {
+	if err := validateRequest(Request{ImageID: workspace.imageID, Argv: []string{"write"}, Input: files}); err != nil {
 		return err
 	}
 	if err := workspace.requireRunning(ctx); err != nil {
@@ -37,7 +36,7 @@ func (workspace *Workspace) CollectTree(parent context.Context, root string) ([]
 	if err := validatePath(root); err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(parent, 2*time.Minute)
+	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	workspace.mu.Lock()
 	defer workspace.mu.Unlock()

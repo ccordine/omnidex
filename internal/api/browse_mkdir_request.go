@@ -24,7 +24,7 @@ func decodeBrowseMkdirRequest(w http.ResponseWriter, r *http.Request) (browseMkd
 	if r == nil || r.Body == nil {
 		return browseMkdirRequest{}, fmt.Errorf("directory creation body is required")
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxBrowseMkdirBodyBytes)
+
 	raw, err := io.ReadAll(r.Body)
 	if err != nil {
 		return browseMkdirRequest{}, fmt.Errorf("read directory creation request: %w", err)
@@ -44,11 +44,11 @@ func decodeBrowseMkdirRequest(w http.ResponseWriter, r *http.Request) (browseMkd
 	if err := requireJSONEOF(decoder, "directory creation request"); err != nil {
 		return browseMkdirRequest{}, err
 	}
-	if !utf8.ValidString(request.Parent) || len(request.Parent) > 4096 || strings.ContainsRune(request.Parent, '\x00') ||
+	if !utf8.ValidString(request.Parent) || strings.ContainsRune(request.Parent, '\x00') ||
 		request.Parent != strings.TrimSpace(request.Parent) {
 		return browseMkdirRequest{}, fmt.Errorf("directory creation parent must be one canonical UTF-8 path of at most 4096 bytes")
 	}
-	if !utf8.ValidString(request.Name) || len(request.Name) > 255 || strings.ContainsRune(request.Name, '\x00') ||
+	if !utf8.ValidString(request.Name) || strings.ContainsRune(request.Name, '\x00') ||
 		request.Name == "" || request.Name != strings.TrimSpace(request.Name) || request.Name == "." || request.Name == ".." ||
 		strings.ContainsAny(request.Name, `/\`) {
 		return browseMkdirRequest{}, fmt.Errorf("directory creation name must be one canonical path segment of at most 255 bytes")

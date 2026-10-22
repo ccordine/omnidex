@@ -77,7 +77,7 @@ func (s *Server) refreshScrumAutoWorkAsync(parent context.Context) error {
 	s.scrumAutoWorkAsyncMu.Unlock()
 	go func() {
 		for {
-			ctx, cancel := context.WithTimeout(parent, scrumPlayAutoRunTimeout)
+			ctx, cancel := context.WithCancel(parent)
 			if err := s.refreshScrumAutoWork(ctx); err != nil && parent.Err() == nil {
 				log.Printf("scrum global auto-work refresh: %v", err)
 			}

@@ -34,14 +34,7 @@ func requireObjectiveSessionContextAdmissionTx(
 	if err != nil {
 		return err
 	}
-	if len(followups) >= model.MaxChannelSessionTurns {
-		return fmt.Errorf(
-			"%w: job %d already has the maximum %d persisted context events",
-			ErrObjectiveSessionContextCapacity,
-			job.ID,
-			model.MaxChannelSessionTurns,
-		)
-	}
+
 	total := 0
 	for _, followup := range followups {
 		if len(followup.contextText) < 2 || followup.contextText[:2] != "\n\n" {
@@ -49,31 +42,12 @@ func requireObjectiveSessionContextAdmissionTx(
 		}
 		total += len(followup.contextText)
 	}
-	var prospective string
 	switch kind {
 	case conversationFollowupUserTurn:
-		if err := model.ValidateChannelMessage(model.ChannelMessageRoleUser, exactText); err != nil {
-			return err
-		}
-		prospective = "user follow-up:\n" + exactText
-	case conversationFollowupRedirect:
-		prospective = "user redirect:\n" + exactText
-	case conversationFollowupInterruption:
-		prospective = "user interruption:\n" + exactText
-	case conversationFollowupCancellation:
-		prospective = "user cancellation:\n" + exactText
+		return model.ValidateChannelMessage(model.ChannelMessageRoleUser, exactText)
+	case conversationFollowupRedirect, conversationFollowupInterruption, conversationFollowupCancellation:
+		return nil
 	default:
 		return fmt.Errorf("active objective context cannot admit unregistered event kind %q", kind)
 	}
-	projectedBytes := total + 2 + len(prospective)
-	if projectedBytes > MaxObjectiveSessionContextBytes {
-		return fmt.Errorf(
-			"%w: job %d would require %d bytes beyond the explicit %d-byte bound",
-			ErrObjectiveSessionContextCapacity,
-			job.ID,
-			projectedBytes,
-			MaxObjectiveSessionContextBytes,
-		)
-	}
-	return nil
 }

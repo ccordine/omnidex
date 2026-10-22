@@ -20,19 +20,22 @@ func (p *reviewScopeRoutingProvider) Run(ctx context.Context, call Assignment, e
 	}
 	p.roles = append(p.roles, call.Role)
 	if call.Role == ReviewResponse {
-		return RunParserSieve(ctx, call, event, sieveTestProvider(p.t, func(leaf Assignment) any {
-			if leaf.ParserStep.TaskInstructions != p.task.Instructions() {
-				p.t.Fatal("review lost frozen scope")
-			}
-			if leaf.ParserStep.Stage == "scan" {
-				return scanOracle(leaf.ParserStep.Source, p.kind)
-			}
-			findings := []map[string]string{}
-			if p.quote != "" && p.reviews == 1 {
-				findings = append(findings, map[string]string{"quote": p.quote, "file": "output.txt"})
-			}
-			return map[string]any{"findings": findings}
-		}))
+		if call.Task == nil || call.Task.Instructions() != p.task.Instructions() {
+			p.t.Fatal("review lost frozen scope")
+		}
+		findings := []map[string]string{}
+		if p.quote != "" && p.reviews == 1 {
+			findings = append(findings, map[string]string{"observation": p.quote, "file": "output.txt"})
+		}
+		content, _ := json.Marshal(map[string]any{"kind": p.kind, "findings": findings})
+		content, err := MapParserResponse(call, content)
+		if err != nil {
+			return Result{}, err
+		}
+		if err := event(NativeEvent{Frame: json.RawMessage(`{"fixture":"review-response"}`)}); err != nil {
+			return Result{}, err
+		}
+		return Result{Provider: call.Route.Provider, Model: call.Route.Model, Completed: true, Content: content}, nil
 	}
 	p.reviews++
 	if call.Session != nil {

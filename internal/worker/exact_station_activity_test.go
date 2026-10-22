@@ -4,7 +4,6 @@ import (
 	"context"
 	"reflect"
 	"testing"
-	"time"
 
 	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/model"
@@ -35,7 +34,7 @@ func TestExactStationPublishesPublicActivityBeforeReturningItsUnchangedResult(t 
 	probe := &stationActivityProbe{}
 	prepared := llm.PreparedModel{BaseModel: "selected-model", Prompt: "one narrow semantic question", ContextTokens: 8192, MaxOutputTokens: 128}
 	observations := 0
-	result, err := generatePreparedExactWithActivityWithinMaximumDuration(context.Background(), probe, prepared, func(activity model.AgentActivity) error {
+	result, err := generatePreparedExactWithActivity(context.Background(), probe, prepared, func(activity model.AgentActivity) error {
 		observations++
 		return activity.Validate()
 	})
@@ -48,9 +47,8 @@ func TestExactStationPublishesPublicActivityBeforeReturningItsUnchangedResult(t 
 	if !reflect.DeepEqual(prepared, probe.prepared) || result.Content != "exact semantic result" {
 		t.Fatal("display changed the exact request or semantic result")
 	}
-	deadline, ok := probe.ctx.Deadline()
-	if !ok || time.Until(deadline) > llm.MaximumModelRequestDuration {
-		t.Fatal("observed request lost its original hard deadline")
+	if _, ok := probe.ctx.Deadline(); ok {
+		t.Fatal("observed request gained an artificial deadline")
 	}
 	if probe.ctx.Err() != context.Canceled {
 		t.Fatal("observed provider context remained open after return")
@@ -59,7 +57,7 @@ func TestExactStationPublishesPublicActivityBeforeReturningItsUnchangedResult(t 
 
 func TestExactStationWithoutDisplayUsesItsOriginalProviderEntryPoint(t *testing.T) {
 	probe := &stationActivityProbe{}
-	if _, err := generatePreparedExactWithinMaximumDuration(context.Background(), probe, llm.PreparedModel{}); err != nil {
+	if _, err := generatePreparedExact(context.Background(), probe, llm.PreparedModel{}); err != nil {
 		t.Fatal(err)
 	}
 	if probe.plainCalls != 1 || probe.observedCalls != 0 {

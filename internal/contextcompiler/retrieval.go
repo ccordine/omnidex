@@ -7,7 +7,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
-	"github.com/gryph/omnidex/internal/model"
 )
 
 // ResolveRetrievalDirective binds fixed provider availability to an immutable
@@ -45,12 +44,7 @@ func validateRetrievalAuthority(
 	if strings.TrimSpace(exactInstruction) == "" {
 		return fmt.Errorf("context retrieval requires one non-blank exact instruction")
 	}
-	if len(exactInstruction) > model.MaxFreeFormTurnBytes {
-		return fmt.Errorf(
-			"context retrieval exact instruction exceeds %d bytes",
-			model.MaxFreeFormTurnBytes,
-		)
-	}
+
 	if !utf8.ValidString(exactInstruction) {
 		return fmt.Errorf("context retrieval exact instruction is not valid UTF-8")
 	}

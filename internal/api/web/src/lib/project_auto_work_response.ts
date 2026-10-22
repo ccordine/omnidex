@@ -59,9 +59,7 @@ export function validateProjectAutoWorkResponse(
   expectedProjectID: number,
   status: number,
 ): ProjectAutoWorkResponse {
-  if (new TextEncoder().encode(JSON.stringify(value)).byteLength > PROJECT_AUTO_WORK_RESPONSE_MAX_BYTES) {
-    throw new Error("Project auto-work response exceeds its byte bound.");
-  }
+
   const core = [
     "commit_state", "project_id", "auto_work", "active_card_id", "active_card_updated_at",
     "job_id", "paused_cards", "message",
@@ -72,8 +70,7 @@ export function validateProjectAutoWorkResponse(
   if (record.commit_state !== "committed" && record.commit_state !== "committed_degraded") {
     throw new Error("Project auto-work response lacks one exact registered commit state.");
   }
-  if ((record.commit_state === "committed" && status !== 200) ||
-      (record.commit_state === "committed_degraded" && status !== 207)) {
+  if ((record.commit_state === "committed" && status !== 200) || (record.commit_state === "committed_degraded" && status !== 207)) {
     throw new Error("Project auto-work response commit state contradicts its HTTP status.");
   }
   const projectID = exactInteger(record.project_id, "Project auto-work response.project_id");
@@ -103,9 +100,7 @@ export function validateProjectAutoWorkResponse(
   if ("card" in record) authority.card = validateScrumCardProjection(record.card, activeCardID || undefined);
   if ("play_queue" in record) authority.play_queue = validateScrumPlayQueue(record.play_queue);
   if (record.commit_state === "committed") {
-    if ("operation_error" in record || !authority.board || !authority.play_queue ||
-        (activeCardID !== "" && (!authority.card || authority.card.updated_at !== activeRevision)) ||
-        (activeCardID === "" && authority.card !== undefined)) {
+    if ((("operation_error" in record || !authority.board || !authority.play_queue) || ((activeCardID !== "") && (!authority.card || authority.card.updated_at !== activeRevision))) || (activeCardID === "" && authority.card !== undefined)) {
       throw new Error("Committed project auto-work response lacks its exact authoritative projections.");
     }
     return { commit_state: "committed", ...authority };

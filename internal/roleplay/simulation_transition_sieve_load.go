@@ -43,9 +43,7 @@ func loadSimulationInventoryCandidatesTx(
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	if len(items) > MaxInventoryItems {
-		return nil, fmt.Errorf("%w: inventory exceeds %d items", ErrSimulationNotConfigured, MaxInventoryItems)
-	}
+
 	return items, nil
 }
 
@@ -71,7 +69,7 @@ func loadItemMeterDeltasTx(ctx context.Context, tx pgx.Tx, templateID string) ([
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	if len(deltas) < 1 || len(deltas) > MaxDefinitionEffects {
+	if len(deltas) < 1 {
 		return nil, fmt.Errorf("%w: item effects are outside their bound", ErrSimulationNotConfigured)
 	}
 	return deltas, nil

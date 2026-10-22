@@ -39,22 +39,16 @@ func (c *Client) generatePreparedRaw(
 	defer response.Body.Close()
 	result.ProviderHTTPStatus = response.StatusCode
 	result.ProviderContentEncoding = exactProviderContentEncoding(response)
-	body, readErr := io.ReadAll(io.LimitReader(
-		response.Body, llm.MaxExactPreparedProviderResponseBytes+1,
-	))
+	body, readErr := io.ReadAll(
+		response.Body,
+	)
 	result.ProviderResponseCapturedBytes = len(body)
 	result.ProviderResponseCapture = append([]byte{}, body...)
 	if readErr != nil {
 		result.ProviderResponseDisposition = llm.ProviderResponseBodyReadError
 		return result, readErr
 	}
-	if len(body) > llm.MaxExactPreparedProviderResponseBytes {
-		result.ProviderResponseDisposition = llm.ProviderResponseBodyLimit
-		return result, fmt.Errorf(
-			"ollama raw generation response exceeds %d bytes",
-			llm.MaxExactPreparedProviderResponseBytes,
-		)
-	}
+
 	result.ProviderResponseComplete = true
 	result.ProviderResponseBytesKnown = true
 	result.ProviderResponseBytes = int64(len(body))

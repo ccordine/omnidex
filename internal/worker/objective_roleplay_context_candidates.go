@@ -26,7 +26,7 @@ func currentRoundResponseContextRecords(
 	preparation roleplay.SimulationTurnAuthority,
 	earlier []roleplayRoundResponseAuthority,
 ) ([]queue.ContextSearchRecord, error) {
-	if len(earlier) > len(preparation.Responders) || len(earlier) >= roleplay.MaxSceneParticipants {
+	if len(earlier) > len(preparation.Responders) {
 		return nil, fmt.Errorf("current roleplay response context exceeds the prepared round")
 	}
 	records := make([]queue.ContextSearchRecord, len(earlier))

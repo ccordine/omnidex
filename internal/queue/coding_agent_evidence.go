@@ -7,7 +7,6 @@ import (
 	"reflect"
 
 	"github.com/gryph/omnidex/internal/codingagent"
-	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
 )
@@ -26,7 +25,7 @@ func (store *CodingAgentEvidenceStore) Append(ctx context.Context, entry codinga
 		return 0, fmt.Errorf("agent evidence lacks its exact generation or phase")
 	}
 	encoded, err := json.Marshal(entry)
-	if err != nil || len(encoded) > llm.MaxExactPreparedProviderResponseBytes {
+	if err != nil {
 		return 0, fmt.Errorf("agent evidence exceeds its typed transport boundary")
 	}
 	tx, err := store.repository.pool.BeginTx(ctx, pgx.TxOptions{})

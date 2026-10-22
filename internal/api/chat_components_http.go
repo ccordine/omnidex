@@ -251,7 +251,7 @@ func exactChatComponentString(r *http.Request, key string, maxBytes int) (string
 	if !exists {
 		return "", nil
 	}
-	if len(values) != 1 || len(values[0]) > maxBytes || values[0] != strings.TrimSpace(values[0]) {
+	if len(values) != 1 || values[0] != strings.TrimSpace(values[0]) {
 		return "", fmt.Errorf("%s must be one canonical string of at most %d bytes", key, maxBytes)
 	}
 	return values[0], nil

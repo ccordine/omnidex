@@ -14,7 +14,8 @@ func planningInitialOutputSchema(
 	object func(map[string]any, ...string) map[string]any,
 	text, strings map[string]any,
 ) map[string]any {
-	ledger := planningLedgerSchema(object, text, strings)
+	task := planningTaskInputSchema(object, text, strings)
+	ledger := object(map[string]any{"tasks": map[string]any{"type": "array", "items": task}}, "tasks")
 	return object(map[string]any{
 		"ledger": ledger,
 	}, "ledger")
@@ -96,8 +97,29 @@ func planningMutationItemSchema(
 	object func(map[string]any, ...string) map[string]any,
 	text, strings map[string]any,
 ) map[string]any {
-	ledger := planningLedgerSchema(object, text, strings)
-	properties := ledger["properties"].(map[string]any)
-	item := properties["tasks"].(map[string]any)["items"]
+	item := planningTaskInputSchema(object, text, strings)
 	return map[string]any{"anyOf": []map[string]any{object(map[string]any{"task": item}, "task")}}
+}
+
+func planningTaskInputSchema(object func(map[string]any, ...string) map[string]any, text, strings map[string]any) map[string]any {
+	ledger := planningLedgerSchema(object, text, strings)
+	task := ledger["properties"].(map[string]any)["tasks"].(map[string]any)["items"].(map[string]any)
+	properties := task["properties"].(map[string]any)
+	for _, name := range []string{"id", "provenance", "rationale", "rank", "disposition", "review_state"} {
+		delete(properties, name)
+	}
+	required := []string{}
+	for _, name := range task["required"].([]string) {
+		if properties[name] != nil {
+			required = append(required, name)
+		}
+	}
+	task["required"] = required
+	context := properties["owner_context"].(map[string]any)["items"].(map[string]any)
+	delete(context["properties"].(map[string]any), "provenance")
+	context["required"] = []string{"text"}
+	criterion := properties["acceptance"].(map[string]any)["items"].(map[string]any)
+	delete(criterion["properties"].(map[string]any), "id")
+	criterion["required"] = []string{"text", "verification"}
+	return task
 }

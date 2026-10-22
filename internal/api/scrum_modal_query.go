@@ -121,9 +121,7 @@ func decodeExactScrumFileQuery(
 	if request == nil || request.URL == nil {
 		return nil, fmt.Errorf("%s request URL is required", source)
 	}
-	if len(request.URL.RawQuery) > maxScrumModalRawQuerySize {
-		return nil, fmt.Errorf("%s query exceeds the %d-byte bound", source, maxScrumModalRawQuerySize)
-	}
+
 	values, err := url.ParseQuery(request.URL.RawQuery)
 	if err != nil {
 		return nil, fmt.Errorf("decode %s query: %w", source, err)
@@ -173,9 +171,7 @@ func validateScrumModalFilePath(value string) error {
 	if strings.ContainsRune(value, '\x00') {
 		return fmt.Errorf("Scrum card file_path must not contain NUL")
 	}
-	if len(value) > maxScrumModalFilePathSize {
-		return fmt.Errorf("Scrum card file_path exceeds the %d-byte bound", maxScrumModalFilePathSize)
-	}
+
 	if value == "" {
 		return nil
 	}

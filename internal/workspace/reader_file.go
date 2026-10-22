@@ -56,7 +56,7 @@ func ReadFile(ctx context.Context, root RootReader, relative string) (result Fil
 	if !before.Mode().IsRegular() {
 		return result, fmt.Errorf("workspace read path %q is not a regular file", relative)
 	}
-	if before.Size() < 0 || before.Size() > MaxReconciliationFileBytes {
+	if before.Size() < 0 {
 		return result, fmt.Errorf("workspace file %q exceeds the %d-byte read limit", relative, MaxReconciliationFileBytes)
 	}
 	if before.Size() == 0 {
@@ -83,7 +83,7 @@ func ReadFile(ctx context.Context, root RootReader, relative string) (result Fil
 	if err != nil || !opened.Mode().IsRegular() || !os.SameFile(before, opened) {
 		return result, errors.Join(fmt.Errorf("workspace file changed before reading"), err)
 	}
-	content, err := io.ReadAll(io.LimitReader(file, MaxReconciliationFileBytes+1))
+	content, err := io.ReadAll(file)
 	if err != nil {
 		return result, err
 	}

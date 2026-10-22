@@ -261,7 +261,7 @@ func composeUserTurnParts(
 	persona UserPersonaKind,
 	parts []UserTurnPart,
 ) (UserContributionKind, string, error) {
-	if len(parts) < 1 || len(parts) > MaxUserTurnParts {
+	if len(parts) < 1 {
 		return "", "", fmt.Errorf("roleplay turn builder requires 1..%d ordered parts", MaxUserTurnParts)
 	}
 	hasAction := false
@@ -269,7 +269,7 @@ func composeUserTurnParts(
 	hasEvent := false
 	sections := make([]string, len(parts))
 	for index, part := range parts {
-		if len(part.Text) == 0 || len(part.Text) > MaxUserTurnBytes || !utf8.ValidString(part.Text) ||
+		if len(part.Text) == 0 || !utf8.ValidString(part.Text) ||
 			strings.IndexByte(part.Text, 0) >= 0 || strings.TrimSpace(part.Text) == "" || part.Text != strings.TrimSpace(part.Text) {
 			return "", "", fmt.Errorf("roleplay turn part %d must contain exact trimmed nonblank UTF-8 text", index)
 		}
@@ -288,9 +288,7 @@ func composeUserTurnParts(
 		}
 	}
 	exact := strings.Join(sections, "\n\n")
-	if len(exact) > MaxUserTurnBytes {
-		return "", "", fmt.Errorf("roleplay composed turn exceeds %d UTF-8 bytes", MaxUserTurnBytes)
-	}
+
 	switch persona {
 	case UserPersonaCharacter:
 		if hasEvent {
@@ -317,7 +315,7 @@ func composeUserTurnParts(
 }
 
 func validateUserTurnText(kind UserContributionKind, exactText string) error {
-	if len(exactText) == 0 || len(exactText) > MaxUserTurnBytes || !utf8.ValidString(exactText) ||
+	if len(exactText) == 0 || !utf8.ValidString(exactText) ||
 		strings.IndexByte(exactText, 0) >= 0 || strings.TrimSpace(exactText) == "" {
 		return fmt.Errorf("roleplay user turn must contain 1..%d nonblank UTF-8 bytes without NUL", MaxUserTurnBytes)
 	}

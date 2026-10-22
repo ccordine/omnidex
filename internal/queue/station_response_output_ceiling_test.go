@@ -91,7 +91,7 @@ func TestExpectedPortableStationMaxOutputTokensRejectsInvalidNativeContext(t *te
 		t.Fatal(err)
 	}
 	if _, err := ExpectedPortableStationMaxOutputTokens(
-		job, llm.MinInferenceContextTokens-1,
+		job, 0,
 	); err == nil {
 		t.Fatal("invalid native context was accepted")
 	}

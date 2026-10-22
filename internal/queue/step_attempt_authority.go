@@ -17,7 +17,7 @@ func validateStepAttemptAuthority(authority model.StepAttemptAuthority) error {
 		return fmt.Errorf("%w: exact positive job, generation, step, and attempt identities are required", ErrStaleStepAttempt)
 	}
 	worker := authority.WorkerID
-	if worker == "" || worker != strings.TrimSpace(worker) || len(worker) > 256 ||
+	if worker == "" || worker != strings.TrimSpace(worker) ||
 		!utf8.ValidString(worker) || strings.ContainsRune(worker, '\x00') {
 		return fmt.Errorf("%w: worker identity must be exact PostgreSQL-compatible text of at most 256 bytes", ErrStaleStepAttempt)
 	}

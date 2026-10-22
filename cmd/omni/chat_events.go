@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/gryph/omnidex/internal/client"
 	"github.com/gryph/omnidex/internal/model"
 )
@@ -39,7 +40,7 @@ func followJobEvents(
 						return
 					}
 					fatal := client.IsPermanentRealtimeError(err)
-					if !sendStreamUpdate(ctx, updates, streamUpdate{
+					if !websocket.IsCloseError(err, websocket.CloseNormalClosure) && !sendStreamUpdate(ctx, updates, streamUpdate{
 						Err: fmt.Errorf("realtime stream disconnected: %w", err), Fatal: fatal,
 					}) || fatal {
 						return

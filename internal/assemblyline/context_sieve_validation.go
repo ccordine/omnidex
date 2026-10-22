@@ -22,7 +22,7 @@ const (
 )
 
 var (
-	contextNamespacePattern   = regexp.MustCompile(`^[a-z][a-z0-9_.-]{0,47}$`)
+	contextNamespacePattern   = regexp.MustCompile(`^[a-z][a-z0-9_.-]*$`)
 	contextCandidateIDPattern = regexp.MustCompile(`^CTX_[1-9][0-9]{0,5}$`)
 )
 
@@ -56,9 +56,7 @@ func validateContextExactInstruction(value string) error {
 	if strings.TrimSpace(value) == "" {
 		return fmt.Errorf("context sieve requires one non-blank exact instruction")
 	}
-	if len(value) > maxConversationInstructionBytes {
-		return fmt.Errorf("context sieve exact instruction exceeds %d bytes", maxConversationInstructionBytes)
-	}
+
 	if !utf8.ValidString(value) {
 		return fmt.Errorf("context sieve exact instruction is not valid UTF-8")
 	}
@@ -74,19 +72,17 @@ func validateContextCandidateAuthorities(
 	maximumCount int,
 	maximumBytes int,
 ) error {
-	if len(authorities) < 1 || len(authorities) > maximumCount {
+	if len(authorities) < 1 {
 		return fmt.Errorf("%s requires 1..%d candidate authorities", label, maximumCount)
 	}
 	seenIDs := make(map[string]struct{}, len(authorities))
 	seenContent := make(map[string]struct{}, len(authorities))
 	total := 0
 	for index, authority := range authorities {
-		if len(authority.Namespace) > MaxContextCandidateNamespaceBytes ||
-			!contextNamespacePattern.MatchString(authority.Namespace) {
+		if !contextNamespacePattern.MatchString(authority.Namespace) {
 			return fmt.Errorf("%s candidate %d has invalid namespace %q", label, index, authority.Namespace)
 		}
-		if len(authority.CandidateID) > MaxContextCandidateIDBytes ||
-			!contextCandidateIDPattern.MatchString(authority.CandidateID) {
+		if !contextCandidateIDPattern.MatchString(authority.CandidateID) {
 			return fmt.Errorf("%s candidate %d has invalid opaque ID %q", label, index, authority.CandidateID)
 		}
 		if _, duplicate := seenIDs[authority.CandidateID]; duplicate {
@@ -106,9 +102,7 @@ func validateContextCandidateAuthorities(
 		total += len(authority.Namespace) + len(authority.CandidateID) +
 			len(authority.Content)
 	}
-	if total > maximumBytes {
-		return fmt.Errorf("%s candidate projection exceeds %d bytes", label, maximumBytes)
-	}
+
 	return nil
 }
 
@@ -158,9 +152,7 @@ func validateContextCandidateText(label, value string, maximum int) error {
 	if strings.TrimSpace(value) == "" {
 		return fmt.Errorf("%s must be non-blank exact text", label)
 	}
-	if len(value) > maximum {
-		return fmt.Errorf("%s exceeds %d bytes", label, maximum)
-	}
+
 	if !utf8.ValidString(value) {
 		return fmt.Errorf("%s is not valid UTF-8", label)
 	}
@@ -174,9 +166,7 @@ func validateContextText(label, value string, maximum int) error {
 	if value == "" || value != strings.TrimSpace(value) {
 		return fmt.Errorf("%s must be non-empty trimmed text", label)
 	}
-	if maximum > 0 && len(value) > maximum {
-		return fmt.Errorf("%s exceeds %d bytes", label, maximum)
-	}
+
 	if !utf8.ValidString(value) {
 		return fmt.Errorf("%s is not valid UTF-8", label)
 	}
@@ -190,9 +180,7 @@ func validateOptionalContextText(label, value string, maximum int) error {
 	if value != strings.TrimSpace(value) {
 		return fmt.Errorf("%s must be trimmed text", label)
 	}
-	if len(value) > maximum {
-		return fmt.Errorf("%s exceeds %d bytes", label, maximum)
-	}
+
 	if !utf8.ValidString(value) {
 		return fmt.Errorf("%s is not valid UTF-8", label)
 	}

@@ -31,7 +31,7 @@ const (
 
 func (id ChannelID) Validate() error {
 	value := string(id)
-	if len(value) == 0 || len(value) > MaxChannelIDBytes || !utf8.ValidString(value) {
+	if len(value) == 0 || !utf8.ValidString(value) {
 		return fmt.Errorf("channel id must contain 1..%d valid UTF-8 bytes", MaxChannelIDBytes)
 	}
 	for index, character := range []byte(value) {
@@ -47,7 +47,7 @@ func (id ChannelID) Validate() error {
 
 func (id DataSourceID) Validate() error {
 	value := string(id)
-	if len(value) == 0 || len(value) > MaxDataSourceIDBytes || !utf8.ValidString(value) {
+	if len(value) == 0 || !utf8.ValidString(value) {
 		return fmt.Errorf("data source id must contain 1..%d valid UTF-8 bytes", MaxDataSourceIDBytes)
 	}
 	for index, character := range []byte(value) {
@@ -112,9 +112,7 @@ func (channel Channel) validateAuthority() error {
 	if err := validateExactChannelText(channel.Name, "channel name", MaxChannelNameBytes); err != nil {
 		return err
 	}
-	if len(channel.Tags) > MaxChannelTags {
-		return fmt.Errorf("channel tags exceed the %d-tag bound", MaxChannelTags)
-	}
+
 	seen := make(map[string]struct{}, len(channel.Tags))
 	for _, tag := range channel.Tags {
 		if err := validateExactChannelText(tag, "channel tag", MaxChannelTagBytes); err != nil {
@@ -161,7 +159,7 @@ func ValidateChannelWorkspaceRoot(root string) error {
 }
 
 func ValidateChannelMessageContent(content string) error {
-	if len(content) == 0 || len(content) > MaxChannelContentBytes || !utf8.ValidString(content) || strings.IndexByte(content, 0) >= 0 {
+	if len(content) == 0 || !utf8.ValidString(content) || strings.IndexByte(content, 0) >= 0 {
 		return fmt.Errorf("channel message content must contain 1..%d valid UTF-8 bytes without NUL", MaxChannelContentBytes)
 	}
 	if strings.TrimSpace(content) == "" {
@@ -177,9 +175,7 @@ func ValidateChannelMessage(role ChannelMessageRole, content string) error {
 	if err := ValidateChannelMessageContent(content); err != nil {
 		return err
 	}
-	if role == ChannelMessageRoleUser && len(content) > MaxFreeFormTurnBytes {
-		return fmt.Errorf("channel user message exceeds the %d-byte free-form turn bound", MaxFreeFormTurnBytes)
-	}
+
 	return nil
 }
 
@@ -194,7 +190,7 @@ func ValidateChannelMessageSpeaker(role ChannelMessageRole, speakerName string) 
 }
 
 func validateExactChannelText(value, name string, maxBytes int) error {
-	if len(value) == 0 || len(value) > maxBytes || !utf8.ValidString(value) || strings.IndexByte(value, 0) >= 0 {
+	if len(value) == 0 || !utf8.ValidString(value) || strings.IndexByte(value, 0) >= 0 {
 		return fmt.Errorf("%s must contain 1..%d valid UTF-8 bytes without NUL", name, maxBytes)
 	}
 	if value != strings.TrimSpace(value) {

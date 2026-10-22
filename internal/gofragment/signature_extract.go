@@ -17,7 +17,7 @@ var ErrNoExplicitFunctionSignature = errors.New("objective contains no explicit 
 // bounded authority. It is a syntax parser, not natural-language routing: no
 // phrasing, verbs, paths, or filenames influence the result.
 func ExtractUniqueNewFunctionSignature(authority string) (NewFunctionSignature, error) {
-	if authority == "" || len(authority) > maxGoSignatureAuthorityBytes || !utf8.ValidString(authority) || strings.IndexByte(authority, 0) >= 0 {
+	if authority == "" || !utf8.ValidString(authority) || strings.IndexByte(authority, 0) >= 0 {
 		return NewFunctionSignature{}, fmt.Errorf("Go signature authority must be valid UTF-8 within %d bytes", maxGoSignatureAuthorityBytes)
 	}
 	file := token.NewFileSet().AddFile("", -1, len(authority))

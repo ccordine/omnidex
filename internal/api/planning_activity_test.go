@@ -78,7 +78,6 @@ func TestRealtimePlanningActivityRejectsMisplacedAndInvalidProjection(t *testing
 		"unregistered outcome":      `"runtimeEvent":"planning_activity","planningActivity":{"schema":1,"kind":"candidate_resolved","subject":"Requested behavior.","outcome":"approved-by-model"}`,
 		"negative count":            `"runtimeEvent":"planning_activity","planningActivity":{"schema":1,"kind":"inventory_completed","count":-1}`,
 		"unrelated partition count": `"runtimeEvent":"planning_activity","planningActivity":{"schema":1,"kind":"candidate_resolved","subject":"Requested behavior.","outcome":"retained","count":2}`,
-		"overbound candidate":       `"runtimeEvent":"planning_activity","planningActivity":{"schema":1,"kind":"candidate_started","subject":"` + strings.Repeat("x", 1025) + `"}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			var event JobRuntimeEvent

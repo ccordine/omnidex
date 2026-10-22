@@ -21,9 +21,7 @@ func (r *Repository) FilterNewRoleplayCanonFacts(
 	if worldID == "" {
 		return nil, fmt.Errorf("roleplay canon delta requires an exact world identity")
 	}
-	if len(candidates) > roleplay.MaxCanonFactsPerTurn {
-		return nil, fmt.Errorf("roleplay canon delta exceeds its candidate bound")
-	}
+
 	seen := make(map[string]struct{}, len(candidates))
 	for _, fact := range candidates {
 		if err := roleplay.ValidateCanonFact(fact); err != nil {

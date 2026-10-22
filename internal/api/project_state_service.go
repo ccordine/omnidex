@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
+
 	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/hostbridge"
@@ -43,9 +43,7 @@ func splitProjectPath(path string) (id int64, action string) {
 			}
 		}
 		action = strings.Join(parts[1:], "/")
-		if len(action) > 64 {
-			return 0, ""
-		}
+
 	}
 	return id, action
 }
@@ -69,7 +67,7 @@ func (s *Server) validateProjectLocation(ctx context.Context, raw string) (strin
 	}
 	client := s.hostBridgeClient()
 	if client != nil {
-		ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
 		result, err := client.Browse(ctx, location, hostbridge.BrowseOptions{Limit: 1})
 		if err != nil {

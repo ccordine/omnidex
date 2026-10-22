@@ -1,7 +1,6 @@
 package api
 
 import (
-	"fmt"
 	"html"
 	"strings"
 )
@@ -27,9 +26,7 @@ func renderChatHostBridgeStatus(status hostBridgeStatusResponse) (string, error)
 			}
 		}
 	}
-	if len(status.Suggestions) > 16 {
-		return "", fmt.Errorf("host bridge suggestions exceed the 16-item presentation bound")
-	}
+
 	var suggestions strings.Builder
 	if len(status.Suggestions) > 0 {
 		suggestions.WriteString(`<div class="rounded border border-amber-300/30 bg-amber-300/10 p-3"><div class="text-xs font-semibold uppercase tracking-[.16em] text-amber-200">How to fix</div><ol class="mt-2 list-decimal space-y-2 pl-5 text-sm leading-6 text-amber-50">`)

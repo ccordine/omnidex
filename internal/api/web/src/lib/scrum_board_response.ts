@@ -89,9 +89,7 @@ export function validateScrumBoardResponse(
   expectedColumn: ScrumColumn,
   expectedOffset: number,
 ): ScrumBoardResponse {
-  if (new TextEncoder().encode(JSON.stringify(value)).byteLength > BOARD_RESPONSE_MAX_BYTES) {
-    throw new Error("Scrum board response exceeds its byte bound.");
-  }
+
   const fields = [
     "board", "cards_by_col", "html", "project_id", "all_columns", "visible_column",
     "column_counts", "card_offset", "card_has_more", "auto_work", "auto_work_complete",

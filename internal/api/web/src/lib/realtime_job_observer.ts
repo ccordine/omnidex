@@ -17,18 +17,14 @@ type ObserveRealtimeJobOptions<T> = {
   jobID: number;
   load: () => Promise<RealtimeJobSnapshot<T>>;
   onUpdate?: (snapshot: RealtimeJobSnapshot<T>) => void | Promise<void>;
-  timeoutMs?: number;
   stopOnWaitingInput?: boolean;
 };
 
-const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 
 export function observeRealtimeJob<T>(options: ObserveRealtimeJobOptions<T>): RealtimeJobObservation<T> {
   const { jobID, load, onUpdate } = options;
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   if (!Number.isSafeInteger(jobID) || jobID <= 0) throw new Error("Realtime job observer requires a positive integer job id.");
   if (typeof load !== "function") throw new Error(`Realtime job #${jobID} observer requires a server loader.`);
-  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error(`Realtime job #${jobID} observer requires a positive timeout.`);
 
   let settled = false;
   let refreshRequested = false;
@@ -43,7 +39,6 @@ export function observeRealtimeJob<T>(options: ObserveRealtimeJobOptions<T>): Re
   const cleanup = () => {
     document.removeEventListener("omni:job-progress", progressHandler);
     document.removeEventListener("omni:realtime-sync-required", syncHandler);
-    window.clearTimeout(timeout);
   };
   const fail = (error: unknown) => {
     if (settled) return;
@@ -112,9 +107,6 @@ export function observeRealtimeJob<T>(options: ObserveRealtimeJobOptions<T>): Re
 
   document.addEventListener("omni:job-progress", progressHandler);
   document.addEventListener("omni:realtime-sync-required", syncHandler);
-  const timeout = window.setTimeout(() => {
-    fail(new Error(`Timed out waiting for authoritative completion of job #${jobID}.`));
-  }, timeoutMs);
   const initial = refresh();
   void initial.catch((error) => fail(error));
 

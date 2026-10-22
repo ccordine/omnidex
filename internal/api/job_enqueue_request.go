@@ -27,7 +27,7 @@ func decodeGenericCodingEnqueue(w http.ResponseWriter, r *http.Request) (enqueue
 	if r == nil || r.Body == nil {
 		return enqueueRequest{}, fmt.Errorf("coding enqueue request body is required")
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxGenericCodingEnqueueBodyBytes)
+
 	raw, err := io.ReadAll(r.Body)
 	if err != nil {
 		return enqueueRequest{}, fmt.Errorf("read coding enqueue request: %w", err)

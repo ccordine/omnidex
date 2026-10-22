@@ -14,14 +14,14 @@ CREATE TABLE llm_call_evidence (
     step_id bigint NOT NULL,
     step_attempt bigint NOT NULL CHECK (step_attempt > 0),
     worker_id text NOT NULL CHECK (
-        worker_id <> '' AND worker_id=btrim(worker_id) AND octet_length(worker_id) <= 256
+        worker_id <> '' AND worker_id=btrim(worker_id)
     ),
     scope text NOT NULL CHECK (
         scope IN ('portable_semantic_worker','portable_fragment_worker')
     ),
-    work_input bytea CHECK (octet_length(work_input) BETWEEN 1 AND 131072),
+    work_input bytea CHECK (octet_length(work_input) >= 1),
     work_kind text NOT NULL CHECK (
-        work_kind <> '' AND work_kind=btrim(work_kind) AND octet_length(work_kind) <= 128
+        work_kind <> '' AND work_kind=btrim(work_kind)
     ),
     iteration integer NOT NULL CHECK (iteration BETWEEN 1 AND 3),
     output_continuation integer NOT NULL CHECK (output_continuation=0),
@@ -35,10 +35,10 @@ CREATE TABLE llm_call_evidence (
     source_question text,
     requested_model text NOT NULL CHECK (
         requested_model <> '' AND requested_model=btrim(requested_model)
-        AND octet_length(requested_model) <= 512
+
     ),
     model text NOT NULL CHECK (
-        model <> '' AND model=btrim(model) AND octet_length(model) <= 512
+        model <> '' AND model=btrim(model)
     ),
     protocol text NOT NULL CHECK (
         protocol IN ('omnidex.ollama-plain-completion-request.v4','omnidex.codex-app-server-request.v1')
@@ -52,11 +52,11 @@ CREATE TABLE llm_call_evidence (
     provider_request_bytes integer NOT NULL CHECK (
         provider_request_bytes=octet_length(provider_request)
         -- Semantic prompt plus JSON escaping/wrapper and bounded native IDs.
-        AND provider_request_bytes BETWEEN 1 AND (1048576 + 21*1048576)
+        AND provider_request_bytes >= 1
     ),
-    context_tokens integer NOT NULL CHECK (context_tokens BETWEEN 1 AND 1048576),
+    context_tokens integer NOT NULL CHECK (context_tokens >= 1),
     max_output_tokens integer NOT NULL CHECK (
-        max_output_tokens=-1 OR max_output_tokens BETWEEN 1 AND context_tokens
+        max_output_tokens=-1 OR max_output_tokens >= 1
     ),
     output_limit_mode text NOT NULL CHECK (output_limit_mode IN ('explicit','natural')),
     created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
@@ -77,13 +77,13 @@ CREATE TABLE llm_call_evidence (
         OR
         (iteration>1
          AND source_base_candidate IS NOT NULL
-         AND octet_length(source_base_candidate) BETWEEN 1 AND 32768
+         AND octet_length(source_base_candidate) >= 1
          AND source_start_byte>=0 AND source_end_byte>source_start_byte
          AND source_end_byte<=octet_length(source_base_candidate)
          AND (source_start_byte>0 OR
               source_end_byte<octet_length(source_base_candidate))
          AND source_question IS NOT NULL AND source_question=btrim(source_question)
-         AND source_question<>'' AND octet_length(source_question)<=2048
+         AND source_question<>''
          AND model_input=source_question || E'\n\n' || convert_from(
              substring(
                  convert_to(source_base_candidate,'UTF8')
@@ -106,12 +106,12 @@ CREATE TABLE llm_call_receipts (
     call_evidence_id bigint PRIMARY KEY
         REFERENCES llm_call_evidence(id) ON DELETE CASCADE,
     generation_receipt bytea NOT NULL CHECK (
-        octet_length(generation_receipt) BETWEEN 2 AND 16384
+        octet_length(generation_receipt) >= 2
     ),
     raw_response_present boolean NOT NULL,
     raw_response bytea,
     raw_response_bytes integer NOT NULL,
-    candidate text CHECK (octet_length(candidate) <= 16777216),
+    candidate text,
     prompt_tokens integer NOT NULL CHECK (prompt_tokens >= 0),
     output_tokens integer NOT NULL CHECK (output_tokens >= 0),
     provider_duration_nanos bigint NOT NULL CHECK (provider_duration_nanos >= 0),
@@ -123,7 +123,7 @@ CREATE TABLE llm_call_receipts (
     CONSTRAINT llm_call_receipts_raw_response_shape CHECK (
         (raw_response_present AND raw_response IS NOT NULL
          AND raw_response_bytes=octet_length(raw_response)
-         AND raw_response_bytes BETWEEN 0 AND 122748929)
+         AND raw_response_bytes >= 0)
         OR
         (NOT raw_response_present AND raw_response IS NULL AND raw_response_bytes=0)
     ),
@@ -133,7 +133,7 @@ CREATE TABLE llm_call_receipts (
          AND btrim(candidate) <> '' AND prompt_tokens > 0 AND output_tokens > 0)
         OR
         (status='failed' AND error IS NOT NULL AND error=btrim(error)
-         AND error <> '' AND octet_length(error) <= 8192
+         AND error <> ''
          AND (NOT output_limit_reached OR
               (candidate IS NOT NULL AND btrim(candidate) <> ''
                AND prompt_tokens > 0 AND output_tokens > 0)))
@@ -153,7 +153,7 @@ CREATE TABLE llm_call_outcomes (
         OR
         (status IN ('rejected','provider_failed','interrupted')
          AND validation_error IS NOT NULL AND validation_error=btrim(validation_error)
-         AND validation_error <> '' AND octet_length(validation_error) <= 8192)
+         AND validation_error <> '' )
     )
 );
 
@@ -282,7 +282,7 @@ BEGIN
 			END IF;
 		ELSIF jsonb_typeof(request_context) IS DISTINCT FROM 'array' THEN
 			RAISE EXCEPTION 'source correction requires retained model context';
-		ELSIF jsonb_array_length(request_context) NOT BETWEEN 1 AND NEW.context_tokens OR
+		ELSIF jsonb_array_length(request_context) < 1 OR
 		   request_context IS DISTINCT FROM
 		       (convert_from(prior_call.prior_raw_response,'UTF8')::json -> 'context')::jsonb THEN
 			RAISE EXCEPTION 'source correction model context differs from its exact parent response';
@@ -383,7 +383,7 @@ CREATE TABLE verification_command_evidence (
     step_id bigint NOT NULL,
     step_attempt bigint NOT NULL CHECK (step_attempt > 0),
     worker_id text NOT NULL CHECK (
-        worker_id <> '' AND worker_id=btrim(worker_id) AND octet_length(worker_id) <= 256
+        worker_id <> '' AND worker_id=btrim(worker_id)
     ),
     phase text NOT NULL CHECK (phase IN (
         'isolated_install','isolated_implementation','isolated_task','isolated_final',
@@ -409,26 +409,26 @@ CREATE TABLE verification_command_evidence (
     exit_code integer CHECK (exit_code BETWEEN 0 AND 255),
     launch_error text,
 	observation_error text,
-    stdout bytea NOT NULL CHECK (octet_length(stdout) <= 1048576),
+    stdout bytea NOT NULL,
 	stdout_complete boolean NOT NULL,
-    stderr bytea NOT NULL CHECK (octet_length(stderr) <= 1048576),
+    stderr bytea NOT NULL,
 	stderr_complete boolean NOT NULL,
 	status text NOT NULL CHECK (status IN (
 		'succeeded','exit_failed','launch_failed','observation_failed'
 	)),
     created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
     CONSTRAINT verification_command_argv_bound CHECK (
-        octet_length(argv) BETWEEN 3 AND 65536
+        octet_length(argv) >= 3
         AND jsonb_typeof(convert_from(argv,'UTF8')::jsonb)='array'
-        AND jsonb_array_length(convert_from(argv,'UTF8')::jsonb) BETWEEN 1 AND 128
+        AND jsonb_array_length(convert_from(argv,'UTF8')::jsonb) >= 1
     ),
     CONSTRAINT verification_command_environment_bound CHECK (
-        octet_length(environment) BETWEEN 2 AND 65536
+        octet_length(environment) >= 2
         AND jsonb_typeof(convert_from(environment,'UTF8')::jsonb)='array'
-        AND jsonb_array_length(convert_from(environment,'UTF8')::jsonb) BETWEEN 0 AND 64
+        AND jsonb_array_length(convert_from(environment,'UTF8')::jsonb) >= 0
     ),
     CONSTRAINT verification_command_stdin_shape CHECK (
-        (stdin_present AND stdin IS NOT NULL AND octet_length(stdin) <= 1048576)
+        (stdin_present AND stdin IS NOT NULL )
         OR
         (NOT stdin_present AND stdin IS NULL)
     ),
@@ -448,16 +448,16 @@ CREATE TABLE verification_command_evidence (
         (status='launch_failed' AND exit_code IS NULL AND launch_error IS NOT NULL
 		 AND observation_error IS NULL
          AND launch_error=btrim(launch_error) AND launch_error<>''
-         AND octet_length(launch_error) <= 8192)
+         )
 		OR
 		(status='observation_failed' AND observation_error IS NOT NULL
 		 AND observation_error=btrim(observation_error) AND observation_error<>''
-		 AND octet_length(observation_error) <= 8192
+
 		 AND ((exit_code IS NOT NULL AND launch_error IS NULL
 		       AND stdout_complete AND stderr_complete) OR
 		      (exit_code IS NULL AND launch_error IS NOT NULL
 		       AND launch_error=btrim(launch_error) AND launch_error<>''
-		       AND octet_length(launch_error) <= 8192)))
+		       )))
     ),
     CONSTRAINT verification_command_one_ordinal
         UNIQUE (job_id,generation,step_id,step_attempt,ordinal),
@@ -554,7 +554,7 @@ CREATE FUNCTION channel_tags_are_exact(tags text[]) RETURNS boolean
        AND NOT EXISTS (
            SELECT 1 FROM unnest(tags) AS tag
            WHERE tag IS NULL
-              OR octet_length(tag) NOT BETWEEN 1 AND 64
+              OR octet_length(tag) < 1
               OR tag <> btrim(tag)
               OR tag <> lower(tag)
        )
@@ -953,8 +953,8 @@ $$;
 CREATE FUNCTION lifecycle_feedback_is_valid(value text, maximum_bytes integer) RETURNS boolean
     LANGUAGE sql IMMUTABLE STRICT
     AS $$
-    SELECT maximum_bytes BETWEEN 1 AND 65536
-       AND octet_length(value) BETWEEN 1 AND maximum_bytes
+    SELECT maximum_bytes >= 1
+       AND octet_length(value) >= 1
        AND btrim(
             value,
             U&'\0009\000A\000B\000C\000D\0020\0085\00A0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200A\2028\2029\202F\205F\3000'
@@ -1724,7 +1724,7 @@ SELECT
   ((NOT (payload ? 'workspace_root')) AND (NOT (payload ? 'workspace_identity'))) OR
   ((payload ?& ARRAY['workspace_root','workspace_identity']) AND
    (jsonb_typeof(payload -> 'workspace_root') = 'string') AND
-   (octet_length(payload ->> 'workspace_root') BETWEEN 1 AND 4096) AND
+   (octet_length(payload ->> 'workspace_root') >= 1) AND
    (jsonb_typeof(payload -> 'workspace_identity') = 'string') AND
    ((payload ->> 'workspace_identity') ~ '^(client_[0-9a-f]{32}_)?directory_(0|[1-9][0-9]{0,19})_[1-9][0-9]{0,19}$'));
 $$;
@@ -2256,7 +2256,7 @@ DECLARE
     expected JSONB := '[]'::jsonb;
 BEGIN
     IF jsonb_typeof(participants)<>'array' OR
-       jsonb_array_length(participants) NOT BETWEEN 1 AND 16 OR
+       jsonb_array_length(participants) < 1 OR
        jsonb_typeof(result_value->'user_turn')<>'object' THEN
         RETURN NULL;
     END IF;
@@ -2393,7 +2393,7 @@ BEGIN
            jsonb_typeof(response->'character_id')<>'string' OR
            NOT ((response->>'character_id') ~ '^rpc_[0-9a-f]{32}$') OR
            jsonb_typeof(response->'output')<>'string' OR
-           octet_length(response->>'output') NOT BETWEEN 1 AND 2048 OR
+           octet_length(response->>'output') < 1 OR
            btrim(response->>'output')='' OR
            jsonb_typeof(response->'facts')<>'array' OR
            jsonb_array_length(response->'facts')>8 OR
@@ -2403,11 +2403,11 @@ BEGIN
            COALESCE(jsonb_typeof(response->'ongoing_action'),'missing')
                NOT IN ('missing','string','null') OR
            (jsonb_typeof(response->'previous_ongoing_action')='string' AND (
-               octet_length(response->>'previous_ongoing_action') NOT BETWEEN 1 AND 512 OR
+               octet_length(response->>'previous_ongoing_action') < 1 OR
                response->>'previous_ongoing_action'<>btrim(response->>'previous_ongoing_action')
            )) OR
            (jsonb_typeof(response->'ongoing_action')='string' AND (
-               octet_length(response->>'ongoing_action') NOT BETWEEN 1 AND 512 OR
+               octet_length(response->>'ongoing_action') < 1 OR
                response->>'ongoing_action'<>btrim(response->>'ongoing_action')
            )) THEN
             RETURN FALSE;
@@ -2419,7 +2419,7 @@ BEGIN
         seen_characters := array_append(seen_characters,character_id);
         FOR fact IN SELECT item.value FROM jsonb_array_elements(response->'facts') AS item(value) LOOP
             IF jsonb_typeof(fact)<>'string' OR
-               octet_length(fact #>> '{}') NOT BETWEEN 1 AND 512 OR
+               octet_length(fact #>> '{}') < 1 OR
                btrim(fact #>> '{}')='' THEN
                 RETURN FALSE;
             END IF;
@@ -2498,7 +2498,7 @@ DECLARE
 BEGIN
     IF jsonb_typeof(result_value->'responders')<>'array' OR
        jsonb_typeof(result_value->'responder_routes')<>'array' OR
-       jsonb_array_length(result_value->'responders') NOT BETWEEN 1 AND 16 OR
+       jsonb_array_length(result_value->'responders') < 1 OR
        jsonb_array_length(result_value->'responders')<>
            jsonb_array_length(result_value->'responder_routes') THEN
         RETURN FALSE;
@@ -2754,7 +2754,7 @@ CREATE FUNCTION roleplay_transition_observers_are_exact(candidate jsonb) RETURNS
     LANGUAGE sql IMMUTABLE STRICT
     AS $_$
     SELECT jsonb_typeof(candidate)='array'
-       AND jsonb_array_length(candidate) BETWEEN 1 AND 16
+       AND jsonb_array_length(candidate) >= 1
        AND NOT EXISTS (
             SELECT 1
             FROM jsonb_array_elements(candidate) AS item(value)
@@ -2811,7 +2811,7 @@ CREATE FUNCTION roleplay_user_canon_character_ids_valid(candidate jsonb) RETURNS
     LANGUAGE sql IMMUTABLE STRICT
     AS $_$
     SELECT jsonb_typeof(candidate)='array'
-       AND jsonb_array_length(candidate)<=16
+
        AND NOT EXISTS (
             SELECT 1
             FROM jsonb_array_elements(candidate) AS item(value)
@@ -2906,12 +2906,12 @@ CREATE FUNCTION roleplay_user_canon_payload_valid(candidate jsonb) RETURNS boole
        AND candidate ?& ARRAY['facts','knowledge_character_ids']
        AND candidate-ARRAY['facts','knowledge_character_ids']='{}'::jsonb
        AND jsonb_typeof(candidate->'facts')='array'
-       AND jsonb_array_length(candidate->'facts')<=8
+
        AND NOT EXISTS (
             SELECT 1
             FROM jsonb_array_elements(candidate->'facts') AS item(value)
             WHERE jsonb_typeof(item.value)<>'string'
-               OR octet_length(item.value#>>'{}') NOT BETWEEN 1 AND 512
+               OR octet_length(item.value#>>'{}') < 1
                OR btrim(item.value#>>'{}')=''
        )
        AND jsonb_array_length(candidate->'facts')=(
@@ -2952,7 +2952,7 @@ BEGIN
            (
                jsonb_typeof(payload_value->'previous_ongoing_action')<>'string' OR
                (
-                   octet_length(payload_value->>'previous_ongoing_action') BETWEEN 1 AND 512 AND
+                   octet_length(payload_value->>'previous_ongoing_action') >= 1 AND
                    payload_value->>'previous_ongoing_action'=
                        btrim(payload_value->>'previous_ongoing_action')
                )
@@ -2960,7 +2960,7 @@ BEGIN
            (
                jsonb_typeof(payload_value->'ongoing_action')<>'string' OR
                (
-                   octet_length(payload_value->>'ongoing_action') BETWEEN 1 AND 512 AND
+                   octet_length(payload_value->>'ongoing_action') >= 1 AND
                    payload_value->>'ongoing_action'=btrim(payload_value->>'ongoing_action')
                )
            );
@@ -3037,7 +3037,7 @@ BEGIN
            jsonb_typeof(part->'kind')<>'string' OR
            jsonb_typeof(part->'text')<>'string' OR
            part->>'kind' NOT IN ('message','action','event') OR
-           octet_length(part->>'text') NOT BETWEEN 1 AND 4096 OR
+           octet_length(part->>'text') < 1 OR
            btrim(part->>'text')='' THEN
             RETURN FALSE;
         END IF;
@@ -3054,7 +3054,7 @@ BEGIN
         E'\n\n' ORDER BY item.ordinal
     ) INTO rendered
     FROM jsonb_array_elements(parts_value) WITH ORDINALITY AS item(value,ordinal);
-    IF rendered<>exact_text_value OR octet_length(rendered)>4096 THEN
+    IF rendered<>exact_text_value  THEN
         RETURN FALSE;
     END IF;
     IF persona_kind_value='character' THEN
@@ -3171,7 +3171,7 @@ CREATE FUNCTION scrum_render_utc_timestamp(value timestamp with time zone) RETUR
 CREATE FUNCTION scrum_trim_space(value text) RETURNS text
     LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
     SET search_path TO 'pg_catalog', '__OMNIDEX_RUNTIME_SCHEMA__', 'pg_temp'
-    RETURN btrim(value, (((((((((((((((((((((' 	
+    RETURN btrim(value, ((((((((((((((((((((('
 
 '::text || chr(11)) || chr(12)) || chr(133)) || chr(160)) || chr(5760)) || chr(8192)) || chr(8193)) || chr(8194)) || chr(8195)) || chr(8196)) || chr(8197)) || chr(8198)) || chr(8199)) || chr(8200)) || chr(8201)) || chr(8202)) || chr(8232)) || chr(8233)) || chr(8239)) || chr(8287)) || chr(12288)));
 
@@ -3183,7 +3183,7 @@ CREATE FUNCTION scrum_trim_space(value text) RETURNS text
 CREATE FUNCTION scrum_valid_channel_command(payload jsonb) RETURNS boolean
     LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
     SET search_path TO 'pg_catalog', '__OMNIDEX_RUNTIME_SCHEMA__', 'pg_temp'
-    RETURN ((jsonb_typeof(payload) = 'object'::text) AND (payload ?& ARRAY['operation_id'::text, 'project_id'::text, 'card_id'::text, 'message'::text]) AND ((payload - ARRAY['operation_id'::text, 'project_id'::text, 'card_id'::text, 'message'::text]) = '{}'::jsonb) AND (jsonb_typeof((payload -> 'operation_id'::text)) = 'string'::text) AND ((payload ->> 'operation_id'::text) ~ '^lifecycle_operation_[a-z0-9_]{1,128}$'::text) AND (jsonb_typeof((payload -> 'project_id'::text)) = 'number'::text) AND ((payload -> 'project_id'::text) = to_jsonb(((payload ->> 'project_id'::text))::bigint)) AND (((payload ->> 'project_id'::text))::bigint > 0) AND (jsonb_typeof((payload -> 'card_id'::text)) = 'string'::text) AND ((octet_length((payload ->> 'card_id'::text)) >= 1) AND (octet_length((payload ->> 'card_id'::text)) <= 256)) AND ((payload ->> 'card_id'::text) = scrum_trim_space((payload ->> 'card_id'::text))) AND (jsonb_typeof((payload -> 'message'::text)) = 'string'::text) AND ((octet_length((payload ->> 'message'::text)) >= 1) AND (octet_length((payload ->> 'message'::text)) <= 4096)) AND (scrum_trim_space((payload ->> 'message'::text)) <> ''::text));
+    RETURN ((jsonb_typeof(payload) = 'object'::text) AND (payload ?& ARRAY['operation_id'::text, 'project_id'::text, 'card_id'::text, 'message'::text]) AND ((payload - ARRAY['operation_id'::text, 'project_id'::text, 'card_id'::text, 'message'::text]) = '{}'::jsonb) AND (jsonb_typeof((payload -> 'operation_id'::text)) = 'string'::text) AND ((payload ->> 'operation_id'::text) ~ '^lifecycle_operation_[a-z0-9_]+$'::text) AND (jsonb_typeof((payload -> 'project_id'::text)) = 'number'::text) AND ((payload -> 'project_id'::text) = to_jsonb(((payload ->> 'project_id'::text))::bigint)) AND (((payload ->> 'project_id'::text))::bigint > 0) AND (jsonb_typeof((payload -> 'card_id'::text)) = 'string'::text) AND ((octet_length((payload ->> 'card_id'::text)) >= 1) ) AND ((payload ->> 'card_id'::text) = scrum_trim_space((payload ->> 'card_id'::text))) AND (jsonb_typeof((payload -> 'message'::text)) = 'string'::text) AND ((octet_length((payload ->> 'message'::text)) >= 1) ) AND (scrum_trim_space((payload ->> 'message'::text)) <> ''::text));
 
 
 --
@@ -3193,7 +3193,7 @@ CREATE FUNCTION scrum_valid_channel_command(payload jsonb) RETURNS boolean
 CREATE FUNCTION scrum_valid_message_id(value text) RETURNS boolean
     LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
     SET search_path TO 'pg_catalog', '__OMNIDEX_RUNTIME_SCHEMA__', 'pg_temp'
-    RETURN (((octet_length(value) >= 1) AND (octet_length(value) <= 256)) AND (value ~ '^[A-Za-z0-9][A-Za-z0-9_.:-]*$'::text));
+    RETURN (((octet_length(value) >= 1) ) AND (value ~ '^[A-Za-z0-9][A-Za-z0-9_.:-]*$'::text));
 
 
 --
@@ -3637,7 +3637,7 @@ $$;
 CREATE FUNCTION validate_roleplay_research_paragraph_indexes(value jsonb) RETURNS boolean
     LANGUAGE sql IMMUTABLE STRICT
     AS $_$
-    SELECT jsonb_typeof(value)='array' AND jsonb_array_length(value) BETWEEN 1 AND 4 AND
+    SELECT jsonb_typeof(value)='array' AND jsonb_array_length(value) >= 1 AND
            NOT EXISTS (
                SELECT 1 FROM jsonb_array_elements(value) AS item
                WHERE jsonb_typeof(item)<>'number' OR (item #>> '{}') !~ '^[0-3]$'
@@ -3902,9 +3902,9 @@ BEGIN
        NEW.result->'action'->>'kind'<>NEW.action_kind OR
        COALESCE(NEW.result->'action'->>'command_key','')<>NEW.command_key OR
        jsonb_typeof(NEW.result->'effects')<>'array' OR
-       jsonb_array_length(NEW.result->'effects') NOT BETWEEN 1 AND 32 OR
+       jsonb_array_length(NEW.result->'effects') < 1 OR
        jsonb_typeof(NEW.result->'narrative_events')<>'array' OR
-       jsonb_array_length(NEW.result->'narrative_events') NOT BETWEEN 1 AND 2 THEN
+       jsonb_array_length(NEW.result->'narrative_events') < 1 THEN
         RAISE EXCEPTION 'simulation transition does not match exact scene, observer, or result authority';
     END IF;
 
@@ -3940,10 +3940,10 @@ $$;
 CREATE FUNCTION validate_roleplay_text_array(value jsonb) RETURNS boolean
     LANGUAGE sql IMMUTABLE STRICT
     AS $$
-    SELECT jsonb_typeof(value)='array' AND jsonb_array_length(value) <= 16 AND
+    SELECT jsonb_typeof(value)='array'  AND
            NOT EXISTS (
                SELECT 1 FROM jsonb_array_elements(value) AS item
-               WHERE jsonb_typeof(item)<>'string' OR octet_length(item #>> '{}') NOT BETWEEN 1 AND 256 OR
+               WHERE jsonb_typeof(item)<>'string' OR octet_length(item #>> '{}') < 1 OR
                      (item #>> '{}')<>btrim(item #>> '{}')
            ) AND (
                SELECT COUNT(*)=COUNT(DISTINCT item #>> '{}') FROM jsonb_array_elements(value) AS item
@@ -3972,7 +3972,7 @@ BEGIN
     IF EXISTS (
         SELECT 1 FROM jsonb_array_elements(NEW.facts) AS item
         WHERE jsonb_typeof(item)<>'string' OR
-              octet_length(item #>> '{}') NOT BETWEEN 1 AND 512 OR
+              octet_length(item #>> '{}') < 1 OR
               btrim(item #>> '{}')=''
     ) OR (
         SELECT COUNT(*)<>COUNT(DISTINCT item #>> '{}')
@@ -4051,7 +4051,7 @@ BEGIN
         SELECT 1
         FROM jsonb_array_elements(NEW.facts) AS item(value)
         WHERE jsonb_typeof(item.value)<>'string' OR
-              octet_length(item.value#>>'{}') NOT BETWEEN 1 AND 512 OR
+              octet_length(item.value#>>'{}') < 1 OR
               btrim(item.value#>>'{}')=''
     ) OR jsonb_array_length(NEW.facts)<>(
         SELECT COUNT(DISTINCT item.value#>>'{}')
@@ -4158,7 +4158,7 @@ CREATE TABLE ai_channel_messages (
     role text NOT NULL,
     content text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT ai_channel_messages_content_check CHECK (((btrim(content) <> ''::text) AND (((role = 'user'::text) AND ((octet_length(content) >= 1) AND (octet_length(content) <= 4096))) OR ((role = 'assistant'::text) AND ((octet_length(content) >= 1) AND (octet_length(content) <= 32768)))))),
+    CONSTRAINT ai_channel_messages_content_check CHECK (((btrim(content) <> ''::text) AND (((role = 'user'::text) AND ((octet_length(content) >= 1) )) OR ((role = 'assistant'::text) AND ((octet_length(content) >= 1) ))))),
     CONSTRAINT ai_channel_messages_role_check CHECK ((role = ANY (ARRAY['user'::text, 'assistant'::text])))
 );
 
@@ -4193,7 +4193,7 @@ DECLARE
     components text[];
     component text;
 BEGIN
-    IF octet_length(root) NOT BETWEEN 1 AND 4096 OR root <> btrim(root) THEN
+    IF octet_length(root) < 1 OR root <> btrim(root) THEN
         RETURN false;
     END IF;
     IF left(root, 1) = '/' THEN
@@ -4237,9 +4237,9 @@ CREATE TABLE ai_channels (
          cli_workspace_identity ~ '^client_[0-9a-f]{32}_directory_(0|[1-9][0-9]{0,19})_[1-9][0-9]{0,19}$' AND
          id ~ '^cli-chat-[0-9a-f]{32}$' AND mode = 'assistant' AND data_source_id IS NULL)
     ),
-    CONSTRAINT ai_channels_identity_check CHECK ((id ~ '^[a-z0-9][a-z0-9_.:-]{0,95}$'::text)),
+    CONSTRAINT ai_channels_identity_check CHECK ((id ~ '^[a-z0-9][a-z0-9_.:-]*$'::text)),
     CONSTRAINT ai_channels_mode_check CHECK ((mode = ANY (ARRAY['assistant'::text, 'roleplay'::text]))),
-    CONSTRAINT ai_channels_name_check CHECK ((((octet_length(name) >= 1) AND (octet_length(name) <= 256)) AND (name = btrim(name)))),
+    CONSTRAINT ai_channels_name_check CHECK ((((octet_length(name) >= 1) ) AND (name = btrim(name)))),
     CONSTRAINT ai_channels_roleplay_binding_check CHECK ((((mode = 'assistant'::text) AND (roleplay_viewpoint_character_id IS NULL)) OR ((mode = 'roleplay'::text) AND (roleplay_viewpoint_character_id IS NOT NULL)))),
     CONSTRAINT ai_channels_roleplay_data_source_isolation_check CHECK (((mode = 'assistant'::text) OR (data_source_id IS NULL))),
     CONSTRAINT ai_channels_scope_check CHECK ((scope = 'user'::text)),
@@ -4265,7 +4265,7 @@ CREATE TABLE channel_session_turn_operations (
     created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
     CONSTRAINT channel_session_turn_operations_disposition_check CHECK ((disposition = ANY (ARRAY['enqueued'::text, 'replanned'::text, 'feedback_submitted'::text]))),
     CONSTRAINT channel_session_turn_operations_kind_check CHECK ((kind = 'channel_session_turn'::text)),
-    CONSTRAINT channel_session_turn_operations_operation_id_check CHECK ((operation_id ~ '^lifecycle_operation_[a-z0-9_]{1,128}$'::text)),
+    CONSTRAINT channel_session_turn_operations_operation_id_check CHECK ((operation_id ~ '^lifecycle_operation_[a-z0-9_]+$'::text)),
     CONSTRAINT channel_session_turn_operations_result_generation_check CHECK ((result_generation > 0)),
     CONSTRAINT channel_session_turn_operations_result_job_check CHECK (((jsonb_typeof(result_job) = 'object'::text) AND (result_job ? 'id'::text) AND (result_job ? 'current_generation'::text) AND (result_job ? 'status'::text) AND (((result_job ->> 'id'::text))::bigint = job_id) AND (((result_job ->> 'current_generation'::text))::bigint = result_generation) AND ((result_job ->> 'status'::text) = ANY (ARRAY['pending'::text, 'running'::text, 'completed'::text, 'failed'::text, 'canceled'::text, 'waiting_input'::text])))),
     CONSTRAINT channel_session_turn_operations_shape_check CHECK ((((disposition = 'enqueued'::text) AND (result_generation = 1) AND (user_message_id IS NOT NULL) AND (result_step_id IS NULL)) OR ((disposition = 'replanned'::text) AND (result_generation > 1) AND (user_message_id IS NULL) AND (result_step_id IS NULL)) OR ((disposition = 'feedback_submitted'::text) AND (user_message_id IS NULL) AND (result_step_id IS NOT NULL))))
@@ -4315,9 +4315,9 @@ CREATE TABLE data_sources (
     credential_env text NOT NULL,
     CONSTRAINT data_sources_delegated_catalog_absent_check CHECK (((execution_mode = 'direct'::text) OR ((schema_catalog IS NULL) AND (catalog_updated_at IS NULL)))),
     CONSTRAINT data_sources_driver_check CHECK ((driver = 'postgres'::text)),
-    CONSTRAINT data_sources_execution_authority_shape_check CHECK ((((execution_mode = 'direct'::text) AND ((port >= 1) AND (port <= 65535)) AND (ssl_mode = ANY (ARRAY['disable'::text, 'allow'::text, 'prefer'::text, 'require'::text, 'verify-ca'::text, 'verify-full'::text])) AND (authority_url = ''::text) AND (credential_env = ''::text) AND (host = btrim(host)) AND (database_name = btrim(database_name)) AND (username = btrim(username)) AND (dsn = btrim(dsn)) AND ((use_dsn AND (dsn <> ''::text)) OR ((NOT use_dsn) AND (host <> ''::text) AND (database_name <> ''::text) AND (username <> ''::text)))) OR ((execution_mode = 'delegated'::text) AND (host = ''::text) AND (port = 0) AND (database_name = ''::text) AND (username = ''::text) AND (password = ''::text) AND (ssl_mode = ''::text) AND (NOT use_dsn) AND (dsn = ''::text) AND (authority_url = btrim(authority_url)) AND ((length(authority_url) >= 8) AND (length(authority_url) <= 2048)) AND ((authority_url ~~ 'http://%'::text) OR (authority_url ~~ 'https://%'::text)) AND (credential_env ~ '^OMNIDEX_DELEGATED_AUTHORITY_[A-Z][A-Z0-9_]{0,93}_TOKEN$'::text)))),
+    CONSTRAINT data_sources_execution_authority_shape_check CHECK ((((execution_mode = 'direct'::text) AND ((port >= 1) AND (port <= 65535)) AND (ssl_mode = ANY (ARRAY['disable'::text, 'allow'::text, 'prefer'::text, 'require'::text, 'verify-ca'::text, 'verify-full'::text])) AND (authority_url = ''::text) AND (credential_env = ''::text) AND (host = btrim(host)) AND (database_name = btrim(database_name)) AND (username = btrim(username)) AND (dsn = btrim(dsn)) AND ((use_dsn AND (dsn <> ''::text)) OR ((NOT use_dsn) AND (host <> ''::text) AND (database_name <> ''::text) AND (username <> ''::text)))) OR ((execution_mode = 'delegated'::text) AND (host = ''::text) AND (port = 0) AND (database_name = ''::text) AND (username = ''::text) AND (password = ''::text) AND (ssl_mode = ''::text) AND (NOT use_dsn) AND (dsn = ''::text) AND (authority_url = btrim(authority_url)) AND ((length(authority_url) >= 8) ) AND ((authority_url ~~ 'http://%'::text) OR (authority_url ~~ 'https://%'::text)) AND (credential_env ~ '^OMNIDEX_DELEGATED_AUTHORITY_[A-Z][A-Z0-9_]*_TOKEN$'::text)))),
     CONSTRAINT data_sources_execution_mode_check CHECK ((execution_mode = ANY (ARRAY['direct'::text, 'delegated'::text]))),
-    CONSTRAINT data_sources_identity_check CHECK ((id ~ '^[a-z0-9][a-z0-9_.:-]{0,127}$'::text)),
+    CONSTRAINT data_sources_identity_check CHECK ((id ~ '^[a-z0-9][a-z0-9_.:-]*$'::text)),
     CONSTRAINT data_sources_name_check CHECK (((name <> ''::text) AND (name = btrim(name)))),
     CONSTRAINT data_sources_read_only_check CHECK (read_only),
     CONSTRAINT data_sources_schema_snapshot_shape_check CHECK (
@@ -4368,7 +4368,7 @@ CREATE TABLE database_evidence (
     acquired_at timestamp with time zone NOT NULL,
     duration_ms bigint NOT NULL CHECK (duration_ms>=0),
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT database_evidence_metrics_check CHECK (((plan_total_cost >= (0)::double precision) AND (plan_total_cost <= ('1000000000000'::bigint)::double precision) AND (plan_estimated_rows >= 0) AND (plan_estimated_rows <= 1000000000) AND (returned_rows >= 0) AND (returned_rows <= 500) AND (result_bytes >= 0) AND (result_bytes <= 4194304) AND isfinite(acquired_at)))
+    CONSTRAINT database_evidence_metrics_check CHECK (((plan_total_cost >= (0)::double precision) AND (plan_total_cost <= ('1000000000000'::bigint)::double precision) AND (plan_estimated_rows >= 0) AND (plan_estimated_rows <= 1000000000) AND (returned_rows >= 0) AND (result_bytes >= 0) AND isfinite(acquired_at)))
 );
 
 
@@ -4485,7 +4485,7 @@ CASE
 END),
     CONSTRAINT job_lifecycle_operations_kind_check CHECK ((kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text, 'submit_feedback'::text, 'interrupt_job'::text, 'resume_job'::text, 'replan_job'::text, 'cancel_job'::text]))),
     CONSTRAINT job_lifecycle_operations_observed_generation_check CHECK ((observed_generation > 0)),
-    CONSTRAINT job_lifecycle_operations_operation_id_check CHECK ((operation_id ~ '^lifecycle_operation_[a-z0-9_]{1,128}$'::text)),
+    CONSTRAINT job_lifecycle_operations_operation_id_check CHECK ((operation_id ~ '^lifecycle_operation_[a-z0-9_]+$'::text)),
     CONSTRAINT job_lifecycle_operations_result_generation_check CHECK ((result_generation > 0)),
     CONSTRAINT job_lifecycle_operations_result_job_status_check CHECK ((result_job_status = ANY (ARRAY['pending'::text, 'running'::text, 'completed'::text, 'failed'::text, 'canceled'::text, 'waiting_input'::text]))),
     CONSTRAINT job_lifecycle_operations_result_step_status_check CHECK (((result_step_status IS NULL) OR (result_step_status = ANY (ARRAY['completed'::text, 'failed'::text, 'waiting_input'::text, 'running'::text, 'canceled'::text]))))
@@ -4513,7 +4513,7 @@ CREATE TABLE job_step_attempts (
     CONSTRAINT job_step_attempts_check2 CHECK ((((status = 'active'::text) AND (finished_at IS NULL)) OR ((status <> 'active'::text) AND (finished_at IS NOT NULL)))),
     CONSTRAINT job_step_attempts_generation_check CHECK ((generation > 0)),
     CONSTRAINT job_step_attempts_status_check CHECK ((status = ANY (ARRAY['active'::text, 'completed'::text, 'failed'::text, 'waiting_input'::text, 'canceled'::text, 'superseded'::text, 'expired'::text]))),
-    CONSTRAINT job_step_attempts_worker_id_check CHECK (((worker_id <> ''::text) AND (worker_id = btrim(worker_id)) AND (octet_length(worker_id) <= 256)))
+    CONSTRAINT job_step_attempts_worker_id_check CHECK (((worker_id <> ''::text) AND (worker_id = btrim(worker_id)) ))
 );
 
 
@@ -4617,7 +4617,7 @@ CREATE TABLE lifecycle_operation_registry (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT lifecycle_operation_registry_check CHECK (((jsonb_typeof(command_payload) = 'object'::text) AND (command_payload ? 'operation_id'::text) AND ((command_payload ->> 'operation_id'::text) = operation_id))),
     CONSTRAINT lifecycle_operation_registry_kind_check CHECK ((kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text, 'submit_feedback'::text, 'interrupt_job'::text, 'resume_job'::text, 'replan_job'::text, 'channel_session_turn'::text, 'channel_session_message'::text, 'scrum_channel_message'::text, 'cancel_job'::text, 'research_turn'::text]))),
-    CONSTRAINT lifecycle_operation_registry_operation_id_check CHECK ((operation_id ~ '^lifecycle_operation_[a-z0-9_]{1,128}$'::text))
+    CONSTRAINT lifecycle_operation_registry_operation_id_check CHECK ((operation_id ~ '^lifecycle_operation_[a-z0-9_]+$'::text))
 );
 
 
@@ -4854,7 +4854,7 @@ CREATE TABLE roleplay_canon_events (
     authority_namespace text DEFAULT 'FICTIONAL_CANON'::text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT roleplay_canon_events_authority_check CHECK ((authority_namespace = 'FICTIONAL_CANON'::text)),
-    CONSTRAINT roleplay_canon_events_content_check CHECK ((((octet_length(content) >= 1) AND (octet_length(content) <= 512)) AND (btrim(content) <> ''::text))),
+    CONSTRAINT roleplay_canon_events_content_check CHECK ((((octet_length(content) >= 1) ) AND (btrim(content) <> ''::text))),
     CONSTRAINT roleplay_canon_events_identity_check CHECK ((id ~ '^rpe_[0-9a-f]{32}$'::text))
 );
 
@@ -4917,7 +4917,7 @@ CREATE TABLE roleplay_character_generation_configs (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT roleplay_character_generation_configs_revision_check CHECK ((revision >= 1)),
-    CONSTRAINT roleplay_character_generation_model_check CHECK (((octet_length(narrative_model) <= 256) AND (narrative_model = btrim(narrative_model)) AND ((narrative_model = ''::text) OR (narrative_model ~ '^[A-Za-z0-9._:/@-]+$'::text))))
+    CONSTRAINT roleplay_character_generation_model_check CHECK (( (narrative_model = btrim(narrative_model)) AND ((narrative_model = ''::text) OR (narrative_model ~ '^[A-Za-z0-9._:/@-]+$'::text))))
 );
 
 
@@ -4949,7 +4949,7 @@ CREATE TABLE roleplay_character_library (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT roleplay_character_library_authority_check CHECK ((authority_namespace = 'CHARACTER_IDENTITY'::text)),
     CONSTRAINT roleplay_character_library_identity_check CHECK ((id ~ '^rpl_[0-9a-f]{32}$'::text)),
-    CONSTRAINT roleplay_character_library_name_check CHECK ((((octet_length(name) >= 1) AND (octet_length(name) <= 256)) AND (name = btrim(name))))
+    CONSTRAINT roleplay_character_library_name_check CHECK ((((octet_length(name) >= 1) ) AND (name = btrim(name))))
 );
 
 
@@ -4967,7 +4967,7 @@ CREATE TABLE roleplay_character_memories (
     authority_namespace text DEFAULT 'CHARACTER_MEMORY'::text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT roleplay_character_memories_authority_namespace_check CHECK ((authority_namespace = 'CHARACTER_MEMORY'::text)),
-    CONSTRAINT roleplay_character_memories_content_check CHECK ((((octet_length(content) >= 1) AND (octet_length(content) <= 1024)) AND (content = btrim(content)))),
+    CONSTRAINT roleplay_character_memories_content_check CHECK ((((octet_length(content) >= 1) ) AND (content = btrim(content)))),
     CONSTRAINT roleplay_character_memories_id_check CHECK ((id ~ '^rpm_[0-9a-f]{32}$'::text))
 );
 
@@ -5017,9 +5017,9 @@ CREATE TABLE roleplay_character_profiles (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT roleplay_character_profiles_goals_content_check CHECK (validate_roleplay_text_array(goals)),
     CONSTRAINT roleplay_character_profiles_revision_check CHECK ((revision >= 1)),
-    CONSTRAINT roleplay_character_profiles_summary_check CHECK ((((octet_length(summary) >= 1) AND (octet_length(summary) <= 1024)) AND (summary = btrim(summary)))),
+    CONSTRAINT roleplay_character_profiles_summary_check CHECK ((((octet_length(summary) >= 1) ) AND (summary = btrim(summary)))),
     CONSTRAINT roleplay_character_profiles_traits_content_check CHECK (validate_roleplay_text_array(traits)),
-    CONSTRAINT roleplay_character_profiles_voice_check CHECK (((octet_length(voice) <= 1024) AND (voice = btrim(voice))))
+    CONSTRAINT roleplay_character_profiles_voice_check CHECK (( (voice = btrim(voice))))
 );
 
 
@@ -5036,7 +5036,7 @@ CREATE TABLE roleplay_characters (
     library_character_id text NOT NULL,
     CONSTRAINT roleplay_characters_authority_check CHECK ((authority_namespace = 'FICTIONAL_CANON'::text)),
     CONSTRAINT roleplay_characters_identity_check CHECK ((id ~ '^rpc_[0-9a-f]{32}$'::text)),
-    CONSTRAINT roleplay_characters_name_check CHECK ((((octet_length(name) >= 1) AND (octet_length(name) <= 256)) AND (name = btrim(name))))
+    CONSTRAINT roleplay_characters_name_check CHECK ((((octet_length(name) >= 1) ) AND (name = btrim(name))))
 );
 
 
@@ -5056,11 +5056,11 @@ CREATE TABLE roleplay_current_scenes (
     initiative_round bigint DEFAULT 1 NOT NULL,
     initiative_turn bigint DEFAULT 1 NOT NULL,
     fictional_time_tick bigint DEFAULT 0 NOT NULL,
-    CONSTRAINT roleplay_current_scenes_description_check CHECK ((((octet_length(description) >= 1) AND (octet_length(description) <= 1024)) AND (description = btrim(description)))),
+    CONSTRAINT roleplay_current_scenes_description_check CHECK ((((octet_length(description) >= 1) ) AND (description = btrim(description)))),
     CONSTRAINT roleplay_current_scenes_id_check CHECK ((id ~ '^rps_[0-9a-f]{32}$'::text)),
     CONSTRAINT roleplay_current_scenes_initiative_check CHECK ((((initiative_round >= 1) AND (initiative_round <= '9007199254740991'::bigint)) AND ((initiative_turn >= 1) AND (initiative_turn <= '9007199254740991'::bigint)) AND ((fictional_time_tick >= 0) AND (fictional_time_tick <= '9007199254740990'::bigint)) AND (initiative_turn = (fictional_time_tick + 1)) AND (initiative_round <= initiative_turn))),
     CONSTRAINT roleplay_current_scenes_revision_check CHECK ((revision >= 1)),
-    CONSTRAINT roleplay_current_scenes_title_check CHECK ((((octet_length(title) >= 1) AND (octet_length(title) <= 256)) AND (title = btrim(title))))
+    CONSTRAINT roleplay_current_scenes_title_check CHECK ((((octet_length(title) >= 1) ) AND (title = btrim(title))))
 );
 
 
@@ -5091,10 +5091,10 @@ CREATE TABLE roleplay_interaction_commands (
     argument_mode text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT roleplay_interaction_commands_argument_mode_check CHECK ((argument_mode = ANY (ARRAY['none'::text, 'required'::text]))),
-    CONSTRAINT roleplay_interaction_commands_command_key_check CHECK (((command_key ~ '^[a-z][a-z0-9-]{0,31}$'::text) AND (command_key <> ALL (ARRAY['give'::text, 'take'::text, 'research'::text])))),
-    CONSTRAINT roleplay_interaction_commands_description_check CHECK ((((octet_length(description) >= 1) AND (octet_length(description) <= 512)) AND (description = btrim(description)))),
+    CONSTRAINT roleplay_interaction_commands_command_key_check CHECK (((command_key ~ '^[a-z][a-z0-9-]*$'::text) AND (command_key <> ALL (ARRAY['give'::text, 'take'::text, 'research'::text])))),
+    CONSTRAINT roleplay_interaction_commands_description_check CHECK ((((octet_length(description) >= 1) ) AND (description = btrim(description)))),
     CONSTRAINT roleplay_interaction_commands_id_check CHECK ((id ~ '^rpa_[0-9a-f]{32}$'::text)),
-    CONSTRAINT roleplay_interaction_commands_name_check CHECK ((((octet_length(name) >= 1) AND (octet_length(name) <= 128)) AND (name = btrim(name))))
+    CONSTRAINT roleplay_interaction_commands_name_check CHECK ((((octet_length(name) >= 1) ) AND (name = btrim(name))))
 );
 
 
@@ -5147,9 +5147,9 @@ CREATE TABLE roleplay_item_templates (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT roleplay_item_templates_check CHECK ((((use_policy = 'finite'::text) AND ((initial_uses >= 1) AND (initial_uses <= 1000))) OR ((use_policy = 'infinite'::text) AND (initial_uses IS NULL)))),
     CONSTRAINT roleplay_item_templates_check1 CHECK ((((trigger_meter_key IS NULL) AND (trigger_direction IS NULL) AND (trigger_threshold IS NULL)) OR ((trigger_meter_key IS NOT NULL) AND (trigger_direction = ANY (ARRAY['at_or_below'::text, 'at_or_above'::text])) AND ((trigger_threshold >= '-1000000'::integer) AND (trigger_threshold <= 1000000))))),
-    CONSTRAINT roleplay_item_templates_description_check CHECK ((((octet_length(description) >= 1) AND (octet_length(description) <= 512)) AND (description = btrim(description)))),
+    CONSTRAINT roleplay_item_templates_description_check CHECK ((((octet_length(description) >= 1) ) AND (description = btrim(description)))),
     CONSTRAINT roleplay_item_templates_id_check CHECK ((id ~ '^rpi_[0-9a-f]{32}$'::text)),
-    CONSTRAINT roleplay_item_templates_name_check CHECK ((((octet_length(name) >= 1) AND (octet_length(name) <= 256)) AND (name = btrim(name)) AND (POSITION(('"'::text) IN (name)) = 0) AND (POSITION(('\'::text) IN (name)) = 0) AND (POSITION(('
+    CONSTRAINT roleplay_item_templates_name_check CHECK ((((octet_length(name) >= 1) ) AND (name = btrim(name)) AND (POSITION(('"'::text) IN (name)) = 0) AND (POSITION(('\'::text) IN (name)) = 0) AND (POSITION(('
 '::text) IN (name)) = 0) AND (POSITION(('
 '::text) IN (name)) = 0))),
     CONSTRAINT roleplay_item_templates_priority_check CHECK (((priority >= '-1000'::integer) AND (priority <= 1000))),
@@ -5171,9 +5171,9 @@ CREATE TABLE roleplay_meter_definitions (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT roleplay_meter_definitions_check CHECK (((minimum < maximum) AND ((initial_value >= minimum) AND (initial_value <= maximum)))),
     CONSTRAINT roleplay_meter_definitions_maximum_check CHECK ((maximum <= 1000000)),
-    CONSTRAINT roleplay_meter_definitions_meter_key_check CHECK ((meter_key ~ '^[a-z][a-z0-9-]{0,31}$'::text)),
+    CONSTRAINT roleplay_meter_definitions_meter_key_check CHECK ((meter_key ~ '^[a-z][a-z0-9-]*$'::text)),
     CONSTRAINT roleplay_meter_definitions_minimum_check CHECK ((minimum >= '-1000000'::integer)),
-    CONSTRAINT roleplay_meter_definitions_name_check CHECK ((((octet_length(name) >= 1) AND (octet_length(name) <= 128)) AND (name = btrim(name))))
+    CONSTRAINT roleplay_meter_definitions_name_check CHECK ((((octet_length(name) >= 1) ) AND (name = btrim(name))))
 );
 
 
@@ -5198,10 +5198,10 @@ CREATE TABLE roleplay_ongoing_action_resolutions (
     CONSTRAINT roleplay_ongoing_action_resolutions_authority_namespace_check CHECK ((authority_namespace = 'SIMULATION_STATE'::text)),
     CONSTRAINT roleplay_ongoing_action_resolutions_check CHECK ((((source_kind = 'response'::text) AND ((source_position >= 0) AND (source_position <= 15))) OR ((source_kind = 'user_action'::text) AND (source_position = '-1'::integer)))),
     CONSTRAINT roleplay_ongoing_action_resolutions_delta_check CHECK (((changed = (previous_action_text IS DISTINCT FROM action_text)) AND ((changed AND (current_state_id IS NOT NULL)) OR ((NOT changed) AND (NOT (previous_state_id IS DISTINCT FROM current_state_id)))))),
-    CONSTRAINT roleplay_ongoing_action_resolutions_previous_text_check CHECK (((previous_action_text IS NULL) OR (((octet_length(previous_action_text) >= 1) AND (octet_length(previous_action_text) <= 512)) AND (previous_action_text = btrim(previous_action_text))))),
+    CONSTRAINT roleplay_ongoing_action_resolutions_previous_text_check CHECK (((previous_action_text IS NULL) OR (((octet_length(previous_action_text) >= 1) ) AND (previous_action_text = btrim(previous_action_text))))),
     CONSTRAINT roleplay_ongoing_action_resolutions_source_kind_check CHECK ((source_kind = ANY (ARRAY['response'::text, 'user_action'::text]))),
     CONSTRAINT roleplay_ongoing_action_resolutions_state_identity_check CHECK ((((previous_state_id IS NULL) OR (previous_state_id ~ '^rpo_[0-9a-f]{32}$'::text)) AND ((current_state_id IS NULL) OR (current_state_id ~ '^rpo_[0-9a-f]{32}$'::text)))),
-    CONSTRAINT roleplay_ongoing_action_resolutions_text_check CHECK (((action_text IS NULL) OR (((octet_length(action_text) >= 1) AND (octet_length(action_text) <= 512)) AND (action_text = btrim(action_text)))))
+    CONSTRAINT roleplay_ongoing_action_resolutions_text_check CHECK (((action_text IS NULL) OR (((octet_length(action_text) >= 1) ) AND (action_text = btrim(action_text)))))
 );
 
 
@@ -5225,7 +5225,7 @@ CREATE TABLE roleplay_ongoing_action_states (
     CONSTRAINT roleplay_ongoing_action_states_check CHECK ((((source_kind = 'response'::text) AND ((source_position >= 0) AND (source_position <= 15))) OR ((source_kind = 'user_action'::text) AND (source_position = '-1'::integer)))),
     CONSTRAINT roleplay_ongoing_action_states_id_check CHECK ((id ~ '^rpo_[0-9a-f]{32}$'::text)),
     CONSTRAINT roleplay_ongoing_action_states_source_kind_check CHECK ((source_kind = ANY (ARRAY['response'::text, 'user_action'::text]))),
-    CONSTRAINT roleplay_ongoing_action_states_text_check CHECK (((action_text IS NULL) OR (((octet_length(action_text) >= 1) AND (octet_length(action_text) <= 512)) AND (action_text = btrim(action_text)))))
+    CONSTRAINT roleplay_ongoing_action_states_text_check CHECK (((action_text IS NULL) OR (((octet_length(action_text) >= 1) ) AND (action_text = btrim(action_text)))))
 );
 
 
@@ -5266,9 +5266,9 @@ CREATE TABLE roleplay_research_completion_citations (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT roleplay_research_citation_paragraphs_check CHECK (validate_roleplay_research_paragraph_indexes(paragraph_indexes)),
     CONSTRAINT roleplay_research_completion_citation_authority_namespace_check CHECK ((authority_namespace = 'REAL_WORLD'::text)),
-    CONSTRAINT roleplay_research_completion_citations_capsule_id_check CHECK ((((octet_length(capsule_id) >= 1) AND (octet_length(capsule_id) <= 128)) AND (capsule_id = btrim(capsule_id)))),
+    CONSTRAINT roleplay_research_completion_citations_capsule_id_check CHECK ((((octet_length(capsule_id) >= 1) ) AND (capsule_id = btrim(capsule_id)))),
     CONSTRAINT roleplay_research_completion_citations_completion_index_check CHECK (((completion_index >= 0) AND (completion_index <= 3))),
-    CONSTRAINT roleplay_research_completion_citations_paragraph_indexes_check CHECK (((jsonb_typeof(paragraph_indexes) = 'array'::text) AND ((jsonb_array_length(paragraph_indexes) >= 1) AND (jsonb_array_length(paragraph_indexes) <= 4))))
+    CONSTRAINT roleplay_research_completion_citations_paragraph_indexes_check CHECK (((jsonb_typeof(paragraph_indexes) = 'array'::text) AND ((jsonb_array_length(paragraph_indexes) >= 1) )))
 );
 
 
@@ -5317,7 +5317,7 @@ CREATE TABLE roleplay_research_turns (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT roleplay_research_turns_authority_namespace_check CHECK ((authority_namespace = 'REAL_WORLD'::text)),
     CONSTRAINT roleplay_research_turns_capability_check CHECK ((capability = 'web_research'::text)),
-    CONSTRAINT roleplay_research_turns_question_check CHECK ((((octet_length(question) >= 1) AND (octet_length(question) <= 1024)) AND (question = btrim(question)) AND (POSITION(('
+    CONSTRAINT roleplay_research_turns_question_check CHECK ((((octet_length(question) >= 1) ) AND (question = btrim(question)) AND (POSITION(('
 '::text) IN (question)) = 0) AND (POSITION(('
 '::text) IN (question)) = 0))),
     CONSTRAINT roleplay_research_turns_scene_revision_check CHECK ((scene_revision >= 1))
@@ -5371,11 +5371,9 @@ CREATE TABLE roleplay_simulation_transitions (
     CONSTRAINT roleplay_simulation_transitions_action_kind_check CHECK ((action_kind = ANY (ARRAY['give'::text, 'take'::text, 'interaction'::text, 'automatic'::text]))),
     CONSTRAINT roleplay_simulation_transitions_before_revision_check CHECK ((before_revision >= 1)),
     CONSTRAINT roleplay_simulation_transitions_check CHECK ((after_revision = (before_revision + 1))),
-    CONSTRAINT roleplay_simulation_transitions_check1 CHECK ((((action_kind = 'automatic'::text) AND (exact_action = ''::text) AND (command_key = ''::text)) OR ((action_kind = ANY (ARRAY['give'::text, 'take'::text])) AND (exact_action <> ''::text) AND (command_key = ANY (ARRAY['give'::text, 'take'::text]))) OR ((action_kind = 'interaction'::text) AND (exact_action <> ''::text) AND (command_key ~ '^[a-z][a-z0-9-]{0,31}$'::text)))),
-    CONSTRAINT roleplay_simulation_transitions_command_key_check CHECK ((octet_length(command_key) <= 32)),
-    CONSTRAINT roleplay_simulation_transitions_exact_action_check CHECK ((octet_length(exact_action) <= 1060)),
+    CONSTRAINT roleplay_simulation_transitions_check1 CHECK ((((action_kind = 'automatic'::text) AND (exact_action = ''::text) AND (command_key = ''::text)) OR ((action_kind = ANY (ARRAY['give'::text, 'take'::text])) AND (exact_action <> ''::text) AND (command_key = ANY (ARRAY['give'::text, 'take'::text]))) OR ((action_kind = 'interaction'::text) AND (exact_action <> ''::text) AND (command_key ~ '^[a-z][a-z0-9-]*$'::text)))),
     CONSTRAINT roleplay_simulation_transitions_operation_id_check CHECK ((operation_id ~ '^rpt_[0-9a-f]{32}$'::text)),
-    CONSTRAINT roleplay_simulation_transitions_result_check CHECK (((jsonb_typeof(result) = 'object'::text) AND (octet_length((result)::text) <= 65536) AND (result ?& ARRAY['schema'::text, 'operation_id'::text, 'world_id'::text, 'scene_id'::text, 'actor_character_id'::text, 'before_revision'::text, 'after_revision'::text, 'action'::text, 'effects'::text, 'narrative_events'::text, 'created_at'::text]) AND (jsonb_typeof((result -> 'action'::text)) = 'object'::text) AND (jsonb_typeof((result -> 'effects'::text)) = 'array'::text) AND (jsonb_typeof((result -> 'narrative_events'::text)) = 'array'::text)))
+    CONSTRAINT roleplay_simulation_transitions_result_check CHECK (((jsonb_typeof(result) = 'object'::text)  AND (result ?& ARRAY['schema'::text, 'operation_id'::text, 'world_id'::text, 'scene_id'::text, 'actor_character_id'::text, 'before_revision'::text, 'after_revision'::text, 'action'::text, 'effects'::text, 'narrative_events'::text, 'created_at'::text]) AND (jsonb_typeof((result -> 'action'::text)) = 'object'::text) AND (jsonb_typeof((result -> 'effects'::text)) = 'array'::text) AND (jsonb_typeof((result -> 'narrative_events'::text)) = 'array'::text)))
 );
 
 
@@ -5415,11 +5413,11 @@ CREATE TABLE roleplay_simulation_turn_advances (
     after_initiative_round bigint NOT NULL,
     after_initiative_turn bigint NOT NULL,
     after_fictional_time_tick bigint NOT NULL,
-    CONSTRAINT roleplay_simulation_turn_advanc_participant_character_ids_check CHECK (((jsonb_typeof(participant_character_ids) = 'array'::text) AND ((jsonb_array_length(participant_character_ids) >= 1) AND (jsonb_array_length(participant_character_ids) <= 16)))),
+    CONSTRAINT roleplay_simulation_turn_advanc_participant_character_ids_check CHECK (((jsonb_typeof(participant_character_ids) = 'array'::text) AND ((jsonb_array_length(participant_character_ids) >= 1) ))),
     CONSTRAINT roleplay_simulation_turn_advances_before_revision_check CHECK ((before_revision >= 1)),
     CONSTRAINT roleplay_simulation_turn_advances_check CHECK ((after_revision = (before_revision + 1))),
     CONSTRAINT roleplay_simulation_turn_advances_initiative_check CHECK (roleplay_initiative_advance_valid(before_initiative_round, before_initiative_turn, before_fictional_time_tick, after_initiative_round, after_initiative_turn, after_fictional_time_tick, previous_character_id, active_character_id, participant_character_ids)),
-    CONSTRAINT roleplay_simulation_turn_advances_result_check CHECK (((jsonb_typeof(result) = 'object'::text) AND (octet_length((result)::text) <= 32768) AND (result ?& ARRAY['preparation_id'::text, 'world_id'::text, 'scene_id'::text, 'previous_character_id'::text, 'active_character_id'::text, 'before_revision'::text, 'after_revision'::text, 'before_initiative'::text, 'after_initiative'::text, 'participant_character_ids'::text, 'created_at'::text]) AND ((result -> 'before_initiative'::text) = jsonb_build_object('round', before_initiative_round, 'turn', before_initiative_turn, 'fictional_time_tick', before_fictional_time_tick)) AND ((result -> 'after_initiative'::text) = jsonb_build_object('round', after_initiative_round, 'turn', after_initiative_turn, 'fictional_time_tick', after_fictional_time_tick)) AND (jsonb_typeof((result -> 'participant_character_ids'::text)) = 'array'::text)))
+    CONSTRAINT roleplay_simulation_turn_advances_result_check CHECK (((jsonb_typeof(result) = 'object'::text)  AND (result ?& ARRAY['preparation_id'::text, 'world_id'::text, 'scene_id'::text, 'previous_character_id'::text, 'active_character_id'::text, 'before_revision'::text, 'after_revision'::text, 'before_initiative'::text, 'after_initiative'::text, 'participant_character_ids'::text, 'created_at'::text]) AND ((result -> 'before_initiative'::text) = jsonb_build_object('round', before_initiative_round, 'turn', before_initiative_turn, 'fictional_time_tick', before_fictional_time_tick)) AND ((result -> 'after_initiative'::text) = jsonb_build_object('round', after_initiative_round, 'turn', after_initiative_turn, 'fictional_time_tick', after_fictional_time_tick)) AND (jsonb_typeof((result -> 'participant_character_ids'::text)) = 'array'::text)))
 );
 
 
@@ -5450,7 +5448,7 @@ CREATE TABLE roleplay_simulation_turn_preparations (
     CONSTRAINT roleplay_simulation_turn_preparations_check3 CHECK (((pending_transition_id IS NULL) = (scene_revision = base_scene_revision))),
     CONSTRAINT roleplay_simulation_turn_preparations_input_kind_check CHECK ((input_kind = ANY (ARRAY['prose'::text, 'simulation_action'::text, 'external_command'::text]))),
     CONSTRAINT roleplay_simulation_turn_preparations_operation_id_check CHECK ((operation_id ~ '^rpt_[0-9a-f]{32}$'::text)),
-    CONSTRAINT roleplay_simulation_turn_preparations_result_check CHECK (((jsonb_typeof(result) = 'object'::text) AND (octet_length((result)::text) <= 524288) AND (result ?& ARRAY['preparation_id'::text, 'channel_id'::text, 'user_message_id'::text, 'world_id'::text, 'scene_id'::text, 'base_scene_revision'::text, 'scene_revision'::text, 'active_character_id'::text, 'user_turn'::text, 'input_kind'::text, 'explicit_action'::text, 'participant_character_ids'::text, 'generation_config'::text, 'narrative_projection'::text, 'narrative_authority'::text, 'responders'::text, 'responder_routes'::text, 'created_at'::text]) AND roleplay_response_round_valid(result))),
+    CONSTRAINT roleplay_simulation_turn_preparations_result_check CHECK (((jsonb_typeof(result) = 'object'::text)  AND (result ?& ARRAY['preparation_id'::text, 'channel_id'::text, 'user_message_id'::text, 'world_id'::text, 'scene_id'::text, 'base_scene_revision'::text, 'scene_revision'::text, 'active_character_id'::text, 'user_turn'::text, 'input_kind'::text, 'explicit_action'::text, 'participant_character_ids'::text, 'generation_config'::text, 'narrative_projection'::text, 'narrative_authority'::text, 'responders'::text, 'responder_routes'::text, 'created_at'::text]) AND roleplay_response_round_valid(result))),
     CONSTRAINT roleplay_simulation_turn_preparations_scene_revision_check CHECK ((scene_revision >= 1))
 );
 
@@ -5470,9 +5468,9 @@ CREATE TABLE roleplay_turn_completions (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     response_position integer DEFAULT 0 NOT NULL,
     CONSTRAINT roleplay_turn_completions_authority_check CHECK ((authority_namespace = 'FICTIONAL_CANON'::text)),
-    CONSTRAINT roleplay_turn_completions_facts_check CHECK (((jsonb_typeof(facts) = 'array'::text) AND (jsonb_array_length(facts) <= 8))),
-    CONSTRAINT roleplay_turn_completions_knowledge_check CHECK (((jsonb_typeof(knowledge_character_ids) = 'array'::text) AND (jsonb_array_length(knowledge_character_ids) <= 16) AND ((jsonb_array_length(facts) > 0) OR (jsonb_array_length(knowledge_character_ids) = 0)))),
-    CONSTRAINT roleplay_turn_completions_operation_check CHECK ((operation_id ~ '^lifecycle_operation_[a-z0-9_]{1,128}$'::text)),
+    CONSTRAINT roleplay_turn_completions_facts_check CHECK (((jsonb_typeof(facts) = 'array'::text) )),
+    CONSTRAINT roleplay_turn_completions_knowledge_check CHECK (((jsonb_typeof(knowledge_character_ids) = 'array'::text)  AND ((jsonb_array_length(facts) > 0) OR (jsonb_array_length(knowledge_character_ids) = 0)))),
+    CONSTRAINT roleplay_turn_completions_operation_check CHECK ((operation_id ~ '^lifecycle_operation_[a-z0-9_]+$'::text)),
     CONSTRAINT roleplay_turn_completions_position_check CHECK (((response_position >= 0) AND (response_position <= 15)))
 );
 
@@ -5494,9 +5492,9 @@ CREATE TABLE roleplay_user_canon_completions (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT roleplay_user_canon_authority_check CHECK ((authority_namespace = 'FICTIONAL_CANON'::text)),
     CONSTRAINT roleplay_user_canon_completions_persona_kind_check CHECK ((persona_kind = ANY (ARRAY['character'::text, 'narrator'::text]))),
-    CONSTRAINT roleplay_user_canon_facts_check CHECK (((jsonb_typeof(facts) = 'array'::text) AND (jsonb_array_length(facts) <= 8))),
-    CONSTRAINT roleplay_user_canon_knowledge_check CHECK (((jsonb_typeof(knowledge_character_ids) = 'array'::text) AND (jsonb_array_length(knowledge_character_ids) <= 16) AND ((jsonb_array_length(facts) > 0) OR (jsonb_array_length(knowledge_character_ids) = 0)))),
-    CONSTRAINT roleplay_user_canon_operation_check CHECK ((operation_id ~ '^lifecycle_operation_[a-z0-9_]{1,128}$'::text)),
+    CONSTRAINT roleplay_user_canon_facts_check CHECK (((jsonb_typeof(facts) = 'array'::text) )),
+    CONSTRAINT roleplay_user_canon_knowledge_check CHECK (((jsonb_typeof(knowledge_character_ids) = 'array'::text)  AND ((jsonb_array_length(facts) > 0) OR (jsonb_array_length(knowledge_character_ids) = 0)))),
+    CONSTRAINT roleplay_user_canon_operation_check CHECK ((operation_id ~ '^lifecycle_operation_[a-z0-9_]+$'::text)),
     CONSTRAINT roleplay_user_canon_persona_check CHECK ((((persona_kind = 'character'::text) AND (actor_character_id IS NOT NULL)) OR ((persona_kind = 'narrator'::text) AND (actor_character_id IS NULL))))
 );
 
@@ -5518,15 +5516,15 @@ CREATE TABLE roleplay_user_turns (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     parts jsonb DEFAULT '[]'::jsonb NOT NULL,
     authority jsonb GENERATED ALWAYS AS (roleplay_user_turn_authority(persona_kind, persona_character_id, persona_name, persona_summary, contribution_kind, exact_text, parts)) STORED,
-    CONSTRAINT roleplay_user_turns_authority_check CHECK (((jsonb_typeof(authority) = 'object'::text) AND (octet_length((authority)::text) <= 16384) AND (authority ?& ARRAY['persona_kind'::text, 'persona_name'::text, 'contribution_kind'::text, 'parts'::text, 'exact_text'::text]))),
+    CONSTRAINT roleplay_user_turns_authority_check CHECK (((jsonb_typeof(authority) = 'object'::text)  AND (authority ?& ARRAY['persona_kind'::text, 'persona_name'::text, 'contribution_kind'::text, 'parts'::text, 'exact_text'::text]))),
     CONSTRAINT roleplay_user_turns_command_text_check CHECK ((((contribution_kind = 'command'::text) AND ("left"(exact_text, 1) = '/'::text)) OR ((contribution_kind <> 'command'::text) AND ("left"(exact_text, 1) <> '/'::text)))),
     CONSTRAINT roleplay_user_turns_contribution_kind_authority_check CHECK ((contribution_kind = ANY (ARRAY['dialogue'::text, 'action'::text, 'action_dialogue'::text, 'structured_turn'::text, 'narration'::text, 'direction'::text, 'narration_direction'::text, 'command'::text]))),
-    CONSTRAINT roleplay_user_turns_exact_text_check CHECK ((((octet_length(exact_text) >= 1) AND (octet_length(exact_text) <= 4096)) AND (btrim(exact_text) <> ''::text))),
+    CONSTRAINT roleplay_user_turns_exact_text_check CHECK ((((octet_length(exact_text) >= 1) ) AND (btrim(exact_text) <> ''::text))),
     CONSTRAINT roleplay_user_turns_parts_check CHECK (roleplay_user_turn_parts_valid(parts, persona_kind, contribution_kind, exact_text)),
     CONSTRAINT roleplay_user_turns_persona_contribution_check CHECK ((((persona_kind = 'character'::text) AND (persona_character_id IS NOT NULL) AND (persona_name <> 'Narrator'::text) AND (contribution_kind = ANY (ARRAY['dialogue'::text, 'action'::text, 'action_dialogue'::text, 'structured_turn'::text]))) OR ((persona_kind = 'narrator'::text) AND (persona_character_id IS NULL) AND (persona_name = 'Narrator'::text) AND (persona_summary = ''::text) AND (contribution_kind = ANY (ARRAY['narration'::text, 'direction'::text, 'narration_direction'::text, 'command'::text]))))),
     CONSTRAINT roleplay_user_turns_persona_kind_check CHECK ((persona_kind = ANY (ARRAY['character'::text, 'narrator'::text]))),
-    CONSTRAINT roleplay_user_turns_persona_name_check CHECK ((((octet_length(persona_name) >= 1) AND (octet_length(persona_name) <= 256)) AND (persona_name = btrim(persona_name)))),
-    CONSTRAINT roleplay_user_turns_persona_summary_check CHECK (((octet_length(persona_summary) <= 1024) AND (persona_summary = btrim(persona_summary))))
+    CONSTRAINT roleplay_user_turns_persona_name_check CHECK ((((octet_length(persona_name) >= 1) ) AND (persona_name = btrim(persona_name)))),
+    CONSTRAINT roleplay_user_turns_persona_summary_check CHECK (( (persona_summary = btrim(persona_summary))))
 );
 
 
@@ -5542,7 +5540,7 @@ CREATE TABLE roleplay_worlds (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT roleplay_worlds_authority_check CHECK ((authority_namespace = 'FICTIONAL_CANON'::text)),
     CONSTRAINT roleplay_worlds_identity_check CHECK ((id ~ '^rpw_[0-9a-f]{32}$'::text)),
-    CONSTRAINT roleplay_worlds_name_check CHECK ((((octet_length(name) >= 1) AND (octet_length(name) <= 256)) AND (name = btrim(name))))
+    CONSTRAINT roleplay_worlds_name_check CHECK ((((octet_length(name) >= 1) ) AND (name = btrim(name))))
 );
 
 
@@ -5567,7 +5565,7 @@ CREATE TABLE scrum_card_messages (
     CONSTRAINT scrum_card_messages_check CHECK ((created_at = inserted_at)),
     CONSTRAINT scrum_card_messages_check1 CHECK ((source_created_at = scrum_render_utc_timestamp(created_at))),
     CONSTRAINT scrum_card_messages_check2 CHECK (((operation_id IS NULL) OR (role = 'user'::text))),
-    CONSTRAINT scrum_card_messages_content_check CHECK (((octet_length(content) >= 1) AND (octet_length(content) <= 4194304))),
+    CONSTRAINT scrum_card_messages_content_check CHECK (((octet_length(content) >= 1) )),
     CONSTRAINT scrum_card_messages_created_at_check CHECK (scrum_canonical_timestamp(created_at)),
     CONSTRAINT scrum_card_messages_inserted_at_check CHECK (scrum_canonical_timestamp(inserted_at)),
     CONSTRAINT scrum_card_messages_message_id_check CHECK (scrum_valid_message_id(message_id)),
@@ -5624,7 +5622,7 @@ CREATE TABLE scrum_channel_operations (
     created_at timestamp with time zone NOT NULL,
     CONSTRAINT scrum_channel_operations_created_at_check CHECK (scrum_canonical_timestamp(created_at)),
     CONSTRAINT scrum_channel_operations_effect_kind_check CHECK ((effect_kind = ANY (ARRAY['start_job'::text, 'replan_job'::text, 'submit_feedback'::text]))),
-    CONSTRAINT scrum_channel_operations_effect_operation_id_check CHECK ((effect_operation_id ~ '^lifecycle_operation_[a-z0-9_]{1,128}$'::text)),
+    CONSTRAINT scrum_channel_operations_effect_operation_id_check CHECK ((effect_operation_id ~ '^lifecycle_operation_[a-z0-9_]+$'::text)),
     CONSTRAINT scrum_channel_operations_result_action_check CHECK ((result_action = ANY (ARRAY['started'::text, 'replanned'::text, 'feedback'::text])))
 );
 
@@ -5671,9 +5669,9 @@ CREATE TABLE step_completion_evidence_sets (
     CONSTRAINT step_completion_evidence_sets_check CHECK ((evidence_count = jsonb_array_length(records_json))),
     CONSTRAINT step_completion_evidence_sets_evidence_count_check CHECK (((evidence_count >= 0) AND (evidence_count <= 32))),
     CONSTRAINT step_completion_evidence_sets_generation_check CHECK ((generation > 0)),
-    CONSTRAINT step_completion_evidence_sets_operation_id_check CHECK ((operation_id ~ '^lifecycle_operation_[a-z0-9_]{1,128}$'::text)),
+    CONSTRAINT step_completion_evidence_sets_operation_id_check CHECK ((operation_id ~ '^lifecycle_operation_[a-z0-9_]+$'::text)),
     CONSTRAINT step_completion_evidence_sets_records_json_check CHECK ((jsonb_typeof(records_json) = 'array'::text)),
-    CONSTRAINT step_completion_evidence_sets_worker_id_check CHECK (((worker_id <> ''::text) AND (worker_id = btrim(worker_id)) AND (octet_length(worker_id) <= 256)))
+    CONSTRAINT step_completion_evidence_sets_worker_id_check CHECK (((worker_id <> ''::text) AND (worker_id = btrim(worker_id)) ))
 );
 
 
@@ -9699,7 +9697,7 @@ CREATE TABLE coding_ledger_revisions (
     PRIMARY KEY (ledger_id,revision),
     UNIQUE (ledger_id,operation_id),
     CHECK (revision=base_revision+1),
-    CHECK (octet_length(operation_id) BETWEEN 1 AND 256 AND operation_id=btrim(operation_id))
+    CHECK (octet_length(operation_id) >= 1 AND operation_id=btrim(operation_id))
 );
 
 ALTER TABLE coding_ledgers
@@ -9714,7 +9712,7 @@ CREATE TABLE coding_ledger_items (
     created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     PRIMARY KEY (ledger_id,item_id),
     FOREIGN KEY (ledger_id,created_revision) REFERENCES coding_ledger_revisions(ledger_id,revision) ON DELETE RESTRICT,
-    CHECK (item_id ~ '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$')
+    CHECK (item_id ~ '^[A-Za-z0-9][A-Za-z0-9_.:-]*$')
 );
 
 CREATE TABLE coding_ledger_item_versions (
@@ -9725,7 +9723,7 @@ CREATE TABLE coding_ledger_item_versions (
     review_state text CHECK (review_state IN ('proposed','agreed','needs_discussion')),
     rank bigint NOT NULL CHECK (rank>=0),
     payload jsonb NOT NULL CHECK (jsonb_typeof(payload)='object' AND payload<>'{}'::jsonb),
-    rationale text NOT NULL CHECK (octet_length(rationale)<=8192),
+    rationale text NOT NULL,
     removed_by_turn_id text,
     created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     PRIMARY KEY (ledger_id,item_id,revision),
@@ -9753,7 +9751,7 @@ CREATE TABLE coding_ledger_origins (
     origin_kind text NOT NULL CHECK (origin_kind IN ('owner_turn','planner','analysis','migration','execution_finding','review_finding')),
     owner_turn_id text,
     source_item_id text,
-    detail text NOT NULL CHECK (octet_length(btrim(detail)) BETWEEN 1 AND 8192),
+    detail text NOT NULL CHECK (octet_length(btrim(detail)) >= 1),
     created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     PRIMARY KEY (ledger_id,item_id,revision,origin_kind),
     FOREIGN KEY (ledger_id,item_id,revision) REFERENCES coding_ledger_item_versions(ledger_id,item_id,revision) ON DELETE RESTRICT,
@@ -9805,7 +9803,7 @@ BEGIN
             END IF;
             FOR item IN SELECT value FROM jsonb_array_elements(entry->'item_ids') LOOP
                 IF jsonb_typeof(item)<>'string' OR
-                   (item #>> '{}') !~ '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$' THEN
+                   (item #>> '{}') !~ '^[A-Za-z0-9][A-Za-z0-9_.:-]*$' THEN
                     RETURN false;
                 END IF;
             END LOOP;
@@ -9813,7 +9811,7 @@ BEGIN
             reason_text:=entry->>'reason';
             IF entry ? 'item_ids' OR jsonb_typeof(entry->'reason') IS DISTINCT FROM 'string' OR
                reason_text IS NULL OR reason_text<>btrim(reason_text) OR
-               octet_length(reason_text) NOT BETWEEN 1 AND 8192 THEN
+               octet_length(reason_text) < 1 THEN
                 RETURN false;
             END IF;
         ELSE
@@ -10791,7 +10789,7 @@ BEGIN
    jsonb_typeof(command->'workspace_identity') IS DISTINCT FROM 'string' OR
    (command ? 'coding_mode' AND command->'coding_mode' IS DISTINCT FROM '"agents"'::jsonb) OR
    jsonb_typeof(NEW.command_payload->'redirect_operation_id') IS DISTINCT FROM 'string' OR
-   NEW.command_payload->>'redirect_operation_id' !~ '^lifecycle_operation_[a-z0-9_]{1,128}$' OR
+   NEW.command_payload->>'redirect_operation_id' !~ '^lifecycle_operation_[a-z0-9_]+$' OR
    NEW.command_payload->>'redirect_operation_id'=NEW.operation_id OR
    NOT lifecycle_feedback_is_valid(command->>'text',4096) OR
    (command->>'expected_job_id') !~ '^[1-9][0-9]{0,18}$' OR
@@ -10994,7 +10992,7 @@ CREATE TRIGGER channel_session_message_reply_update_immutable BEFORE UPDATE ON a
 -- A parsed owner message is intake; only a separate execution transaction may
 -- fill its receipt. The exact actor, message, context and model evidence persist.
 CREATE TABLE channel_user_intents (
-    operation_id text PRIMARY KEY CHECK (operation_id ~ '^lifecycle_operation_[a-z0-9_]{1,128}$'),
+    operation_id text PRIMARY KEY CHECK (operation_id ~ '^lifecycle_operation_[a-z0-9_]+$'),
     channel_id text NOT NULL REFERENCES ai_channels(id),
     workspace_identity text NOT NULL,
     request_json jsonb NOT NULL CHECK (jsonb_typeof(request_json)='object'),

@@ -66,7 +66,7 @@ func TestInstalledParserSieveCurrentCorpus(t *testing.T) {
 				call.Task = fixture.Task
 				call.Response = fixture.Source
 			}
-			result, err := codingagent.RunParserSieve(ctx, call, func(event codingagent.NativeEvent) error {
+			result, err := provider.Run(ctx, call, func(event codingagent.NativeEvent) error {
 				if evidence == nil || len(event.Frame) == 0 {
 					return nil
 				}
@@ -79,7 +79,7 @@ func TestInstalledParserSieveCurrentCorpus(t *testing.T) {
 					record["code_rendered_envelope"] = envelope
 				}
 				return json.NewEncoder(evidence).Encode(record)
-			}, provider.Run)
+			})
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// Scripted semantic answers verify the real controller, sieve and routing;
+// Scripted semantic answers verify the real controller and routing;
 // the opt-in native corpus measures live interpretation separately.
 type executionScopeProvider struct {
 	t              *testing.T
@@ -24,24 +24,20 @@ func (p *executionScopeProvider) Run(ctx context.Context, call Assignment, event
 		if call.Task == nil || call.Task.Goal != p.task.Goal || call.Route.Effort != "high" {
 			p.t.Fatal("execution parser lost frozen task or configured effort")
 		}
-		return RunParserSieve(ctx, call, event, sieveTestProvider(p.t, func(leaf Assignment) any {
-			if leaf.ParserStep.TaskInstructions != p.task.Instructions() {
-				p.t.Fatal("leaf lost frozen instructions")
-			}
-			prompt, err := RenderParserPrompt(leaf)
-			if err != nil || !strings.Contains(prompt, "exact frozen task_instructions") || !strings.Contains(prompt, "Evaluate the EXECUTION assignment only") || !strings.Contains(prompt, "not prerequisites for execution completion") {
-				p.t.Fatal("missing execution scope", err)
-			}
-			background, err := RenderParserContext(leaf)
-			if err != nil || !strings.Contains(background, "task_instructions") {
-				p.t.Fatal("missing task background", err)
-			}
-			kind := p.kind
-			if p.kind == "done" && leaf.ParserStep.BlockID != "block_1" {
-				kind = "ignore"
-			}
-			return scanOracle(leaf.ParserStep.Source, kind)
-		}))
+		prompt, err := RenderParserPrompt(call)
+		if err != nil || !strings.Contains(prompt, "frozen task instructions") {
+			p.t.Fatal("missing execution scope", err)
+		}
+		background, err := RenderParserContext(call)
+		instructions, _ := json.Marshal(p.task.Instructions())
+		if err != nil || !strings.Contains(background, string(instructions)) {
+			p.t.Fatal("missing frozen task background", err)
+		}
+		content, _ := json.Marshal(map[string]string{"kind": p.kind})
+		if err := event(NativeEvent{Frame: json.RawMessage(`{"fixture":"execution-response"}`)}); err != nil {
+			return Result{}, err
+		}
+		return Result{Provider: call.Route.Provider, Model: call.Route.Model, Completed: true, Content: content}, nil
 	}
 	content, _ := json.Marshal(p.response)
 	if call.Role == ReviewResponse {

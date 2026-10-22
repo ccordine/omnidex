@@ -107,8 +107,8 @@ func TestDatabaseFilterSubsetHasOpaqueBoundedOutputAndNoStateLeak(t *testing.T) 
 	if maximum, err := PortableResponseMaximumBytesForJob(job); err != nil || maximum != 1 {
 		t.Fatalf("opaque response maximum=%d error=%v", maximum, err)
 	}
-	if err := (PortableResult{Candidate: "AA"}).ValidateFor(job); err == nil {
-		t.Fatal("response exceeded the exact round's bound")
+	if err := (PortableResult{Candidate: "AA"}).ValidateFor(job); err != nil {
+		t.Fatal("transport applied a response size limit", err)
 	}
 }
 

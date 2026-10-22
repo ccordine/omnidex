@@ -67,6 +67,29 @@ func TestSessionUserIntentConfirmationAndNativeReply(t *testing.T) {
 	}
 }
 
+func TestSessionUserIntentBindsOriginalContentWithoutModelCopy(t *testing.T) {
+	for _, text := range []string{
+		"Create sample.txt containing this text exactly.\n\n" + strings.Repeat("Example line for the cancellation and input-size pilot.\n", 600),
+		"  Keep this literal Unicode and JSON: 界 café\n{\"quoted\":\"cancel the task\"}\n  ",
+	} {
+		for _, answer := range []string{`{"text":"","recipient":"codex"}`, `{"text":"a shortened copy","recipient":"codex"}`} {
+			calls := 0
+			current := sessionintent.Context{}
+			result, err := interpretSessionUserIntent(t.Context(), sessionintent.Request{Text: text}, current, func(context.Context, string) (string, error) {
+				calls++
+				return `{"patch":[{"op":"replace","path":"/message","value":` + answer + `}]}`, nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			after, err := sessionintent.Apply(current, result.Patch)
+			if err != nil || calls != 1 || after.Message == nil || after.Message.Text != text || after.Message.Recipient != "codex" {
+				t.Fatalf("original content was not bound: calls=%d error=%v", calls, err)
+			}
+		}
+	}
+}
+
 func TestUserIntentAPIRejectsCallerAuthoredCallbacks(t *testing.T) {
 	for _, execute := range []bool{false, true} {
 		r := httptest.NewRequest(http.MethodPost, "/v1/channels/test/session/intent", strings.NewReader(`{"callback":"execute","action":"approve"}`))

@@ -20,7 +20,7 @@ func decodeProjectAutoWorkActionRequest(w http.ResponseWriter, r *http.Request, 
 	if r == nil || r.Body == nil {
 		return fmt.Errorf("%s body is required", name)
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxProjectAutoWorkActionBodyBytes)
+
 	raw, err := io.ReadAll(r.Body)
 	if err != nil {
 		var tooLarge *http.MaxBytesError

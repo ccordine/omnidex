@@ -91,7 +91,7 @@ type SourceBlockRef struct {
 }
 
 func (b SourceBlueprint) Validate() error {
-	if len(b.Documents) == 0 || len(b.Documents) > maxConstructionDocuments {
+	if len(b.Documents) == 0 {
 		return fmt.Errorf("source blueprint requires between 1 and %d documents", maxConstructionDocuments)
 	}
 	ids := make(map[string]struct{})
@@ -154,11 +154,11 @@ func validateSourceBlock(block SourceBlock) error {
 	if generated && (!hasSignature || !hasContract) {
 		return fmt.Errorf("generated block %s requires both one signature and one local behavior contract", block.ID)
 	}
-	if strings.TrimSpace(block.API) == "" || len(block.API) > maxSourceAPIBytes {
+	if strings.TrimSpace(block.API) == "" {
 		return fmt.Errorf("block %s requires a bounded code-owned API declaration", block.ID)
 	}
-	if generated && (strings.ContainsAny(block.Signature, "\r\n") || len(block.Contract) > maxLocalBehaviorBytes) {
-		return fmt.Errorf("generated block %s has an invalid signature or oversized contract", block.ID)
+	if generated && (strings.ContainsAny(block.Signature, "\r\n")) {
+		return fmt.Errorf("generated block %s has an invalid signature or contract", block.ID)
 	}
 	if err := validateSourceBlockTaskOwnership(block); err != nil {
 		return err

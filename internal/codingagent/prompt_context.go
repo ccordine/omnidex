@@ -22,7 +22,13 @@ func PromptContext(call Assignment) any {
 		}{tasks, call.PlanningConversation, failure, call.Clarifications}
 	}
 	if call.Role == ReviewResponse || call.Role == ExecutionResponse {
-		return struct{}{}
+		instructions := ""
+		if call.Task != nil {
+			instructions = call.Task.Instructions()
+		}
+		return struct {
+			TaskInstructions string `json:"task_instructions"`
+		}{instructions}
 	}
 	if call.Role == Execute || call.Role == Review {
 		type findingText struct {

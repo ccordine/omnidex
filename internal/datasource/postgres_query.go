@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/gryph/omnidex/internal/db"
 	"github.com/gryph/omnidex/internal/omni"
@@ -23,7 +22,7 @@ func ConnectReadOnly(ctx context.Context, conn Connection) (*pgxpool.Pool, error
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	pool, err := db.Connect(ctx, dsn)
 	if err != nil {

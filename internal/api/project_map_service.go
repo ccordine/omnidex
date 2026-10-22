@@ -7,7 +7,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/omni"
@@ -65,7 +64,7 @@ func (s *Server) handleProjectMap(w http.ResponseWriter, r *http.Request, id int
 
 func (s *Server) loadProjectCodebaseMapPayload(ctx context.Context, location string) (map[string]any, error) {
 	if client := s.hostBridgeClient(); client != nil && !projectPathAccessibleLocally(location) {
-		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
 		cm, err := s.scanProjectMapViaBridge(ctx, location, defaultProjectMapMaxFiles)
 		if err != nil {
@@ -100,7 +99,7 @@ func (s *Server) scanProjectCodebaseMap(ctx context.Context, project model.Proje
 	}
 
 	if client := s.hostBridgeClient(); client != nil && !projectPathAccessibleLocally(location) {
-		ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
 		cm, err := s.scanProjectMapViaBridge(ctx, location, defaultProjectMapMaxFiles)
 		if err != nil {

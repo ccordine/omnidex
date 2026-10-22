@@ -29,9 +29,7 @@ function requireScrumFilePath(value: unknown): string {
   if (new TextDecoder().decode(encoded) !== value) {
     throw new Error("Scrum card file path must be valid Unicode.");
   }
-  if (encoded.byteLength > MAX_SCRUM_FILE_PATH_BYTES) {
-    throw new Error(`Scrum card file path exceeds ${MAX_SCRUM_FILE_PATH_BYTES} UTF-8 bytes.`);
-  }
+
   if (value === "") return value;
   const segments = value.split("/");
   if (value.startsWith("/") || value.endsWith("/") || value.includes("\\") ||

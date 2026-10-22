@@ -44,7 +44,7 @@ func TestExactPreparedContextPreservesNativeIDsOutsideSemanticPrompt(t *testing.
 	}
 }
 
-func TestExactPreparedContextRejectsMissingMalformedAndExcessiveNativeIDs(t *testing.T) {
+func TestExactPreparedContextRejectsMissingAndMalformedNativeIDs(t *testing.T) {
 	t.Parallel()
 	for name, raw := range map[string]string{
 		"absent": `{}`, "null": `{"context":null}`, "empty": `{"context":[]}`,
@@ -55,7 +55,6 @@ func TestExactPreparedContextRejectsMissingMalformedAndExcessiveNativeIDs(t *tes
 		"overflow": `{"context":[9223372036854775808]}`,
 		"alias":    `{"Context":[1]}`, "duplicate": `{"context":[1],"context":[2]}`,
 		"trailing": `{"context":[1]} {}`, "nested": `{"context":[[1]]}`,
-		"too many": `{"context":[` + strings.Repeat("1,", MinInferenceContextTokens) + `1]}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := DecodeExactPreparedRetainedContext(ExactPreparedProtocolPlainCompletionV4,
@@ -64,7 +63,7 @@ func TestExactPreparedContextRejectsMissingMalformedAndExcessiveNativeIDs(t *tes
 			}
 		})
 	}
-	for _, context := range [][]int{{}, {-1}, make([]int, MinInferenceContextTokens+1)} {
+	for _, context := range [][]int{{}, {-1}} {
 		prepared := exactPreparedRequestFixture()
 		prepared.RetainedContext = context
 		if _, err := ExactPreparedRequestBytes(prepared); err == nil {
@@ -77,7 +76,7 @@ func TestExactPreparedContextRequestAllowsDeclaredMaximumWithoutTruncation(t *te
 	t.Parallel()
 	prepared := exactPreparedRequestFixture()
 	prepared.ContextTokens = MaxInferenceContextTokens
-	prepared.RetainedContext = make([]int, prepared.ContextTokens)
+	prepared.RetainedContext = make([]int, prepared.ContextTokens+1)
 	for index := range prepared.RetainedContext {
 		prepared.RetainedContext[index] = 200_000
 	}

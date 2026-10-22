@@ -123,10 +123,6 @@ func normalizeGoSourceBody(raw string) (string, error) {
 	if body == "" {
 		return "", fmt.Errorf("Go source-body response is empty")
 	}
-	if len(body) > maxGoExtractedSourceBodyBytes {
-		return "", fmt.Errorf(
-			"Go source-body response exceeds %d bytes", maxGoExtractedSourceBodyBytes,
-		)
-	}
+
 	return body, nil
 }

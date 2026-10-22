@@ -123,7 +123,7 @@ func TestExecutionProofLiveCorrectionAndOwnerContinuationPostgres(t *testing.T) 
 		t.Run(mode, func(t *testing.T) {
 			pool, repo := freshUserIntentRepository(t)
 			ctx := t.Context()
-			native, err := codex.New(os.Getenv("OMNI_TEST_CODEX_COMMAND"), t.TempDir(), 60*time.Second)
+			native, err := codex.New(os.Getenv("OMNI_TEST_CODEX_COMMAND"), t.TempDir())
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -36,7 +36,7 @@ func (job PortableJob) Validate() error {
 	if job.Schema != PortableJobSchemaV2 || !validWorkKind(job.Kind) {
 		return fmt.Errorf("portable job schema or work kind is not registered")
 	}
-	if len(job.Payload) == 0 || len(job.Payload) > maxPortablePayloadBytes ||
+	if len(job.Payload) == 0 ||
 		!json.Valid(job.Payload) {
 		return fmt.Errorf("portable job payload is not one bounded JSON value")
 	}

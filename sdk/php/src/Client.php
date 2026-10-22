@@ -18,12 +18,8 @@ final class Client
         private readonly string $baseUrl,
         private readonly string $token,
         ?Transport $transport = null,
-        private readonly int $timeoutSeconds = 30,
     ) {
         Validation::configuration($baseUrl, $token);
-        if ($timeoutSeconds < 1) {
-            throw new \InvalidArgumentException('HTTP timeout must be a positive number of seconds.');
-        }
         $this->transport = $transport ?? new NativeTransport();
     }
 
@@ -133,7 +129,6 @@ final class Client
             $this->baseUrl . $path,
             $headers,
             $encoded,
-            $this->timeoutSeconds,
         );
         if (strlen($response->body) > self::MAX_RESPONSE_BYTES) {
             throw new \RuntimeException('Omnidex integration response exceeds 16777216 bytes.');

@@ -3,6 +3,7 @@ package sessionintent
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/gryph/omnidex/internal/userintent"
 )
@@ -140,4 +141,25 @@ func ValidateRoutedPatch(r Request, c Context, patch []userintent.Patch) error {
 		}
 	}
 	return nil
+}
+
+// Selecting message delivery is semantic; reproducing the owner's text and its
+// sole current recipient is not. Bind both from the admitted request/state.
+func BindContent(r Request, c Context, patch []userintent.Patch) ([]userintent.Patch, error) {
+	bound := append([]userintent.Patch{}, patch...)
+	for i, op := range bound {
+		if op.Path != "/message" || (op.Op != "replace" && op.Op != "add") {
+			continue
+		}
+		value := strings.TrimSpace(string(op.Value))
+		if !strings.HasPrefix(value, "{") && value != "true" {
+			continue
+		}
+		raw, err := json.Marshal(Content{Text: r.Text, Recipient: messageRecipient(c)})
+		if err != nil {
+			return nil, err
+		}
+		bound[i].Value = raw
+	}
+	return bound, nil
 }

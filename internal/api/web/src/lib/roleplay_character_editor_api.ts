@@ -13,7 +13,7 @@ export async function fetchRoleplayCharacterEditor(
   channelID: string,
   characterID: string,
 ): Promise<RoleplayCharacterEditorResponse> {
-  const channel = requireID(channelID, "channel", /^[a-z0-9][a-z0-9_.:-]{0,95}$/);
+  const channel = requireID(channelID, "channel", /^[a-z0-9][a-z0-9_.:-]*$/);
   const character = roleplayID(characterID, "character", "rpc");
   const query = new URLSearchParams({ channel_id: channel, character_id: character });
   const response = await fetch(`/v1/ui/roleplay/character?${query}`);
@@ -21,7 +21,7 @@ export async function fetchRoleplayCharacterEditor(
   if (response.status !== 200) {
     throw new Error(`Roleplay character editor expected HTTP 200, received HTTP ${response.status}.`);
   }
-  const responseChannel = requireID(payload.channel_id, "response channel", /^[a-z0-9][a-z0-9_.:-]{0,95}$/);
+  const responseChannel = requireID(payload.channel_id, "response channel", /^[a-z0-9][a-z0-9_.:-]*$/);
   const worldID = roleplayID(payload.world_id, "response world", "rpw");
   const responseCharacter = roleplayID(payload.character_id, "response character", "rpc");
   if (responseChannel !== channel || responseCharacter !== character) {

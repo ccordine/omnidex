@@ -9,9 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
-
-	"github.com/gryph/omnidex/internal/llm"
 )
 
 type Client struct {
@@ -25,14 +22,12 @@ func NewEmbedding(
 	baseURL string,
 	apiKey string,
 	embeddingModel string,
-	timeout time.Duration,
 ) *Client {
-	timeout = llm.BoundedModelRequestDuration(timeout)
 	return &Client{
 		baseURL:        normalizeBaseURL(baseURL),
 		apiKey:         strings.TrimSpace(apiKey),
 		embeddingModel: strings.TrimSpace(embeddingModel),
-		httpClient:     &http.Client{Timeout: timeout},
+		httpClient:     &http.Client{},
 	}
 }
 

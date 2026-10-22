@@ -35,13 +35,17 @@ func TestRoleplayCanonInventoryReturnsFactsOrExplicitAbsence(t *testing.T) {
 func TestRoleplayCanonInventoryRejectsMalformedOrMixedAbsence(t *testing.T) {
 	input := roleplayCanonInventoryTestInput()
 	const fact = "Mara locks the observatory door."
+	for _, large := range []string{strings.Repeat(fact+"\n", MaxRoleplayCanonFactsPerTurn) + fact, strings.Repeat("x", roleplay.MaxCanonEventBytes+1)} {
+		got, err := DecodeRoleplayCanonFactInventory(input, large)
+		if err != nil || strings.Join(got.Candidates, "\n") != large {
+			t.Fatal("large inventory was rejected or changed", err)
+		}
+	}
 	for _, raw := range []string{
 		"", " ", "[]", `{ "candidates": [] }`,
 		" NO_CANON_FACT_CANDIDATES", "NO_CANON_FACT_CANDIDATES ",
 		"NO_CANON_FACT_CANDIDATES\n" + fact, fact + "\nNO_CANON_FACT_CANDIDATES",
 		fact + "\r\n" + fact, fact + "\n\n" + fact,
-		strings.Repeat(fact+"\n", MaxRoleplayCanonFactsPerTurn) + fact,
-		strings.Repeat("x", roleplay.MaxCanonEventBytes+1),
 	} {
 		inventory, err := DecodeRoleplayCanonFactInventory(input, raw)
 		if err == nil || !reflect.DeepEqual(inventory, RoleplayCanonFactInventory{}) {

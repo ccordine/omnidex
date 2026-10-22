@@ -199,7 +199,7 @@ func loadCommandMeterDeltasTx(ctx context.Context, tx pgx.Tx, commandID string) 
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	if len(deltas) < 1 || len(deltas) > MaxDefinitionEffects {
+	if len(deltas) < 1 {
 		return nil, fmt.Errorf("%w: interaction command effects are outside their bound", ErrSimulationNotConfigured)
 	}
 	return deltas, nil

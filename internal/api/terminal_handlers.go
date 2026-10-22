@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -60,7 +59,7 @@ func (s *Server) prepareTerminalConnection(r *http.Request, probe bool) (termina
 		return terminalConnectionPayload{}, err
 	}
 
-	setupCtx, setupCancel := context.WithTimeout(r.Context(), 15*time.Second)
+	setupCtx, setupCancel := context.WithCancel(r.Context())
 	defer setupCancel()
 
 	project, err := s.repo.GetProject(setupCtx, projectID)
@@ -149,7 +148,7 @@ func (s *Server) handleHostTerminalWS(w http.ResponseWriter, r *http.Request) {
 		header.Set("Authorization", "Bearer "+token)
 	}
 
-	dialCtx, dialCancel := context.WithTimeout(r.Context(), 12*time.Second)
+	dialCtx, dialCancel := context.WithCancel(r.Context())
 	defer dialCancel()
 
 	bridgeConn, resp, err := websocket.DefaultDialer.DialContext(dialCtx, payload.bridgeURL, header)

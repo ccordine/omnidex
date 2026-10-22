@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
@@ -53,7 +54,7 @@ func TestChatBootstrapRetainsRealtimeAfterRequestCompletes(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	apiClient, err := client.New(server.URL, time.Second)
+	apiClient, err := client.New(server.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,4 +69,22 @@ func TestChatBootstrapRetainsRealtimeAfterRequestCompletes(t *testing.T) {
 	if _, err := bootstrap.stream.Read(); err != nil {
 		t.Fatalf("bootstrap request completion closed the session stream: %v", err)
 	}
+	t.Run("slash exit without terminal EOF", func(t *testing.T) {
+		console, keys := modeEditorConsole(t, ctx)
+		done := make(chan error, 1)
+		go func() {
+			done <- runChatSessions(chatSessionConfig{Context: ctx, Cancel: cancel, Client: apiClient,
+				Channel: bootstrap.channel, WorkspaceIdentity: identity, Snapshot: bootstrap.snapshot,
+				Stream: bootstrap.stream, Console: console, Signals: make(chan os.Signal)}, "11111111111111111111111111111111")
+		}()
+		modeKeys(t, keys, "/exit\r")
+		select {
+		case err := <-done:
+			if err != nil || ctx.Err() != nil {
+				t.Fatalf("exit: %v; parent: %v", err, ctx.Err())
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("/exit waited for more terminal input")
+		}
+	})
 }

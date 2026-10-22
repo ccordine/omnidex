@@ -52,8 +52,6 @@ func validateLifecycleFeedback(
 	if strings.ContainsRune(feedback, '\x00') {
 		return "", fmt.Errorf("%s must not contain NUL", subject)
 	}
-	if len(feedback) > maximumBytes {
-		return "", fmt.Errorf("%s exceeds the %d-byte limit", subject, maximumBytes)
-	}
+
 	return feedback, nil
 }

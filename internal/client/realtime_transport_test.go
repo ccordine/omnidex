@@ -7,7 +7,6 @@ import (
 	"net/url"
 	"reflect"
 	"testing"
-	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/gryph/omnidex/internal/model"
@@ -130,7 +129,7 @@ func TestRealtimeEventValidationRejectsCrossChannelAndNonCanonicalFileAuthority(
 func TestOpenJobEventsRejectsInvalidAuthorityBeforeDial(t *testing.T) {
 	t.Parallel()
 
-	apiClient, err := New("http://127.0.0.1:1", time.Second)
+	apiClient, err := New("http://127.0.0.1:1")
 	if err != nil {
 		t.Fatalf("create client: %v", err)
 	}

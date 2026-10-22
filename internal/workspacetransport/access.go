@@ -29,7 +29,7 @@ func (hub *Hub) Acquire(ctx context.Context, root, identity string) (workspace.A
 		}
 		// An acquisition round must finish so code knows whether it owns a
 		// lease. Canceling a waiter must not close another owner's connection.
-		round, cancel := context.WithTimeout(context.WithoutCancel(ctx), operationTimeout)
+		round, cancel := context.WithCancel(context.WithoutCancel(ctx))
 		reply, err := r.call(round, requestData{request: request{Kind: opAcquire}}, nil)
 		cancel()
 		if err == nil {

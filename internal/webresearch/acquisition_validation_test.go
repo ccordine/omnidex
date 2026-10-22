@@ -104,7 +104,7 @@ func TestEmptyAcquisitionStopsWithActualDiagnostics(t *testing.T) {
 	}
 }
 
-func TestAcquisitionBoundsFailureKeepsTransportAndCancellationErrors(t *testing.T) {
+func TestLargeAcquisitionRetainsTransportAndCancellationErrors(t *testing.T) {
 	for _, phase := range []string{"discovery", "fetch"} {
 		t.Run(phase, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
@@ -124,12 +124,12 @@ func TestAcquisitionBoundsFailureKeepsTransportAndCancellationErrors(t *testing.
 				return nil
 			}
 			result, err := gatherAcquisitionObservation(t, ctx, fixture)
-			if !errors.Is(err, ErrInvalidAcquisition) || !errors.Is(err, context.Canceled) || !errors.Is(err, failure) ||
-				len(result.Fetches) != 0 || len(result.Evidence) != 0 || len(result.Projected) != 0 || result.SemanticCalls != 0 {
+			if errors.Is(err, ErrInvalidAcquisition) || !errors.Is(err, context.Canceled) || !errors.Is(err, failure) ||
+				len(result.Evidence) != 0 || len(result.Projected) != 0 || result.SemanticCalls != 0 {
 				t.Fatalf("oversized report was accepted or lost its failure: %+v / %v", result, err)
 			}
-			if phase == "discovery" && (len(result.Discovery) != 0 || fixture.fetches != 0) ||
-				phase == "fetch" && (len(result.Discovery) != 1 || fixture.fetches != 1) || fixture.discoveries != 1 {
+			if phase == "discovery" && (len(result.Discovery) != 1 || len(result.Fetches) != 0 || fixture.fetches != 0) ||
+				phase == "fetch" && (len(result.Discovery) != 1 || len(result.Fetches) != 1 || fixture.fetches != 1) || fixture.discoveries != 1 {
 				t.Fatalf("bounded acquisition sequence changed: %+v", result)
 			}
 		})

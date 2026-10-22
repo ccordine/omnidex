@@ -244,7 +244,7 @@ export class ChatChannelCoordinator {
   }
 
   async loadTranscript(channelID: string, requiredMessageID?: number, beforeID?: number): Promise<void> {
-    if (!/^[a-z0-9][a-z0-9_.:-]{0,95}$/.test(channelID)) {
+    if (!/^[a-z0-9][a-z0-9_.:-]*$/.test(channelID)) {
       throw new Error("A canonical channel id is required to load a transcript.");
     }
     try {

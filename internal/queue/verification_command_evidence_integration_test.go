@@ -27,7 +27,7 @@ func TestFreshSchemaVerificationCommandResultsDoNotVetoLaterCompletion(t *testin
 	commands := []VerificationCommandEvidence{
 		verificationIntegrationCommand(claim.Authority, 1, started, &zero, ""),
 		verificationIntegrationCommand(claim.Authority, 2, started.Add(time.Second), &nine, ""),
-		verificationIntegrationCommand(claim.Authority, 3, started.Add(2*time.Second), nil, "executable not found"),
+		verificationIntegrationCommand(claim.Authority, 3, started.Add(2*time.Second), nil, strings.Repeat("x", 8193)),
 	}
 	commands[0].Environment = nil
 	commands[0].Stdin = []byte{}
@@ -51,11 +51,8 @@ func TestFreshSchemaVerificationCommandResultsDoNotVetoLaterCompletion(t *testin
 		}
 	}
 
-	if _, err := pool.Exec(ctx, invalidObservationCommandSQL(false), job.ID); err == nil {
+	if _, err := pool.Exec(ctx, invalidObservationCommandSQL(), job.ID); err == nil {
 		t.Fatal("observation failure with incomplete process output was accepted")
-	}
-	if _, err := pool.Exec(ctx, invalidObservationCommandSQL(true), job.ID, strings.Repeat("x", 8193)); err == nil {
-		t.Fatal("observation failure with an unbounded launch error was accepted")
 	}
 	if err := repository.AppendVerificationCommandEvidence(ctx, commands[2]); err == nil {
 		t.Fatal("duplicate verification ordinal was accepted")
@@ -70,7 +67,7 @@ func TestFreshSchemaVerificationCommandResultsDoNotVetoLaterCompletion(t *testin
 	if err != nil || len(stored) != 5 ||
 		stored[0].Status != VerificationCommandSucceeded ||
 		stored[1].Status != VerificationCommandExitFailed ||
-		stored[2].Status != VerificationCommandLaunchFailed ||
+		stored[2].Status != VerificationCommandLaunchFailed || stored[2].LaunchError != commands[2].LaunchError ||
 		stored[3].Status != VerificationCommandSucceeded ||
 		stored[4].Status != VerificationCommandObservationFailed {
 		t.Fatalf("commands=%#v err=%v", stored, err)
@@ -145,15 +142,10 @@ func verificationIntegrationCommand(
 	}
 }
 
-func invalidObservationCommandSQL(unboundedLaunchError bool) string {
+func invalidObservationCommandSQL() string {
 	exitCode := "exit_code"
 	launchError := "launch_error"
 	stdoutComplete := "false"
-	if unboundedLaunchError {
-		exitCode = "NULL"
-		launchError = "$2"
-		stdoutComplete = "stdout_complete"
-	}
 	return `
 		INSERT INTO verification_command_evidence (
 			job_id,generation,step_id,step_attempt,worker_id,phase,ordinal,

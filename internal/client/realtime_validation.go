@@ -2,10 +2,11 @@ package client
 
 import (
 	"fmt"
-	"github.com/gryph/omnidex/internal/model"
 	"path"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/gryph/omnidex/internal/model"
 )
 
 func (event RealtimeEvent) validate(expectedChannelID model.ChannelID) error {
@@ -103,7 +104,7 @@ func (event RealtimeEvent) validateWorkspaceRead() error {
 	if event.FileOperation != operation || event.FileSourcePath != "" || !rootDirectory && (!canonicalRealtimeRelativePath(event.FilePath) || strings.ContainsAny(event.FilePath, "\\\x00\r\n")) {
 		return fmt.Errorf("workspace read event changed its exact relative path or observed operation")
 	}
-	if len(event.FilePath) > 4096 || !utf8.ValidString(event.FilePath) {
+	if !utf8.ValidString(event.FilePath) {
 		return fmt.Errorf("workspace read event exceeds its exact path boundary")
 	}
 	return nil

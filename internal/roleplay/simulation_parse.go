@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-var simulationCommandKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
+var simulationCommandKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 
 func ParseSimulationAction(exact string) (SimulationAction, error) {
 	if exact == "" || exact != strings.TrimSpace(exact) || strings.ContainsAny(exact, "\r\n\x00") {
@@ -27,7 +27,7 @@ func ParseSimulationAction(exact string) (SimulationAction, error) {
 			return SimulationAction{}, fmt.Errorf("simulation action argument must be one exact quoted value")
 		}
 		argument = raw[1 : len(raw)-1]
-		if argument == "" || argument != strings.TrimSpace(argument) || len([]byte(argument)) > MaxSimulationTextBytes {
+		if argument == "" || argument != strings.TrimSpace(argument) {
 			return SimulationAction{}, fmt.Errorf("simulation action argument must be 1 to %d exact trimmed bytes", MaxSimulationTextBytes)
 		}
 		hasArgument = true

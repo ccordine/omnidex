@@ -41,10 +41,10 @@ func applySimulationStateTx(
 	if action == nil && !autoUsed {
 		return nil, false, nil
 	}
-	if len(effects) < 1 || len(effects) > MaxTransitionEffects {
+	if len(effects) < 1 {
 		return nil, false, fmt.Errorf("%w: transition effects are outside their bound", ErrSimulationNotConfigured)
 	}
-	if len(narrativeEvents) < 1 || len(narrativeEvents) > 2 {
+	if len(narrativeEvents) < 1 {
 		return nil, false, fmt.Errorf("%w: transition narrative events are outside their bound", ErrSimulationNotConfigured)
 	}
 	afterRevision, err := updateSceneRevisionTx(

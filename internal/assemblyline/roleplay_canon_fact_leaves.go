@@ -91,9 +91,7 @@ func (inventory RoleplayCanonFactInventory) ValidateFor(input RoleplayCanonExtra
 	if inventory.Candidates == nil {
 		return fmt.Errorf("roleplay canon fact inventory candidates must be an explicit array")
 	}
-	if len(inventory.Candidates) > MaxRoleplayCanonFactsPerTurn {
-		return fmt.Errorf("roleplay canon fact inventory must contain 0..%d candidates", MaxRoleplayCanonFactsPerTurn)
-	}
+
 	for index, candidate := range inventory.Candidates {
 		if strings.ContainsAny(candidate, "\r\n") {
 			return fmt.Errorf("roleplay canon fact inventory candidate %d must be one line", index)
@@ -169,9 +167,7 @@ func renderRoleplayCanonExtractionAuthority(input RoleplayCanonExtractionInput) 
 		parts = append(parts, "Established fictional context:\n"+contextText)
 	}
 	authority := strings.Join(parts, "\n\n")
-	if len(authority) > maxPortablePayloadBytes {
-		return "", fmt.Errorf("roleplay canon fact authority exceeds %d bytes", maxPortablePayloadBytes)
-	}
+
 	return authority, nil
 }
 

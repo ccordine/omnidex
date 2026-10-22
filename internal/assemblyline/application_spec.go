@@ -92,10 +92,8 @@ func (specification ApplicationSpecification) Validate() error {
 	if err := validateRequirementQuote("application product", specification.ProductQuote); err != nil {
 		return err
 	}
-	if len(specification.ProductQuote) > maxApplicationProductBytes {
-		return fmt.Errorf("application product quote exceeds %d bytes", maxApplicationProductBytes)
-	}
-	if len(specification.Requirements) < 1 || len(specification.Requirements) > maxRequirementCount {
+
+	if len(specification.Requirements) < 1 {
 		return fmt.Errorf(
 			"application specification requires 1..%d grounded requirements",
 			maxRequirementCount,

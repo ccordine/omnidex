@@ -27,9 +27,7 @@ func decodeScrumTagCatalogQuery(request *http.Request) (scrumTagCatalogQuery, er
 	if request == nil || request.URL == nil {
 		return scrumTagCatalogQuery{}, fmt.Errorf("Scrum tag catalog request URL is required")
 	}
-	if len(request.URL.RawQuery) > maxScrumTagRawQuerySize {
-		return scrumTagCatalogQuery{}, fmt.Errorf("Scrum tag catalog query exceeds the %d-byte bound", maxScrumTagRawQuerySize)
-	}
+
 	values, err := url.ParseQuery(request.URL.RawQuery)
 	if err != nil {
 		return scrumTagCatalogQuery{}, fmt.Errorf("decode Scrum tag catalog query: %w", err)
@@ -60,9 +58,7 @@ func decodeScrumTagCatalogQuery(request *http.Request) (scrumTagCatalogQuery, er
 		if strings.ContainsRune(raw, '\x00') {
 			return scrumTagCatalogQuery{}, fmt.Errorf("Scrum tag catalog search must not contain NUL")
 		}
-		if len(raw) > maxScrumTagQueryBytes {
-			return scrumTagCatalogQuery{}, fmt.Errorf("Scrum tag catalog search exceeds the %d-byte bound", maxScrumTagQueryBytes)
-		}
+
 		query.Search = raw
 	}
 	if raw, present := oneQueryValue(values, "limit"); present {

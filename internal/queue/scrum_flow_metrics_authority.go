@@ -199,9 +199,7 @@ func (metrics *ScrumFlowMetrics) score(checklistIncomplete bool) error {
 		if weight > math.MaxInt32-int64(metrics.IncompleteScore) {
 			return fmt.Errorf("Scrum flow incomplete score exceeds %d", math.MaxInt32)
 		}
-		if len(metrics.Signals) >= maxScrumFlowSignals || len(signal) > maxScrumFlowSignalBytes {
-			return fmt.Errorf("Scrum flow derived signals exceed bounded authority")
-		}
+
 		metrics.IncompleteScore += int(weight)
 		metrics.Signals = append(metrics.Signals, signal)
 		return nil

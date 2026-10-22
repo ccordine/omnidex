@@ -105,7 +105,6 @@ func (generation PreparedGeneration) validateSuccessfulContentEvidence() error {
 	}
 	if generation.ProviderResponseDisposition != ProviderResponseSucceeded ||
 		strings.TrimSpace(generation.Content) == "" ||
-		len(generation.Content) > MaxExactPreparedModelContentBytes ||
 		!utf8.ValidString(generation.Content) || strings.ContainsRune(generation.Content, 0) ||
 		!generation.ProviderDonePresent || !generation.ProviderDone ||
 		!validPreparedDoneReason(generation.Protocol, generation.ProviderDoneReason) ||
@@ -163,8 +162,6 @@ func (generation PreparedGeneration) ValidateProviderResponseReceipt() error {
 	if !registeredProviderResponseDisposition(generation.ProviderResponseDisposition) ||
 		!validPreparedResponseStatus(generation.Protocol, generation.ProviderHTTPStatus) ||
 		generation.ProviderResponseBytes < 0 || generation.ProviderResponseCapturedBytes < 0 ||
-		generation.ProviderResponseCapturedBytes >
-			MaxExactPreparedProviderResponseBytes+maxExactPreparedProviderBoundaryBytes ||
 		generation.ProviderContentEncoding.Validate() != nil {
 		return fmt.Errorf("provider response receipt is invalid")
 	}
@@ -174,7 +171,6 @@ func (generation PreparedGeneration) ValidateProviderResponseReceipt() error {
 			return fmt.Errorf("partial provider response disposition claims a complete body")
 		}
 		if !generation.ProviderResponseBytesKnown ||
-			generation.ProviderResponseCapturedBytes > MaxExactPreparedProviderResponseBytes ||
 			generation.ProviderResponseBytes != int64(generation.ProviderResponseCapturedBytes) {
 			return fmt.Errorf("complete provider response has an invalid body length")
 		}

@@ -68,13 +68,7 @@ func loadConversationSessionFollowupsTx(
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	if len(followups) > model.MaxChannelSessionTurns {
-		return nil, fmt.Errorf(
-			"conversation job %d exceeds the explicit %d-event follow-up context bound",
-			jobID,
-			model.MaxChannelSessionTurns,
-		)
-	}
+
 	for left, right := 0, len(followups)-1; left < right; left, right = left+1, right-1 {
 		followups[left], followups[right] = followups[right], followups[left]
 	}

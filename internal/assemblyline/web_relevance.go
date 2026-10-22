@@ -33,7 +33,7 @@ func (input WebRelevanceInput) validate() error {
 	if err := input.Context.Validate(); err != nil {
 		return err
 	}
-	if len(input.Candidates) < 1 || len(input.Candidates) > maxWebRelevanceCandidates {
+	if len(input.Candidates) < 1 {
 		return fmt.Errorf("web relevance requires 1..%d candidates", maxWebRelevanceCandidates)
 	}
 	if input.MaxSelections < 1 || input.MaxSelections > len(input.Candidates) {
@@ -63,9 +63,7 @@ func (input WebRelevanceInput) validate() error {
 		}
 		total += len(candidate.CandidateID) + len(candidate.Title) + len(candidate.Snippet) + len(candidate.Excerpt)
 	}
-	if total > maxWebRelevanceProjectionBytes {
-		return fmt.Errorf("web relevance projection exceeds %d bytes", maxWebRelevanceProjectionBytes)
-	}
+
 	return nil
 }
 

@@ -7,7 +7,6 @@ import (
 	"io"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestInputArchivePreservesExactBytesAndPermissions(t *testing.T) {
@@ -105,9 +104,9 @@ func TestCollectionReturnsOnlyDeclaredFiles(t *testing.T) {
 }
 
 func TestInvalidExperimentNeverInvokesDocker(t *testing.T) {
-	for _, defect := range []string{"image", "path", "overlap", "mode", "environment", "timeout", "nul"} {
+	for _, defect := range []string{"image", "path", "overlap", "mode", "environment", "nul"} {
 		t.Run(defect, func(t *testing.T) {
-			request := Request{ImageID: "sha256:" + strings.Repeat("a", 64), Argv: []string{"true"}, Timeout: time.Second}
+			request := Request{ImageID: "sha256:" + strings.Repeat("a", 64), Argv: []string{"true"}}
 			switch defect {
 			case "image":
 				request.ImageID = "alpine:latest"
@@ -119,8 +118,6 @@ func TestInvalidExperimentNeverInvokesDocker(t *testing.T) {
 				request.Input = []File{{Path: "a", Mode: 0o4644}}
 			case "environment":
 				request.Environment = []string{"A=first", "A=second"}
-			case "timeout":
-				request.Timeout = 0
 			case "nul":
 				request.Argv = []string{"echo", "\x00"}
 			}

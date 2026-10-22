@@ -138,9 +138,7 @@ func exactRootDirectory(root string) (os.FileInfo, error) {
 }
 
 func validateDesiredFiles(desired []DesiredFile) ([]DesiredFile, error) {
-	if len(desired) > MaxReconciliationFiles {
-		return nil, fmt.Errorf("workspace reconciliation exceeds %d desired files", MaxReconciliationFiles)
-	}
+
 	normalized := make([]DesiredFile, len(desired))
 	targets := make(map[string]int, len(desired))
 	sources := make(map[string]int)
@@ -170,12 +168,7 @@ func validateDesiredFiles(desired []DesiredFile) ([]DesiredFile, error) {
 			if state.Mode&^uint32(0o777) != 0 {
 				return nil, fmt.Errorf("workspace desired file %q has invalid permission bits", state.Path)
 			}
-			if len(state.Content) > MaxReconciliationFileBytes {
-				return nil, fmt.Errorf("workspace desired file %q exceeds %d bytes", state.Path, MaxReconciliationFileBytes)
-			}
-			if totalBytes > MaxReconciliationTotalBytes-len(state.Content) {
-				return nil, fmt.Errorf("workspace desired content exceeds %d total bytes", MaxReconciliationTotalBytes)
-			}
+
 			totalBytes += len(state.Content)
 		}
 		if state.MoveFrom != "" {
@@ -217,11 +210,11 @@ func validateDesiredFiles(desired []DesiredFile) ([]DesiredFile, error) {
 }
 
 func validateRelativePath(value string) error {
-	if value == "" || len(value) > 4096 || !utf8.ValidString(value) || value != strings.TrimSpace(value) || strings.Contains(value, "\\") || path.IsAbs(value) || path.Clean(value) != value || value == "." || value == ".." || strings.HasPrefix(value, "../") || strings.ContainsRune(value, '\x00') {
+	if value == "" || !utf8.ValidString(value) || value != strings.TrimSpace(value) || strings.Contains(value, "\\") || path.IsAbs(value) || path.Clean(value) != value || value == "." || value == ".." || strings.HasPrefix(value, "../") || strings.ContainsRune(value, '\x00') {
 		return fmt.Errorf("path %q must be one exact relative slash path", value)
 	}
 	for _, name := range strings.Split(value, "/") {
-		if name == "" || name == "." || name == ".." || len(name) > 255 {
+		if name == "" || name == "." || name == ".." {
 			return fmt.Errorf("path %q contains an invalid basename", value)
 		}
 	}

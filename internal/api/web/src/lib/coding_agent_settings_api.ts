@@ -96,7 +96,7 @@ function token(value: unknown, label: string, empty = false): string {
 function description(value: unknown): string { return exactString(value, "Model description", { maxBytes: 8192 }); }
 
 function array(value: unknown, label: string, maximum: number): unknown[] {
-  if (!Array.isArray(value) || value.length > maximum) throw new Error(`${label} exceeds its item bound.`);
+  if (!Array.isArray(value)) throw new Error(`${label} exceeds its item bound.`);
   return value;
 }
 

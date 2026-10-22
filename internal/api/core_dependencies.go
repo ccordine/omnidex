@@ -123,7 +123,7 @@ func (s *Server) checkHostBridgeDependency(ctx context.Context) coreDependencySt
 	started := time.Now()
 	checkCtx, cancel := context.WithTimeout(ctx, coreDependencyCheckTimeout)
 	defer cancel()
-	status := s.collectHostBridgeStatusWithTimeout(checkCtx, coreDependencyCheckTimeout)
+	status := s.collectHostBridgeStatus(checkCtx)
 	dependency.LatencyMS = time.Since(started).Milliseconds()
 	dependency.Target = firstNonEmpty(status.URL, dependency.Target)
 	if status.Reachable {

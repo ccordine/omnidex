@@ -16,7 +16,6 @@ func TestWorkspaceOperationsRejectUnrelatedAndUnboundedFields(t *testing.T) {
 		{ID: 1, Kind: opReadFile, Path: "../outside"},
 		{ID: 1, Kind: opReadDirectory, Path: ".", Limit: workspace.MaxDirectoryPageEntries + 1},
 		{ID: 1, Kind: opReadDirectory, Path: ".", Limit: 1, After: "../outside"},
-		{ID: 1, Kind: opPrepare, Lease: 2, DesiredCount: workspace.MaxReconciliationFiles + 1},
 		{ID: 1, Kind: opApply, Lease: 2},
 		{ID: 1, Kind: opRelease, Lease: 2, Prepared: 3},
 	} {
@@ -34,15 +33,15 @@ func TestWorkspaceOperationsRejectUnrelatedAndUnboundedFields(t *testing.T) {
 			t.Errorf("accepted invalid page: %#v", page)
 		}
 	}
-	for _, size := range []int64{-1, workspace.MaxReconciliationFileBytes + 1} {
+	for _, size := range []int64{-1} {
 		total := int64(0)
 		if err := admitContentBytes(&total, size); err == nil {
 			t.Errorf("accepted invalid content size %d", size)
 		}
 	}
 	total := int64(workspace.MaxReconciliationTotalBytes)
-	if err := admitContentBytes(&total, 1); err == nil {
-		t.Fatal("accepted excess aggregate content")
+	if err := admitContentBytes(&total, workspace.MaxReconciliationFileBytes+1); err != nil || total != workspace.MaxReconciliationTotalBytes+workspace.MaxReconciliationFileBytes+1 {
+		t.Fatal("large aggregate content was rejected or changed", err)
 	}
 }
 

@@ -12,7 +12,7 @@ var imageReferencePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._/-]*:[a-zA-Z0-
 // ResolveImage acquires one code-selected technical image and returns its actual
 // immutable daemon identity. Missing local images are acquired explicitly.
 func (docker *Docker) ResolveImage(ctx context.Context, reference string) (string, error) {
-	if docker == nil || docker.cli == nil || ctx == nil || len(reference) > 256 || !imageReferencePattern.MatchString(reference) {
+	if docker == nil || docker.cli == nil || ctx == nil || !imageReferencePattern.MatchString(reference) {
 		return "", fmt.Errorf("Docker image acquisition requires one exact tagged reference and client context")
 	}
 	stdout, stderr, err := docker.capture(ctx, []string{"image", "ls", "--all", "--quiet", "--no-trunc", "--filter", "reference=" + reference}, nil)

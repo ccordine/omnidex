@@ -40,7 +40,7 @@ func researchForkTx(ctx context.Context, tx pgx.Tx, channel model.ChannelID, req
 	if request.ConversationID != request.OperationID || seed.SourceChannel != channel || len(seed.Messages) != 0 || len(seed.Ledger) != 0 {
 		return nil, fmt.Errorf("fork must select this session's source references, without supplied source content")
 	}
-	if len(seed.MessageIDs) > 20 || (len(seed.MessageIDs) == 0) == (seed.LedgerID == 0) || (seed.LedgerID == 0) != (seed.LedgerRevision == 0) {
+	if (len(seed.MessageIDs) == 0) == (seed.LedgerID == 0) || (seed.LedgerID == 0) != (seed.LedgerRevision == 0) {
 		return nil, fmt.Errorf("select one to twenty messages or one exact ledger revision")
 	}
 	resolved := &sessionintent.ResearchSeed{SourceChannel: channel, MessageIDs: seed.MessageIDs, LedgerID: seed.LedgerID, LedgerRevision: seed.LedgerRevision}
@@ -64,24 +64,20 @@ func researchForkTx(ctx context.Context, tx pgx.Tx, channel model.ChannelID, req
 		if !belongs {
 			return nil, fmt.Errorf("ledger does not belong to source session")
 		}
-		ledger, err := readCodingLedgerRevisionTx(ctx, tx, seed.LedgerID, seed.LedgerRevision, CodingLedgerReadOptions{Limit: 101})
+		ledger, err := readCodingLedgerRevisionTx(ctx, tx, seed.LedgerID, seed.LedgerRevision, CodingLedgerReadOptions{Limit: -1})
 		if err != nil {
 			return nil, err
 		}
-		if len(ledger.Ledger.Tasks) > 100 {
-			return nil, fmt.Errorf("selected ledger exceeds research context budget")
-		}
+
 		resolved.Ledger, err = json.Marshal(ledger.Ledger)
 		if err != nil {
 			return nil, err
 		}
 	}
-	raw, err := json.Marshal(resolved)
+	_, err := json.Marshal(resolved)
 	if err != nil {
 		return nil, err
 	}
-	if len(raw) > 64<<10 {
-		return nil, fmt.Errorf("fork source exceeds 64 KiB")
-	}
+
 	return resolved, nil
 }

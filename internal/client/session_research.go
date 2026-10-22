@@ -36,11 +36,7 @@ func (client *Client) Research(ctx context.Context, channel model.Channel, reque
 	if err := ValidateSessionTurnText(request.Text); err != nil {
 		return result, err
 	}
-	scoped := *client
-	transport := *client.httpClient
-	transport.Timeout = 130 * time.Second
-	scoped.httpClient = &transport
-	err := scoped.doJSON(ctx, http.MethodPost, "/v1/channels/"+string(channel.ID)+"/session/research", request, &result, http.StatusOK)
+	err := client.doJSON(ctx, http.MethodPost, "/v1/channels/"+string(channel.ID)+"/session/research", request, &result, http.StatusOK)
 	if err == nil && (result.ConversationID != request.ConversationID || result.OperationID != request.OperationID || result.Question != request.Text || (result.Answer == "") == (result.Error == "")) {
 		err = fmt.Errorf("research receipt differs from its question or lacks an outcome")
 	}

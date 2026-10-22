@@ -15,7 +15,7 @@ func TestParserLiveStartupShutdown(t *testing.T) {
 	}
 	for sample := 1; sample <= 3; sample++ {
 		ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
-		client, err := NewParser(ctx, command, t.TempDir(), 10*time.Second)
+		client, err := NewParser(ctx, command, t.TempDir())
 		if err != nil {
 			cancel()
 			t.Fatal(err)

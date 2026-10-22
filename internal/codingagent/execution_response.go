@@ -39,7 +39,7 @@ func (controller *Controller) handleExecutionResponse(ctx context.Context, task 
 	var outcome struct {
 		Kind ExecutionResponseKind `json:"kind"`
 	}
-	if err := decodeContract(parsed.Content, &outcome); err != nil {
+	if err := json.Unmarshal(parsed.Content, &outcome); err != nil {
 		return &ParserFailure{Cause: err}
 	}
 	switch outcome.Kind {

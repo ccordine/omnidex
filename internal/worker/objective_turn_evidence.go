@@ -207,9 +207,7 @@ func renderObjectiveTurnOutput(result objectiveTurnResult) (string, error) {
 		))
 	}
 	output := strings.Join(lines, "\n")
-	if len(output) > maxObjectiveOutputBytes {
-		return "", fmt.Errorf("objective completion output exceeds %d bytes", maxObjectiveOutputBytes)
-	}
+
 	return output, nil
 }
 
@@ -220,9 +218,7 @@ func validateObjectiveTurnResult(result objectiveTurnResult) error {
 		return fmt.Errorf("objective result is incomplete or has invalid output")
 	}
 	if len(result.RoleplayResponses) == 0 {
-		if len(result.Output) > maxObjectiveOutputBytes {
-			return fmt.Errorf("objective result is incomplete or has invalid output")
-		}
+
 	} else {
 		if err := queue.ValidateRoleplayResponseRound(result.RoleplayResponses); err != nil {
 			return fmt.Errorf("objective roleplay response round: %w", err)

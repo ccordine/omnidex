@@ -45,14 +45,12 @@ describe("Scrum channel encoded response authority", () => {
     });
   });
 
-  it("rejects one encoded byte beyond the explicit channel response bound", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", {
+  it("accepts a response declared larger than the former channel bound", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({project_id:14,card_id:"card-7",requested_before:"scrumchat_v1_2",limit:50,messages:[],before_cursor:"",has_more:false,busy:false}), {
       status: 200,
       headers: { "Content-Length": String(SCRUM_CHANNEL_RESPONSE_MAX_BYTES + 1) },
     })));
 
-    await expect(fetchScrumChannelPage("card-7", "scrumchat_v1_2", 14)).rejects.toThrow(
-      new RegExp(`${SCRUM_CHANNEL_RESPONSE_MAX_BYTES}-byte transport bound`),
-    );
+    await expect(fetchScrumChannelPage("card-7", "scrumchat_v1_2", 14)).resolves.toMatchObject({messages:[]});
   });
 });

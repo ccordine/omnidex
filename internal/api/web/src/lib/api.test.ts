@@ -11,15 +11,15 @@ describe("exact JSON response transport", () => {
     await expect(readJSON(response)).rejects.toThrow(/trailing data/);
   });
 
-  it("rejects a declared response larger than the caller's transport bound", async () => {
+  it("accepts a declared response larger than the old transport bound", async () => {
     const response = new Response('{"ok":true}', {
       status: 200,
       headers: { "Content-Type": "application/json", "Content-Length": "12" },
     });
-    await expect(readJSON(response, 11)).rejects.toThrow(/11-byte transport bound/);
+    await expect(readJSON(response, 11)).resolves.toEqual({ ok: true });
   });
 
-  it("rejects a streamed response that crosses the caller's transport bound", async () => {
+  it("accepts a streamed response larger than the old transport bound", async () => {
     const response = new Response(new ReadableStream<Uint8Array>({
       start(controller) {
         controller.enqueue(new TextEncoder().encode('{"value":"'));
@@ -27,7 +27,7 @@ describe("exact JSON response transport", () => {
         controller.close();
       },
     }), { status: 200, headers: { "Content-Type": "application/json" } });
-    await expect(readJSON(response, 12)).rejects.toThrow(/12-byte transport bound/);
+    await expect(readJSON(response, 12)).resolves.toEqual({ value: "too large" });
   });
 
   it("rejects invalid UTF-8 before JSON parsing", async () => {

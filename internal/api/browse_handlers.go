@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/gryph/omnidex/internal/hostbridge"
 )
@@ -21,7 +20,7 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if client := s.hostBridgeClient(); client != nil {
-		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+		ctx, cancel := context.WithCancel(r.Context())
 		defer cancel()
 		result, err := client.Browse(ctx, target, opts)
 		if err != nil {
@@ -82,7 +81,7 @@ func (s *Server) handleBrowseMkdir(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if client := s.hostBridgeClient(); client != nil {
-		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+		ctx, cancel := context.WithCancel(r.Context())
 		defer cancel()
 		path, err := client.Mkdir(ctx, req.Parent, req.Name)
 		if err != nil {

@@ -16,18 +16,14 @@ func decodeOrdinarySemanticText(label string, raw string, maximum int) (string, 
 	if maximum < 0 {
 		return "", fmt.Errorf("%s has a negative byte bound", label)
 	}
-	if maximum > 0 && len(raw) > maxPortableCandidateBytes {
-		return "", fmt.Errorf("%s exceeds %d bytes", label, maxPortableCandidateBytes)
-	}
+
 	if !utf8.ValidString(raw) || strings.ContainsRune(raw, '\x00') {
 		return "", fmt.Errorf("%s must be valid UTF-8 without NUL bytes", label)
 	}
 	if strings.TrimSpace(raw) == "" {
 		return "", fmt.Errorf("%s is empty", label)
 	}
-	if maximum > 0 && len(raw) > maximum {
-		return "", fmt.Errorf("%s exceeds %d bytes", label, maximum)
-	}
+
 	return raw, nil
 }
 
@@ -44,9 +40,7 @@ func decodeRawSemanticLeaf(
 	if maximum < 1 {
 		return "", fmt.Errorf("%s raw leaf has no positive byte bound", label)
 	}
-	if len(raw) > maxPortableCandidateBytes {
-		return "", fmt.Errorf("%s raw leaf exceeds %d bytes", label, maxPortableCandidateBytes)
-	}
+
 	if !utf8.ValidString(raw) || strings.ContainsRune(raw, '\x00') {
 		return "", fmt.Errorf("%s raw leaf must be valid UTF-8 without NUL bytes", label)
 	}
@@ -57,9 +51,7 @@ func decodeRawSemanticLeaf(
 	if leaf == "" {
 		return "", fmt.Errorf("%s raw leaf is empty", label)
 	}
-	if len(leaf) > maximum {
-		return "", fmt.Errorf("%s raw leaf exceeds %d bytes", label, maximum)
-	}
+
 	if !allowMultiline && strings.ContainsAny(leaf, "\r\n") {
 		return "", fmt.Errorf("%s raw leaf must be exactly one line", label)
 	}

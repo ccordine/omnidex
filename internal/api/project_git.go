@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/projectgit"
@@ -35,7 +34,7 @@ func (s *Server) handleProjectGit(w http.ResponseWriter, r *http.Request, id int
 }
 
 func (s *Server) loadProjectGitStatus(ctx context.Context, project model.Project, location string) (projectgit.Status, error) {
-	runCtx, cancel := context.WithTimeout(ctx, 12*time.Second)
+	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	if projectPathAccessibleLocally(location) {

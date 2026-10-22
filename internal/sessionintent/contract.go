@@ -36,7 +36,9 @@ func StateContract(c Context) (json.RawMessage, error) {
 		p["approval"].Enum = []any{nil}
 	}
 	recipient := messageRecipient(c)
-	p["message"].Description = "Task content for the current workflow owner, separate from application state controls. Set the complete object with text and recipient. Preserve the task instructions, quotation, negation, conditions and references in text."
+	p["message"].Description = "Deliver this user message as task content to the current workflow owner, separate from application state controls. Set the object with empty text and the current recipient. Code inserts the complete original user message unchanged; never copy, summarize or rewrite it."
+	p["message"].Properties["text"].Enum = []any{""}
+	p["message"].Properties["text"].Description = "Code supplies the original user message. Return an empty string."
 	p["message"].Properties["recipient"].Enum = []any{recipient}
 	p["message"].Properties["recipient"].Description = "Current workflow owner. Codex task content is delivered to planner during planning and codex otherwise."
 	p["native_reply"].Description = "Answer to the current native question only; null when no answer is intended."

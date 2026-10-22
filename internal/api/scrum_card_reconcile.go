@@ -37,7 +37,7 @@ func (s *Server) persistScrumCardTransition(
 		ProjectID: projectID, CardID: previous.ID, ExpectedUpdatedAt: expectedUpdatedAt,
 		ExpectedJobID: previous.JobID, Kind: kind, Column: column,
 		PlayState: next.PlayState, QueueOrder: next.QueueOrder,
-		JobID: next.JobID,
+		JobID:    next.JobID,
 		Messages: messages,
 	})
 	if err != nil {

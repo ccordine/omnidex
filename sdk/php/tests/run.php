@@ -24,22 +24,22 @@ const TOKEN = 'integration-token-0123456789abcdef';
 
 final class FakeTransport implements Transport
 {
-    /** @var list<callable(string, string, array<string, string>, ?string, int): Response> */
+    /** @var list<callable(string, string, array<string, string>, ?string): Response> */
     private array $handlers;
 
-    /** @param list<callable(string, string, array<string, string>, ?string, int): Response> $handlers */
+    /** @param list<callable(string, string, array<string, string>, ?string): Response> $handlers */
     public function __construct(array $handlers)
     {
         $this->handlers = $handlers;
     }
 
-    public function send(string $method, string $url, array $headers, ?string $body, int $timeoutSeconds): Response
+    public function send(string $method, string $url, array $headers, ?string $body): Response
     {
         $handler = array_shift($this->handlers);
         if ($handler === null) {
             throw new RuntimeException('Unexpected transport call.');
         }
-        return $handler($method, $url, $headers, $body, $timeoutSeconds);
+        return $handler($method, $url, $headers, $body);
     }
 
     public function remaining(): int
@@ -171,7 +171,42 @@ function testFailureBoundaries(): void
     Authority::validateDelegatedId(Authority::createDelegatedId());
 }
 
+function testNativeRequestWaitsForDelayedResponse(): void
+{
+    $originalTimeout = ini_get('default_socket_timeout');
+    ini_set('default_socket_timeout', '1');
+    $server = <<<'SERVER'
+    $server = stream_socket_server('tcp://127.0.0.1:0');
+    echo stream_socket_get_name($server, false) . "\n";
+    fflush(STDOUT);
+    $conn = stream_socket_accept($server, 5);
+    while (($line = fgets($conn)) !== false && trim($line) !== '') {}
+    usleep(1100000);
+    fwrite($conn, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n");
+    fflush($conn);
+    usleep(1100000);
+    fwrite($conn, '{}');
+    fclose($conn);
+    fclose($server);
+    SERVER;
+    $process = proc_open([PHP_BINARY, '-r', $server], [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+    try {
+        $address = trim(fgets($pipes[1]));
+        $response = (new Omnidex\Integration\Http\NativeTransport())->send('GET', 'http://' . $address, [], null);
+        same(200, $response->status, 'delayed response status');
+        same('{}', $response->body, 'delayed response body');
+    } finally {
+        foreach ($pipes as $pipe) {
+            fclose($pipe);
+        }
+        proc_terminate($process);
+        proc_close($process);
+        ini_set('default_socket_timeout', $originalTimeout);
+    }
+}
+
 testDelegatedRegistration();
 testChannelAndMessage();
 testFailureBoundaries();
+testNativeRequestWaitsForDelayedResponse();
 fwrite(STDOUT, "PHP SDK contract tests passed.\n");

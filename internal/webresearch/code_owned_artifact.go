@@ -32,7 +32,7 @@ func BuildGroundedCompletionArtifact(
 	maxParagraphs, maxParagraphBytes int,
 ) (Artifact, error) {
 	if maxParagraphs < 1 || maxParagraphs > maxPortableSynthesisParagraphs ||
-		maxParagraphBytes < 1 || maxParagraphBytes > maxPortableSynthesisParagraphBytes {
+		maxParagraphBytes < 1 {
 		return Artifact{}, fmt.Errorf("%w: grounded artifact bounds are invalid", ErrInvalidConfiguration)
 	}
 	if err := validateEvidence(evidence); err != nil {

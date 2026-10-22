@@ -150,9 +150,7 @@ export async function createUserChannel(input: {
   const payload = await readJSON<{ channel?: unknown }>(response);
   requireStatus(response, 201, "channel create");
   const channel = requireUserChannel(payload.channel, "Channel create response");
-  if (channel.id !== input.id || channel.name !== input.name ||
-    (workspaceRoot !== undefined && channel.workspace_root !== workspaceRoot) ||
-    (channel.data_source_id ?? "") !== (dataSourceID ?? "") || channel.mode !== creation.mode) {
+  if ((((channel.id !== input.id || channel.name !== input.name) || (workspaceRoot !== undefined && channel.workspace_root !== workspaceRoot)) || ((channel.data_source_id ?? "") !== (dataSourceID ?? ""))) || (channel.mode !== creation.mode)) {
     throw new Error("Channel create response changed the requested identity.");
   }
   return channel;
@@ -229,7 +227,7 @@ function requireRoleplayCharacterID(value: unknown, source: string): string {
 }
 
 function requireDataSourceID(value: unknown, source: string): string {
-  if (typeof value !== "string" || !/^[a-z0-9][a-z0-9_.:-]{0,127}$/.test(value)) {
+  if (typeof value !== "string" || !/^[a-z0-9][a-z0-9_.:-]*$/.test(value)) {
     throw new Error(`${source} has an invalid canonical data-source id.`);
   }
   return value;
@@ -261,8 +259,7 @@ function requireChannelMessage(
       : requireRoleplayCharacterID(presentation.character_id, `${source} roleplay character_id`);
     const parts = parseRoleplayPresentationParts(presentation.parts, `${source} roleplay parts`);
     if (personaKind === "character") {
-      if (characterID === undefined ||
-        (contributionKind !== "dialogue" && contributionKind !== "action" &&
+      if ((characterID === undefined) || (contributionKind !== "dialogue" && contributionKind !== "action" &&
          contributionKind !== "action_dialogue" && contributionKind !== "structured_turn")) {
         throw new Error(`${source} character roleplay presentation is contradictory.`);
       }
@@ -271,8 +268,7 @@ function requireChannelMessage(
         ...(parts === undefined ? {} : { parts }),
       };
     } else {
-      if (characterID !== undefined ||
-        (contributionKind !== "narration" && contributionKind !== "direction" &&
+      if ((characterID !== undefined) || (contributionKind !== "narration" && contributionKind !== "direction" &&
          contributionKind !== "narration_direction" && contributionKind !== "command")) {
         throw new Error(`${source} narrator roleplay presentation is contradictory.`);
       }
@@ -323,7 +319,7 @@ function parseRoleplayPresentationParts(
   source: string,
 ): NonNullable<ChannelMessage["roleplay"]>["parts"] {
   if (value === undefined) return undefined;
-  if (!Array.isArray(value) || value.length < 1 || value.length > 16) {
+  if (!Array.isArray(value) || value.length < 1) {
     throw new Error(`${source} must be a bounded array.`);
   }
   return value.map((item, index) => {
@@ -353,14 +349,14 @@ function requireChannelTurnJob(value: unknown, source: string): ChannelTurnJob {
 }
 
 function requireChannelID(value: unknown, source: string): string {
-  if (typeof value !== "string" || !/^[a-z0-9][a-z0-9_.:-]{0,95}$/.test(value)) {
+  if (typeof value !== "string" || !/^[a-z0-9][a-z0-9_.:-]*$/.test(value)) {
     throw new Error(`${source} has an invalid canonical channel id.`);
   }
   return value;
 }
 
 function requireTags(value: unknown, source: string): string[] {
-  if (!Array.isArray(value) || value.length > 32) throw new Error(`${source} must be an array of at most 32 tags.`);
+  if (!Array.isArray(value)) throw new Error(`${source} must be an array of at most 32 tags.`);
   const tags = value.map((item, index) => requireBoundedText(item, `${source} item ${index}`, 64, true));
   if (tags.some((tag) => tag !== tag.toLowerCase())) throw new Error(`${source} must contain only lowercase tags.`);
   if (new Set(tags).size !== tags.length) throw new Error(`${source} contains duplicate tags.`);
@@ -394,7 +390,7 @@ function requireNonblankString(value: unknown, source: string): string {
 
 function requireBoundedText(value: unknown, source: string, maxBytes: number, exact: boolean): string {
   const text = requireNonblankString(value, source);
-  if (new TextEncoder().encode(text).byteLength > maxBytes) throw new Error(`${source} exceeds ${maxBytes} UTF-8 bytes.`);
+
   if (exact && text !== text.trim()) throw new Error(`${source} must not have surrounding whitespace.`);
   return text;
 }

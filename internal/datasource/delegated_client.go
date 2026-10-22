@@ -24,12 +24,12 @@ func NewDelegatedClient(baseURL, token string, httpClient *http.Client) (*Delega
 	if err := ValidateDelegatedBaseURL(baseURL); err != nil {
 		return nil, err
 	}
-	if token == "" || token != strings.TrimSpace(token) || len(token) < 24 || len(token) > 4096 ||
+	if token == "" || token != strings.TrimSpace(token) || len(token) < 24 ||
 		strings.ContainsAny(token, "\r\n\x00") {
 		return nil, fmt.Errorf("delegated database authority token must contain 24..4096 exact bytes")
 	}
-	if httpClient == nil || httpClient.Timeout <= 0 {
-		return nil, fmt.Errorf("delegated database authority requires a bounded HTTP client")
+	if httpClient == nil {
+		return nil, fmt.Errorf("delegated database authority requires an HTTP client")
 	}
 	client := *httpClient
 	client.CheckRedirect = func(*http.Request, []*http.Request) error {
@@ -118,13 +118,11 @@ func (client *DelegatedClient) post(ctx context.Context, endpoint string, input,
 		return fmt.Errorf("execute delegated database request: %w", err)
 	}
 	defer response.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(response.Body, MaxDelegatedResponseBytes+1))
+	raw, err := io.ReadAll(response.Body)
 	if err != nil {
 		return fmt.Errorf("read delegated database response: %w", err)
 	}
-	if len(raw) > MaxDelegatedResponseBytes {
-		return fmt.Errorf("delegated database response exceeds %d bytes", MaxDelegatedResponseBytes)
-	}
+
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return delegatedHostStatusError(response.StatusCode, raw)
 	}

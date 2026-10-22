@@ -146,9 +146,7 @@ func validateRoleplaySceneDraft(
 		draft.Revision < 0 || draft.SceneRevision < 0 {
 		return fmt.Errorf("persisted roleplay scene draft changed authority")
 	}
-	if len(draft.Participants) > roleplay.MaxSceneParticipants {
-		return fmt.Errorf("persisted roleplay scene draft exceeds participant bound")
-	}
+
 	seen := make(map[string]struct{}, len(draft.Participants))
 	for _, participant := range draft.Participants {
 		if !roleplayCharacterIdentityPattern.MatchString(participant.CharacterID) {

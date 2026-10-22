@@ -106,7 +106,7 @@ func validateSemanticUncertaintyContractField(name, value string) error {
 	if value == "" || value != strings.TrimSpace(value) {
 		return fmt.Errorf("%s must be non-empty and exactly trimmed", name)
 	}
-	if len(value) > 512 || !utf8.ValidString(value) || strings.ContainsAny(value, "\x00\r\n") {
+	if !utf8.ValidString(value) || strings.ContainsAny(value, "\x00\r\n") {
 		return fmt.Errorf("%s must be one bounded UTF-8 line", name)
 	}
 	return nil

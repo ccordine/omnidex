@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gryph/omnidex/internal/model"
 	"golang.org/x/term"
 )
 
@@ -69,7 +68,7 @@ func TestPlanReviewNoteBytesCannotBecomeAChatTurnBeforeHandoff(t *testing.T) {
 		_ = source.Close()
 	})
 	router := mustPlanReviewInputRouter(t, source)
-	pasteReader := newBracketedPasteReader(router, model.MaxFreeFormTurnBytes)
+	pasteReader := newBracketedPasteReader(router)
 	var output bytes.Buffer
 	terminal := term.NewTerminal(
 		terminalReadWriter{reader: pasteReader, writer: &output},
@@ -157,7 +156,7 @@ func testBracketedPasteChatInput(t *testing.T, pasted string) {
 		_ = source.Close()
 	})
 	router := mustPlanReviewInputRouter(t, source)
-	pasteReader := newBracketedPasteReader(router, model.MaxFreeFormTurnBytes)
+	pasteReader := newBracketedPasteReader(router)
 	var output bytes.Buffer
 	terminal := term.NewTerminal(
 		terminalReadWriter{reader: pasteReader, writer: &output},
@@ -211,7 +210,7 @@ func TestPlanNoteModeTransitionWaitsForInFlightBytesToRetainAuthority(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	pasteReader := newBracketedPasteReader(router, model.MaxFreeFormTurnBytes)
+	pasteReader := newBracketedPasteReader(router)
 	var output bytes.Buffer
 	terminal := term.NewTerminal(
 		terminalReadWriter{reader: pasteReader, writer: &output},

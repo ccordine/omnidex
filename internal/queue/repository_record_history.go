@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/gryph/omnidex/internal/evidence"
+
 	"github.com/jackc/pgx/v5"
 )
 
@@ -16,7 +18,9 @@ func readHistoricalEvidencePage(
 	limit int,
 ) ([]HistoricalEvidence, string, error) {
 	rows, err := tx.Query(ctx, `
-		SELECT record.id, record.job_id, record.step_id, record.payload_json, record.created_at,
+		SELECT record.id, record.job_id, record.step_id, record.kind,
+		       COALESCE(record.source_type,''), COALESCE(record.source_ref,''),
+		       record.payload_json, record.created_at,
 		       steps.generation, steps.superseded_at_generation
 		FROM evidence AS record
 		JOIN job_steps AS steps
@@ -35,14 +39,16 @@ func readHistoricalEvidencePage(
 		var item HistoricalEvidence
 		var id, recordJobID, stepID int64
 		var payload []byte
+		var kind, sourceType, sourceRef string
 		var createdAt time.Time
 		if err := rows.Scan(
-			&id, &recordJobID, &stepID, &payload, &createdAt,
+			&id, &recordJobID, &stepID, &kind, &sourceType, &sourceRef, &payload, &createdAt,
 			&item.Step.Generation, &item.Step.SupersededAtGeneration,
 		); err != nil {
 			return nil, "", fmt.Errorf("scan job %d historical evidence: %w", jobID, err)
 		}
-		if err := json.Unmarshal(payload, &item.Evidence); err != nil {
+		item.Evidence, err = historicalEvidenceRecord(kind, sourceType, sourceRef, payload)
+		if err != nil {
 			return nil, "", fmt.Errorf("decode historical evidence %d: %w", id, err)
 		}
 		item.Evidence.ID = id
@@ -59,4 +65,38 @@ func readHistoricalEvidencePage(
 	return finishJobHistoryPage(jobID, JobHistoryEvidence, items, limit, func(item HistoricalEvidence) int64 {
 		return item.Evidence.ID
 	})
+}
+
+// Native journals and session receipts share the evidence table with public
+// records, but have different payload types. Project their public facts instead
+// of decoding them as Record or exposing raw model envelopes and wire frames.
+func historicalEvidenceRecord(kind, sourceType, sourceRef string, payload []byte) (evidence.Record, error) {
+	var record evidence.Record
+	switch kind {
+	case "coding_agent":
+		var entry struct {
+			Phase        string   `json:"phase"`
+			Role         string   `json:"role"`
+			TaskID       string   `json:"task_id"`
+			Generation   int64    `json:"generation"`
+			Notes        []string `json:"notes"`
+			WrittenFiles []string `json:"written_files"`
+		}
+		if err := json.Unmarshal(payload, &entry); err != nil {
+			return record, err
+		}
+		record = evidence.Record{Kind: kind, SourceType: sourceType, SourceRef: sourceRef,
+			Summary: entry.Phase, FilePaths: entry.WrittenFiles,
+			Metadata: map[string]any{"phase": entry.Phase, "role": entry.Role, "task_id": entry.TaskID, "generation": entry.Generation}}
+		if len(entry.Notes) == 1 && (entry.Phase == "execution_response" || entry.Phase == "review_response" || entry.Phase == "task_incomplete" || entry.Phase == "planning_incomplete") {
+			record.Summary = entry.Notes[0]
+		}
+	case "channel_session_message", "coding_planning_amendment":
+		record = evidence.Record{Kind: kind, SourceType: sourceType, SourceRef: sourceRef, Summary: kind}
+	default:
+		if err := json.Unmarshal(payload, &record); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
 }

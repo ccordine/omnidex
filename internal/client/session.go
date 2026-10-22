@@ -181,8 +181,7 @@ func validateChatSessionTurns(snapshot ChatSessionSnapshot) error {
 	if snapshot.Turns == nil {
 		return fmt.Errorf("chat session turns must be an array")
 	}
-	if len(snapshot.Turns) > model.MaxChannelSessionTurns ||
-		snapshot.TurnsTruncated && len(snapshot.Turns) != model.MaxChannelSessionTurns {
+	if snapshot.TurnsTruncated && len(snapshot.Turns) != model.MaxChannelSessionTurns {
 		return fmt.Errorf("chat session turn truncation is contradictory")
 	}
 	seen := make(map[model.LifecycleOperationID]struct{}, len(snapshot.Turns))
@@ -266,8 +265,7 @@ func validateChatSessionControls(snapshot ChatSessionSnapshot) error {
 	if snapshot.Controls == nil {
 		return fmt.Errorf("chat session controls must be an array")
 	}
-	if len(snapshot.Controls) > model.MaxChannelSessionControls ||
-		snapshot.ControlsTruncated && len(snapshot.Controls) != model.MaxChannelSessionControls {
+	if snapshot.ControlsTruncated && len(snapshot.Controls) != model.MaxChannelSessionControls {
 		return fmt.Errorf("chat session control truncation is contradictory")
 	}
 	seen := make(map[model.LifecycleOperationID]struct{}, len(snapshot.Controls))
@@ -284,7 +282,6 @@ func validateChatSessionControls(snapshot ChatSessionSnapshot) error {
 			strings.TrimSpace(control.Text) == "" {
 			return fmt.Errorf("chat session control %q has invalid persisted authority", control.OperationID)
 		}
-		maximum := maxObjectiveControlBytes
 		switch control.Kind {
 		case model.ChannelSessionControlInterrupt:
 			if control.Generation < 1 || control.Status != model.JobStatusWaiting {
@@ -295,16 +292,13 @@ func validateChatSessionControls(snapshot ChatSessionSnapshot) error {
 				return fmt.Errorf("chat session redirect %q has contradictory authority", control.OperationID)
 			}
 		case model.ChannelSessionControlCancel:
-			maximum = maxCancelReasonBytes
 			if control.Status != model.JobStatusCanceled {
 				return fmt.Errorf("chat session cancellation %q has status %q", control.OperationID, control.Status)
 			}
 		default:
 			return fmt.Errorf("chat session control %q has unsupported kind %q", control.OperationID, control.Kind)
 		}
-		if len(control.Text) > maximum {
-			return fmt.Errorf("chat session control %q exceeds its exact byte bound", control.OperationID)
-		}
+
 		if index > 0 && !sessionHistoryOrder(
 			snapshot.Controls[index-1].CreatedAt,
 			string(snapshot.Controls[index-1].OperationID),

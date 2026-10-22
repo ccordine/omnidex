@@ -35,10 +35,10 @@ func runChatSessions(config chatSessionConfig, clientID string) (resultErr error
 	console := config.Console
 	source := console.reviewInput.source.(*workspaceInputSource)
 	terminal := &sessionTerminal{source: source.source, output: console.workspace.output, selected: config.Channel.ID}
-	source.source = &sessionTerminalInput{terminal: terminal, id: config.Channel.ID, ctx: ctx}
+	config.Context, config.Cancel = context.WithCancel(ctx)
+	source.source = &sessionTerminalInput{terminal: terminal, id: config.Channel.ID, ctx: config.Context}
 	console.workspace.output = sessionTerminalOutput{terminal, config.Channel.ID}
 	host := &chatSessions{ctx: ctx, clientID: clientID, terminal: terminal, sessions: make(map[model.ChannelID]*retainedChatSession), selected: config.Channel.ID, requests: make(chan workspaceSessionRequest, 1), done: make(chan error, 1)}
-	config.Context, config.Cancel = context.WithCancel(ctx)
 	first := &retainedChatSession{config: config, signals: make(chan os.Signal, 2)}
 	host.add(first)
 	completed := 0
@@ -67,10 +67,8 @@ func runChatSessions(config chatSessionConfig, clientID string) (resultErr error
 			completed++
 			return err
 		case signal := <-config.Signals:
-			select {
-			case host.sessions[host.selected].signals <- signal:
-			case <-ctx.Done():
-				return ctx.Err()
+			if err := host.signalSelected(signal); err != nil {
+				return err
 			}
 		case request := <-host.requests:
 			if request.origin != host.selected {
@@ -97,6 +95,22 @@ func runChatSessions(config chatSessionConfig, clientID string) (resultErr error
 				}
 			}
 		}
+	}
+}
+
+func (host *chatSessions) signalSelected(signal os.Signal) error {
+	entry := host.sessions[host.selected]
+	if signal == os.Interrupt {
+		cleared, err := entry.config.Console.cancelDraft(host.ctx)
+		if err != nil || cleared {
+			return err
+		}
+	}
+	select {
+	case entry.signals <- signal:
+		return nil
+	case <-host.ctx.Done():
+		return host.ctx.Err()
 	}
 }
 

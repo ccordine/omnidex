@@ -74,7 +74,7 @@ func ParseMemoryKind(value string) (MemoryKind, error) {
 
 func ParseMemorySource(value string) (MemorySource, error) {
 	if value == "" || value != strings.TrimSpace(value) || !utf8.ValidString(value) ||
-		strings.ContainsRune(value, '\x00') || len(value) > MaxMemorySourceBytes {
+		strings.ContainsRune(value, '\x00') {
 		return "", fmt.Errorf(
 			"memory source must be exact non-empty UTF-8 provenance of at most %d bytes",
 			MaxMemorySourceBytes,
@@ -113,9 +113,7 @@ func ParseMemoryCategories(values []string) ([]MemoryCategory, error) {
 }
 
 func ValidateMemoryCategories(categories []MemoryCategory) error {
-	if len(categories) > MaxMemoryCategories {
-		return fmt.Errorf("memory categories exceed the %d-item bound", MaxMemoryCategories)
-	}
+
 	seen := make(map[MemoryCategory]struct{}, len(categories))
 	for _, category := range categories {
 		if _, err := ParseMemoryCategory(string(category)); err != nil {
@@ -130,13 +128,11 @@ func ValidateMemoryCategories(categories []MemoryCategory) error {
 }
 
 func ValidateMemoryTags(tags []string) error {
-	if len(tags) > MaxMemoryTags {
-		return fmt.Errorf("memory tags exceed the %d-item bound", MaxMemoryTags)
-	}
+
 	seen := make(map[string]struct{}, len(tags))
 	for _, tag := range tags {
 		if tag == "" || tag != strings.TrimSpace(tag) || !utf8.ValidString(tag) ||
-			strings.ContainsRune(tag, '\x00') || len(tag) > MaxMemoryTagBytes {
+			strings.ContainsRune(tag, '\x00') {
 			return fmt.Errorf("memory tag must be exact non-empty UTF-8 text of at most %d bytes", MaxMemoryTagBytes)
 		}
 		if _, exists := seen[tag]; exists {
@@ -172,8 +168,7 @@ func (input MemoryInput) Validate() error {
 		return err
 	}
 	if input.Content == "" || input.Content != strings.TrimSpace(input.Content) ||
-		!utf8.ValidString(input.Content) || strings.ContainsRune(input.Content, '\x00') ||
-		len(input.Content) > MaxMemoryContentBytes {
+		!utf8.ValidString(input.Content) || strings.ContainsRune(input.Content, '\x00') {
 		return fmt.Errorf("memory content must be exact non-empty UTF-8 text of at most %d bytes", MaxMemoryContentBytes)
 	}
 	if err := ValidateMemoryInputTags(input.Tags); err != nil {

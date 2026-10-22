@@ -93,7 +93,7 @@ func decodeUIProjectModelFields(models map[string]any) ([]uiProjectModelField, e
 			return nil, fmt.Errorf("project model field %q has invalid option authority", definition.Key)
 		}
 		value, ok := raw["value"].(string)
-		if !ok || !utf8.ValidString(value) || strings.ContainsRune(value, '\x00') || len(value) > 4096 || value != strings.TrimSpace(value) {
+		if !ok || !utf8.ValidString(value) || strings.ContainsRune(value, '\x00') || value != strings.TrimSpace(value) {
 			return nil, fmt.Errorf("project model field %q has invalid resolved value", definition.Key)
 		}
 		fields = append(fields, uiProjectModelField{Key: definition.Key, Label: definition.Label, Value: value, Options: options})

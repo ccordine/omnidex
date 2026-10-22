@@ -35,12 +35,16 @@ func TestDatabasePurposeInventoryRejectsMalformedAndMixedAbsence(t *testing.T) {
 		Collection: DatabaseQueryFilterPurpose,
 	}
 	const purpose = "Require the reading to exceed seven."
+	for _, large := range []string{strings.Repeat(purpose+"\n", MaxDatabaseQueryPurposeCandidates) + purpose, strings.Repeat("x", maxDatabaseQueryPurposeBytes+1)} {
+		got, err := DecodeDatabaseQueryPurposeInventory(input, large)
+		if err != nil || strings.Join(got.Candidates, "\n") != large {
+			t.Fatal("large inventory was rejected or changed", err)
+		}
+	}
 	for _, raw := range []string{
 		"", "[]", `{ "candidates": [] }`, " NO_QUERY_PURPOSE_CANDIDATES", "NO_QUERY_PURPOSE_CANDIDATES ",
 		"NO_QUERY_PURPOSE_CANDIDATES\n" + purpose, purpose + "\nNO_QUERY_PURPOSE_CANDIDATES",
 		purpose + "\n\n" + purpose, purpose + "\r\n" + purpose,
-		strings.Repeat(purpose+"\n", MaxDatabaseQueryPurposeCandidates) + purpose,
-		strings.Repeat("x", maxDatabaseQueryPurposeBytes+1),
 	} {
 		inventory, err := DecodeDatabaseQueryPurposeInventory(input, raw)
 		if err == nil || !reflect.DeepEqual(inventory, DatabaseQueryPurposeInventory{}) {

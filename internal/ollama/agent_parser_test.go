@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/gryph/omnidex/internal/codingagent"
 )
@@ -15,10 +14,10 @@ import (
 func parserAssignment() codingagent.Assignment {
 	return codingagent.Assignment{Role: codingagent.ExecutionResponse,
 		Route: codingagent.Route{Provider: "ollama", Model: "parser:7b"}, Response: "The task is finished.",
-		ParserStep: &codingagent.ParserStep{Stage: "scan", BlockID: "block_1", Source: "The task is finished."}}
+		Task: &codingagent.Task{ID: "task", Goal: "Finish the task."}}
 }
 
-const parserScanFixture = `{"units":{"unit_1":{"kind":"done","reason":"Explicit completion.","group_start":"unit_1"}}}`
+const parserScanFixture = `{"kind":"done"}`
 
 func TestLocalParserUsesSharedSchemaAndOriginalWireEvidence(t *testing.T) {
 	dispatches := 0
@@ -40,7 +39,7 @@ func TestLocalParserUsesSharedSchemaAndOriginalWireEvidence(t *testing.T) {
 			Response: parserScanFixture, PromptEvalCount: 120, EvalCount: 7})
 	}))
 	defer server.Close()
-	parser, err := NewParser(server.URL, time.Second, 8192)
+	parser, err := NewParser(server.URL, 8192)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +68,7 @@ func TestLocalParserUsesSharedSchemaAndOriginalWireEvidence(t *testing.T) {
 }
 
 func TestLocalParserRejectsIncompleteOrUnboundProviderResponses(t *testing.T) {
-	for _, name := range []string{"different-model", "length-stop", "unfinished", "oversized-context", "malformed-output", "invalid-review-reference", "unavailable"} {
+	for _, name := range []string{"different-model", "length-stop", "unfinished", "malformed-output", "unavailable"} {
 		t.Run(name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				response := parserResponse{Model: "parser:7b", Done: true, DoneReason: "stop", Response: parserScanFixture, PromptEvalCount: 100, EvalCount: 8}
@@ -80,27 +79,66 @@ func TestLocalParserRejectsIncompleteOrUnboundProviderResponses(t *testing.T) {
 					response.DoneReason = "length"
 				case "unfinished":
 					response.Done = false
-				case "oversized-context":
-					response.PromptEvalCount = 8192
 				case "malformed-output":
 					response.Response = "finished"
-				case "invalid-review-reference":
-					response.Response = `{"kind":"done","findings":[{"requirement":"criterion_2","file":"","observation":"Broken"}],"verification":"Checked"}`
 				case "unavailable":
 					w.WriteHeader(http.StatusServiceUnavailable)
 				}
 				_ = json.NewEncoder(w).Encode(response)
 			}))
 			defer server.Close()
-			parser, _ := NewParser(server.URL, time.Second, 8192)
+			parser, _ := NewParser(server.URL, 8192)
 			call := parserAssignment()
-			if name == "invalid-review-reference" {
-				call.Role, call.Task = codingagent.ReviewResponse, &codingagent.Task{ID: "task", Acceptance: []string{"Works"}}
-			}
 			result, err := parser.Run(context.Background(), call, func(codingagent.NativeEvent) error { return nil })
 			if err == nil || result.Completed {
 				t.Fatalf("%s became an accepted parser result: %+v %v", name, result, err)
 			}
 		})
+	}
+}
+
+func TestLocalPlanningExtractsCompleteTaskWithOneRequest(t *testing.T) {
+	source := "1. Render the requested page. Use the configured theme.\n\nFiles: page.go and page_test.go.\n\nAcceptance: keyboard navigation works. Verify with the keyboard test."
+	dispatches := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		dispatches++
+		var request parserRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.HasSuffix(request.Prompt, source) || strings.Contains(request.Prompt, "group_start") || strings.Contains(request.Prompt, "task_support") {
+			t.Fatal("task source was split into parser stages", request.Prompt)
+		}
+		content, _ := json.Marshal(map[string]any{"ledger": map[string]any{"tasks": []any{map[string]any{
+			"goal": source, "objective": "Render the requested page.",
+			"owner_context":         []any{map[string]any{"text": "Use the configured theme."}},
+			"constraints":           []string{"Preserve keyboard navigation."},
+			"write_files":           []string{"page.go", "page_test.go"},
+			"file_responsibilities": []any{map[string]any{"path": "page.go", "action": "change", "responsibility": "Render the page."}},
+			"acceptance":            []any{map[string]any{"text": "Keyboard navigation works.", "verification": []string{"Run the keyboard test."}}},
+		}}}})
+		_ = json.NewEncoder(w).Encode(parserResponse{Model: "parser:7b", Done: true, DoneReason: "stop", Response: string(content), PromptEvalCount: 120, EvalCount: 100})
+	}))
+	defer server.Close()
+	parser, err := NewParser(server.URL, 8192)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := codingagent.Assignment{JobID: 1, Role: codingagent.PlanningInitial, PlanningResponse: source, Route: codingagent.Route{Provider: "ollama", Model: "parser:7b"}}
+	result, err := parser.Run(t.Context(), call, func(codingagent.NativeEvent) error { return nil })
+	if err != nil || dispatches != 1 {
+		t.Fatalf("planning required extra stages: requests=%d err=%v", dispatches, err)
+	}
+	var parsed struct {
+		Ledger codingagent.EngineeringLedger `json:"ledger"`
+	}
+	if err := json.Unmarshal(result.Content, &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if err := parsed.Ledger.ValidateDraft(); err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed.Ledger.Tasks) != 1 || parsed.Ledger.Tasks[0].Goal != source || len(parsed.Ledger.Tasks[0].Acceptance[0].Verification) != 1 || parsed.Ledger.Tasks[0].OwnerContext[0].Provenance.Reference == "" {
+		t.Fatalf("task details were lost: %+v", parsed.Ledger)
 	}
 }

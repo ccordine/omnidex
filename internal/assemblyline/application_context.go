@@ -44,9 +44,7 @@ func validateApplicationRequest(label, request string) error {
 	if strings.TrimSpace(request) == "" {
 		return fmt.Errorf("%s requires a non-empty user request", label)
 	}
-	if len(request) > maxPortablePayloadBytes/2 {
-		return fmt.Errorf("%s user request exceeds %d bytes", label, maxPortablePayloadBytes/2)
-	}
+
 	return nil
 }
 
@@ -71,9 +69,7 @@ func (context ApplicationContext) Validate() error {
 	if context.Schema != ApplicationContextSchemaV1 {
 		return fmt.Errorf("application context schema must be %q", ApplicationContextSchemaV1)
 	}
-	if len(context.Facts) > MaxApplicationContextFacts {
-		return fmt.Errorf("application context accepts at most %d facts", MaxApplicationContextFacts)
-	}
+
 	seen := make(map[string]struct{}, len(context.Facts))
 	for index, fact := range context.Facts {
 		if fact.ID != fmt.Sprintf("fact_%03d", index+1) {
@@ -83,8 +79,7 @@ func (context ApplicationContext) Validate() error {
 			return fmt.Errorf("application context fact %q is duplicated", fact.ID)
 		}
 		seen[fact.ID] = struct{}{}
-		if fact.Value == "" || fact.Value != strings.TrimSpace(fact.Value) ||
-			len(fact.Value) > MaxApplicationContextFactBytes {
+		if fact.Value == "" || fact.Value != strings.TrimSpace(fact.Value) {
 			return fmt.Errorf("application context fact %q has invalid value", fact.ID)
 		}
 		if err := ValidatePathFreeModelContext("application context fact "+fact.ID, fact.Value); err != nil {

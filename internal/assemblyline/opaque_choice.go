@@ -20,7 +20,7 @@ type OpaqueModelChoice struct {
 func NewOpaqueModelChoice(description, value string) (OpaqueModelChoice, error) {
 	description = strings.TrimSpace(description)
 	if description == "" || !utf8.ValidString(description) ||
-		strings.ContainsRune(description, '\x00') || len(description) > 4096 {
+		strings.ContainsRune(description, '\x00') {
 		return OpaqueModelChoice{}, fmt.Errorf(
 			"opaque model choice requires one bounded semantic description",
 		)
@@ -70,9 +70,7 @@ func RenderOpaqueModelChoiceQuestion(
 	parts = append(parts, opaqueModelChoiceLabeledDescriptions(choices)...)
 	parts = append(parts, opaqueModelChoiceAnswerClause(len(choices)))
 	result := strings.Join(parts, "\n\n")
-	if len(result) > maxPortableResourceBytes {
-		return "", fmt.Errorf("opaque model choice input exceeds %d bytes", maxPortableResourceBytes)
-	}
+
 	return result, nil
 }
 
@@ -118,7 +116,7 @@ func opaqueModelChoiceAnswerClause(count int) string {
 }
 
 func validateOpaqueModelChoices(choices []OpaqueModelChoice) error {
-	if len(choices) < 1 || len(choices) > maxOpaqueModelChoices {
+	if len(choices) < 1 {
 		return fmt.Errorf("opaque model choices require 1..%d options", maxOpaqueModelChoices)
 	}
 	seenDescriptions := make(map[string]struct{}, len(choices))

@@ -72,9 +72,7 @@ func parseScrumFlowMetrics(raw json.RawMessage) (ScrumFlowMetrics, error) {
 	if len(raw) == 0 {
 		return ScrumFlowMetrics{}, fmt.Errorf("payload is required; use an explicit empty object when no metrics exist")
 	}
-	if len(raw) > maxScrumFlowMetricsBytes {
-		return ScrumFlowMetrics{}, fmt.Errorf("payload exceeds %d bytes", maxScrumFlowMetricsBytes)
-	}
+
 	if !utf8.Valid(raw) {
 		return ScrumFlowMetrics{}, fmt.Errorf("payload must be valid UTF-8")
 	}
@@ -144,12 +142,10 @@ func validateScrumFlowMetrics(metrics ScrumFlowMetrics) error {
 	if metrics.CompletionStatus != "likely_complete" && metrics.CompletionStatus != "likely_incomplete" && metrics.CompletionStatus != "uncertain" {
 		return fmt.Errorf("completion_status is not registered")
 	}
-	if len(metrics.Signals) > maxScrumFlowSignals {
-		return fmt.Errorf("signals exceeds %d items", maxScrumFlowSignals)
-	}
+
 	seenSignals := make(map[string]struct{}, len(metrics.Signals))
 	for index, signal := range metrics.Signals {
-		if !utf8.ValidString(signal) || strings.ContainsRune(signal, '\x00') || strings.TrimSpace(signal) == "" || strings.TrimSpace(signal) != signal || len(signal) > maxScrumFlowSignalBytes {
+		if !utf8.ValidString(signal) || strings.ContainsRune(signal, '\x00') || strings.TrimSpace(signal) == "" || strings.TrimSpace(signal) != signal {
 			return fmt.Errorf("signals[%d] is outside its registered domain", index)
 		}
 		if _, exists := seenSignals[signal]; exists {
@@ -157,13 +153,11 @@ func validateScrumFlowMetrics(metrics ScrumFlowMetrics) error {
 		}
 		seenSignals[signal] = struct{}{}
 	}
-	encodedSignals, err := json.Marshal(metrics.Signals)
+	_, err := json.Marshal(metrics.Signals)
 	if err != nil {
 		return fmt.Errorf("encode signals: %w", err)
 	}
-	if len(encodedSignals) > maxScrumFlowSignalsJSON {
-		return fmt.Errorf("signals exceeds its %d-byte aggregate bound", maxScrumFlowSignalsJSON)
-	}
+
 	if metrics.LastPlayOutcome != "" && metrics.LastPlayOutcome != "success" && metrics.LastPlayOutcome != "failed" {
 		return fmt.Errorf("last_play_outcome is not registered")
 	}

@@ -23,9 +23,7 @@ func decodeProjectCollectionQuery(request *http.Request) (projectCollectionQuery
 	if request == nil || request.URL == nil {
 		return projectCollectionQuery{}, fmt.Errorf("project collection request URL is required")
 	}
-	if len(request.URL.RawQuery) > maxProjectRawQuerySize {
-		return projectCollectionQuery{}, fmt.Errorf("project collection query exceeds the %d-byte bound", maxProjectRawQuerySize)
-	}
+
 	values, err := url.ParseQuery(request.URL.RawQuery)
 	if err != nil {
 		return projectCollectionQuery{}, fmt.Errorf("decode project collection query: %w", err)

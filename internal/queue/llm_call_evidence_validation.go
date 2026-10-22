@@ -199,9 +199,7 @@ func normalizeLLMCallReceipt(record LLMCallReceiptRecord) (normalizedLLMCallRece
 	if err != nil {
 		return normalizedLLMCallReceipt{}, fmt.Errorf("encode exact provider generation receipt: %w", err)
 	}
-	if len(generationReceipt) > maxLLMCallGenerationReceiptBytes {
-		return normalizedLLMCallReceipt{}, fmt.Errorf("exact provider generation receipt exceeds its evidence bound")
-	}
+
 	rawPresent := llmGenerationHasRawResponse(owned)
 	rawResponse := []byte(nil)
 	if rawPresent {
@@ -257,7 +255,7 @@ func validateLLMCallError(value string) error {
 	if value == "" {
 		return nil
 	}
-	if value != strings.TrimSpace(value) || len(value) > 8192 || !utf8.ValidString(value) ||
+	if value != strings.TrimSpace(value) || !utf8.ValidString(value) ||
 		strings.ContainsRune(value, 0) {
 		return fmt.Errorf("LLM call evidence error must be exact bounded UTF-8 text")
 	}

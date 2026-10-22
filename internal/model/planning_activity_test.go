@@ -9,6 +9,7 @@ import (
 func TestPlanningActivityRequiresExactPublicFactContract(t *testing.T) {
 	for _, activity := range []PlanningActivity{
 		{Schema: 1, Kind: "inventory_started"},
+		{Schema: 1, Kind: "candidate_started", Subject: strings.Repeat("x", MaxPlanningCandidateSubjectBytes+1)},
 		{Schema: 1, Kind: "inventory_completed", Count: 3},
 		{Schema: 1, Kind: "candidate_started", Subject: "The user can cancel a pending request."},
 		{Schema: 1, Kind: "candidate_resolved", Subject: "The user can cancel a pending request.", Outcome: "retained"},
@@ -28,7 +29,6 @@ func TestPlanningActivityRequiresExactPublicFactContract(t *testing.T) {
 		{Schema: 1, Kind: "thinking", Subject: "Invented native thought"},
 		{Schema: 1, Kind: "candidate_started"},
 		{Schema: 1, Kind: "candidate_started", Subject: " leading space"},
-		{Schema: 1, Kind: "candidate_started", Subject: strings.Repeat("x", MaxPlanningCandidateSubjectBytes+1)},
 		{Schema: 1, Kind: "candidate_started", Subject: "two\nlines"},
 		{Schema: 1, Kind: "candidate_started", Subject: "\xff"},
 		{Schema: 1, Kind: "candidate_resolved", Subject: "An outcome.", Outcome: "native-approved"},
@@ -44,7 +44,7 @@ func TestPlanningActivityRequiresExactPublicFactContract(t *testing.T) {
 	}
 }
 
-func TestPlanningSemanticPublicationFitsExistingRealtimeFrame(t *testing.T) {
+func TestPlanningSemanticPublicationAcceptsLargeFrames(t *testing.T) {
 	activity := PlanningActivity{Schema: 1, Kind: "semantic_started", WorkKind: "application_requirement_candidate_authorization", Station: "application_requirement_candidate_authorization", Model: "fixture-model", Question: "Which offered value is required?", Why: "Natural language does not determine a literal selection mechanically.", Consumer: "Decode the exact selected value."}
 	for i := 0; i < 30; i++ {
 		activity.Options = append(activity.Options, strings.Repeat("x", 2048))
@@ -53,7 +53,7 @@ func TestPlanningSemanticPublicationFitsExistingRealtimeFrame(t *testing.T) {
 	if err != nil || len(encoded) < 48*1024 {
 		t.Fatal("oversized publication fixture is invalid")
 	}
-	if activity.Validate() == nil {
-		t.Fatal("planning publication can overflow the existing bounded realtime frame")
+	if err := activity.Validate(); err != nil {
+		t.Fatal("large planning publication was rejected", err)
 	}
 }

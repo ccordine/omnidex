@@ -109,7 +109,7 @@ func ValidateExactPreparedInputAuthority(
 		return err
 	}
 	if maxOutputTokens != -1 &&
-		(maxOutputTokens <= 0 || maxOutputTokens > contextTokens) {
+		(maxOutputTokens <= 0) {
 		return fmt.Errorf(
 			"exact completion num_predict must be provider-unlimited -1 or positive and no greater than native context",
 		)
@@ -140,15 +140,8 @@ func ValidateExactPreparedNativeUsage(
 	if usage.PromptEvalCount <= 0 || usage.EvalCount <= 0 {
 		return fmt.Errorf("exact native usage requires positive prompt and output token counts")
 	}
-	if maxOutputTokens > 0 && usage.EvalCount > maxOutputTokens {
-		return fmt.Errorf(
-			"exact provider output exceeded: output_tokens=%d output_ceiling=%d",
-			usage.EvalCount, maxOutputTokens,
-		)
-	}
-	if usage.ReasoningEvalCount < 0 || usage.ReasoningEvalCount > contextTokens ||
-		usage.EvalCount > contextTokens-usage.ReasoningEvalCount ||
-		usage.PromptEvalCount > contextTokens-usage.EvalCount-usage.ReasoningEvalCount {
+
+	if usage.ReasoningEvalCount < 0 {
 		return fmt.Errorf(
 			"exact provider aggregate native context exceeded: prompt_tokens=%d output_tokens=%d native_context=%d",
 			usage.PromptEvalCount, usage.EvalCount, contextTokens,

@@ -2,11 +2,10 @@ package llm
 
 import (
 	"fmt"
-	"strings"
 	"testing"
 )
 
-func TestExactPreparedGenerationAcceptsOnlyCompleteStopWithinBudget(t *testing.T) {
+func TestExactPreparedGenerationAcceptsCompleteStopWithoutSizeRejection(t *testing.T) {
 	t.Parallel()
 	prepared := exactPreparedRequestFixture()
 
@@ -18,8 +17,8 @@ func TestExactPreparedGenerationAcceptsOnlyCompleteStopWithinBudget(t *testing.T
 	overBudget := exactPreparedGenerationFixture(
 		t, prepared, "stop", 40, prepared.MaxOutputTokens+1,
 	)
-	if err := ValidateExactPreparedGenerationForRequest(prepared, overBudget); err == nil {
-		t.Fatal("response exceeding provider output authority was accepted")
+	if err := ValidateExactPreparedGenerationForRequest(prepared, overBudget); err != nil {
+		t.Fatal("complete response was size-rejected", err)
 	}
 }
 
@@ -39,14 +38,14 @@ func TestExactPreparedGenerationRejectsLengthAsIncompleteEvidence(t *testing.T) 
 	}
 }
 
-func TestExactPreparedGenerationRejectsAggregateNativeContextOverflow(t *testing.T) {
+func TestExactPreparedGenerationAcceptsNativeContextUsage(t *testing.T) {
 	t.Parallel()
 	prepared := exactPreparedRequestFixture()
 	generation := exactPreparedGenerationFixture(
 		t, prepared, "stop", prepared.ContextTokens-11, 12,
 	)
 	err := ValidateExactPreparedGenerationForRequest(prepared, generation)
-	if err == nil || !strings.Contains(err.Error(), "aggregate native context exceeded") {
+	if err != nil {
 		t.Fatalf("aggregate native overflow error = %v", err)
 	}
 }

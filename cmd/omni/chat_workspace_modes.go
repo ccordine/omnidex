@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 
-	"github.com/gryph/omnidex/internal/model"
 	"golang.org/x/term"
 )
 
@@ -15,7 +14,6 @@ func (event workspaceModeSwitch) Error() string { return "switch editor to " + e
 type workspaceEditorState struct {
 	terminal *term.Terminal
 	paste    *bracketedPasteReader
-	overflow bool
 	draft    workspaceScreen
 	prompt   string
 }
@@ -25,12 +23,16 @@ type workspaceEditorState struct {
 func (console *chatConsole) readEditorLine() (string, error) {
 	for {
 		console.presentationMu.Lock()
+		console.readingDraft = true
 		editor := console.terminal
+		editor.AutoCompleteCallback = console.interruptDraftKey
 		console.presentationMu.Unlock()
 		line, err := editor.ReadLine()
 		var event workspaceModeSwitch
 		if !errors.As(err, &event) {
 			console.presentationMu.Lock()
+			console.readingDraft = false
+			console.finishDraftInterruptLocked(false)
 			console.inputMode = console.editorMode
 			console.presentationMu.Unlock()
 			return line, err
@@ -38,6 +40,10 @@ func (console *chatConsole) readEditorLine() (string, error) {
 		err = console.selectEditor(event.mode)
 		console.reviewInput.finishEditorSwitch(event.mode)
 		if err != nil {
+			console.presentationMu.Lock()
+			console.readingDraft = false
+			console.finishDraftInterruptLocked(false)
+			console.presentationMu.Unlock()
 			return "", err
 		}
 	}
@@ -63,17 +69,15 @@ func (console *chatConsole) selectEditor(mode string) error {
 	console.promptMu.Lock()
 	previousPrompt := console.prompt
 	console.promptMu.Unlock()
-	console.editors[previous] = workspaceEditorState{terminal: console.terminal, paste: console.pasteReader, overflow: console.inputOverflow.Load(), draft: draft, prompt: previousPrompt}
+	console.editors[previous] = workspaceEditorState{terminal: console.terminal, paste: console.pasteReader, draft: draft, prompt: previousPrompt}
 	state, exists := console.editors[mode]
 	if !exists {
-		state.paste = newBracketedPasteReader(console.reviewInput, model.MaxFreeFormTurnBytes)
+		state.paste = newBracketedPasteReader(console.reviewInput)
 		state.terminal = term.NewTerminal(terminalReadWriter{reader: state.paste, writer: console.workspace}, mode+"> ")
-		state.terminal.AutoCompleteCallback = console.boundTerminalInput
 		state.draft = newWorkspaceScreen(console.terminalWidth)
 		state.prompt = mode + "> "
 	}
 	console.terminal, console.pasteReader, console.editorMode = state.terminal, state.paste, mode
-	console.inputOverflow.Store(state.overflow)
 	console.promptMu.Lock()
 	console.prompt = state.prompt
 	console.promptMu.Unlock()

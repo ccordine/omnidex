@@ -90,9 +90,7 @@ func decodeCodexCapture(encoded []byte) (CodexResponseCapture, CodexContinuation
 	var capture CodexResponseCapture
 	var thread codexThreadFrame
 	var turn codexTurnFrame
-	if len(encoded) > MaxExactPreparedProviderResponseBytes {
-		return capture, CodexContinuation{}, fmt.Errorf("Codex capture exceeds its bound")
-	}
+
 	if err := decodeCodexFrame(encoded, &capture); err != nil {
 		return capture, CodexContinuation{}, err
 	}

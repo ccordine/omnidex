@@ -109,7 +109,7 @@ func validateRoleplayGroundedSemanticAuthority(
 	); err != nil {
 		return err
 	}
-	if len(evidence) < 1 || len(evidence) > maxRoleplayGroundedEvidence {
+	if len(evidence) < 1 {
 		return fmt.Errorf("roleplay grounded response requires 1..%d evidence capsules", maxRoleplayGroundedEvidence)
 	}
 	if err := (GroundedAnswerInput{
@@ -140,7 +140,7 @@ func (decision RoleplayGroundedResponseDecision) ValidateFor(
 	if decision.Schema != RoleplayGroundedResponseSchemaV1 {
 		return fmt.Errorf("roleplay grounded response schema must be %q", RoleplayGroundedResponseSchemaV1)
 	}
-	if len(decision.Paragraphs) < 1 || len(decision.Paragraphs) > maxRoleplayGroundedParagraphs {
+	if len(decision.Paragraphs) < 1 {
 		return fmt.Errorf("roleplay grounded response requires 1..%d paragraphs", maxRoleplayGroundedParagraphs)
 	}
 	available := make(map[string]struct{}, len(input.RealWorldEvidence))

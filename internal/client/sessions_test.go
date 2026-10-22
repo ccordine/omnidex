@@ -42,7 +42,7 @@ func TestCLISessionsRejectsForeignDuplicateAndMalformedObservations(t *testing.T
 				json.NewEncoder(w).Encode(listing)
 			}))
 			defer server.Close()
-			apiClient, err := New(server.URL, time.Second)
+			apiClient, err := New(server.URL)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -77,7 +77,7 @@ func TestCLISessionsPaginatesBeyondResponseLimit(t *testing.T) {
 		json.NewEncoder(w).Encode(page)
 	}))
 	defer server.Close()
-	c, err := New(server.URL, time.Second)
+	c, err := New(server.URL)
 	if err != nil {
 		t.Fatal(err)
 	}

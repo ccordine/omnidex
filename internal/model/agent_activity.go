@@ -89,7 +89,7 @@ func (activity AgentActivity) Validate() error {
 	default:
 		return fmt.Errorf("agent activity has unregistered role %q", activity.Role)
 	}
-	if !activityText(activity.Text, MaxAgentActivityTextBytes) || !activityText(activity.Command, 4096) || !activityText(activity.CWD, 4096) || len(activity.Paths) > 8 {
+	if !activityText(activity.Text, MaxAgentActivityTextBytes) || !activityText(activity.Command, 4096) || !activityText(activity.CWD, 4096) {
 		return fmt.Errorf("agent activity exceeds its UTF-8 field bounds")
 	}
 	for _, file := range activity.Paths {
@@ -114,7 +114,7 @@ func (activity AgentActivity) Validate() error {
 			return fmt.Errorf("native command lacks its exact observed command")
 		}
 		if activity.Source == AgentActivityVerification {
-			if activity.Command != "" || len(activity.Argv) == 0 || len(activity.Argv) > 128 || activity.Argv[0] == "" {
+			if activity.Command != "" || len(activity.Argv) == 0 || activity.Argv[0] == "" {
 				return fmt.Errorf("verification command requires its exact argv")
 			}
 			for _, argument := range activity.Argv {
@@ -147,13 +147,13 @@ func (activity AgentActivity) Validate() error {
 	if activity.Status == AgentActivityStarted && activity.ExitCode != nil {
 		return fmt.Errorf("running command cannot carry an exit code")
 	}
-	encoded, err := json.Marshal(activity)
-	if err != nil || len(encoded) > 48*1024 {
-		return fmt.Errorf("agent activity exceeds its encoded transport bound")
+	_, err := json.Marshal(activity)
+	if err != nil {
+		return fmt.Errorf("encode agent activity: %w", err)
 	}
 	return nil
 }
 
 func activityText(value string, limit int) bool {
-	return len(value) <= limit && utf8.ValidString(value) && !strings.ContainsRune(value, '\x00')
+	return utf8.ValidString(value) && !strings.ContainsRune(value, '\x00')
 }

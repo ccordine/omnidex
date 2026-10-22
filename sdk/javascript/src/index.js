@@ -30,13 +30,11 @@ export function newDelegatedAuthorityId() {
 }
 
 export class OmnidexClient {
-  constructor({ baseUrl, token, timeoutMs = 30_000, fetch: fetchImplementation = globalThis.fetch }) {
+  constructor({ baseUrl, token, fetch: fetchImplementation = globalThis.fetch }) {
     validateConfiguration(baseUrl, token);
-    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) throw new TypeError("timeoutMs must be a positive integer.");
     if (typeof fetchImplementation !== "function") throw new TypeError("A fetch implementation is required.");
     this.baseUrl = baseUrl;
     this.token = token;
-    this.timeoutMs = timeoutMs;
     this.fetch = fetchImplementation;
   }
 
@@ -121,9 +119,9 @@ export class OmnidexClient {
 
   async request(path, { method, body, signal, expectedStatus }) {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(new Error("Omnidex request timed out.")), this.timeoutMs);
     const abort = () => controller.abort(signal.reason);
     signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
     try {
       const response = await this.fetch(this.baseUrl + path, {
         method, redirect: "error", signal: controller.signal,
@@ -142,7 +140,6 @@ export class OmnidexClient {
       }
       return value;
     } finally {
-      clearTimeout(timeout);
       signal?.removeEventListener("abort", abort);
     }
   }

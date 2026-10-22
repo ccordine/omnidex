@@ -36,9 +36,7 @@ func redactArtifactIdentities(input string, provenance modelcontext.ArtifactIden
 	for _, match := range matches {
 		token, exists := tokens[match.Value]
 		if !exists {
-			if maximum > 0 && len(identities) >= maximum {
-				return "", nil, fmt.Errorf("request exceeds the %d-artifact identity limit", maxArtifactIdentities)
-			}
+
 			token = fmt.Sprintf("ARTIFACT_%d", len(identities)+1)
 			tokens[match.Value] = token
 			identities = append(identities, ArtifactIdentity{Token: token, Value: match.Value})

@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/gryph/omnidex/internal/client"
 	"github.com/gryph/omnidex/internal/manifest"
@@ -19,7 +18,6 @@ import (
 
 const (
 	defaultCoreURL = manifest.DefaultCoreURL
-	requestTimeout = 30 * time.Second
 )
 
 type chatBootstrap struct {
@@ -69,7 +67,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) (resultErr er
 	if err != nil {
 		return err
 	}
-	apiClient, err := client.New(coreURL, requestTimeout)
+	apiClient, err := client.New(coreURL)
 	if err != nil {
 		return err
 	}

@@ -8,13 +8,12 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/gryph/omnidex/internal/llm"
 )
 
 func TestPreparedSourceCorrectionTransmitsCapturedNativeContext(t *testing.T) {
-	client := New("http://ollama.invalid", "", "", time.Minute)
+	client := New("http://ollama.invalid", "", "")
 	var requests []map[string]json.RawMessage
 	client.httpClient.Transport = preparedRawRoundTripper(func(request *http.Request) (*http.Response, error) {
 		if request.Method != http.MethodPost || request.URL.Path != "/api/generate" {

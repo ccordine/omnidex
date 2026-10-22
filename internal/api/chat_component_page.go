@@ -61,7 +61,7 @@ func chatEmptyState(message string) string {
 }
 
 func validateChatText(value, name string, maxBytes int) error {
-	if len(value) == 0 || len(value) > maxBytes || !utf8.ValidString(value) || strings.IndexByte(value, 0) >= 0 {
+	if len(value) == 0 || !utf8.ValidString(value) || strings.IndexByte(value, 0) >= 0 {
 		return fmt.Errorf("%s must contain 1..%d valid UTF-8 bytes without NUL", name, maxBytes)
 	}
 	return nil

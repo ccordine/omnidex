@@ -147,9 +147,7 @@ func (status Status) Validate() error {
 			return fmt.Errorf("git status contains a negative counter")
 		}
 	}
-	if len(status.ChangedFiles) > ChangedFileLimit || len(status.RecentCommits) > CommitLimit {
-		return fmt.Errorf("git status exceeds its bounded inventory")
-	}
+
 	if status.Clean != (status.StagedCount+status.ModifiedCount+status.UntrackedCount+status.DeletedCount+status.ConflictedCount == 0) {
 		return fmt.Errorf("git clean authority contradicts its counters")
 	}
@@ -185,7 +183,7 @@ func validateCommit(commit Commit) error {
 }
 
 func exactStatusString(label, value string, maxBytes int, nonblank bool) error {
-	if !utf8.ValidString(value) || strings.ContainsRune(value, '\x00') || len(value) > maxBytes ||
+	if !utf8.ValidString(value) || strings.ContainsRune(value, '\x00') ||
 		(nonblank && strings.TrimSpace(value) == "") {
 		return fmt.Errorf("git %s must be one bounded exact UTF-8 string", label)
 	}

@@ -19,9 +19,7 @@ func (r *Repository) ListScrumCardTags(ctx context.Context, projectID int64, que
 	if !utf8.ValidString(query) || strings.ContainsRune(query, '\x00') {
 		return nil, fmt.Errorf("Scrum tag catalog query must be valid UTF-8 without NUL")
 	}
-	if len(query) > 256 {
-		return nil, fmt.Errorf("Scrum tag catalog query exceeds the 256-byte bound")
-	}
+
 	rows, err := r.pool.Query(ctx, `
 		SELECT DISTINCT LOWER(BTRIM(tag.value)) AS normalized_tag
 		FROM scrum_cards AS card

@@ -62,16 +62,18 @@ type Result struct {
 }
 
 type Receipt struct {
-	Interrupted bool                       `json:"interrupted"`
-	ExitClient  bool                       `json:"exit_client"`
-	OperationID model.LifecycleOperationID `json:"operation_id"`
-	Patch       []userintent.Patch         `json:"patch"`
-	JobID       int64                      `json:"job_id"`
-	Generation  int64                      `json:"generation"`
-	Status      string                     `json:"status"`
-	Revision    int64                      `json:"revision"`
-	MessageID   int64                      `json:"message_id,omitempty"`
-	Summary     string                     `json:"summary"`
+	Interrupted        bool                       `json:"interrupted"`
+	ExitClient         bool                       `json:"exit_client"`
+	OperationID        model.LifecycleOperationID `json:"operation_id"`
+	Patch              []userintent.Patch         `json:"patch"`
+	JobID              int64                      `json:"job_id"`
+	Generation         int64                      `json:"generation"`
+	Status             string                     `json:"status"`
+	Revision           int64                      `json:"revision"`
+	MessageID          int64                      `json:"message_id,omitempty"`
+	TurnOperationID    model.LifecycleOperationID `json:"turn_operation_id,omitempty"`
+	ControlOperationID model.LifecycleOperationID `json:"control_operation_id,omitempty"`
+	Summary            string                     `json:"summary"`
 }
 
 // Snapshot is a projection of authoritative persisted state and the current

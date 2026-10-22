@@ -179,9 +179,14 @@ func (controller *Controller) PublishPlanningLedger(ctx context.Context, turn Pl
 	})
 	var text strings.Builder
 	fmt.Fprintf(&text, "Proposal ledger %s, revision %d. Execution order:\n", ledger.ID, ledger.Revision)
+	position := 0
 	for _, task := range tasks {
 		if task.Disposition == model.LedgerDispositionActive {
-			fmt.Fprintf(&text, "\n%s. %s\n", task.ID, task.Goal)
+			position++
+			fmt.Fprintf(&text, "\n%d. %s\n", position, task.Goal)
+			if task.Objective != "" && task.Objective != task.Goal {
+				fmt.Fprintf(&text, "   %s\n", task.Objective)
+			}
 		}
 	}
 	_, err = controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "planning_response", Role: Plan, PlanningProposal: &ledger, Notes: []string{turn.OperationID, turn.Text, text.String()}})

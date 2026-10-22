@@ -46,7 +46,7 @@ func (input ApplicationIntentInput) validate() error {
 
 func validateApplicationIntentText(label, value string, maximum int) error {
 	if value == "" || value != strings.TrimSpace(value) || !utf8.ValidString(value) ||
-		strings.ContainsRune(value, '\x00') || len(value) > maximum {
+		strings.ContainsRune(value, '\x00') {
 		return fmt.Errorf("application intent %s must be trimmed UTF-8 text of at most %d bytes", label, maximum)
 	}
 	return ValidatePathFreeModelContext("application intent "+label, value)

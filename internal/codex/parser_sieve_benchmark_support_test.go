@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 )
 
 func installedAgentClient(t *testing.T) (*Client, string) {
@@ -17,7 +16,7 @@ func installedAgentClient(t *testing.T) (*Client, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client, err := New(command, directory, 2*time.Minute)
+	client, err := New(command, directory)
 	if err != nil {
 		t.Fatal(err)
 	}

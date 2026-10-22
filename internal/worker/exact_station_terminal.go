@@ -43,7 +43,7 @@ func (s *Service) dispatchExactStationCall(
 	}
 	started := time.Now()
 	stopHeartbeat := s.startProgressHeartbeat(ctx, authority, fmt.Sprintf("station-call:%d", opening.ID))
-	result, callErr := generatePreparedExactWithActivityWithinMaximumDuration(
+	result, callErr := generatePreparedExactWithActivity(
 		ctx, s.stationClient, prepared, s.exactStationPublicActivity(ctx, authority),
 	)
 	stopHeartbeat()
@@ -102,21 +102,21 @@ func (s *Service) dispatchExactStationCall(
 	return portable, execution, nil
 }
 
-func generatePreparedExactWithinMaximumDuration(
+func generatePreparedExact(
 	ctx context.Context,
 	client llm.ExactStationClient,
 	prepared llm.PreparedModel,
 ) (llm.PreparedGeneration, error) {
-	return generatePreparedExactWithActivityWithinMaximumDuration(ctx, client, prepared, nil)
+	return generatePreparedExactWithActivity(ctx, client, prepared, nil)
 }
 
-func generatePreparedExactWithActivityWithinMaximumDuration(
+func generatePreparedExactWithActivity(
 	ctx context.Context,
 	client llm.ExactStationClient,
 	prepared llm.PreparedModel,
 	observe func(model.AgentActivity) error,
 ) (llm.PreparedGeneration, error) {
-	callCtx, cancelCall := context.WithTimeout(ctx, llm.MaximumModelRequestDuration)
+	callCtx, cancelCall := context.WithCancel(ctx)
 	defer cancelCall()
 	if observable, ok := client.(llm.ExactStationActivityClient); ok && observe != nil {
 		return observable.GeneratePreparedExactWithActivity(callCtx, prepared, observe)

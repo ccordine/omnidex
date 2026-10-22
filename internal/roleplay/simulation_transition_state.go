@@ -75,7 +75,7 @@ func loadSceneParticipantsTx(
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	if len(participants) < 1 || len(participants) > MaxSceneParticipants {
+	if len(participants) < 1 {
 		return nil, fmt.Errorf("%w: scene participant count is outside its bound", ErrSimulationNotConfigured)
 	}
 	for position, participant := range participants {

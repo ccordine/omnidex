@@ -24,7 +24,7 @@ func decodeExactChannelJSON(
 	maxBytes int64,
 	destination any,
 ) error {
-	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+
 	raw, err := io.ReadAll(r.Body)
 	if err != nil {
 		var tooLarge *http.MaxBytesError

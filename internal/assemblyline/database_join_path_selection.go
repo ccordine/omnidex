@@ -52,7 +52,7 @@ func (input DatabaseJoinPathSelectionInput) validate() error {
 	if input.FromRelationID == input.ToRelationID {
 		return fmt.Errorf("database join-path ambiguity requires two distinct relations")
 	}
-	if len(input.Candidates) < 1 || len(input.Candidates) > maxDatabaseJoinCandidates {
+	if len(input.Candidates) < 1 {
 		return fmt.Errorf("database join-path selection requires 1..%d candidates", maxDatabaseJoinCandidates)
 	}
 	seen := make(map[string]struct{}, len(input.Candidates))

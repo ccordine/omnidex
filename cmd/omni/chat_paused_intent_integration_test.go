@@ -124,7 +124,7 @@ func testPausedPlanningUserIntent(t *testing.T, live bool) {
 		handler.ServeHTTP(w, r)
 	}))
 	defer httpServer.Close()
-	apiClient, err := client.New(httpServer.URL, time.Minute)
+	apiClient, err := client.New(httpServer.URL)
 	if err != nil {
 		t.Fatal(err)
 	}

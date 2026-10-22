@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"strconv"
-	"time"
 
 	"github.com/gryph/omnidex/internal/codex"
 	"github.com/gryph/omnidex/internal/codingagent"
@@ -13,11 +12,7 @@ import (
 // No provider process or authentication is resolved until an agent job runs.
 func agentProviders(cfg config.Config) func() (map[string]codingagent.Provider, error) {
 	return func() (map[string]codingagent.Provider, error) {
-		timeout, err := time.ParseDuration(cfg.RequestTimeout)
-		if err != nil {
-			return nil, err
-		}
-		client, err := codex.New(cfg.CodexCommand, cfg.CodexDirectory, timeout)
+		client, err := codex.New(cfg.CodexCommand, cfg.CodexDirectory)
 		if err != nil {
 			return nil, err
 		}
@@ -27,7 +22,7 @@ func agentProviders(cfg config.Config) func() (map[string]codingagent.Provider, 
 			if err != nil {
 				return nil, err
 			}
-			parser, err := ollama.NewParser(cfg.OllamaBaseURL, timeout, contextTokens)
+			parser, err := ollama.NewParser(cfg.OllamaBaseURL, contextTokens)
 			if err != nil {
 				return nil, err
 			}

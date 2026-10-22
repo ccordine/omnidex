@@ -44,7 +44,7 @@ export class RoleplayWorkspaceCoordinator {
   async selectWorld(event: Event): Promise<boolean> {
     const button = event.currentTarget as HTMLButtonElement;
     const channelID = button.dataset.channelId;
-    if (!channelID || !/^[a-z0-9][a-z0-9_.:-]{0,95}$/.test(channelID)) {
+    if (!channelID || !/^[a-z0-9][a-z0-9_.:-]*$/.test(channelID)) {
       throw new Error("World browser selection lacks a canonical channel identity.");
     }
     let selected = false;

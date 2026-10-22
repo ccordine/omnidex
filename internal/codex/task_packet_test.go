@@ -33,7 +33,7 @@ func TestTaskPacketNativeExecutionAndReviewProtocol(t *testing.T) {
 			}
 			writer := &protocolWriter{}
 			responses := fmt.Sprintf("{\"id\":1,\"result\":{}}\n{\"id\":2,\"result\":{\"model\":\"fixture\",\"thread\":{\"id\":%q}}}\n{\"id\":3,\"result\":{}}\n{\"id\":4,\"result\":{\"turn\":{\"id\":\"turn\"}}}\n", "fresh-"+string(role))
-			conn := &connection{input: writer, output: bufio.NewScanner(bytes.NewBufferString(responses))}
+			conn := &connection{input: writer, output: bufio.NewReader(bytes.NewBufferString(responses))}
 			thread, _, err := conn.startAgentThread(call, "")
 			if err != nil {
 				t.Fatal(err)

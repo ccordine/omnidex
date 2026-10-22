@@ -111,9 +111,7 @@ func mutateRoleplaySceneDraft(
 		}
 	}
 	if selected && index < 0 {
-		if len(draft.Participants) >= roleplay.MaxSceneParticipants {
-			return roleplaySceneDraft{}, fmt.Errorf("%w: scene draft participant bound reached", roleplay.ErrSimulationConflict)
-		}
+
 		draft.Participants = append(draft.Participants, participant)
 		draft.Revision++
 	} else if !selected && index >= 0 {

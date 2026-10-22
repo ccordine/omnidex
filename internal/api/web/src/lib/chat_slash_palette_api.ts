@@ -1,7 +1,7 @@
 import { readJSON } from "./api";
 import { requireServerComponentBundle } from "./chat_component_api";
 
-const CANONICAL_CHANNEL_ID = /^[a-z0-9][a-z0-9_.:-]{0,95}$/;
+const CANONICAL_CHANNEL_ID = /^[a-z0-9][a-z0-9_.:-]*$/;
 const MAX_SLASH_COMMANDS = 97;
 
 export interface SlashCommandComponent {

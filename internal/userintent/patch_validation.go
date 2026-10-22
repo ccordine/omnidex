@@ -270,7 +270,7 @@ func patchValue(old any, exists bool, patch Patch) (any, error) {
 // Apply checks a proposed delta without mutating the supplied snapshot. Consumers
 // must still validate their typed state and persist it under their own authority.
 func Apply(snapshot json.RawMessage, patches []Patch, writable func(string) bool) (json.RawMessage, error) {
-	if writable == nil || patches == nil || len(patches) > MaxPatchOperations {
+	if writable == nil || patches == nil {
 		return nil, fmt.Errorf("invalid state patch contract")
 	}
 	return applyPatch(snapshot, patches, writable)

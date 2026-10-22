@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 )
 
 // Bound native ephemeral-thread retention even during a long service lifetime.
@@ -22,11 +21,11 @@ type parserProcess struct {
 	closed     bool
 }
 
-func NewParser(lifetime context.Context, command, directory string, timeout time.Duration) (*Client, error) {
+func NewParser(lifetime context.Context, command, directory string) (*Client, error) {
 	if lifetime == nil {
 		return nil, fmt.Errorf("parser requires a lifecycle context")
 	}
-	client, err := New(command, directory, timeout)
+	client, err := New(command, directory)
 	if err != nil {
 		return nil, err
 	}

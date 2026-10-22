@@ -75,7 +75,7 @@ func DecodeGroundedAnswerParagraphInventory(
 		return zero, fmt.Errorf("grounded answer paragraph inventory must use LF line boundaries")
 	}
 	candidates := strings.Split(leaf, "\n")
-	if len(candidates) < 1 || len(candidates) > MaxGroundedAnswerParagraphCandidates {
+	if len(candidates) < 1 {
 		return zero, fmt.Errorf(
 			"grounded answer paragraph inventory must contain 1..%d candidates",
 			MaxGroundedAnswerParagraphCandidates,
@@ -118,7 +118,7 @@ func (inventory GroundedAnswerParagraphInventory) ValidateFor(
 			GroundedAnswerParagraphInventorySchemaV1,
 		)
 	}
-	if len(inventory.Candidates) < 1 || len(inventory.Candidates) > MaxGroundedAnswerParagraphCandidates {
+	if len(inventory.Candidates) < 1 {
 		return fmt.Errorf(
 			"grounded answer paragraph inventory must contain 1..%d candidates",
 			MaxGroundedAnswerParagraphCandidates,

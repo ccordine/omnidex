@@ -51,10 +51,7 @@ export function ChannelTab({ context, projectID, mutationBusy, runMutation, onCa
   useEffect(() => {
     if (activeCardIDRef.current === card.id) {
       const authoritativeWindow = card.chat;
-      if (authoritativeWindow.length > MAX_RECENT_MESSAGES) {
-        setHistoryError(`Authoritative channel window exceeds the ${MAX_RECENT_MESSAGES}-message browser bound.`);
-        return;
-      }
+
 	  // The server cursor describes the boundary immediately before this exact
 	  // recent window. Older pages loaded against a superseded boundary cannot
 	  // be retained without creating a gap or overlap in durable history.

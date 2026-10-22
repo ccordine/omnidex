@@ -25,7 +25,7 @@ func resolveCodexExecutable(command string) string {
 	}
 	packageRoot := filepath.Dir(filepath.Dir(resolved))
 	data, err := os.ReadFile(filepath.Join(packageRoot, "package.json"))
-	if err != nil || len(data) > 64<<10 {
+	if err != nil {
 		return command
 	}
 	var manifest struct {

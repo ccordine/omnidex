@@ -83,7 +83,7 @@ func (event JobRuntimeEvent) validate() error {
 	if event.AgentActivity != nil {
 		return fmt.Errorf("non-agent runtime event carries an agent projection")
 	}
-	if len(event.Detail) > maxRealtimeRuntimeDetailBytes || !utf8.ValidString(event.Detail) ||
+	if !utf8.ValidString(event.Detail) ||
 		strings.ContainsRune(event.Detail, '\x00') {
 		return fmt.Errorf("job runtime event detail exceeds its exact UTF-8 boundary")
 	}
@@ -123,12 +123,12 @@ func (event JobRuntimeEvent) validate() error {
 		return fmt.Errorf("job runtime file fields require a registered workspace event")
 	}
 	if event.FilePath != strings.TrimSpace(event.FilePath) ||
-		len(event.FilePath) > maxRealtimeFilePathBytes || !utf8.ValidString(event.FilePath) ||
+		!utf8.ValidString(event.FilePath) ||
 		strings.ContainsRune(event.FilePath, '\x00') {
 		return fmt.Errorf("job runtime file path is outside its exact UTF-8 boundary")
 	}
 	if event.FileSourcePath != "" && (event.FileSourcePath != strings.TrimSpace(event.FileSourcePath) ||
-		len(event.FileSourcePath) > maxRealtimeFilePathBytes || !utf8.ValidString(event.FileSourcePath) ||
+		!utf8.ValidString(event.FileSourcePath) ||
 		strings.ContainsRune(event.FileSourcePath, '\x00')) {
 		return fmt.Errorf("job runtime source path is outside its exact UTF-8 boundary")
 	}
@@ -141,7 +141,7 @@ func canonicalRealtimeObservedPath(value string) bool {
 }
 
 func canonicalRealtimeRuntimeEvent(value string) bool {
-	if value == "" || value != strings.TrimSpace(value) || len(value) > maxRealtimeRuntimeEventBytes {
+	if value == "" || value != strings.TrimSpace(value) {
 		return false
 	}
 	for _, character := range []byte(value) {

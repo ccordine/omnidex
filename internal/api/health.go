@@ -11,12 +11,12 @@ import (
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	dependencies := s.collectCoreDependencies(r.Context())
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":          coreHealthStatus(dependencies),
-		"time":            time.Now().UTC(),
-		"queue_enabled":   s.repo != nil,
-		"listen_addr":     strings.TrimSpace(s.listenAddr),
-		"release":         version.JSON(),
-		"dependencies":    dependencies,
+		"status":        coreHealthStatus(dependencies),
+		"time":          time.Now().UTC(),
+		"queue_enabled": s.repo != nil,
+		"listen_addr":   strings.TrimSpace(s.listenAddr),
+		"release":       version.JSON(),
+		"dependencies":  dependencies,
 	})
 }
 
