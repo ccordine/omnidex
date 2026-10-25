@@ -44,7 +44,8 @@ func (controller *Controller) resumeTask(ctx context.Context, task Task) error {
 		return state.incomplete
 	}
 	if state.pendingResponse != nil {
-		if err := controller.handleExecutionResponse(ctx, task, *state.pendingResponse, state.round); err != nil {
+		kind, err := controller.handleExecutionResponse(ctx, task, *state.pendingResponse, state.round)
+		if err != nil {
 			var incomplete *IncompleteTaskError
 			if !state.resumeIncomplete || !errors.As(err, &incomplete) {
 				return err
@@ -54,13 +55,9 @@ func (controller *Controller) resumeTask(ctx context.Context, task Task) error {
 			state.session = &ExecutionSession{ThreadID: incomplete.ThreadID, TurnID: incomplete.TurnID, State: "interrupted"}
 			state.pendingResponse = nil
 		} else {
-			var response string
-			if err := json.Unmarshal(state.pendingResponse.Content, &response); err != nil {
+			if err := state.recordExecutionResult(task.ID, *state.pendingResponse, state.round, kind); err != nil {
 				return err
 			}
-			state.executionReport = &ExecutionReport{CallID: state.pendingResponse.CallID, Round: state.round, Response: response}
-			state.started[task.ID] = true
-			state.resumeIncomplete = false
 		}
 	}
 	return controller.runTask(ctx, task, state)

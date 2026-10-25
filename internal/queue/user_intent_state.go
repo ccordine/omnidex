@@ -31,6 +31,25 @@ func (r *Repository) applyUserIntentTx(ctx context.Context, tx pgx.Tx, saved sto
 		applyUserPresentation(after, &receipt)
 		return receipt, nil
 	}
+	if current.PlanState == "proposed" && after.PlanState == "frozen" && len(current.Items) == 0 {
+		// An empty proposal is a planning conversation, not executable work.
+		// Keep its question visible, including for already persisted intents.
+		receipt.Patch = nil
+		receipt.Summary = "There are no tasks to start yet. Continue planning with what you want done."
+		var response string
+		err := tx.QueryRow(ctx, `SELECT payload_json->'notes'->>2 FROM evidence
+		 WHERE job_id=$1 AND kind='coding_agent' AND payload_json->>'generation'=$2::bigint::text
+		 AND payload_json->>'phase'='planning_draft' AND jsonb_array_length(payload_json->'notes')=3
+		 ORDER BY id DESC LIMIT 1`, current.JobID, current.Generation).Scan(&response)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return receipt, err
+		}
+		if response != "" {
+			receipt.Summary = "There are no tasks to start yet.\n\n" + response
+		}
+		applyUserPresentation(after, &receipt)
+		return receipt, nil
+	}
 	if err := applyUserLedgerDeltaTx(ctx, tx, saved, after, &receipt); err != nil {
 		return receipt, err
 	}
@@ -172,6 +191,12 @@ func (r *Repository) applyUserJobStateTx(ctx context.Context, tx pgx.Tx, saved s
 
 func (r *Repository) persistUserContentTx(ctx context.Context, tx pgx.Tx, saved storedUserIntent, text string, receipt *sessionintent.Receipt) (string, error) {
 	request, current := saved.request, saved.current
+	if current.JobStatus == model.JobStatusFailed && current.Recoverable {
+		// A reply addressed to the retained workflow continues that workflow.
+		// The same recovery transition retains its context and exact owner text.
+		saved.request.Text = text
+		return r.applyUserJobStateTx(ctx, tx, saved, model.JobStatusRunning, receipt)
+	}
 	request.OperationID = userDeltaOperation(request.OperationID, "message")
 	if err := lockLifecycleOperationIdentityTx(ctx, tx, request.OperationID); err != nil {
 		return "", err

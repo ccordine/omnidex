@@ -116,7 +116,11 @@ func applyCodingLedgerMutationTx(ctx context.Context, tx pgx.Tx, command ApplyCo
 		return CodingLedgerRevision{}, err
 	}
 	next.Revision = current + 1
-	if err := applyCodingLedgerOperations(&next, command.Mutation.Operations); err != nil {
+	restores, err := acceptedCodingLedgerRestoresTx(ctx, tx, command.LedgerID, current, currentProjection.Ledger, command.Mutation.Operations)
+	if err != nil {
+		return CodingLedgerRevision{}, err
+	}
+	if err := applyCodingLedgerOperationsWithRestores(&next, command.Mutation.Operations, restores); err != nil {
 		return CodingLedgerRevision{}, err
 	}
 	if err := validateDraftLedgerForRepository(next); err != nil {
@@ -212,7 +216,11 @@ func codingLedgerMutationReplayMatchesTx(
 		return false, err
 	}
 	expectedLedger.Revision = result.Revision
-	if err := applyCodingLedgerOperations(&expectedLedger, command.Mutation.Operations); err != nil {
+	restores, err := acceptedCodingLedgerRestoresTx(ctx, tx, command.LedgerID, command.Mutation.BaseRevision, base.Ledger, command.Mutation.Operations)
+	if err != nil {
+		return false, err
+	}
+	if err := applyCodingLedgerOperationsWithRestores(&expectedLedger, command.Mutation.Operations, restores); err != nil {
 		return false, nil
 	}
 	resultLedger := result.Ledger
@@ -309,6 +317,10 @@ func sameCodingLedgerItemIDs(left, right []model.LedgerItemID) bool {
 }
 
 func applyCodingLedgerOperations(ledger *model.EngineeringLedger, operations []model.LedgerMutationOperation) error {
+	return applyCodingLedgerOperationsWithRestores(ledger, operations, nil)
+}
+
+func applyCodingLedgerOperationsWithRestores(ledger *model.EngineeringLedger, operations []model.LedgerMutationOperation, accepted map[model.LedgerItemID]model.LedgerTask) error {
 	removed := make(map[model.LedgerItemID]bool)
 	restored := make(map[model.LedgerItemID]bool)
 	for _, operation := range operations {
@@ -361,6 +373,12 @@ func applyCodingLedgerOperations(ledger *model.EngineeringLedger, operations []m
 				return fmt.Errorf("coding ledger remove target %s does not exist", operation.TargetID)
 			}
 		case model.LedgerMutationRestore:
+			if task, found := accepted[operation.TargetID]; found {
+				if !replaceCodingLedgerMutationItem(ledger, operation.TargetID, &model.LedgerMutationItem{Task: &task}) {
+					return fmt.Errorf("accepted task %s is absent from the current ledger", operation.TargetID)
+				}
+				continue
+			}
 			if disposition, found := codingLedgerItemDisposition(*ledger, operation.TargetID); !found || disposition != model.LedgerDispositionTombstoned {
 				return fmt.Errorf("coding ledger restore target %s is not tombstoned", operation.TargetID)
 			}

@@ -25,7 +25,11 @@ func TestManifestRoleSettingsReachNativeProtocol(t *testing.T) {
 	}
 	for _, role := range []codingagent.Role{codingagent.Execute, codingagent.Review} {
 		instructions := agentRoleInstructions(role)
-		for _, required := range []string{"frozen task", "after your response", "not prerequisites for completing", "do not request routine command approval"} {
+		handoff := "after your response"
+		if role == codingagent.Execute {
+			handoff = "after the execution reports completion"
+		}
+		for _, required := range []string{"frozen task", handoff, "not prerequisites for completing", "do not request routine command approval"} {
 			if !strings.Contains(instructions, required) {
 				t.Fatalf("%s instructions lack %q", role, required)
 			}

@@ -18,10 +18,18 @@ const (
 // observed revision comes from the persisted proposal, never model output or
 // conversation memory.
 type PlanningTurn struct {
-	OperationID      string `json:"operation_id"`
-	OwnerTurnID      string `json:"owner_turn_id"`
-	Text             string `json:"text"`
-	ObservedRevision int64  `json:"observed_revision"`
+	OperationID         string             `json:"operation_id"`
+	OwnerTurnID         string             `json:"owner_turn_id"`
+	Text                string             `json:"text"`
+	ObservedRevision    int64              `json:"observed_revision"`
+	NewerOwnerDirection *PlanningDirection `json:"newer_owner_direction,omitempty"`
+}
+
+// PlanningDirection retains later explicit authority while an older queued
+// message is reconciled. The queued message itself remains unchanged.
+type PlanningDirection struct {
+	OperationID string `json:"operation_id"`
+	Text        string `json:"text"`
 }
 
 func (turn PlanningTurn) validate(initial bool) error {
@@ -265,16 +273,24 @@ func applyPlanningOperation(ledger *EngineeringLedger, operation model.LedgerMut
 			return nil
 		})
 	case model.LedgerMutationRestore:
+		wasRemoved := false
 		if err := updatePlanningItem(ledger, operation.TargetID, func(item *model.LedgerItem) error {
+			if item.Disposition == model.LedgerDispositionActive {
+				// Only the repository can retrieve the exact accepted contract.
+				return nil
+			}
 			if item.Disposition != model.LedgerDispositionTombstoned {
 				return fmt.Errorf("planning item %s is not removed", item.ID)
 			}
+			wasRemoved = true
 			item.Disposition, item.ReviewState = model.LedgerDispositionActive, model.LedgerReviewProposed
 			return nil
 		}); err != nil {
 			return err
 		}
-		resetPlanningAgreements(ledger, operation.TargetID)
+		if wasRemoved {
+			resetPlanningAgreements(ledger, operation.TargetID)
+		}
 		return nil
 	case model.LedgerMutationReview:
 		return updatePlanningItem(ledger, operation.TargetID, func(item *model.LedgerItem) error {

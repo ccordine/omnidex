@@ -27,7 +27,11 @@ func (p *reviewScopeRoutingProvider) Run(ctx context.Context, call Assignment, e
 		if p.quote != "" && p.reviews == 1 {
 			findings = append(findings, map[string]string{"observation": p.quote, "file": "output.txt"})
 		}
-		content, _ := json.Marshal(map[string]any{"kind": p.kind, "findings": findings})
+		kind := p.kind
+		if p.reviews > 1 {
+			kind = "done"
+		}
+		content, _ := json.Marshal(map[string]any{"kind": kind, "findings": findings})
 		content, err := MapParserResponse(call, content)
 		if err != nil {
 			return Result{}, err
@@ -56,6 +60,7 @@ func TestFrozenReviewOutcomesRetainCorrectionAndInputRoutes(t *testing.T) {
 		{"finding", "Review complete. output.txt omits the required result.", "done", "output.txt omits the required result."},
 		{"qualification finding", "Review complete. output.txt omits the required result; qualification failed with exit 1. Correction and acceptance remain pending.", "done", "output.txt omits the required result; qualification failed with exit 1."},
 		{"failure", "Required verification could not finish; the review is unfinished.", "error", ""},
+		{"incomplete with findings", "Task incomplete: output.txt omits the required result and verification remains pending.", "error", "output.txt omits the required result."},
 		{"missing evidence", "I inspected the source.", "error", ""},
 		{"question", "Which required endpoint should I verify?", "question", ""},
 		{"permission", "May I access the required verification endpoint?", "permission", ""},
@@ -69,7 +74,7 @@ func TestFrozenReviewOutcomesRetainCorrectionAndInputRoutes(t *testing.T) {
 			controller := Controller{JobID: 1, Generation: 1, Root: t.TempDir(), Evidence: store, Environment: durableTaskEnvironment{}, Providers: map[string]Provider{"fixture": p}, Configuration: Configuration{Mode: Agents, Planner: route, Executor: route, Reviewer: route, LedgerParser: route}}
 			err := controller.RunTask(t.Context(), task)
 			switch tc.kind {
-			case "done":
+			case "done", "error":
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -77,19 +82,18 @@ func TestFrozenReviewOutcomesRetainCorrectionAndInputRoutes(t *testing.T) {
 					t.Fatalf("lost correction sequence: %v", p.roles)
 				}
 				corrected := false
+				observation, file := tc.quote, "output.txt"
+				if tc.kind == "error" && tc.quote == "" {
+					observation, file = tc.source, ""
+				}
 				for _, entry := range store.entries {
 					if entry.Phase == "call_opened" && entry.Role == Execute && len(entry.Assignment.Findings) > 0 {
 						f := entry.Assignment.Findings[0]
-						corrected = f.TaskID == task.ID && f.File == "output.txt" && f.Observation == tc.quote
+						corrected = f.TaskID == task.ID && f.File == file && f.Observation == observation
 					}
 				}
 				if !corrected {
 					t.Fatal("exact finding did not reach correction execution")
-				}
-			case "error":
-				var incomplete *IncompleteTaskError
-				if !errors.As(err, &incomplete) {
-					t.Fatalf("lost required failure: %v", err)
 				}
 			case "question", "permission":
 				var input *ExecutionInputRequired

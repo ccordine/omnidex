@@ -31,11 +31,14 @@ func (controller *Controller) review(ctx context.Context, scope Assignment, task
 		return ReviewResult{}, result, err
 	}
 	for _, entry := range entries {
-		if entry.Phase == "review_response" && entry.CallID == result.CallID && entry.ResponseKind == ExecutionDone && entry.ReviewResponse != nil && len(entry.Notes) == 1 && entry.Notes[0] == response {
-			if err := ValidateReview(tasks, entry.ReviewResponse.ReviewResult); err != nil {
+		if entry.Phase == "review_response" && entry.CallID == result.CallID &&
+			(entry.ResponseKind == ExecutionDone || entry.ResponseKind == ExecutionError) &&
+			entry.ReviewResponse != nil && len(entry.Notes) == 1 && entry.Notes[0] == response {
+			review := reviewTaskResult(scope.Task.ID, *entry.ReviewResponse, response)
+			if err := ValidateReview(tasks, review); err != nil {
 				return ReviewResult{}, result, err
 			}
-			return entry.ReviewResponse.ReviewResult, result, nil
+			return review, result, nil
 		}
 		if entry.Phase == "review_parse_rejected" && entry.CallID == result.CallID {
 			parser.ValidationNotes = entry.Notes
@@ -49,10 +52,11 @@ func (controller *Controller) review(ctx context.Context, scope Assignment, task
 	err = decodeContract(parsed.Content, &review)
 	if err == nil {
 		switch review.Kind {
-		case ExecutionDone:
+		case ExecutionDone, ExecutionError:
+			review.ReviewResult = reviewTaskResult(scope.Task.ID, review, response)
 			normalizeReviewFindingFiles(tasks, &review.ReviewResult)
 			err = ValidateReview(tasks, review.ReviewResult)
-		case ExecutionQuestion, ExecutionPermission, ExecutionError:
+		case ExecutionQuestion, ExecutionPermission:
 		default:
 			err = fmt.Errorf("review response parser returned unknown kind %q", review.Kind)
 		}
@@ -73,11 +77,20 @@ func (controller *Controller) review(ctx context.Context, scope Assignment, task
 	switch review.Kind {
 	case ExecutionQuestion, ExecutionPermission:
 		return ReviewResult{}, result, &ExecutionInputRequired{TaskID: scope.Task.ID, Role: Review, Kind: review.Kind, Text: response}
-	case ExecutionError:
-		return ReviewResult{}, result, &IncompleteTaskError{Reason: "Review is incomplete: " + response, ThreadID: result.ThreadID, TurnID: result.TurnID}
 	default:
 		return review.ReviewResult, result, nil
 	}
+}
+
+func reviewTaskResult(taskID string, review ReviewResponseResult, response string) ReviewResult {
+	if review.Kind == ExecutionError && len(review.Findings) == 0 {
+		// A completed reviewer response describing unfinished verification is
+		// retained task feedback. When no findings were extracted, give the
+		// executor the exact report through the existing correction loop.
+		// Only a later independent review can accept the task.
+		return ReviewResult{Findings: []Finding{{TaskID: taskID, Observation: response}}, Verification: response}
+	}
+	return review.ReviewResult
 }
 
 // Reviewers commonly attach source locations to a file name. Preserve the

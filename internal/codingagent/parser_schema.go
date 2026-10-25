@@ -16,7 +16,7 @@ func ParserOutputSchema(call Assignment) map[string]any {
 		return planningMutationOutputSchema(object, text, strings)
 	}
 	if call.Role == ExecutionResponse {
-		return object(map[string]any{"kind": planningEnum("done", "question", "permission", "error")}, "kind")
+		return object(map[string]any{"kind": planningEnum("done", "continue", "question", "permission", "error")}, "kind")
 	}
 	finding := object(map[string]any{"file": text, "observation": text}, "file", "observation")
 	return object(map[string]any{"kind": planningEnum("done", "question", "permission", "error"), "findings": map[string]any{"type": "array", "items": finding}, "verification": text}, "kind", "findings", "verification")

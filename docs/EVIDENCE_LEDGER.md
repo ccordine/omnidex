@@ -9042,3 +9042,2635 @@ call timings, complete scoped histories, independent output checks, and binary/s
 fingerprints remain under its evidence directory. Job 39's transcript read after
 CLI exit was rejected by workspace authority; its terminal/journal evidence remains,
 and job 40's final transcript was captured before disconnecting.
+
+## 2026-10-22 — CLI loop after failed-job resume
+
+Owner reported `persisted session message 335 changed terminal job state` repeating
+after resuming job 42. The server legitimately resumes failed jobs, but the CLI
+treated the message's live job-state projection as immutable after any terminal
+status. Every refresh rejected the new state and left the old snapshot retained.
+
+Removed that CLI-only terminal-state guard. Immutable message content, exact job
+binding/identity, and monotonic state timestamps remain checked. Regression tests
+cover failed → running → failed → completed, a recovery occurring between polls,
+repeated snapshots without duplicate output, reconnect, and invalid identity,
+content, binding, and stale-state changes. The complete CLI suite passed in 36.424s.
+
+Real CLI/provider/PostgreSQL pilot used disposable job 43. A missing external
+readiness flag deliberately caused a verification failure. Ordinary continuation
+resumed job 43 in the same generation 1; it reached another truthful failure with a
+different error. The CLI accepted both transitions without the reported rejection
+or refresh loop and retained interactive control. This tests failure recovery
+presentation, not successful completion of an intentionally blocked workload.
+
+A cancellation proposal raced with the second failure. Automatic approval review
+blocked a confirmation attempt; readback showed the proposal was already absent,
+so it was not confirmed. No cancellation success is claimed. Reopening through the
+installed launcher retained history, and `/status` worked. Test inputs were
+unchanged, no result file was manufactured, and the owner workload was untouched.
+
+Installed CLI SHA-256:
+997b5814309a14b4a382b48eb9e4744166a7147feec140a3185e32d69cec72a3.
+The core did not require a rebuild or restart. Existing CLI processes require one
+reopen to load this executable. Source remained unchanged throughout the pilot.
+Report and terminal/API evidence: bin/session-recovery-20261022/report.md.
+
+## 2026-10-22 — incomplete reviews return findings to execution
+
+Job 42 retained five concrete review findings under kind `error`. Its next resume
+parsed the same native review again and stopped with the same incomplete-review
+error. The controller now consumes those findings through the existing task
+correction loop. When an incomplete report has no extracted findings, code retains
+its exact text as one task-level finding. Previously saved incomplete reviews are
+reused without another review/parser call. Removed the superseded branch that
+resumed the incomplete reviewer instead of returning work to execution. Required
+owner answers, permission requests, and actual provider failures remain explicit.
+
+Complete codingagent and codex suites passed (0.016s and 0.552s), including retained
+review recovery with and without extracted findings on unrelated fixtures,
+accepted-work preservation, owner-input routing, and genuine provider failure.
+Core/UI/CLI builds passed. Source fingerprints remained unchanged during live tests.
+
+Installed-software acceptance used ordinary omni chat with real providers and
+PostgreSQL. Existing fixture job 43 resumed in generation 1 after its external
+prerequisite was restored. Its saved review findings went directly to execution;
+one correction and fresh independent review completed it. Independently verified
+exact result.txt bytes: verified followed by a newline.
+
+Fresh fixture job 44 produced an incomplete review with two findings. In the same
+job, generation, and coding step, code started correction about 10ms after recording
+that review. The test observer then restored the external readiness flag. The
+operator supplied only the initial request and one plan approval: no resume,
+clarification, or rescue prompt. Two executions and two independent reviews
+completed the task. Exact summary.txt bytes were rows=3, newline, total=12, newline;
+protected fixture inputs were unchanged. These were deliberate functional tests,
+not uninterrupted autonomy claims. The final review took 259.507 seconds while
+checking verification-before-write evidence; review latency remains observable.
+
+Installed/running core SHA-256:
+207fd0d6e90af0e4d50bb8cefb01b99b7552701b0836b727401d9c0bcac37ba6.
+Installed CLI: 019af11cf1c654c9a17d4989a9f4fc57a94c4542422623f8d69a0adfde9a3268.
+Core PID 3032839, health/readiness passed. Restart occurred with no running jobs.
+Owner job 42 remains unchanged at its prior failed generation 6, ready for an
+ordinary continuation; no owner workload edits or execution were initiated.
+Report, exact terminal inputs, API snapshots, call sequences, timings, and hashes:
+bin/review-continuation-20261022/report.md.
+
+
+## 2026-10-22 — empty-ledger freeze and lost failed-task reply
+
+Observed owner job 42 had failed after native input. Its next content reply was
+incorrectly treated as a new job 45, dropping the original task context. The new
+planner asked what to provision, and its parser correctly returned zero tasks.
+Publication replaced that question with an empty execution-order heading; a later
+start intent attempted to freeze that empty ledger and hit the database task invariant.
+
+Changed planning publication to retain the exact reply when there are no active
+tasks. Starting an empty proposal now leaves it in discussion and returns the
+retained question instead of attempting a freeze or claiming execution. Content
+replies to recoverable failed work use the existing same-job resume transition,
+retaining the original task, ledger, generation, routes and exact owner text.
+Database invariants and real failures remain authoritative; no new inference or
+approval stage was added.
+
+Automated checks passed: codingagent/sessionintent suites, queue UserIntent and
+new empty-plan/recovery PostgreSQL integrations, worker PlanningConversation tests,
+embedded UI/core build, and diff whitespace checks. Fixtures used a disposable
+PostgreSQL container with no host data/credentials mounted.
+
+Installed core SHA-256:
+`f8a6f61a2072ec4b7485ed55629cb943a4f963933db4d5589d83fea1caa36237`.
+Systemd restarted the configured bin/omnidex at 10:42:18 EDT, PID 3268105, after
+checking no running/pending jobs. Health/readiness passed. Direct /proc executable
+reading was denied; installed-file hash and systemd ExecStart/start time verified
+the deployment. Source hashes remained unchanged through the pilots.
+
+Actual installed CLI/core/real-provider checks:
+
+- Job 46 exposed the planner's question for an empty ledger. Start requested
+  clarification without a freeze failure. A concrete reply and one approval
+  continued the same job through execution/review; note.txt was exactly ready
+  plus newline. The PostgreSQL regression separately exercised the deterministic
+  empty-start no-op; the live interpreter chose clarification.
+- Job 47 retained its frozen ledger and completed automatically after the test
+  interrupted only its newly spawned response-parser process. Existing lease
+  expiry/retry handled the outage without another user message or replaying native
+  execution. total.txt was exactly 24 plus newline; note.txt was preserved.
+- Job 48 failed after its disposable directory was deliberately made unavailable
+  for 2.16 seconds and restored with the same inode. The CLI exited for the missing
+  directory. Reconnection plus one Interact content reply resumed job 48,
+  generation 1, ledger 43/revision 3, without another ledger or approval. Execution
+  (20.345s) and independent review (55.048s) passed; status.txt was exactly healthy
+  plus newline, and both prior files were unchanged. Failed step 237 remained
+  history; completed step 238 retained the same authority.
+
+These were controlled functional tests, not autonomy claims. An earlier observer
+safely declined ambiguous process matches and signaled nothing. Evidence, terminal
+inputs, raw model events, timings and exact artifacts are retained under ignored
+`bin/ledger-freeze-20261022/`. Its database container, observers and build
+cache/scratch were cleaned up; the final CLI exited 0.
+
+Owner jobs were read only: 42 remains failed with its original native-item error;
+45 remains waiting with its original empty proposal. Their state/workspace was not
+reset, merged or resumed. The separate native-item failure is outside this fix.
+Changes remain uncommitted, alongside the preceding CLI/review fixes.
+
+## 2026-10-22 — use the existing local Olympus runtime
+
+The owner clarified that local Olympus should be started and its runtime state
+could be replaced. Reconnected the installed CLI to the existing production-suite
+workspace, submitted the owner's exact text to job 45, then started the resulting
+local startup task. Job 45 retained ledger 40, generation 2, frozen revision 4,
+and completed at 11:59:41 EDT. No additional owner input, environment selection,
+proof waiver, manual ledger edit, or Codex-written application implementation was
+needed. The Omnidex binaries remained the versions recorded above.
+
+Omnidex started the existing source-built stack, renewed expired local TLS,
+fixed completed-bootstrap handling and an interactive validation pager hang,
+corrected password-reset/MFA routing and administration MFA enforcement, and
+included the required authentication helpers/configuration/autoload entries in
+the local API image. Its final independent review accepted the task with zero
+findings. All 18 runtime services remained running on local ports 8080/8443.
+Actual bootstrap/status/validation, browser login/MFA enforcement and Clients,
+configuration, and Users navigation passed. Four focused shell tests and the
+MFA suite (16 tests, 221 assertions) passed. The full Phoenix suite remains
+unverified because of its pre-existing test-discovery conflict. This run does
+not establish completion of the separate rolling-demo task.
+
+Observed friction: about 55 minutes from clarification to acceptance, with four
+execution sessions and four independent reviews. A pre-existing MFA finding was
+initially documented without correction, a partial image update omitted required
+dependencies, and stale documentation caused a final additional round. Even the
+documentation-only correction repeated the full required verification. The run
+needed no further human steering, but this repeated work remains measurable
+overhead. This was a functional run in the owner's existing workspace, not a fresh
+workspace autonomy benchmark.
+
+The workload's startup/access instructions and evidence are in
+`/home/gryph/Projects/clinect/production-suite/service-manager-olympus/RUNBOOK.md:127`.
+CLI input/output, task/session snapshots, call records, timings, final health,
+and the 18-container inventory are retained under ignored
+`bin/ledger-freeze-20261022/evidence/local-olympus/`. The observation CLI exited 0;
+Olympus was intentionally left running. Omnidex source behavior was not changed
+during this run, and the earlier uncommitted fixes were preserved.
+
+## 2026-10-22 — connect the running Olympus stack to existing WorkNet
+
+Ran the approved WorkNet follow-up through the same installed Omnidex and normal
+CLI in the owner's production-suite workspace. Job 49 / ledger 44 retained one
+task across execution and resume. This was a steered functional pilot, not an
+autonomy benchmark. Installed executable hashes, exact CLI inputs/output,
+non-native call records, and final job state are under ignored
+`bin/ledger-freeze-20261022/evidence/local-olympus/worknet/`.
+
+Omnidex updated five existing Published Apps records through WorkNet's API,
+aligned local Olympus and tenant hostnames, added local Hermes routing, corrected
+the Survey client's configurable-domain validation, and retained the central
+login URL in tenant runtime environment projection. WorkNet now reaches Hermes
+through its existing allowed `172.17.0.1:19080` ingress. Normal trusted HTTPS
+works at `https://api.clinect.worknet/clinect/login`. Production defaults and
+unrelated services remain in place; no commit or push was performed.
+
+Observed checks passed: focused configuration, runtime-broker and Survey-host
+tests; Olympus status/validation; actual-browser password/MFA and administration;
+existing tenant and isolated-test entry; new tenant provisioning/entry;
+standalone Survey submission with a persisted response; and a real
+Phoenix-to-Reverb-to-browser event. Foreign request tokens, unauthorized private
+channels, invalid WebSocket origins, and unknown tenants were rejected. Root
+visually inspected Clients and Survey completion screenshots, verified real HTTPS
+responses, confirmed all 18 services running, and compared host firewall rule
+expressions before/after with counters removed: unchanged. Temporary patient
+fixtures and their source-pack mount were removed; the verified new synthetic
+tenant and required runtime artifacts were retained.
+
+Full acceptance remains incomplete: the synthetic Forms workflow invokes the
+default Athena controller with no Athena version/configuration. Its collection
+page is reachable, but completion fails. No EHR success was fabricated. Job 49
+ended `waiting_input` at 20:36:14 EDT, with its ledger frozen at revision 3;
+independent task review has not run. The current workload record and precise
+remaining prerequisite are in Olympus `.state/worknet-verification/record.md`
+and `RUNBOOK.md` under "Current local WorkNet integration".
+
+Friction: about 35 minutes from planning dispatch to waiting for input, with two
+execution turns. The first stopped at host port 8080 connectivity and an overly
+broad interpretation of the test-network preservation rule. Root supplied a
+scope clarification. Automatic approval review rejected a broad network-change
+resume; read-only diagnostics then found the existing Clinect port 19080 allowance.
+A narrower resume with that evidence passed approval but Omnidex rejected the
+combined clarification/resume as "incompatible state changes require
+clarification". A separate "Resume task 49." succeeded and preserved the same
+job and native thread. Thus this run required supervising diagnosis and corrective
+inputs; it does not establish intervention-free operation. No Omnidex source was
+changed during the run. The CLI exited 0; Olympus and WorkNet were left running.
+
+## 2026-10-22 — enable local Clinect invitation mail
+
+The owner's invitation request exposed a prerequisite missed by the existing-account
+browser checks: System Mail was disabled and had no encrypted SendGrid key. After
+the owner identified `production-suite/onepeak.env` as the credential source,
+configured mail through Olympus's existing `./clinect configure mail` command.
+The command imported the credential into encrypted PostgreSQL storage, removed
+its temporary secret staging file, restarted affected services, and passed runtime
+validation. The temporary input key file was also removed. This was direct
+operational configuration, not an Omnidex autonomy run or a source change.
+
+Verified SMTP TLS/authentication without submitting a message, including through
+the running application's supported entrypoint and `MailRuntimeConfiguration`.
+The application reported its system profile and runtime delivery enabled and its
+URL as `https://api.clinect.worknet`. Actual Chromium password/MFA login using
+normal DNS and TLS reached System Mail, showing delivery enabled and a configured
+key with the secret input blank and no page errors. Visually inspected the
+screenshot. Configuration output and browser evidence are retained under Olympus
+`.state/invitation-mail-20261022/`.
+
+No email was submitted, so invitation submission and inbox delivery remain
+unverified. Mercury configuration was not changed. Olympus remains running.
+
+## 2026-10-22 — Phoenix global mail configuration pilot and demo handoff
+
+Submitted the owner's mail configuration request unchanged through installed
+`omni chat` in the existing production-suite workspace at approximately 20:55 EDT.
+The CLI resumed job 49 / ledger 44. Core and CLI hashes match the preceding pilots;
+no Omnidex runtime source changes were made during this run. Exact terminal input,
+output, execution evidence, and starting workspace status are retained under
+ignored `bin/ledger-freeze-20261022/evidence/local-olympus/mail-config/`.
+
+The ordinary request resumed the old WorkNet execution instead of changing its
+scope. A typed redirect reached mail planning, but two combined planning edits
+failed to preserve the requested ordering. Separate order-only turns corrected
+the sequence. Natural-language start attempts asked for clarification, rejected
+combined approve/start as incompatible, and could not start one task with another
+unapproved. One planning session ended with incomplete native items; a natural
+continuation returned an unavailable transition, while a typed redirect recovered.
+Automatic approval review rejected removing the earlier WorkNet item; it was
+retained. Review also incorrectly treated opening the ledger controls as plan
+acceptance; source inspection confirmed that an empty planning reply only opens
+the controls. Final approval used those normal keyboard controls.
+
+During planning the owner requested the original demo task next. Retrieved saved
+user message 339 and verified its full text, including the owner's test contact
+details, is retained verbatim on the demo ledger item. Saved order: Phoenix mail,
+original Olympus demo, then existing WorkNet verification. No old item was removed
+or marked complete. Mail execution began at 21:10:14 EDT, approximately 15 minutes
+after the initial request, after substantial navigation and planning intervention.
+This is a steered functional pilot, not autonomous execution evidence.
+
+Mail implementation and actual-runtime verification are still in progress. The
+mail task excludes external delivery; the later demo task retains the owner's
+original requested delivery to the supplied test contacts. No acceptance or
+completion is claimed yet. The workload's current record is Olympus
+`.state/mail-verification/record.md`.
+
+At 21:35:05 EDT the first mail execution was interrupted by Omnidex's public
+activity validation: `public activity text is invalid UTF-8 or contains NUL`.
+The run had implemented the settings, passed 41 focused Phoenix tests with 254
+assertions, and begun actual browser/runtime verification. Those results do not
+establish completed acceptance: temporary verification settings still require
+restoration and the final browser/provisioning pass remains unfinished.
+
+Between failed runs, changed Omnidex's activity display projection to replace NUL
+and invalid UTF-8 with the Unicode replacement character. Raw native evidence
+remains unchanged, display chunking remains rune-safe, and genuine sink failures
+still propagate. `GOMAXPROCS=4 go test -p 1 ./internal/codex` and the core build
+passed. Restarted the service with no running jobs and verified readiness; core
+SHA-256 is `40848e4686f85f487afd98b59fa3f8c7b9d1de4b6247d0e735772c087df7ba10`.
+Disposable live regression job 50 printed a binary fixture containing NUL through
+the normal CLI and completed execution and independent review without
+interruption. Independently checked exact `1\n` output and unchanged fixture
+bytes; the retained native command frame still contains the original NUL.
+The fixture files were removed and its CLI closed after acceptance. Evidence is under
+`bin/ledger-freeze-20261022/evidence/binary-activity/`. This fixes a task-neutral
+framework defect; the Phoenix source was produced by Omnidex, not hand-patched
+by the supervising Codex session. Reopened the production-suite CLI and submitted
+`Resume task 49.` against the same saved mail/demo/WorkNet queue.
+
+The first resume inspected the old native turn, confirmed it was interrupted,
+persisted its idle state, and failed with `Original execution is "interrupted",
+not complete`. The existing recovery path only consumes continuation authority
+after that inspection is already saved, so it required a second identical resume
+input. This extra user intervention remains observed friction; no recovery code
+was changed for it in this pilot.
+
+The second resume continued the same native thread at 21:46:22 EDT. A fresh
+independent Chromium login/MFA pass then reached central System Mail and the
+existing E2E and WorkNet verification tenants using normal DNS and trusted TLS:
+all returned HTTP 200, showed the appropriate IM selector and SMTP controls,
+kept stored credential fields blank, and raised no browser page errors. The
+seed IDs differed correctly between tenant databases (2 and 4). The root check
+did not exercise saves or deliveries; Omnidex's own save, customization,
+provisioning, and restart checks remain the acceptance work. A third tenant
+label did not match the checker, so no third-tenant result is claimed.
+
+The resumed execution passed 42 focused tests / 257 assertions and demonstrated
+UI saves, invalid SMTP rejection and correction, seed editing, distinct tenant
+defaults/overrides, and IM rendering without sending mail. Older local image
+classmaps omitted dependencies already present in the source tree; Omnidex
+included those dependencies in its runtime image and repeated affected checks.
+It recovered the retained provisioning run and then provisioned a separate fresh
+tenant from the updated sealed template without manual customer mail setup.
+Runtime restart checks retained encrypted overrides and seed customization.
+
+After Omnidex restored the temporary global sender/delivery values and reset the
+customer override, the root final Chromium pass independently confirmed every
+saved global field/default matched the pre-verification values, both customer
+SMTP controls no longer contained the synthetic override, both IM selectors
+were present, and stored secret fields remained blank. All three inspected
+surfaces returned HTTP 200 with no page errors. Results are in
+`mail-config/root-ui-results-final.json`; visually inspected the customized
+distribution editor screenshot. No external message was submitted by this mail
+pilot. Omnidex cleanup/documentation and independent review remain in progress.
+
+Execution subsequently corrected the inheritance checkbox state after rejected
+input and verified that path in the real UI. Olympus validation initially
+reported stale sealed-template provenance after runtime image updates; matching
+actual migration ledgers were checked before provenance synchronization, after
+which full validation passed. The final checks report 18 healthy running
+services, five main tenant databases and four isolated test environments.
+Temporary credentials/settings and task browser authentication state were
+removed; the two successfully provisioned empty synthetic tenants remain as
+recorded verification state.
+
+Repeated root browser readback after the last UI change confirmed restoration
+and usable controls. One attempt hit `ERR_NETWORK_CHANGED` during an additional
+navigation and another timed out awaiting the MFA redirect; a subsequent fresh
+login/MFA and complete readback passed without either error. The precise cause
+of these intermittent browser failures is not established. They remain observed
+verification friction, not proof of a mail-data failure. Saved queue readback
+again confirmed the original message 339 text matches exactly and remains next.
+
+The execution response was recorded done at 22:08:11 EDT; a fresh independent
+mail review began at 22:08:14 EDT. Review acceptance is still pending.
+
+Independent review reproduced the 42-test pass and live global/customer saves,
+but found a genuine HTTP 500 when saving the seeded IM distribution on freshly
+provisioned `mail-seed-proof-20261022`. The new name did not persist. Existing-
+tenant customization had passed; that evidence does not cover this new-tenant
+failure. Acceptance remains open while Omnidex diagnoses and routes this
+specific finding for correction. The supervising session has supplied no
+workload implementation hints or Phoenix patches.
+
+The reviewer confirmed missing `expiration` and `completion_redirect` columns in
+four tenant databases and reported the overstated completion record. Review
+finished at 22:21:43 EDT; Omnidex automatically opened a fresh correction
+execution for the same frozen mail item at 22:21:46 EDT. This handoff required no
+supervising input, new approval, queue expansion, or restart of the accepted work.
+The remaining action is to fix tenant/template schema, prove real editor saves
+and persistence, and correct the workload record before acceptance.
+
+The automatic correction added the distribution-editor schema repair migration,
+applied it to existing tenants and the sealed template, and passed 42 tests /
+259 assertions. The formerly failing normal editor returned HTTP 302 and
+persisted the changed name/subject and selected local seed. A separate fresh
+tenant provisioned from the repaired template and also saved edits successfully.
+Those edits and configuration survived the six-runtime restart. Full Olympus
+validation passed for six main tenants and four test environments. The corrected
+execution response was recorded done at 22:31:05 EDT; follow-up review is pending.
+
+The root's repeated fresh-login checks eventually received a real HTTP 429 on
+the MFA flow. The captured error page identifies rate limiting; extra root
+login attempts stopped. This was added verification load from the supervising
+harness, not a new mail-feature defect. Authentication controls were preserved.
+The successful earlier root readbacks remain recorded, while the corrected
+editor/fresh-provisioning/restart checks are retained in Omnidex's actual-runtime
+evidence. Temporary global and customer test settings were restored afterward.
+
+Follow-up independent review passed with no remaining findings at 22:42:30 EDT.
+The ledger accepted the mail item at 22:42:30.888 EDT and automatically started
+the original demo item at 22:42:33.922 EDT in the same job 49 / ledger 44. Final
+read-only ledger inspection confirmed accepted mail, the running original demo
+in second position with message 339 retained verbatim, and WorkNet verification
+still pending third. The demo is not claimed complete.
+
+At 22:43:14 EDT, independent read-only checks of the actual running databases
+confirmed restored global SMTP/sender/default values, a configured global
+credential, cleared temporary SMTP overrides in all six tenants, and both
+required distribution-editor columns in every tenant. Checkbox values were
+compared using their actual boolean semantics; stored form values are `0`/`1`
+strings. No secret values were printed. Final configuration and queue snapshots
+are retained in the existing mail-config evidence directory. The pilot CLI
+exited successfully after the handoff; the demo remains background service work.
+Read-only verification at 22:44:42 EDT confirmed job 49 still running with no
+error, 281 native events and nine completed commands after the client exited,
+and no failed calls. The background handoff is recorded in
+`mail-config/background-handoff.json`.
+
+Outcome: the requested mail feature is implemented, installed locally, exercised
+through real UI and dependencies, independently reviewed and accepted. Final
+checks passed 42 tests / 259 assertions, fresh provisioning and customization,
+inheritance/override/reset behavior, failure recovery, and restart persistence;
+all 18 Olympus services remain running. No external delivery was exercised by
+the mail task. Its three empty synthetic verification customers are retained
+as recorded state; temporary credentials, browser sessions, runtime probes and
+the binary-output regression fixtures were cleaned up.
+
+Friction remains substantial: approximately 15 minutes of queue/start steering,
+one framework display crash requiring a scoped fix, and two resume inputs before
+the retained work continued. Mail acceptance took approximately 108 minutes
+from the initial request, including that intervention and runtime verification.
+After recovery, Omnidex itself identified, corrected and rechecked the genuine
+fresh-tenant schema failure without supervisor implementation hints or new owner
+approval. Browser navigation synchronization and network interruptions added
+verification effort; extra fresh logins by the supervising harness also hit
+authentication throttling. This demonstrates delivered behavior and automatic
+task correction, not friction-free or intervention-free operation.
+
+The demo execution subsequently stopped at 22:45:27 EDT asking which client and
+environment should host the demo. On the owner's instruction to pilot it through
+completion, reopened the normal CLI and selected a dedicated demo client in the
+existing local Olympus at `api.clinect.worknet`. A combined answer/continuation
+reply and then `Resume task 49.` both returned `unavailable job state transition`.
+The plain answer `A dedicated demo client in local Olympus at api.clinect.worknet.`
+resumed the same job at 22:55:52 EDT, and execution started at 22:55:56 EDT.
+No framework or workload source was changed to achieve this resume; the completed
+mail item and prior demo work remain retained. Terminal evidence is saved as
+`mail-config/completion-session.input` and `.output`. Completion and actual-software
+acceptance remain pending while this pilot continues.
+
+The wizard provisioned dedicated client #7, `Olympus Dedicated Demo`. Omnidex
+identified a real 404 on the demo configuration route because the local runtime
+image lacked the preserved demo source; it rebuilt the local API image and
+continued setup. At 23:00:28 EDT the provider returned `serverOverloaded`
+(`Selected model is at capacity`), interrupting execution. The first normal
+resume inspected the saved native turn and failed with `Original execution is
+"failed", not complete`; a second resume was submitted. This repeats the earlier
+two-input recovery friction and is additional supervisor intervention, not an
+automatic recovery claim. No task progress was discarded or source hand-patched.
+
+The second resume continued the same native thread at 23:02:05 EDT. Setup then
+succeeded through the UI with one practice, five locations, five providers,
+126 fictional patients, two canonical staff respondents and a connected Survey
+account. Omnidex asked about client #1's dormant Appointix flag before enabling
+the shared ceiling. Automatic approval review initially rejected the supervisor's
+answer because it appeared to disable another customer's service. Read-only
+local UI/database evidence established that #1 is the Clinect E2E test customer,
+its scheduler is off, and the shared Appointix mode is off: processing is already
+effectively disabled. A second, evidence-backed answer was allowed and accepted
+through the normal CLI, directing preservation of that effective disabled state
+while enabling only dedicated demo client #7. EHR calls remain outside authority.
+No direct customer-setting database writes were performed by the supervisor.
+
+By 23:14 EDT generation reached the 92-day window; focused checks passed
+26 tests / 1,497 assertions. Normal migration and permission reconciliation
+resolved observed scheduler failures. A five-form ad hoc order appeared on the
+PROs worklist, but dispatch remained suppressed. Read-only evidence showed the
+23:09 Appointix answer had been queued as `coding_planning_amendment` instead of
+delivered to active execution. At 23:18 the supervisor used normal `/interrupt`
+to retain a checkpoint. A combined CLI resume/clarification was rejected as
+`incompatible state changes require clarification`. The existing public resume
+API accepted the exact clarification with generation 7, frozen revision 12 and
+the bound workspace. The first request inspected the interrupted native turn and
+failed; a second same-job resume with the same clarification was submitted.
+An initial request used the wrong local port and returned 404 without mutation;
+the subsequent requests used the installed CLI's configured CORE_URL. Requests
+and receipts are retained as `mail-config/api-resume-clarification*.json`.
+This is further measured intervention; no autonomy or completed acceptance claim.
+
+The second API resume continued the retained thread at 23:21:27 EDT; execution
+explicitly acknowledged the clarification. Independent read-only database checks
+then confirmed shared Appointix live with customer #7 alone enabled, while #1
+and #3 remained effectively disabled and unscheduled. The actual scorecard showed
+twelve weeks of persisted questionnaires and changing recovery scores. A patient
+passed the native Forms identity gate but opening the first form returned 500;
+Omnidex is diagnosing this genuine failure. The old API image also lacked current
+assets; Omnidex updated those before repeating scorecard/export controls.
+
+At 23:33 EDT execution reported the configured private Mercury endpoint unreachable
+from both host and API runtime. Independent read-only discovery found the existing
+`messaging-mercury` checkout and its local Compose workflow, no running Mercury
+container, and nonempty Twilio account/token/sender configuration in owner-supplied
+`onepeak.env` (no values disclosed). Local Mercury is the available next dependency
+choice; no external endpoint or delivered SMS is claimed yet. Form correction,
+email, export and full recovery acceptance remain ongoing.
+
+Forms diagnosis found the demo controller's shared insurance transformation still
+invoked NextGen; the real EHR boundary rejected it. Omnidex implemented a demo-only
+correction using existing widgets/responses for insurance, pharmacy, payment
+preference and consent. Rendering, persisted five-form responses and regression
+checks are still pending. At approximately 23:41 EDT the supervisor checkpointed
+execution through `/interrupt` and submitted the local Mercury choice through the
+public same-job resume API, avoiding another deferred active-message amendment.
+Private request/receipt artifacts use `mail-config/api-mercury-*.json`.
+
+All five forms subsequently passed the real patient flow (HTTP 200 per submission),
+showed completion and persisted submitted responses. Forms checks passed 5 tests /
+30 assertions plus 2 / 10; the focused demo/messaging suite passed 29 / 1,513.
+The first Mercury test attempt lacked dependency-network access; the corrected
+run passed 3 tests. Omnidex corrected its Twilio-only startup dependency, brought
+local Mercury up, registered the supplied sender, and queued a CSV export via UI.
+Actual email/export verification remained ongoing; no SMS acceptance was claimed.
+
+At approximately 23:54 EDT the owner corrected the provider assumption: **we do
+not use Twilio anymore**. The supervisor immediately interrupted Omnidex and
+stopped only task-created `olympus-demo-mercury-app-1`, retaining its queue/database
+and all other services. Read-only message-table checks at 23:55 EDT returned
+zero requests and zero provider-accepted messages. No SMS was submitted through
+that instance. The owner was asked for the current Mercury provider/configuration;
+SMS must remain blocked until clarified. The existing API recovery sequence then
+resumed independent forms, email, export and recovery work with explicit authority
+prohibiting Twilio setup/restart/sends and any SMS pending that clarification.
+The prior local-Twilio direction is superseded. Requests/receipts are retained as
+`mail-config/api-provider-correction-*.json`. This provider choice was a supervisor
+mistake inferred from old environment values, not an owner-requested provider switch.
+
+At 00:00 EDT on October 23, the owner explicitly deferred Mercury/SMS and clarified
+that the existing official Mercury instance/shim is authoritative. Remaining demo
+acceptance continues without SMS. Task-created local Mercury setup and unnecessary
+provider-specific changes must be cleaned up while preserving pre-existing data,
+edits and the official integration. This supersedes the pending-provider question.
+
+The next continuation exposed a task-neutral framework defect: starting native
+`contextCompaction` caused Omnidex to abort with an invented context-exhaustion
+error. Removed that special abort and routed genuine provider errors through the
+existing handler, which honors `willRetry` and preserves terminal failures. Added
+`thread/compacted` to retained evidence. Regression coverage exercises all three
+native roles through compaction, subsequent command execution and exact-turn
+completion, including unchanged evidence and genuine context failure/retry cases.
+`GOMAXPROCS=4 go test -p 1 ./internal/codex` passes; live acceptance follows installation.
+
+Installed core SHA-256:
+`7f743b759c35a5314db87c9d2cd2f1c496ec28e48fa17e4f0197ff3f554a69d9`.
+The build passed after rerunning outside the sandbox because esbuild execution was
+blocked with EPERM. Service PID 625553 matched the built binary; `/readyz` returned
+200. No other jobs were running before restart. CLI reconnection was necessary
+(the first resume received HTTP 409, workspace disconnected). Public resume then
+inspected the old interrupted native turn and failed as already observed; a second
+explicit resume continues the same task. These interventions remain pilot friction.
+
+Actual-software compaction acceptance passed on the installed binary: native
+thread `01a166af-bb3e-7a03-9272-cbf9100ebefc`, turn
+`01a166ed-4dd9-74d2-a647-89bdcdee585a` emitted contextCompaction start at
+00:03:13.675 EDT (evidence 592066), completed at 00:05:42.220 (592068), and
+continued commands at 592110/592112 without another intervention. Same job,
+ledger, task and native thread were preserved. The continuation explicitly
+acknowledged the owner's SMS deferral and task-local Mercury cleanup. This proves
+the compaction stop defect is fixed in actual execution; it does not establish
+completion of the still-running workload.
+
+By 00:11 EDT, native execution removed all task-local Mercury containers and
+restored the original Appointix Mercury endpoint. Independent container-label
+inspection returned none. The retained email probe shows demo customer 7 using
+SMTP, customers 1/3 using their disabled array transport, and the native send
+returning HTTP 200; recipient inbox receipt has not been independently verified.
+Export verification exposed missing local S3 configuration. Omnidex implemented,
+tested (30 tests / 1,519 assertions) and deployed demo storage handling. The actual
+worker generated a CSV; the normal authenticated download returned 769 bytes and
+all five demo locations, while anonymous access redirected to login. Scheduled
+notifications, full survey journeys and recovery acceptance remain ongoing.
+
+At 00:15–00:25 EDT, scheduled location export sent its native CSV attachment to
+the authorized address with no recorded exception; the temporary schedule was
+then disabled through UI. No inbox receipt is claimed. The patient PROs survey
+initially failed because the deployed Survey engine lacked preserved product-area
+callback changes. Omnidex deployed current source, retried the pending request,
+and completed the native patient questionnaire. Measure ordering exposed a missing
+entry point and a wizard-state validator restricted to the other products.
+Omnidex extended the existing ordering path and validator; focused checks passed
+31 tests / 1,529 assertions. Full Measure/Engage and recovery verification remain
+ongoing. Since compaction completed at 00:05:42, no further supervisor steering
+or owner input has been required, though browser navigation adjustments and
+application/deployment corrections continue to consume time.
+
+By 00:42 EDT, Measure and Engage native questionnaires completed. Demo setup had
+omitted its managed Artemis route; Omnidex corrected setup and exercised the real
+queue. Engage publication reached `olympus.forms`; Appointix logged receipt and
+committed its transaction before patient completion. The expanded suite passed
+42 tests / 1,560 assertions (two existing PHPUnit deprecations). A combined
+Appointix → five-form → PROs journey passed, leaving ten submitted native form
+responses and four manual survey scores across the verified runs. Cancellation
+preserved accepted records. Before/after restart probes retained those records,
+export/download state, disabled verification schedules, 93 generated days and
+1,972 appointments; the scheduler tick resumed and EHR access stayed disabled.
+Recipient download returned the CSV, reuse HTTP 410, altered signature HTTP 403.
+At 00:46 EDT the entered-contact email order exposed a separate Appointix SendGrid
+adapter failure before provider submission (SMTP-only settings were read). That
+integration fix and delivery recovery remain ongoing, followed by review. The
+success of Phoenix direct mail does not establish Appointix invitation acceptance.
+
+At 01:27:23 EDT, native execution returned its final report and a provider
+`turn/completed` receipt (598878) for the same retained turn. Omnidex then failed
+with `agent ended with incomplete native items`. Replay of item identities shows
+only one unmatched **reasoning** start (597969 at 01:03:08); every command closed.
+This is framework bookkeeping, not incomplete application work. The native task
+ran from compaction completion at 00:05:42 through final output without supervisor
+steering. Added a narrow correction: only an exact, successful terminal turn may
+close unmatched reasoning observations; effectful items remain subject to the
+existing completion check. Regression tests cover success, unfinished command,
+failed/interrupted/wrong-identity turns and unchanged raw receipts.
+`GOMAXPROCS=4 go test -p 1 ./internal/codex` passes. Recovery will inspect the saved
+completed turn rather than replaying workload commands.
+
+Installed completion-fix core SHA-256:
+`b97b91d8af3e00cbb6aec0d44d4b276e02f859b44cee5958ebc0d18fd4f46261`.
+Running PID1275518 matched the built binary and `/readyz` returned200. No other
+jobs were running before restart. Normal CLI reconnection and public API resume
+recovered the provider-completed native turn without a new execution turn.
+Execution response598902 was classified done at01:31:15; fresh independent review
+thread `01a1673d-fc08-7631-99ca-36be5e690473` started at01:31:18 (598906/598907).
+The reviewer explicitly acknowledges the owner's SMS deferral and is independently
+checking retained source/evidence, tests and actual software. The completed-turn
+recovery worked in the real product; unmatched-reasoning handling is covered by
+focused transport regressions, with normal review execution continuing on this build.
+
+Independent review (01:31–01:43) reran 43 Phoenix tests, seven Forms tests,
+Survey callback/sequencing checks, fresh native Engage/five-form/PROs and Measure
+journeys, scorecards, downloads, cancellation and persisted-record/isolation checks.
+It found two concrete omissions: demo entered-contact fields remained limited to
+isolated test environments, and stale changelog text contradicted current evidence.
+The runtime completed review normally and automatically dispatched correction in a
+fresh execution session; no supervisor intervention was needed.
+
+Correction extended the existing override path through Phoenix and Appointix,
+checking the installed demo's exact tenant/database binding while retaining ordinary
+tenant restrictions. The actual UI published entered-email request1985; worker
+commit and sent status confirmed delivery submission, while the selected patient's
+stored email/phone remained unchanged. SMS was not sent. Focused suite44tests /
+1,571assertions passed. Documentation and cleanup completed; execution response
+603828 was done at01:51:15 and a fresh review began at01:51:19. Earlier accepted
+work and failures remained retained. Mailbox receipt remains unverified; WorkNet's
+hard-coded production-host validator probe remains assigned to the separate item.
+
+At02:06:59 EDT, independent review2 found no remaining in-scope demo defects and
+accepted the original demo task (605792). Mail and demo are both accepted in the
+original frozen ledger44/revision12. The next WorkNet item started automatically,
+but its retained historical owner-context note still said mail was current and
+Forms should remain deferred. Execution consequently began rechecking accepted
+mail. The supervisor inspected the frozen item and accepted timestamps, interrupted
+at a retained checkpoint, and clarified the existing approved order: finish the
+remaining WorkNet item now; retain accepted mail/demo and reuse applicable evidence.
+This stale-context confusion required intervention and remains measured friction.
+No accepted task was reopened, ledger rewritten, or new scope introduced.
+
+Final outcome — 2026-10-23 02:24 EDT
+The same authoritative job49/ledger44/revision12 is completed; all three tasks are
+accepted: mail22:42:30 Oct22, original demo02:06:59 Oct23, WorkNet02:24:21 Oct23.
+The WorkNet continuation reused accepted Forms/Survey evidence, fixed the validator's
+local-vs-production host selection with production defaults retained, and verified
+rejection/reload/recovery using a fresh synthetic journey. Full `clinect validate`
+and focused route/runtime checks pass. Independent review also confirmed normal
+DNS/trusted TLS, login/MFA recovery, existing/newly provisioned tenant entry, test
+entry, generated links, realtime and tenant/host isolation. It corrected its own
+probe assumptions (UUID vs numeric provisioning ID, uid10001, and an unrelated
+Jenkins hosts entry) rather than claiming those failed probes were successes.
+Final PostgreSQL job/ledger/task readback confirms completion, and Docker inspection
+confirms all18 Olympus services remain running. Omnidex PID1275518 remains active
+on installed core b97b91d8af3e00cbb6aec0d44d4b276e02f859b44cee5958ebc0d18fd4f46261.
+
+Mercury/SMS remains explicitly owner-deferred, not verified. The task-local Mercury
+stack/provider edits were removed; official endpoint/shim preserved. Email provider
+acceptance and persisted sent records are verified; recipient mailbox receipt is
+not claimed. Accepted demo data, exports, verification evidence and running services
+remain. Workload private sessions/probes/disposable test resources were cleaned up.
+No production deployment or commit/push was performed. The supervisor server
+restart removed its CLI session; final host inspection found no task-owned observer
+wrapper remaining. Source changes and unrelated existing edits are preserved.
+
+Observed friction: this was a steered pilot, not an autonomous benchmark. Two
+framework defects required supervisor fixes/installations (compaction abort and
+unmatched reasoning blocking a completed turn). Stale historical task context
+required one scope clarification; interrupted-turn recovery still takes a separate
+inspection failure and second resume. Browser/probe adjustments added substantial
+time, while scoped application corrections and execution/review handoffs then ran
+without owner decisions. These remaining friction points are recorded, not claimed
+fixed or used to reopen completed work. Final core diff whitespace check passes.
+
+### Clinect invitation password setup — 2026-10-23
+
+The owner reported that “Save password and continue” did nothing after opening an
+emailed invitation and entering a password, with no visible message. Their exact
+report was submitted through the installed `omni chat` in production-suite as job51.
+Existing completed job49 and its accepted mail/demo/WorkNet work remain retained.
+The planner proposed one scoped repair covering successful password persistence and
+the two-step setup transition, visible validation/submission feedback and retry,
+and actual browser verification with real database/Redis sessions. A provider
+`serverOverloaded` response delayed planning; the normal retry recovered without
+changing models, restarting the job, or owner intervention.
+
+At02:35 EDT the supervisor approved the single repair through the normal CLI ledger
+controls and started execution (ledger46). No workload implementation hints or
+source patches were supplied by the supervisor. The installed Omnidex core remains
+b97b91d8af3e00cbb6aec0d44d4b276e02f859b44cee5958ebc0d18fd4f46261.
+Private observation artifacts are in the established ignored
+`bin/ledger-freeze-20261022/evidence/local-olympus/invitation-password/` directory.
+Implementation and actual software acceptance are pending at this checkpoint.
+
+Execution hit another provider `serverOverloaded` failure at02:38:54 (611524),
+after preparing the isolated reproduction runtime. Existing work was retained.
+The supervisor inspected progress and resumed through the public lifecycle API.
+As previously observed, the first resume inspected the failed provider turn and
+returned “Original execution is failed”; a second explicit resume then started
+continuation. These two supervisor actions are intervention, not autonomous recovery.
+
+Browser reproduction confirmed a short matching password triggered native
+validation with zero POSTs and no persistent page error or stated minimum. Valid
+matching passwords already reached authenticated MFA setup. The repair adds visible
+requirements/inline validation, saving feedback and submission-failure recovery.
+The isolated browser gauntlet passes with real PostgreSQL/Redis and CSRF: required,
+short and mismatched values; click/Enter; autofill-style DOM values; network failure
+retry; database rollback/retry; expired-session reload/retry; JavaScript-disabled
+server validation/native submission. Persisted password/invitation state and an
+authenticated MFA page reload are checked. Frontend production build passes.
+
+At02:49 the supervisor found execution's evidence incorrectly treated updating the
+existing local WorkNet installation as unauthorized deployment. The local running
+app still used packaged code. Execution was interrupted at its retained successful
+verification checkpoint and given authority/scope clarification to install and
+verify this same repair in local WorkNet, preserving the owner identity/invitation
+and existing state. No implementation hints were supplied. This required another
+inspection/resume pair; isolated checks remain retained and remote deployment is
+out of scope. Actual local WorkNet acceptance remains pending.
+
+The scoped local image update completed through the established Olympus restart
+workflow and its full runtime contract passed. Invitation/MFA regressions passed
+27 tests / 387 assertions. Actual WorkNet browser results now confirm click with
+autofill-style values and Enter both save the password, accept the invitation,
+open MFA setup and retain authentication after reload. Readback confirms real
+PostgreSQL and Redis sessions, CSRF enabled, basic staff access, MFA still required,
+and acceptance audit events. Both sessions were logged out through the normal UI;
+protected-page access then returned to login. No browser page errors were recorded.
+The supervisor also inspected the live validation screenshot, which visibly shows
+the minimum requirement and mismatch error at the focused confirmation field.
+Only dedicated synthetic identities were used and retired; owner accounts and
+invitations were preserved. A fixture entrypoint mistake and separate Node-client
+certificate trust issue required harness corrections; the normal trusted-TLS
+browser flow passed. Independent review and final cleanup remain pending.
+
+Final acceptance — 2026-10-23 03:04:33 EDT
+Independent review found no defects or unfinished required work (616011), and
+task p_93d55bc42361_1_task was accepted (616012). Authoritative job51 and frozen
+ledger46/revision3 both report completed with no error. Review reran 27 PHP tests
+and 18 JavaScript tests and independently exercised fresh WorkNet invitations:
+click/autofill-style values, Enter, validation correction, network retry, actual
+CSRF rejection/reload/retry, persisted password/invitation acceptance, authenticated
+MFA setup/reload and logout. All passed with real PostgreSQL/Redis and no page
+errors. Its synthetic accounts were retired and audit history retained.
+
+Supervisor readback independently confirmed running healthy Phoenix image
+914b8bca92b4cd08da7cf093d5f66554bb442bcaf81bc76081f26687a6bc7b0e,
+controller SHA256 0a3d2137d78242702bb27b5958f3a5ba1141620289ee058f6de3788a5fe721a5
+and app.js SHA256 2aa86ffe9bc94c03d1a64c29f892dadd0d6eda419ae987bc14669ea6fd652f32,
+matching authoritative source/build output. The fix is installed locally; Olympus
+remains running. Disposable isolated containers/volumes/network and private fixture
+credentials/tokens were removed; synthetic identities are inactive and their
+security history is retained. No owner identity/invitation was changed. No remote
+deployment, commit or push occurred. Actual external password-manager integration
+was not exercised; current-value submission was tested by no-event DOM filling.
+
+Observed friction: approximately36 minutes from initial report submission to final
+acceptance, including two provider-capacity interruptions, an initial normal
+planning retry, two supervisor recovery resumes, and a later scope clarification
+with another inspection/resume pair to ensure delivery to the existing local app.
+Harness permission/environment, rate-limit isolation, container-entrypoint and
+Node-client certificate issues also cost time. These were recorded truthfully;
+none required an additional owner answer. No new framework code changed during
+this run. Root evidence diff whitespace check passes; the observer CLI is closed
+at task completion, leaving the installed app and Omnidex service running.
+
+### Scheduled ad hoc demo invitations — 2026-10-23
+
+Owner request: modify the existing ad hoc process to choose when invitations go
+out, allowing demo patient orders/invitations to appear during a meeting at the
+scheduled time. Submitted verbatim through installed `omni chat`, followed by
+explicit pilot context retaining the existing local WorkNet/demo installation,
+prior accepted work, local installation and actual-software verification authority,
+and the owner's Mercury/SMS deferral. No implementation hints were supplied.
+Job52 started at03:06:42 EDT. This is a steered functional pilot, not an autonomy
+benchmark. No additional owner decision was requested.
+
+Resource check before work: about24GiB memory available and36GiB disk free;
+existing data/services/edits retained. Installed core remains SHA256
+b97b91d8af3e00cbb6aec0d44d4b276e02f859b44cee5958ebc0d18fd4f46261.
+Private CLI/observer artifacts use the established ignored
+`bin/ledger-freeze-20261022/evidence/local-olympus/adhoc-scheduling/` directory.
+Planning, implementation and software acceptance are pending.
+
+The planner proposed one task, p_d4ac3e4e3868_1_task, covering send-now/send-at
+selection separate from the event date, displayed timezone/time, durable delivery
+through existing workers, existing demo-host override and immediate/prefill
+compatibility. Acceptance includes near-future staggered sends in the actual UI,
+no early/duplicate sends, restart continuity, cancellation/failure recovery and
+tenant/contact preservation. The supervisor reviewed and approved this scoped
+task using normal CLI controls; ledger47 was frozen and execution started at
+approximately03:10 EDT. No owner intervention or provider error occurred in planning.
+
+Implementation uses a separate invitation time and timezone in the shared wizard,
+retains the event date, and extends the existing persisted request/Artemis/Appointix
+path. Orders are materialized at creation; durable queue delivery wakes the worker
+when due, where persisted state is rechecked before sending. Initial focused PHP
+checks passed timezone conversion, invalid dates, DST ambiguity, expiration order
+and immediate sending. A worker JMS API compatibility build failure is being
+corrected before installation. Implementation/software acceptance remain pending;
+no supervisor implementation guidance or additional owner answer was needed.
+
+At03:20 the Phoenix/frontend/Appointix builds and focused checks passed (16 PHP
+tests/27 assertions; Java delivery-state and demo-recipient contracts). The local
+API/worker update started. First actual UI order retained distinct event/send
+times and did not send early, but Artemis rejected scheduling the follow-up because
+the Appointix principal had consume-only authority. Omnidex identified the required
+same-queue send permission and is correcting that responsible runtime boundary
+before repeating the UI scenario. This is a recorded failed live attempt, not
+claimed acceptance; no supervisor implementation hints were supplied.
+
+The same-queue authority correction was installed and the original failed request
+recovered without a new order identity. Actual UI orders1990/1991 retained separate
+event/send times, remained unsent before due, and survived browser closure plus
+Phoenix/Appointix restart. Request1990 was scheduled07:25:00UTC and persisted
+sent_at07:25:00UTC; request1991 was still unsent then and reached sent at07:27UTC,
+its selected time. An immediate request1994 also sent. Cancelled1992 stayed
+cancelled without sent_at; expired1993 received no send timestamp. Omnidex completed
+the first scheduled invitation's native patient survey journey. Provider acceptance
+is observed; recipient mailbox receipt is not. Tests used the existing authorized
+demo-host override and synthetic demo patients. Final compatibility/isolation
+checks, evidence cleanup and independent review remain pending.
+
+Final focused checks passed45 PHP tests/1,540assertions and Java parsing, delivery
+state, demo-recipient preservation, tenant targeting and provider-acknowledgement
+checks. Final refinements were installed, then the actual workflow repeated after
+that cold start: the scheduled request sent at07:33UTC, provider acceptance was
+logged and its native patient journey completed. Replay of an already-sent order
+left its sent timestamp and delivery-tracking row unchanged. Actual UI rejected a
+past send time and cancelling the wizard created no order. Five synthetic patient
+contact fingerprints remained unchanged. Independent review and final cleanup
+remain pending. No additional owner answer or supervisor steering was required
+during implementation; Omnidex corrected its queue permission and harness issues.
+
+Execution completed03:38:17 (620722), and independent review started03:38:20.
+Supervisor inspection confirmed running API image
+3f05f76264f1185efa2b111c916b7b9d84d195ca37d4bbde6dc8ff8b24b4f6b7,
+Appointix96ab13d4e7ed795a1991978c095f9a3a3e9bd1d0087265f1709c961f14933643,
+and Artemis e797d2623125c30beadd6e186169c3e12958d5b2a54159dfed161437d92c3e8c.
+Deployed InvitationTiming.php SHA25681cff2e48395bd1edc05b8cb70a60c5984ffaacfaeff445b5c844848bb4a1820
+and schedule view SHA25664aec948cb929aa200e6f4a7b4fab53b5237e994d8b2143890cc92b0437562b0
+match the authoritative source. Workload whitespace checks pass.
+
+Independent review reran focused PHP/Java checks successfully and created two
+fresh synthetic orders through the live wizard, due03:44/03:45 America/New_York.
+Both persisted unsent with blank worklist send timestamps; pending restart and
+due-time/patient-journey verification are in progress. No review verdict yet.
+
+Review confirmed its two fresh sends at07:44/07:45UTC, pending restart survival,
+immediate send, past-time rejection, native patient completion, cancellation and
+tenant/contact checks. Its additional safety test passed after correcting a missing
+disposable-database prerequisite. Review then expanded into forcing a process crash
+between SMTP provider acceptance and database commit, holding a temporary row lock
+on one synthetic request. Supervisor compared the pre-change worker source and
+confirmed that provider-send-before-database-commit sequence already existed.
+
+At03:49 the supervisor interrupted review and clarified the owner's bounded scope:
+finish scheduled delivery/restart/ordinary replay acceptance; record the preexisting
+transport crash-window limitation honestly; do not turn this small feature into a
+general exactly-once delivery redesign. Review must release its owned lock/process
+and clean up the synthetic fixture, retain evidence, and report any actual new
+scheduling defect. This is a supervisor scope intervention, not autonomous review
+completion or a claim that the unproven crash case passed. No implementation hints
+or forced acceptance were supplied; the installed implementation is unchanged.
+
+Final acceptance — 2026-10-23 03:52:37 EDT
+Review completed with no in-scope findings (622641), and the task was accepted
+(622642). Authoritative job52 and frozen ledger47/revision3 both report completed,
+with no error. Review passed49 PHP checks and five Java checks; its live scheduled
+sends, pending restart, send-now, validation, cancellation/expiry, ordinary replay,
+contact/tenant isolation and patient completion checks all passed. The temporary
+crash-test lock is gone; its synthetic request sent once at07:49UTC. The broader
+provider-acceptance/database-commit crash window was not proven and remains an
+explicit preexisting limitation, not a passed test. No implementation changed
+during review. Provider acceptance is verified; mailbox receipt and owner-deferred
+SMS are not claimed.
+
+Final supervisor readback confirms API/Appointix/Artemis still running on the same
+recorded images and no task-named scheduling test containers remain. Review private
+sessions/fixtures and temporary processes were removed; accepted synthetic orders,
+responses, audit history and nonsecret evidence remain. No production deployment,
+commit or push was performed. The observer CLI is closed on completion, with
+Omnidex and the local app left running. Root evidence whitespace check passes.
+
+Observed effort: about46 minutes from job creation to final acceptance. Omnidex
+implemented the cross-service change, corrected the worker API/broker permission
+issues, installed it and performed live timing/restart tests without an owner
+answer or implementation guidance. One supervisor scope correction stopped review
+from expanding into a preexisting transport crash-window redesign; continuing that
+review required the known inspection failure and second explicit resume. Browser
+navigation/response-wait races, probe assumptions and a missing disposable test DB
+also added time. This was a steered pilot with recorded intervention, not a claim
+of zero-friction autonomous completion. No framework code was changed in this run.
+
+## Olympus repository publication — 2026-10-23
+
+Owner requested committing and pushing every affected Olympus repository so they
+can update and set up a demo environment. Published reviewed explicit file sets,
+with no environment files, credentials, runtime data or ignored pilot outputs.
+Automatic review initially rejected broad staging; the replacement used explicit
+feature file lists and excluded unrelated migration-test rewrites. Six such
+Phoenix test edits are preserved in stash
+`d02e1da45957a58580852ca2ae273aa38114cdee` (named "Preserve unrelated migration-test
+edits before Olympus demo publication"). Existing older stashes are untouched.
+A second review questioned the customer survey profile; read-only GitHub metadata
+confirmed both destinations are private, and the explicit five-file Survey push
+was approved. Its Phoenix tenant-seeder dependency and tests are included together.
+
+Initial published commits: Phoenix `591b69bbd` on service-engine-integration,
+Appointix `15abb99` and Forms `abc2c8b52` on cc-2026-06-18-multi-tenant,
+Survey `6f7e402f` on cc-2026-06-18-multitenant, Hestia `cfd6f59` on main,
+Hermes `b857b3d` on main and fix/apple-silicon (ordinary fast-forwards), and
+Olympus `d988606` on main. GitHub subsequently added Forms formatting commit
+`b02731988`; the clean local Forms checkout was fast-forwarded to retain it.
+Olympus's ignored local Appointix/Survey branch overrides were reset through
+`./clinect branches reset appointix survey`; effective refs match sources.json.
+Unrelated Omnidex, legacy-api and unpublished legacy-exporter work is untouched.
+
+Pre-publication verification: all scoped whitespace checks pass; focused Phoenix
+survey/seeder, request-tracking migration and invitation-timing checks pass
+(19 tests, 102 assertions, one PHPUnit deprecation). Survey callback-host and
+customer-profile contracts pass in a network-isolated disposable container.
+Initial harness attempts lacked ephemeral Laravel cache directories or required
+read-only source mounts; corrected harnesses passed without product changes.
+Broad existing migration checks are not claimed green: unrelated rewritten
+tests failed before preservation, the original PostgreSQL-dependent test needs a
+disposable database, and whole-Unit discovery encounters an unchanged final-method
+conflict. Prior completed runtime pilots above remain the feature acceptance.
+
+Final normal `./clinect validate` found an actual release prerequisite failure:
+"Artemis publisher authorization is missing." Preflight requires the literal
+publishers-only role attribute, which rejects the accepted scheduling change's
+same-lane publishers/consumers send permission. Started Omnidex job53 through its
+normal CLI to correct only this validator mismatch, preserve real authorization
+checks and scheduling behavior, and rerun focused plus actual-software validation.
+No deploy, upgrade, database reset, new invitation, or framework change is authorized
+by that repair request. Final repair publication and remote readback are pending.
+
+Final publication acceptance: Omnidex job53/ledger48 revision3 completed at
+04:19:36 EDT, with no review findings (624719) and task acceptance624720. The
+three-file correction changes only preflight's expected send grant/error, adds
+missing-permission regression cases, and records evidence in the existing runbook.
+Focused broker/preflight/runtime checks, shell syntax and whitespace checks pass.
+Execution and independent review both ran the real `./clinect validate` and got
+exit0: system_settings, seven tenants, four test environments, Redis TLS, Docker
+logs, provisioning worker and trusted WorkNet ingress all passed. Supervisor read
+the independent validation log; no implementation change occurred during review.
+One supervisor plan approval, no owner answer or implementation steering was needed
+for this approximately eight-minute repair pilot. Observer CLI exited normally.
+
+Published the reviewed correction as Olympus main `b156ffc787e348f294a36cb831a8824c4aecba08`.
+All seven source branches were read back directly from GitHub and matched their
+local revisions; the final Olympus follow-up was separately verified after push.
+All seven working trees are clean. Full nonsecret commit mapping is retained in
+ignored `bin/ledger-freeze-20261022/evidence/local-olympus/publish/remote-heads.json`.
+Phoenix's named stash is retained and no unrelated repository was published.
+Normal `./clinect branches` matches sources.json; `./clinect update --dry-run`
+selects those source refs and leaves runtime activation to the separate deployment
+step. No actual update, remote deployment or fresh-host setup was performed.
+The local WorkNet overlay remains host-specific as documented in the Olympus
+runbook, including its existing sibling source mounts and locally built broker;
+publication is not evidence of unattended fresh-host WorkNet provisioning.
+
+## Jenkins build79 startup regression — 2026-10-23
+
+Owner supplied the failed test-production-deploy/79 console on
+`https://jenkins.clinect.worknet/`. Read the actual console through its normal
+consoleText endpoint, retaining it only in ignored task evidence. Jenkins pulled
+Olympus main through `b156ffc787e3` and completed migrations, then Docker failed
+to create the Survey process: the published compose.local.yaml attempted to bind
+`/opt/multitenant/legacy-survey-engine/application/libraries/clinect/PhoenixApiClient.php`
+onto an image file, but the host source was not a file. Survey remained Created;
+startup stopped before Hermes and the runtime broker activation phases.
+
+This is a release packaging regression: compose.local.yaml selects source-built
+images for Jenkins production too, not exclusively workstation development.
+Publishing the WorkNet domain overrides, sibling mounts and ignored pilot broker
+binary in that shared overlay was incorrect. Earlier validation against the
+already-running workstation stack did not exercise this deployment boundary.
+Supervisor acknowledged responsibility and submitted bounded repair job54 through
+the installed Omnidex CLI. Required outcome: portable default source-built
+production, explicit local WorkNet selection preserving the accepted local demo,
+real reproduction/fix verification of missing-mount startup, focused contracts and
+normal local CLI/browser validation. No remote deployment, invitation, data reset,
+credentials copied into disposable tests, or Omnidex commit/push is authorized.
+Supervisor will publish accepted changes. Jenkins job configuration read returned
+403; its build console is accessible, and no access bypass was attempted.
+
+Job54 execution implemented explicit persisted `CLINECT_WORKNET` selection,
+portable image-only compose.local.yaml, packaged optional Hermes WorkNet routing,
+and selection-aware activation/validation. It reproduced the real missing-mount
+Docker error, then bootstrapped an isolated production-layout fixture with
+synthetic secrets and data, production login/assets and services working without
+WorkNet. No authoritative source copies or production data were used. Recreated
+the local WorkNet services through the normal CLI and validated real dependencies.
+An image-directory permission defect caught during activation was fixed and
+retested; normal additive Hestia contract reconciliation satisfied the rebuilt
+validator's expected grant. All18 local services run, with available health checks
+healthy. Trusted browser password/MFA login, demo entry, Forms/Survey assets and
+real Phoenix/Reverb delivery pass. Existing patient identity rejection/completed
+form entry was checked without resetting accepted answers. Fixtures and generated
+secrets were removed; source changes remain only in Olympus and Hermes.
+
+Independent review repeated nine focused shell suites, Go broker/control tests,
+packaged callback-host checks, real CLI status/validation, trusted browser checks,
+and a fresh synthetic production-layout startup. These passed. It nevertheless
+returned error631579 for two additional verification demands: a successful
+top-level build while the source tree is deliberately uncommitted, and a fresh
+linked Forms-to-Survey submission. The former correctly hits the preserved
+clean-checkout gate; the latter extends beyond the reported startup regression.
+Neither was falsely reported as passed. Supervisor clarified the bounded startup
+scope, then explicitly interrupted automatic re-execution when ordinary feedback
+did not prevent another attempt to address those gaps. Resume requests retain the
+implementation and all evidence, preserve source authorization, prohibit another
+fixture campaign, and require review of actual in-scope defects. No framework
+source was changed. This is a supervised repair with recorded intervention, not
+an autonomy claim; remote Jenkins recovery remains unverified pending publication.
+
+Publication completed: Hermes `9489be89d9c94f4038353857dc43b333ab5f8537`
+was pushed to main and fix/apple-silicon; Olympus
+`792a91cb33f07d5b4632e5cab47f25b01453f966` was pushed to main. Direct GitHub
+readback matches both local revisions and the two authoritative checkouts are
+clean. Commits contain only the reviewed packaging/routing configuration, focused
+tests and documentation. Actual .env, secret files and task artifacts are excluded.
+The supervisor published based on the reproduced and corrected startup failure,
+passing real production-layout startup, and independent passing runtime/UI checks;
+the Omnidex ledger review is not represented as accepted or completed.
+
+Omnidex rejected two scope-aware resume requests with "incompatible state changes
+require clarification". Plain resume then failed at interrupted-execution
+inspection (631801). A second explicit resume reopened the old two proof demands
+instead of applying the supplied scope correction. No new implementation change
+was made; another top-level build failed. Supervisor interrupted that extra work,
+preserving job54 in waiting_input and its implementation/evidence, then closed the
+observer CLI. This unresolved Omnidex feedback/resume defect remains separate from
+the published Olympus correction; no framework changes were attempted in this task.
+Jenkins was not triggered, and remote deployment success is still unverified.
+
+
+2026-10-23 — Rolling demo prerequisite controls, Omnidex job 55 (in progress)
+
+Read-only Jenkins API/console confirms build 80 SUCCESS, including application
+runtime startup after the published packaging fix. Its upgrade applies system
+migrations; this is not proof of the reported tenant's demo schema readiness.
+Stopped job54's superseded proof campaign via normal /cancel, retaining all work
+and evidence. Started job55 through the installed omni chat in production-suite.
+Initial proposal ledger50/revision1 addresses accurate layered prerequisite status,
+settings CTAs and local WorkNet UI acceptance. Owner clarified that configuration
+and migration controls must be available regardless of production/test environment;
+updated scope requires a functional per-tenant production migration action under
+existing operator authority, with no remote mutation or automatic live delivery.
+
+Friction observed: combined approval plus scope wording was rejected as
+"incompatible state changes require clarification". /interrupt against the still
+proposed job was rejected and the CLI then reported plan revision identity changed;
+subsequent /redirect and /exit were rejected as stale plan-bound input. Ctrl+D
+closed the observer normally; reopening retained the same job and ledger. A plain
+change-proposal request then entered planning successfully. No database state was
+patched, no implementation/evidence discarded, and no framework edits were made.
+This remains a supervised run, not evidence of autonomous completion.
+
+Job55 ledger50/revision2 was frozen and began execution at13:22:48 UTC using
+installed /home/gryph/.omnidex/bin/omni version v0.5.0 (Charmeleon). Supervisor
+submitted three focused observations through normal chat: existing production
+client databases can begin clinect_test_; settings saves must retain the exact
+demo return target; migration completion and actionable issue CTAs must be usable
+without repeated reloads or searching below long diagnostic sections. These
+messages were accepted by the product; inclusion in final implementation remains
+to be checked. No source implementation was hand-patched by the supervisor.
+
+Local production-mode synthetic tenant9900139 was created from the empty template
+for the actual UI pilot. First attempts exposed migration ownership-release,
+unique provisioning slug, and missing external system migration catalog entries.
+The workload repaired these; failed runs/backups remained. A stranded synthetic
+lease was explicitly released via the existing operator socket after fixing its
+ownership-marker check. This required intervention and is not automatic recovery.
+Subsequent UI-triggered run11 succeeded. Supervisor independently read PostgreSQL:
+demo_programs/demo_days/demo_appointments all exist, the actual demo migration is
+recorded, clinect_api_tenant has SELECT but no schema CREATE. Actual password/MFA
+access and configuration CTA navigation were observed. Remaining contextual,
+permission, environment and recovery checks are still in progress; no completion
+or publication is claimed yet. Remote production was not modified.
+
+Primary UI repeat run12 succeeded after the affected PHP pool restart. Actual
+isolated environment315b4f49-effe-4d79-853b-96f0e2513ab2 was created from the owned
+empty fixture; initial creation hit mixed shared PHP image versions. Aligning the
+six affected PHP services restored it. The normal environment migration UI then
+created all three demo tables; supervisor independently verified their existence.
+The normal UI also rejected wrong confirmation/unknown environment without a
+primary fallback, and a restricted MFA-authenticated account could inspect but
+not execute privileged controls. Focused suite reached49 tests/161 assertions.
+A broader suite exposed an unchanged .env.example AUTH_IMPLEMENTATION assertion;
+HEAD already lacks that setting, so this is not a new failure or a reason to
+weaken the unrelated check. Evidence remains in the workload's existing record.
+
+Supervisor review still identifies unclosed gaps before publication: Hestia's
+new main-tenant path rejects every clinect_test_ database prefix even though
+registered primary clients already use those names; migration UI explicitly
+requires manual refresh; setup issue CTAs are still separated below long status
+blocks. Earlier natural feedback was accepted in chat but did not modify the
+running frozen execution. These need actual resolution and verification, not an
+unqualified completion claim. Fixture cleanup/review is still ongoing.
+
+The first execution finished at14:27:28 UTC and cleaned its disposable fixtures.
+Supervisor confirmed its fresh review input did not include the three ordinary
+chat corrections. A normal /redirect preserved job55, its changes, and completed
+evidence and amended the same task. Previously queued feedback was then drained
+into successive proposal revisions, including an obsolete pool-recovery request.
+Supervisor removed that stale request explicitly: the six images, primary and
+isolated migrations, permissions, restart checks, and cleanup were already proven.
+Revision9 was approved with a separate plain approval. Execution step289 began
+at14:39:36 UTC to finish only the valid primary-database name case, automatic
+status/readiness, and adjacent contextual CTAs with their affected UI checks.
+This second pass remains supervised; no publication or remote changes yet.
+
+The correction pass created primary fixture9900239 with database
+clinect_test_demo_gap_20261023. The actual browser exposed an AJAX form-action
+shadowing bug (hidden action input masked form.action); Omnidex fixed the owning
+Stimulus controller and added a regression. The actual UI then completed its
+primary migration. Supervisor independently verified all three demo tables and
+the demo migration record; clinect_api_tenant has SELECT and lacks schema CREATE.
+An initial concurrent browser observation saw an old completed run while the
+workload exercised its repeat. Omnidex independently identified the stale prior
+result and cleared it on accepted submission. Supervisor's subsequent browser
+check confirmed successful live status, cleared schema warning, retained timezone
+draft and focus, exact primary identity, and migration controls before diagnostics.
+Screenshot retained in the existing ignored publication artifact directory.
+The workload asked whether System Runtime could use an unchanged-value save;
+supervisor explicitly confirmed that this is within scope and shared switches
+must remain unchanged. This was additional intervention, not autonomous behavior.
+
+Final correction checks reached31 PHP tests/122 assertions and5 frontend tests,
+with passing affected Go checks, primary-only disposable Hestia integration and
+production assets. Real browser checks cover automatic primary and new isolated
+environment migration, failed identity validation, reconnect, subsequent recovery,
+draft/focus retention, persistent confirmation errors and late-target rejection.
+The new isolated environment is674307ec-7383-4493-8cab-14449133df4f. All six PHP
+roles run image5ab689fa51af9a3fe19d6245c8d1ee29b08e209a23eebe5481bbc065907903be.
+
+Dedicated-demo UI configuration saves/readback/return/restore passed. Embedded,
+active-client and selected-environment cases additionally used authenticated
+native form HTTP round trips with persisted readback and exact return targets;
+normal browser rendering/polling checks covered the three screens. Active-client
+Communications exposed a real cross-host CSRF failure; its control now opens the
+already selected tenant directly, while central screens retain the staff handoff.
+System Runtime and System Mail unchanged-value saves returned to the selected
+environment with unchanged configuration hashes. Validation responses across all
+five editors retain context. Navigation-wait failures and rate-limit waits remain
+recorded as failed attempts; passing repeats are separate observations.
+
+An adjacent, unchanged Forms/Survey workflow-behavior editor returned500 because
+its existing production RLS rejects env-fix.complete_redirect writes. The failed
+transaction rolled back. This was disclosed and no unrelated permissions were
+broadened. Requested Runtime route controls passed their own round trip.
+Normal isolated Drop has succeeded; task-only catalog cleanup hit an FK ordering
+constraint and rolled back. The workload is correcting only that fixture cleanup.
+Final cleanup and review are still in progress; publication has not occurred.
+
+Final supervisor conclusion and publication — 2026-10-23
+
+Execution step289 finished at15:44:46 UTC. Its independent review passed55 PHP
+tests/195assertions,5frontend tests, focused Go checks, real Hestia primary lease
+integration, identical production assets, fresh password/MFA rendered UI checks,
+image alignment and cleanup. No implementation defect was reported. It requested
+additional proof: changed shared-global values despite the existing no-change
+authorization, controller regression tests duplicating the actual authenticated
+save/validation checks, and migration completion repeated on embedded/active
+surfaces despite their verified common controller, status polling, focus and
+targeting plus actual dedicated primary/isolated completion and recovery.
+
+Supervisor retained the concrete coverage distinction and accepted the requested
+behavior based on the passing automated and actual-software evidence. Added the
+already-submitted no-change clarification to the existing workload evidence after
+the executing model failed to receive that normal CLI answer. The automatically
+started extra execution recognized that clarification but proposed another fixture
+campaign for the remaining proof demands. Stopped it via normal /cancel before
+any mutation; subsequent events show only reads. Job55 is canceled, not recorded
+as an accepted autonomous Omnidex ledger completion. The observer CLI closed
+normally. No framework source was changed by this pilot.
+
+Supervisor independently confirmed task customer/routes/databases remain0 and
+all six PHP services use final image
+f73929f810964b76e527029aa6ca429668c6b83650b51e1caaf911d65e9f1958.
+Final readback matched the exact GitHub revisions and clean authoritative trees:
+- Phoenix service-engine-integration:1e6ac3f6ac32ddefd8f6adacbf8fd44cc239d11a.
+- Olympus main:8739652c372c5a5335f62238f01414fe84c3264b.
+- Hestia main:cbaf42c89abd30efcf2f6b5e45deff068f4095cf.
+Only the explicit reviewed source/test/documentation allowlists were committed.
+Credentials, ignored evidence, unrelated source edits and existing stashes remain
+excluded/preserved. Local services contain the verified changes. Jenkins was not
+triggered and remote rollout is not verified. The preexisting unrelated Runtime
+behavior-editor RLS failure and optional env-template check remain disclosed.
+
+2026-10-23 — Explicit client runtime switches, Omnidex job56 (in progress)
+
+Owner clarified that an explicitly enabled client must not require global enable
+as well, and supplied current client1000139 UI evidence: Scheduler On/global off,
+Appointix On/global dry-run, both effectively blocked. The owner has successfully
+used the published tenant migration control; its behavior is retained. Root traced
+real global vetoes in scheduling, queue publication and Java consumption, then
+submitted the outcome to installed omni v0.5.0 in the authoritative production-suite
+workspace. No workload implementation was hand-patched. Scope covers consistent
+client precedence for the four client runtime controls and truthful UI; tenant
+Off/unconfigured authorization and independent communications/isolation remain.
+Actual acceptance requires enabled-versus-disabled synthetic clients with the
+global settings off/dry-run, actual scheduling/processing and affected service
+access. Reversible local proof settings with restoration are authorized; no remote
+mutation, sends, or repeated migration/survey campaign. Existing proof is reused.
+Memory23Gi available and disk31Gi free before heavy work. One cohesive task was
+requested; code review/pilot results and publication remain pending.
+
+Job56 execution step291 started2026-10-23T16:32:45Z after plain approval.
+Initial focused Phoenix checks passed29tests/158assertions; focused Forms passed
+11tests/55assertions. Broader Forms contract suite retains an unrelated NextGen
+exception-string failure. Four runtime images and production assets were built;
+actual enabled/disabled synthetic primary-client proof is in progress.
+Supervisor read-only deployment-contract check found Olympus bin/build-local
+still expects the removed SystemRuntimeGate.java and global Appointix clause:
+appointix_source_contract_is_valid exits2 on the current authoritative Appointix
+source. This is an unresolved normal-build compatibility issue, not an accepted
+release. Recheck after execution/review and return the observed failure through
+Omnidex if it remains; no workload source was hand-patched.
+
+Execution step291 finished16:55:50UTC after about23minutes. It recorded actual
+central scheduling (On11events/Off0), Artemis/Java PDF persistence with global
+dry-run then off, off/missing/tenant-dry-run/isolation denial and recovery, Forms
+and Survey access rules, normal password/MFA UI status and client override CTA.
+Local settings were restored byte-for-byte; task customers/routes/databases were
+removed and private session/raw test artifacts cleaned. Independent review began
+16:55:54UTC. The supervisor's observed Olympus source-contract defect remained,
+so one normal CLI /redirect returned that concrete release failure to the same
+job, preserving accepted runtime evidence and prohibiting a repeated campaign.
+Publication remains pending. No hand-patched workload implementation.
+
+
+Supervisor completion and publication — 2026-10-23
+Omnidex job56/ledger51 completed with no job error. Execution step293 corrected
+the release build contract; independent review accepted it at17:03:50UTC with no
+findings after focused build/lane/Compose/security/runtime checks, the actual
+Olympus Appointix build, and image verification. The earlier completed actual
+runtime pilot, broader-test limitations, restoration and cleanup remain recorded.
+Supervisor independently verified fixture customers/routes/databases0 and six PHP
+services aligned on f620fdbf94e8bc823468d6a8ffca7e8a64766b344a423f3093240cee4b08e402.
+One concrete supervisor redirect was needed for the stale Olympus source contract;
+this was a steered run, not an autonomous-completion claim. No implementation was
+hand-patched by the supervisor. Normal CLI closed after task acceptance.
+
+Published explicit reviewed file sets; GitHub readback matches all five revisions:
+Phoenix service-engine-integration d1eb5f260725d64f1d7b0d8be9ac673062a0eda8
+Forms cc-2026-06-18-multi-tenant b631ba08541d9f385d73e62d7b477fd443b034f0
+Survey cc-2026-06-18-multitenant 3f16a250e035fbcd78783e2754f776334fbc755e
+Appointix cc-2026-06-18-multi-tenant 906b941abbaea4b5ed859dd3e6fb3921d3094d71
+Olympus main 0c85d4d52b63c88cca18ddc21c98a588ccf15480
+Hestia was unchanged. No credentials, private state, unrelated files or existing
+stashes were staged. All pushes were ordinary fast-forwards, Olympus last.
+Automatic approval initially mistook the supervisor's Omnidex-only no-publication
+instruction for an owner restriction. The same operation was approved after the
+explicit owner's existing all-affected-repositories commit/push request and that
+scope distinction were supplied. No owner intervention was required.
+Local verified services remain running. Jenkins was not triggered; remote rollout
+is pending the owner's update job. Email/SMS settings were not enabled.
+
+2026-10-23 — Jenkins82 tenant migration fingerprint failure, Omnidex job57
+
+Owner supplied upgrade contract-validation failure after SQL validation_result ok
+for clinect_dev. Read latest Jenkins build82 metadata/console through its normal
+anonymous endpoints; retained console in existing ignored publish/jenkins-82.txt.
+Hestia validates sealed template provenance, then hashes the current tenant
+migration names plus batches and requires exact equality with the original sealed
+template. The owner previously completed selected-primary-tenant migrations.
+The raw production migration ledger has not been read; actual changed entries
+are not asserted. The incompatibility will be reproduced with a synthetic tenant
+using the authorized migration path before acceptance.
+
+Submitted bounded repair through installed omni v0.5.0 from authoritative
+production-suite. Job57 planning step294 started17:36:42UTC. Scope: correct
+legitimate migration progression versus upgrade validation; retain provenance,
+schema/role checks, data and migration history. Actual acceptance uses migrated
+synthetic primary fixture and the real Hestia/Olympus validation boundary, relevant
+failure/recovery, cleanup and restored settings. No remote writes/deployment,
+Jenkins trigger or unrelated campaign. Supervisor handles publication under the
+existing owner request; native Omnidex workload leaves changes for review.
+Memory23Gi available and disk31Gi free; authoritative Hestia and Olympus clean.
+
+
+Supervisor completion/publication — Jenkins82 repair, 2026-10-23
+Omnidex job57/ledger52 completed with error=null and accepted review at18:13:19UTC.
+Execution17:39:32–17:52:56 reproduced the old SQL-ok/whole-ledger rejection after
+real UI/worker/broker/lease advancement, preserved436original rows/batches and
+synthetic data, and passed the repaired normal Compose validator. Actual local
+batch0history caught and corrected an overly strict first check before delivery.
+Contract/lease/upgrade regressions and actual failure/recovery/repeat passes passed.
+Independent review repeated real flow and verified source/image identity. It found
+only three task-owned anonymous lease-test volumes left by the first execution.
+Omnidex removed those exact unattached volumes and corrected the cleanup claim;
+final independent review confirmed their absence and no remaining findings. No
+supervisor implementation patch, scope redirect, or further owner input was needed.
+Cleanup-only correction retained accepted behavior and required no source changes.
+
+Supervisor confirmed fixture customers/routes/database0, sequence7/true, broker
+running with original clinect-api:local runner, Phoenix source clean, and installed
+operations image09a221b789cf062cc45eaa70c3e02eb514c5bf28626dbdabb54d9008a156a125.
+Final actual standard validation passed system_settings,7tenants and4environments.
+Task private browser state, proof backups/images/settings and test resources were
+cleaned; evidence and nonsecret scripts remain in established ignored state.
+
+Committed only the seven reviewed source/test/documentation files, then ordinary
+fast-forward pushes, Hestia first. Exact GitHub readback and clean trees verified:
+- Hestia main931a27b377c0639daa51f881aebbc9c3277433b6.
+- Olympus main2873d2c2465a04e7811242790e4a81877fb43184.
+Other repositories, existing stashes, credentials and unrelated work preserved.
+Normal Omnidex CLI exited after completed status. Jenkins was not triggered and
+remote rollout is unverified; the owner's next update can pull the repair. No
+remote data/history/configuration writes or source-template resealing occurred.
+
+2026-10-23 — Communication settings save/inheritance bug, Omnidex job58
+
+Owner reports saved status with outbound/email/SMS still blocked despite entering
+ENABLE LIVE COMMUNICATIONS. Supervisor traced existing controller: local checkbox
+values are overwritten with null for separately checked inherit_fields; rendered
+controls allow conflicting choices. Phoenix source starts clean at d1eb5f260725.
+Installed omni v0.5.0 Charmeleon started from authoritative production-suite.
+Job58/ledger53 proposal1 approved through normal CLI: one unambiguous inheritance
+or explicit on/off choice per setting, preserve authorization/MFA/confirmation,
+provider data, audit, tenant isolation and demo return. Focused tests and actual
+local authenticated UI save/reload/persistence/gate/failure-recovery acceptance;
+no actual invitation sends, remote configuration changes or Jenkins trigger.
+Supervisor handles publication under existing owner authorization. Memory23Gi
+available, disk31Gi free; one heavy operation at a time.
+
+Job58 supervision correction: initial execution prepared a separate partial
+application/schema for browser proof despite the original local-Olympus request.
+At14:51EDT supervisor used normal /redirect to retain the repair and explicitly
+require the already-authorized existing WorkNet stack. Same job/ledger retained;
+revision4 approved, execution step299 resumed14:53EDT. This is a steered run, not
+an autonomy claim. Native implementation independently caught/fixed nullable old
+input recovery; focused original pass15tests145assertions and production assets
+built. Actual Olympus acceptance remains pending. No owner intervention requested.
+
+Actual acceptance completed by native execution:17focused tests163assertions,
+production assets, normal password/MFA and tenant entry, explicit live save/reload
+against blocked globals, mixed inheritance/disable, wrong-phrase recovery, demo
+return and post-restart UI/database/gates. Installed API imagec9a9debdc2db8eef6e4e2777a15eb55807ccc90d1177023758f36674dafe2a98;
+supervisor compared all3changed runtime source hashes to installed files exactly.
+Synthetic client6 settings restored; no actual sends or global/provider edits.
+Additional broad isolation suite has existing harness/expectation failures,
+recorded rather than misrepresented as passing. Independent review is running.
+
+Supervisor found and removed interrupted initial execution fixtures during review:
+communication-choices-db and communication-choices-redis (created18:50:27UTC),
+their anonymous volumes20bf1f14108aa1045443d50512dc02782c70edbe0a9c5c4dfd743d36d6662104
+and ed87017b54cea9d7809ec7da4b553253a3960a63f7fbc52f4e4254ee58ad2984,
+and the confirmed-empty communication-choices-proof network. Removed only
+unused task runtime.env/testing.env/fixture.php; preserved nonsecret logs and
+shared services/data. This cleanup required supervisor intervention.
+
+Job58 completion/publication — 2026-10-23
+Independent review accepted step299 at19:15:46UTC, findings=[], job58 completed
+with error=null. It repeated17focused tests163assertions, production asset build
+matching JS/CSS/manifest hashes, real password/MFA/tenant entry, explicit save,
+inheritance, null-draft validation recovery, demo return and restarted API
+persistence. All scope behavior passed. Global/provider/unrelated settings
+unchanged, synthetic client6 restored and private sessions/probes cleaned.
+Known broader isolation suite7errors/3failures were reproduced and disclosed,
+not weakened or treated as passing. Supervisor also removed the stopped
+communication-choices-app from interrupted first execution; final Docker name
+filter confirms no communication-choices fixture containers remain.
+
+Supervisor reviewed6files, confirmed runtime controller/views hashes, committed
+and ordinary-fast-forward pushed Phoenix service-engine-integration:
+70b1a3e598b0d9ceb98bcddb5244dfc78ab8f32d. Exact GitHub head readback and clean
+Phoenix tree verified. Olympus and other workload source repositories unchanged.
+Omnidex runtime source/pre-existing edits/stashes and all owner resources remain
+untouched. Local changed API stays running; Jenkins and remote deployment were
+not triggered. This roughly30-minute steered pilot needed one scope redirect
+back to actual Olympus and supervisor fixture cleanup; native implementation
+and review completed without owner input. WorkNet transient navigation/session
+failures caused browser retries, recorded without claiming failed runs passed.
+
+2026-10-23 — Owner-requested direct local UI proof after job58 publication
+Supervisor drove the real running Olympus UI with a fresh normal password/MFA
+login, central client selection, tenant handoff, Communication settings and
+Return to selected demo. Runtime was unchanged c9a9debdc2db8eef6e4e2777a15eb55807ccc90d1177023758f36674dafe2a98,
+Phoenix70b1a3e598b0d9ceb98bcddb5244dfc78ab8f32d. No additional source edits.
+Artifacts: existing ignored publish/communication-ui-proof.cjs, JSON/log,
+communication-ui-live.png and communication-ui-demo-communications.png.
+
+Final focused UI pass19:32:31–19:32:51UTC succeeded: save confirmation in496ms;
+settings persisted on reload; actual return link reached selected demo; demo
+reported tenant overrides effective despite blocked global defaults, inherited
+System Mail profile enabled, and email/SMS invitations allowed by delivery gates.
+Screenshots visually inspected. Stored fields, actual runtime gates and mail
+profile agreed. Restored synthetic client6 booleans/updated_at; unrelated row and
+global mail fingerprints unchanged. No actual sends/provider connectivity claim.
+Synthetic fixture itself lacks PROs/Engage and has all4client runtime permissions
+off; its full demo setup was not exercised or claimed ready by this mail proof.
+
+Remaining local friction: four repeated-save attempts in one browser session did
+not complete cleanly. Saves persisted, but browser navigation intermittently
+failed with ERR_NETWORK_CHANGED. Captured real Chrome error-page text/screenshots
+and retained run1–run4 logs. Both system Chromium148.0.7778.215 and installed
+Chrome for Testing148.0.7778.96 reproduced it. Read-only ip monitor recorded
+veth removal/recreation at19:28:13.032–19:28:13.458UTC, exactly coincident with
+Chrome failure19:28:13.080UTC. Those rootful Docker bridges are learn-lao_learn-lao
+and dev-net; learn-lao-app-1 was repeatedly exiting1/restarting, restart count
+32713/32714 and approximately30second intervals. This is separate from the
+healthy rootless Olympus stack. Did not stop or alter that unrelated owner app,
+change host networking/security, or count interrupted stress runs as passing.
+Task-owned network monitor stopped, all proof browsers closed, narrow runtime
+snapshot deleted by successful restoration. No Jenkins trigger/remote changes.
+
+2026-10-23 — Owner reports rolling demo stalled and empty PROs/Engage
+New report: primary Dev1000139 shows enabled/Running,420appointments across70days
+through2026-10-08, lasttickOct23 15:50EDT,340completions,6/day,7days ahead; no
+automated activity and both dashboards empty. Previous answer confirmed code
+registration only, not this tenant's actual progress. Admin UI currently derives
+Running solely from enabled. Installed demo tick is every minute, catchup14days
+per pass; actual background operation and visible dashboard results now required.
+
+Submitted through normal installed omni v0.5.0 CLI from authoritative suite,
+job59 planning step300 at19:52:05UTC. Scope actual unattended demo progress,
+truthful status and dashboard population, preserving existing demo work. Existing
+client7/olympus-demo WorkNet fixture and rolling-demo.txt evidence supplied.
+Acceptance observes actual scheduler minute boundaries with rebuilt services,
+normal password/MFA UI and real PROs/Engage rows; manual tick/generate does not
+substitute for automation. No sends, remote changes or unrelated app shutdown.
+Supervisor publication under continuing owner authority. Memory23Gi/disk31Gi;
+Phoenix clean70b1a3e59. Rootless scheduler runningf620fdb image, webc9a9debd.
+
+19:55–20:01UTC diagnosis: Jenkins84 succeeded, pulled Phoenix70b1a3e59 and
+recreated/started api-scheduler. Exact dev-ops inventory0ddfa36 maps deployment to
+pros-dev.clinect.internal, jenkinsbot, /opt/multitenant/production-service. That
+hostname does not resolve here; read-only SSH could not connect. Asked owner for
+reachable IP/alias while continuing independent local reproduction. No remote
+changes or Jenkins trigger. Build console retained in ignored publish evidence.
+
+Accepted local client7 is different:24/day,93days throughOct30,1972appointments,
+1077completed,774interactive,109pending,12preserved. Actual scheduler ticks
+advanced19:57:03→19:58:03 with zero currently due completion backlog. Native UI
+login succeeded, but HTTP200/table row counts alone do not establish populated
+dashboards. Supervisor explicitly requested actual rendered rows under Default
+practice1 and a disposable six/day backlog reproduction; preserved client7.
+Native execution303 stopped to request remote evidence; resumed with precise
+known evidence/access limit and continuing independent work. This is a steered
+pilot, not autonomous-completion evidence. Enabled-as-Running defect confirmed;
+actual remote scheduler failure remains undiagnosed.
+
+Supervisor read-only probe initially failed to load entrypoint secret environment,
+then hit PsySH read-only home, then two incorrect diagnostic column names. No
+guard bypass or data write used. Corrected probe loads the same *_FILE values as
+entrypoint and uses an explicit read-only DB transaction; output matched native
+counts. These exploratory errors are diagnostic-tool errors, not product evidence.
+
+Omnidex friction: replying normally to job59's execution question produced
+"unavailable job state transition" and left it waiting_input. Supervisor used the
+normal /redirect command to continue the same job; ledger54revision5 retained
+accepted scope and added precise local reproduction plus unresolved remote limit.
+Approved separately; execution305 began20:02:22UTC. No framework patch or new job.
+
+Independent UI inspection through normal password/MFA: accepted client7 has only
+Demo Practice2 (no Default1), so it cannot reproduce the owner's exact selection.
+Disposable native fixture9900440/rolling-proof.clinect.worknet has Default1 plus
+the installed demo's Practice2. Supervisor's20:10:37–20:10:40 browser inspection
+confirmed both actual PROs/Engage empty states with Default selected. Subsequent
+navigation to practice2 hit the known host ERR_NETWORK_CHANGED; retained the
+failed run and closed its browser. No settings/records changed by supervisor.
+Nonsecret artifacts demo-fixture-before.* and demo-dashboard-inspect.* remain in
+ignored publish evidence; this baseline is not a passing end-to-end repair test.
+
+Read-only observations of fixture9900440 show original scheduler catch-up with
+zero manual ticks:20:12:09=56days/336appointments throughSep24;20:14:07=84days/
+504appointments throughOct22;20:15:05=92days/552appointments throughOct30. This
+establishes local automatic backlog progress; it does not establish remote Dev's
+execution cause. The first new-setup repair reused active Default1 but left old
+catalogs on Practice2. Supervisor required the pre-change installed fixture remain
+intact and become usable via normal controls, without reinstalling or manual DB
+repair. Ordinary feedback then explicit same-job redirect preserved work;
+planning306 began20:15:19UTC. Existing source/tests/build/migration progress kept.
+
+Owner supplied public Dev report URL and authorized attempting API access.
+Anonymous report GET redirects to /login; GET /api/ with Accept:application/json
+returns401 Unauthenticated. Scoped configuration inspection found no configured
+Dev API credential; local1Password CLI account list empty. No authentication
+bypass, credential guessing, remote configuration write or data mutation used.
+Owner asked whether a token-creation UI exists. Source confirms none for tenant
+API tokens; POST /api/token accepts active tenant credentials and explicitly
+excludes central Clinect shadow accounts. Explained that limitation accurately.
+
+Owner then authorized adding a UI for temporary, isolated access tokens. This is
+queued work after the current demo repair, not a replacement or a remote change.
+Intended outcome: owner selects client, allowed actions and expiration; creates
+and revokes temporary tokens through normal authenticated/MFA UI. Initial access
+covers the read-only diagnostics needed here. Verify allowed operations plus
+cross-client, unselected-action, expiry and revocation denial in actual Olympus.
+Preserve normal account permissions and existing authentication boundaries. Pilot
+through Omnidex after job59 finishes; retain current implementation/evidence and
+avoid interrupting its final software checks for the new task. Existing owner
+publication authority continues; no Jenkins trigger or remote deployment.
+
+Further actual UI acceptance finding: source image468eecbb (API/scheduler/queue)
+made the explicit PROs button show six actual today rows in supervisor's normal
+login proof at20:31:32. Its next navigation hit ERR_NETWORK_CHANGED and remains a
+failed continuous run. Fresh supervisor Engage-only run20:32:28 reached practice2
+and today's page but showed0rows/0metrics. Native then loaded four earlier time
+blocks and obtained six rendered rows, but its screenshot still displayed
+"APPOINTMENTS IN VIEW 0" above those rows. Supervisor visually inspected that
+artifact, rejected this as incomplete empty-dashboard acceptance, and redirected
+the same job to correct the demo-entry experience and truthful count while
+preserving practice/filter choices, data, existing successful checks and fixtures.
+This is observed UI failure-driven correction, not an autonomy claim or redesign.
+
+Job59 revision12 retained the same fixtures and previous passing checks. Execution
+309 corrected demo Engage entry to the selected whole day by default, preserved
+explicit time-block preferences, retained cursor pagination, and updated the
+visible count as appointment rows change. Focused PHP/JS checks passed; actual
+UI acceptance remains in progress. Supervisor independently inspected the diff
+and verified API/scheduler/queue now run image981cdd11b6d3abac907e763b4f35fead52d9
+78aa60b61674b3729a241ed45964, recreated20:41:45UTC. Browser network churn remains
+an observed verification interruption, not a product success or permission to
+change the unrelated rootful application. Resource check:23Gi available RAM and
+28Gi free disk; continue one heavy operation at a time.
+
+The first revised actual UI pass caught a duplicate count (12 for6 appointments):
+paired alert rows shared each appointment ID. Omnidex corrected the counter and
+covered that rendered shape in the regression. It also kept the other existing
+Engage summaries synchronized with loaded/refreshed primary rows. After the next
+production rebuild, the preserved practice2 fixture passed normal password/MFA,
+Default1 selection, Demo controls, explicit dashboard buttons, six rendered rows
+and count6 without history clicks. Supervisor visually inspected
+rolling-proof-engage-entry-rebuilt.png and confirmed this outcome. The actual
+history cursor test showed50 then34 distinct rows/counts, returned50 on Previous,
+and retained filters/practice across84 unique appointments. New-fixture and
+restart acceptance still ongoing; no remote acceptance claimed.
+
+Execution309 concluded local acceptance20:57UTC. Final image9a9066f3cc85f6a210d7
+6245e62089d7bd2c37335e32de18e66d0c86b14a6fa7 runs API/scheduler/queue; supervisor
+confirmed all running after20:53 restart. Both fixtures passed actual dashboard
+entry, counts, date navigation and50/34-row cursor pages before/after restart;
+scheduled successes20:54 and20:55 remained552appointments/92days throughOct30.
+Client7 and original fixture snapshots match. The fresh fixture initially had no
+preexisting Default: installation created practice1 named Demo Practice. It passed
+before its display label was renamed through normal UI, then passed as Default1.
+This proves that new-install path; existing active Default reuse is separately
+covered by the focused regression. Do not conflate a later label change with
+proof that Default existed before install. No records/catalog were relocated.
+Failure trigger removed; task browser sessions removed, services/required synthetic
+fixtures retained. Independent Omnidex review started20:57:48UTC on the same task.
+Remote Dev diagnosis remains blocked on authenticated access/deployment, not
+established by these local results. Next token task will reuse the retained
+synthetic clients for actual allowed-read and cross-client denial checks.
+
+Independent review passed60PHP tests,2JS tests, both authenticated UI fixture
+flows and preservation/scheduled checks. Its response was error solely because
+remote Dev access/proof remains unavailable; Omnidex automatically dispatched
+another execution of the same already-passing local work. Supervisor intervened
+with one /redirect to retain verified work, keep remote diagnosis explicitly
+pending external access, and advance the owner's newly requested token UI as the
+current locally verifiable deliverable. This avoids repeating local work to
+satisfy an inaccessible remote prerequisite; remote success is not asserted.
+Planning step310 started21:03:57UTC in the same job59/ledger54.
+
+Supervisor committed the reviewed local demo repair as Phoenix f44ba6bcf
+(Fix rolling demo dashboard entry and execution status) and pushed it to
+origin/service-engine-integration.18files,511insertions/17deletions. The initial
+explicit git add returned1 because the parent /docs is ignored, although its
+already-tracked demo-mode.txt and all intended files were correctly staged;
+verified the exact staged set and diff before committing. No ignored evidence
+or credentials were forced into git. No Jenkins trigger or remote deployment.
+
+The token UI plan was reviewed and approved separately at21:06UTC, ledger54
+revision15, in the same authoritative job59. One cohesive local feature includes
+normal central staff/MFA management UI, named client/environment-bound read-only
+diagnostic scopes, owner-selected expiry, hashed storage, one-time disclosure,
+revocation and current-authority enforcement. Actual UI-created bearer tokens
+must pass allowed reads and denied scope/client/environment/mutation/expiry/
+revocation checks, with a runtime restart pass. The existing local demo proof is
+credited; remote Dev restoration remains pending external rollout/credential.
+Phoenix f44ba6bcfbc5c912b7e8e717b484dbd654f65044 was verified clean and identical
+to the pushed remote head before approving feature execution.
+
+Token execution311 built the UI/API and central token migration plus Hestia grants.
+First actual issuance failed403 because SDK permissions were incorrectly queried
+as named Laravel gates; Omnidex corrected it without broadening the account.
+Focused checks increased to16. Actual normal-login UI/API pass then exercised
+issuance, scoped reads, pagination, clipboard/fallback, one-time disclosure,
+cross-client/environment and mutation denial, revocation/failure-retry, restart,
+real expiration and absence of secret values in runtime logs. Known browser
+network churn and Node CA configuration required tooling retries. Wider Hestia
+validation hits the existing synthetic customer-ID sequence mismatch; the new
+token privilege check passed. Exact limitations remain in the workload evidence.
+
+Supervisor's additional actual UI pass21:20UTC independently created/revoked one
+narrow token. API denial was401 immediately, but the row displayed both Active
+and Revoked. Recorded in token-status-proof.log/.png in the existing ignored
+publish directory; no secret logged, test token revoked and browser closed.
+Sent one focused /redirect for truthful immediate revocation status, no false
+success on authentication/non-confirming responses, and preservation of a
+separately revealed token when revoking another. Keep all valid proof and current
+picker/navigation refinements; repeat affected checks, not completed demo work.
+
+Revocation amendment revision18 was approved separately; execution313 started
+21:23:47UTC. It changes only confirmed revocation to replace the status, preserves
+another token's reveal, and reports unconfirmed responses with retry guidance.
+Nine focused JS checks pass, including generated and existing rows;16 prior PHP
+checks and actual UI/API expiry/isolation/restart proof remain credited. Current
+preservation snapshots match. Final API image build and corrected UI pass are in
+progress. Phoenix feature changes and Hestia's two grant/validation SQL files
+remain uncommitted; the earlier demo repair f44ba6bcf is already pushed.
+
+Continuation pointer: installed omni v0.5.0, CLI PTY12462, job59/ledger54,
+execution313; observer cursor725202. Root's focused token-status-proof.cjs can be
+rerun with TOKEN_STATUS_ARTIFACT=token-status-corrected and a separate .log to
+retain the initial failure artifacts. It performs normal login/create/revoke and
+checks both API401 and absence of Active in the revoked row; credentials remain
+private, test tokens are revoked and browsers closed. Preserve unrelated root
+Omnidex changes. Hestia main/base931a27b is identical to its remote; final token
+feature publication still needs reviewed commits/push and remote-head checks.
+
+Supervisor repeated the focused normal-password/MFA UI pass on the rebuilt token
+image at21:30UTC. Creation succeeded, the secret was dismissed, and Revoke changed
+the row immediately from Active to a single Revoked state. The real API returned
+401. token-status-corrected.log/.png retain this passing result separately from
+the initial failure; screenshot visually inspected. Task token is revoked and
+browser closed. Native navigation/failure-recovery checks and independent review
+remain in progress; no remote or publication success is claimed for the feature.
+
+The real failure-injection pass exposed the shared fetch session handler following
+authentication redirects before the token controller could report recovery.
+Omnidex scoped token POST/DELETE requests to reject redirects; nine regressions
+pass and its rebuilt UI failure/retry pass is ongoing. An interrupted test left
+token f04fdcd5-ec90-4d59-bd7e-536c114ac258 active temporarily; it is explicitly
+tracked in the next proof script's cleanup list, with interceptors removed first.
+
+Supervisor repaired the task fixture's customer ID sequence invariant: forward
+from7 to9900441 under a table lock, matching retained task-owned clients9900440/1.
+No client row, identity or permission changed. The current Hestia validator then
+passed those checks and reached only an orphan-database failure for the two
+known disposable unit fixtures clinect_rolling_test/clinect_rolling_system_test.
+Retain them until remaining independent tests finish, then remove only those
+two task-owned databases and rerun the full validator. This cleanup is still
+outstanding; no full-validator pass claimed. Registered rolling clients and
+accepted client7 remain preserved. Facts appended to existing workload evidence.
+
+Final token UI checkpoint, 2026-10-23 21:45 UTC:
+- Running API image sha256:7cb351d983053f92ffa8b2d0ca437ec1b7cc3143439540d9142ab176c93f4976 is healthy. Omnidex's final normal-password/MFA UI pass exercised real creation/read/revoke, separate reveal preservation, and redirect/HTML/malformed/nonconfirming/401/419/network recovery with visible retry. Final post-restart smoke also passed. Fault responses were injected only at browser transport; actual token issuance/allowed reads/revocation used real services.
+- Supervisor independently repeated normal-password/MFA login, narrow issuance and revocation on this final image. Immediate row status was only Revoked and actual diagnostic API returned401. token-status-final.log/.png retain the passing proof; screenshot visually inspected. Earlier token-status-native-fetch.log records a failed login attempt before this pass; no token was issued during that failure. Failed artifacts retained separately.
+- The earlier leftover task token f04fdcd5-ec90-4d59-bd7e-536c114ac258 is now revoked. Before the final supervisor probe, no unrevoked/unexpired token existed for either synthetic client; final supervisor probe also revoked its token and closed its browser.
+- Local evidence remains a steered pilot with recorded corrections and navigation retries, not an autonomy claim. Remote Dev diagnosis remains pending deployment and an owner-issued scoped credential. Final independent review, test-database cleanup/full validator and feature publication remain outstanding.
+
+Independent token review at21:49UTC passed16 PHP checks,9 JS checks and a fresh normal-password/MFA UI/API pass, but reproduced one authority defect: surveys/events returned50 synthetic metadata rows through the deployed diagnostic service for an ephemeral SDK actor whose normal event policy denied see-surveyable-events. The surveys capability omitted that current permission. Review retained all valid UI/demo evidence, revoked its tokens, preserved existing state, and returned this specific finding. Omnidex automatically resumed the same step313 at21:50UTC to fix the affected permission check and regression coverage. No owner intervention or remote access retry was needed for this correction; source publication remains pending its verification.
+
+Supervisor final deployment-validation checkpoint, 2026-10-23 21:55:59 UTC:
+Independent review completed the focused17 PHP and9 JavaScript tests and normal-password/MFA UI/API proof on the corrected running image6c1989e30f705b6be3bc0833c47fab3c49c0c12dbe3940f4da19e2d71671f805. Supervisor then verified the two task-owned disposable databases clinect_rolling_test and clinect_rolling_system_test had zero connections and no customer/environment registration, and dropped only those two databases without FORCE. Accepted client7 and registered rolling fixtures remain intact. The current changed Hestia sql/validate-system-settings.sql was executed through actual PostgreSQL with ON_ERROR_STOP and passed in full: status ok, system_settings, PostgreSQL18.4, validated_at2026-10-23T21:55:59.899876+00:00. Evidence: /home/gryph/Projects/tools/omnidex/bin/ledger-freeze-20261022/evidence/local-olympus/publish/diagnostic-hestia-final-validation.log. This resolves the earlier broad-validator limitation; do not rerun tests against the removed disposable databases. Remote Dev diagnosis still requires deployment and an owner-issued token. Feature publication is next.
+
+Supervisor publication, 2026-10-23:
+Committed and pushed Phoenix04a6d784a14ea280f2190b7fe70e12bc9ab4993f on service-engine-integration and Hestia3d8d5416de1b6ee456ea0843c728e5f3de2d8c13 on main. Both remote heads exactly match local commits and both source trees are clean. Olympus source remains clean at2873d2c2465a04e7811242790e4a81877fb43184; no new Olympus implementation change was needed. The earlier demo repairf44ba6bcf remains included. All committed source was the reviewed/tested implementation; no generated secrets, private auth files, .state artifacts or unrelated Omnidex source edits were staged. Local API remains healthy on image6c1989e30f705b6be3bc0833c47fab3c49c0c12dbe3940f4da19e2d71671f805. Jenkins was not triggered and no remote deployment or remote configuration change occurred. Ready for the owner's normal Jenkins update. Remote Dev diagnosis still requires rollout and an owner-issued scoped token.
+
+Final acceptance, 2026-10-23 21:59 UTC:
+Omnidex job59/ledger54 step313 was independently accepted at21:59:28UTC with no remaining local findings; durable job state is completed, error null. Final reviewer reran the full Hestia validator and nine JS checks, plus normal-password/MFA UI/API revocation/failure-recovery checks, and credited the17 PHP, isolation, expiration, restart and rolling-demo evidence. Source was unchanged and clean after the published commits; final review tokens were revoked and preservation snapshots matched. The task-owned interactive CLI was exited normally after completion; the existing application services remain running.
+The temporary-token implementation/pilot took about53minutes from approved execution21:06:27UTC to acceptance21:59:28UTC. No additional owner response was needed. This was a steered pilot: supervisor caught/redirected the incorrect revocation status, independent review caught the missing survey-event permission, supervisor reconciled the task fixture sequence and cleaned up the two unit-test databases, and normal-login/CA/test-harness retries are retained in evidence. A review based on the pre-cleanup validator result caused one additional evidence-reconciliation pass after the supervisor's validator had already passed; no implementation change was needed for that pass. No autonomy claim. Remote Dev restoration remains unresolved until Jenkins rollout and owner-issued temporary access.
+
+### Engage selected-practice follow-up — 2026-10-23
+
+Owner reports Engage repeatedly asks for practice selection even while the top bar already shows a selected practice. Started a new Omnidex task60 in the same authoritative production-suite workspace, preserving completed job59 and all accepted demo/token work. Installed executable /home/gryph/.omnidex/bin/omni reports v0.5.0 Charmeleon; CLI session93895. Phoenix baseline04a6d784a and Hestia3d8d541 are pushed and clean. Running API6c1989e30f705b6be3bc0833c47fab3c49c0c12dbe3940f4da19e2d71671f805 healthy. Resource check24GiB available RAM/24GiB disk free; one heavy operation at a time.
+Root read-only inspection found Engage's dashboard entry uses ActivePractice, whose URL/default/sole-practice resolution omits the SelectedPractice tenant-session state displayed by the top bar. Asked Omnidex in ordinary task terms to reproduce/fix the mismatch, preserve explicit context and authorization/tenant boundaries, verify repeated menu entry/reload/switching in actual rebuilt UI, and clean scoped disposable tests before final validation. No workload implementation hints or root implementation patches. Remote Dev access remains unavailable; no remote work or Jenkins trigger requested. Supervisor retains publication responsibility under existing authority.
+
+Engage practice follow-up supervisor reproduction, 2026-10-23 22:02UTC:
+With the pre-fix running API6c1989e3, normal password/MFA login and tenant handoff to synthetic rolling-proof9900440 succeeded. Using the actual top-bar selector changed the current practice to2; the top bar confirmed2. Clicking the ordinary Engage Dashboard menu link then navigated to /select-practice and asked again. Evidence: /home/gryph/Projects/tools/omnidex/bin/ledger-freeze-20261022/evidence/local-olympus/publish/engage-practice-before-confirmed.log/.json and engage-practice-before-confirmed-2.png; screenshot inspected. First probe reached the same selector but its harness incorrectly expected a top bar on that standalone selector page; retained that failure separately and corrected only the probe. Both task browsers closed, no persistent account settings, demo records or permissions changed. This is observed local reproduction of the owner's symptom, not a remote observation.
+
+Supervisor fixture-metadata repair and complete Hestia validation, 2026-10-23 22:10UTC:
+The broader hestia-validate run found a blank database comment on retained synthetic clinect_rolling_proof. Its original task-owned creation file service-manager-olympus/.state/demo-continuation-20261022/rolling-proof-fixture.sql explicitly records CREATE DATABASE from clinect_template_v1, owner clinect_tenant_owner, and marker clinect.provisioning_run=10000000-0000-4000-8000-000000000440;template=clinect_template_v1. The existing template-contract row confirms that template/lineage. Supervisor restored that exact original marker only after asserting the marker was blank and the owner unchanged. No schema, migration ledger, template provenance, customer identity, account authority or patient/demo data was changed. The complete current-source hestia-validate service then passed: system_settings,9 tenant databases and4 test environments; log /home/gryph/Projects/tools/omnidex/bin/ledger-freeze-20261022/evidence/local-olympus/publish/engage-practice-hestia-final.log, exit0 at22:10:24UTC. The earlier marker finding is resolved; do not repeat repairs or treat it as an outstanding acceptance gate.
+
+Supervisor independent post-change UI observation, 2026-10-23 22:11UTC:
+The cached Playwright Chromium headless shell completed normal password/MFA login and tenant handoff, selected Practice2 through the real top bar, then opened the normal Engage menu at /engage/dashboard?practice=2 without the selector. The top bar remained2 and six synthetic Demo Follow-up Visit rows rendered. Reload and navigation away/reopening both retained2. Screenshot engage-practice-headless-shell-2.png visually inspected; log/json in the existing Omnidex publish directory retain exact outcomes. A subsequent switch-to1 navigation was interrupted by ERR_NETWORK_CHANGED, so that probe does not claim all three planned switching cycles passed. Its browser closed. Earlier system-Chromium post-change attempt failed at MFA navigation due the same host network-change error, with no product claim. Native actual-UI evidence separately confirms Default1 empty and Demo2 six-row states. All valid observations retained, with failures separate; no TLS/authentication policy or owner application changed.
+
+Supervisor focused filter evidence, 2026-10-23 22:15UTC:
+The real UI-supported date preset is Today (case-sensitive, defined in App\Support\DatePicker), while the first inherited browser probes supplied date_range=today. Those invalid-input runs do not establish a regression in supported filter behavior. A separate normal-password/MFA proof using date_range=Today passed filter retention while adding the current practice, switching1to2 through the top bar, and reloading. It also passed intentional explicit practice1 URL precedence followed by ordinary Engage navigation restoring the selected2. Evidence: engage-practice-boundaries-canonical.log in the existing Omnidex publish directory. The later unavailable-practice recovery probe reached / after submitting the selector rather than its expected Engage path, so that step remains unproven; the browser was closed and no broad boundary pass is claimed. No product source changed for these observations.
+
+Supervisor final-image UI evidence review, 2026-10-23 22:24UTC:
+The final rebuilt API b14fff379544b89031e5203ec35ec9290fcdf36d7aee8eb2971ccb60536cd0bc contains both the selected-practice and tenant intended-URL recovery corrections. Native practice-resolution-final-runtime.log records normal password/MFA, Default1 menu entry/reload/away-reopen, Demo2 menu entry with six appointments/reload/away-reopen, and switch back to1 with the correct empty state. The third redundant away/reopen timed out amid host browser navigation churn; earlier two practice cycles remain valid. Native practice-resolution-final-boundaries.log reused that normal-login session and passed supported Today/search filter retention through resolution/switch/reload, temporary explicit-link precedence, unavailable-practice recovery to Engage with filters, and foreign-practice rejection plus own-practice resolution on the second tenant. Supervisor read both complete logs and visually inspected final-runtime-2.png and final-boundaries-recovery.png. Focused final tests pass9tests/63assertions in0.179s.
+Supervisor's separate engage-practice-recovery-final probe stopped before its boundary steps because it incorrectly waited for the native select to be visible after Choices had hidden it behind the visible widget. No application failure or extra boundary success is claimed for that harness attempt; its browser exited and the retained log identifies the hidden select exactly. Native's successful real UI boundary evidence establishes those outcomes. No source was changed by supervisor and no TLS/authentication bypass or owner-application change was made. Independent Omnidex review and publication remain pending.
+
+Final acceptance and publication, 2026-10-23 22:29UTC:
+Omnidex job60/ledger55 step315 was independently accepted at22:28:18UTC; durable job status completed with error null. Independent review found no scoped defects, reran9 regressions/63assertions and real normal-password/MFA UI entry/reload/reopening/switching, query retention, explicit-link precedence, unavailable-selection recovery and second-tenant isolation checks. Full Hestia validation passed system_settings,9 tenant databases and4 test environments; running/source hashes matched and data/authority snapshots remained unchanged. Browser retries remain recorded rather than hidden.
+Supervisor committed only the four reviewed Phoenix files as2ec306b64f2ebdc000ef29fd65d2c4ce006f527e (Honor selected practice when opening Engage) and pushed service-engine-integration. Remote and local heads exactly match; Phoenix source is clean. Hestia remains clean at3d8d5416de1b6ee456ea0843c728e5f3de2d8c13, Olympus remains clean at2873d2c2465a04e7811242790e4a81877fb43184. No unrelated Omnidex source edits were staged. Final local API b14fff379544b89031e5203ec35ec9290fcdf36d7aee8eb2971ccb60536cd0bc remains healthy. Owned browser probes are closed, private practice session storage was deleted, and owned interactive CLI was exited normally after completion. Retained synthetic fixtures and owner services are preserved.
+The approved execution plus independent acceptance took about25minutes20seconds from22:02:58UTC to22:28:18UTC, with no additional owner response. This was a steered pilot: supervisor restored original synthetic database-comment metadata and provided independent reproduction/canonical query evidence; automated review and execution used browser retries for unrelated host network churn. No autonomy claim. The fix is running locally and published for the owner's Jenkins update; Jenkins was not triggered, no remote deployment occurred, and remote Dev behavior is not yet verified on this revision.
+
+### What’s new notification-menu follow-up — 2026-10-23
+Owner requests moving the existing What’s new navbar action inside the notification bell menu. Started Omnidex job61 in the authoritative production-suite workspace using installed /home/gryph/.omnidex/bin/omni v0.5.0 Charmeleon, CLI session55312. Prior Phoenix2ec306b64 is clean/pushed and the accepted API b14fff379544b89031e5203ec35ec9290fcdf36d7aee8eb2971ccb60536cd0bc is healthy. Existing final practice screenshots show the separate purple action beside the bell. Resource check24GiB available RAM and24GiB disk free; one heavy operation at a time.
+Supplied the owner’s narrow placement request with preservation of release content, unread/dismissal behavior, other notifications and navbar controls. Requested relevant checks/production assets and an actual rebuilt WorkNet UI pass for bell entry/modal closing/reopening, existing notifications, desktop/narrow-screen keyboard interaction. Explicitly excluded unrelated database/validation campaigns, provider sends, source copies, shared-service changes and remote deployment. Native owns implementation; supervisor observes/verifies and publishes under standing authority. No new owner decision or implementation hints supplied. Existing task evidence and scoped ignored artifacts are reused; unrelated Omnidex source edits remain untouched.
+
+Supervisor independent release-menu UI proof, 2026-10-23 22:40UTC:
+On the healthy c9d31217bf2c1b50290426c99409b1898ef0e1631ceee465accd6fe2d00455b2 API, a separate normal-password/MFA session and central handoff to retained synthetic rolling-proof succeeded. Real Engage UI passed at1440px and390px: no exposed header release action; bell opened the nested release entry; panel bounds stayed within viewport; Enter opened the existing Bug squashing modal; Escape closed it and restored focus to the persistent bell; reopening then clicking Dismiss also closed it. The probe waits for the actual modal inert state and focus, not a fixed post-animation delay. All targeted assertions passed, exit0 at22:40:06UTC. No acknowledgement/cache writes or notifications were created by this probe; browser closed. Evidence Omnidex bin/ledger-freeze-20261022/evidence/local-olympus/publish/whats-new-menu-first.log/.json and -1440-menu.png/-390-menu.png. This independently establishes mobile close/reopen behavior on the current implementation; native prior fixed-delay/viewport failures remain separate harness observations. Native acknowledgement, ordinary-notification and support-header verification is still in progress.
+
+Supervisor final-build observation and scope boundary, 2026-10-23 22:46UTC:
+Native release-menu-ui-final-ready.log records final-image application and support header bell/modal/keyboard/close/Dismiss/reload checks passing at1440px and390px. Its full_release_notes_opened event reports the error-page title “Looks like we hit a snag!”; that event proves navigation only, not successful notes content. Read-only baseline comparison confirms the full release-notes link is byte-for-byte the prior route('support.changelog') link, SupportController::showChangelog and routes are unchanged, and the existing changelog views have no4.0.0-rc.2 template. This pre-existing versioned notes-page failure is outside the requested navbar relocation; record it accurately as an existing limitation, without inventing release notes or expanding this presentation change into a release-documentation repair. The existing release modal content and preserved link are distinct from successful rendering of that linked page. No claim of full notes-page acceptance is authorized by its navigation event.
+
+Supervisor artifact cleanup/preservation checkpoint, 2026-10-23 22:52UTC:
+The initial release-menu UI run recorded release unread=1 before any Got It interaction. Later resumed probes report0 because the task acknowledged it; preserve the original pre-task state when cleaning up, rather than treating a resumed probe’s0 as the original preference. Only task-created synthetic notifications may be removed. Supervisor redacted request-cookie headers from the failed request-client .log/.json while retaining the certificate error and outcomes; a scoped scan of release-menu log/json artifacts now finds no unredacted XSRF/session-cookie headers and no saved task session files. No application source was changed by supervisor.
+
+Supervisor completed original unread preference restoration, 2026-10-23 22:58UTC:
+After the independent browser probe closed, supervisor used the normal clinect-api-entrypoint artisan runtime to resolve olympus-demo.clinect.worknet, asserted retained customer7/databaseclinect_olympus_demo and synthetic local-admin shadow user1/central-user1, and removed only that tenant’s announcement:1:whats-new acknowledgement cache entry. This restores the original unread=1 observed before the task. Read-only precheck showed unread=false; post-cleanup check showed unread=true. Evidence: Omnidex publish/restore-release-test-preference.php and .log. No account/database/permission/configuration rows or other cache entries were changed. The first plain PHP bootstrap attempt lacked entrypoint hydration and stopped at the Redis guard before mutation; the actual cleanup used the established entrypoint with its normal runtime configuration and no guard bypass. This resolves the preservation finding about the originally unread release; it is not a source-code defect or pending execution change. No further acknowledgement mutation is needed for acceptance; retain the successful UI acknowledgement evidence already recorded.
+
+Notification-menu independent review and focused continuation, 2026-10-23:
+Job61/ledger56 step317 first independent review at23:02:21UTC credited the rebuilt menu/modal, desktop/narrow layouts, acknowledgement/reopen/focus checks,12 tests, matching runtime assets and restored unread state, but reproduced intermittent Dismiss all leaving a row after25seconds; later success did not establish reliability. Native resumed the same step, retaining accepted work. Supervisor sent ordinary scope feedback: diagnose only the in-scope preservation failure, keep the known baseline missing full-notes view outside this relocation, retain completed evidence, restore test preferences and leave publication supervisor-owned. No task restart, alternate ledger, framework patch or direct workload implementation by supervisor.
+Focused native tracing reproduced HTTP200 with an empty notification response and reload confirming server dismissal while a row remained visible. List polling replaced HTMX's target during the request. Native narrowed the correction to Dismiss all's existing template target: stable notification-tray-content-skeleton with innerHTML swap, retaining the skeleton/polling owner and unchanged backend routes. Rebuild and real affected-workflow verification remain pending. No commit/push yet. First final image af6f7198c41275c7cd3a73b9d02b507fc6f07a1313b26ad04038ff9f1775f8dd stays healthy until replacement. Supervisor had restored synthetic tenant7/local-admin1's original unread marker via the normal runtime; reviewer acknowledged once more, then restored it again and confirmed unread1 through a real read-only UI pass on both headers. Task account preferences must remain restored after subsequent verification.
+
+Supervisor evidence correction after final review, 2026-10-23:
+Corrected the final diagnostic-cycle sentence in the existing workload record to match release-menu-execution-final.log exactly: cycle2 recorded individual_dismiss_visible_failure at23:15:09UTC, then Dismiss all passed at23:15:11UTC. It did not pass both actions. Earlier successful cycles remain separately documented. This resolves the review’s reporting discrepancy; no source change, rebuild, or repeat of the accepted UI proof is needed for this evidence-only correction.
+
+Supervisor publication and final scope checkpoint, 2026-10-23:
+Published the independently verified seven-file Phoenix presentation change as0c153cdd8f5e686f384611bfe9a2f19d6e85eee3 (Move release information into the notification menu) on service-engine-integration. Local and remote heads exactly match and Phoenix source is clean; Hestia and Olympus source remain clean/unchanged. Final local API6dcb9e9072f38eee3c8c85e17b5316cf8e49664561e081214257ea9048e29476 is healthy and its changed source/assets match the reviewed checkout. No Jenkins trigger or remote deployment occurred; ready for the owner’s normal update.
+Actual final WorkNet checks cover application/support headers at1440/390, normal password/MFA, bell-to-modal entry, closing/reopening, keyboard/tab/focus, original unread persistence and retained acknowledgement evidence.12 focused checks passed and production builds succeeded. The exact original tray separately reproduced both individual and Dismiss all stale-row failures, including directly observed detached HTMX swap targets; they are established pre-existing limitations, not a regression claim or a repair included in this change. The unchanged full release-notes destination also lacks its current-version view and remains an existing limitation. Final source contains no tentative notification-target correction or backend changes.
+Synthetic notifications were cleared and original tenant7/local-admin1 unread state is restored; task private session/auth artifacts and unredacted cookie headers are absent. Supervisor independently confirmed the corrected cycle2 evidence statement and read-only cache state. The current Omnidex continuation is documentation-only reconciliation of the already-corrected evidence sentence; no further application changes, rebuild, or UI campaign are required by that correction. Unrelated Omnidex edits remain untouched and uncommitted. This was a steered pilot with recorded baseline investigation, test-harness/network retries, scope feedback, artifact redaction and test-preference cleanup; no autonomy claim.
+
+Final supervisor closeout, 2026-10-23:
+The23:24:54UTC independent review explicitly found no new scoped defects, confirmed the cycle2 evidence correction,12 focused checks, fresh real password/MFA UI verification across both headers/widths, matching running source/assets, retained acknowledgement evidence and healthy API. Its structured response nevertheless placed the two demonstrated pre-existing limitations in findings, so Omnidex started another execution session at23:24:57 despite the requested outcome already being delivered. Earlier ordinary scope/documentation-only feedback had not prevented the repeated reviews.
+Supervisor interrupted the redundant owned pilot through the normal CLI, preserving job61/ledger56/step317 and all evidence, then exited CLI55312 normally. Durable job status is waiting_input, error null: do not claim native job completion or ledger acceptance. This is a recorded Omnidex review-routing/completion limitation; no framework change or manual ledger mutation was made. The requested Phoenix feature is implemented, independently verified, locally running and published as0c153cdd8f5e686f384611bfe9a2f19d6e85eee3; final source remains clean and the final API6dcb9e9072f38eee3c8c85e17b5316cf8e49664561e081214257ea9048e29476 healthy. No task browser process, private session/auth artifact or unredacted cookie header remains. Jenkins was not triggered; remote deployment remains the owner’s normal update step.
+Approved execution22:31:34UTC through the final no-new-scoped-defects review23:24:54UTC took about53minutes20seconds, excluding planning/closeout. No further owner response was needed. This was a heavily steered pilot, with supervisor independent UI proof, scope reminders, original test-preference restoration, cookie-artifact redaction, evidence correction, publication and final interruption. Production builds, browser/network/harness retries, genuine baseline notification-race diagnosis, and unnecessary repeated reviews after evidence correction all contributed. Passing relocation evidence is retained; the pre-existing full-notes error and notification dismissal race remain explicitly unfixed. Stop work here; do not reopen adjacent repairs without a new owner request.
+
+MFA account identity and switching pilot, 2026-10-23:
+Owner requests visible account identity and a Not you / switch-account path on MFA and related setup screens. Started installed Omnidex v0.5.0 Charmeleon in authoritative production-suite; Phoenix starts clean at 0c153cdd8 on service-engine-integration. Scope includes MFA setup/challenge/recovery, password setup, and invitation identity/exit, reusing existing auth and profile flows. Preserve authentication, MFA/CSRF, tenant boundaries, profiles, other-device sessions, earlier delivered work, and local data. Focused checks plus rebuilt actual WorkNet UI required; no external sends or Jenkins trigger. Publication remains supervisor-owned.
+Startup friction: ordinary new-task text while job61 remained waiting_input was rejected as not awaiting a parsed question. Supervisor used normal /cancel to stop the previously delivered redundant job61 while preserving its code/evidence; then repeated the new request, creating job62. No framework edits or manual ledger changes. One heavy operation at a time; initial resources about24GiB available RAM and23GiB free disk. Planning/implementation/verification still pending.
+
+Job62/ledger57 approved through normal CLI; execution step319 began23:31:04UTC. Native implementation uses shared escaped identity and switch partials on five screens, with a current-device guard logout endpoint, cleared pending/intended state and regenerated session/CSRF. Supervisor reviewed the diff and existing system-only route boundary. Isolated focused checks passed29 tests/515 assertions (focused-pass.log); earlier permission/test-fixture failures are retained and are not passes. Production assets passed in2.10min with existing warnings. API-only rebuild and actual UI verification are underway; no delivery claim yet. Supervisor prepared a separate read-only-user-state browser check in ignored publish/mfa-switch-final.cjs; it has not run yet.
+
+Supervisor final WorkNet smoke passed23:44:42–43UTC at1440/390: normal password login, displayed account identity, keyboard Not you switch with empty code, retained/selectable profile, password needed again, invitation-request form reachable without sending, and protected MFA redirect after exit. Both login POSTs302; no retry needed in final run. Evidence publish/mfa-switch-final.log/.json/.png. Earlier independent selector ambiguity (email-only account label appears twice in remembered profile) and login navigation wait during overlapping rate-limited native probes remain in separate logs; corrected the selector, stopped overlapping logins, and final probe passed. All root browser contexts closed; no stored sessions/tokens. Native main/supplement UI proof covers five screen types and recovery reload, invitation recipient vs signed-in operator, two-device active and remembered sessions, CSRF, invalid codes, recovery single use and recovery acknowledgment. Native final30 tests/526 assertions pass; API66e8795f93294599d8707c57854b40964973998f3343985f602ed699aadbf2d8 healthy,12 source/asset hashes match. Native cleanup/review/publication pending.
+
+Supervisor publication and closeout — 2026-10-23:
+Published Phoenix commit185ed3867fba5e6b72e06b3b198a5212fa05f294 (Show account identity and allow switching during MFA setup) to service-engine-integration. Local/remote heads exactly match and source is clean. Olympus/Hestia source remain clean and unchanged. API66e8795f93294599d8707c57854b40964973998f3343985f602ed699aadbf2d8 remains healthy; supervisor independently compared12 source/assets with no mismatch and passed normal password/challenge/profile/invitation-entry/guest-redirect keyboard checks at1440/390. No Jenkins trigger or remote deployment; ready for the owner's update.
+Native independent review accepted step319 at23:51:37UTC with no findings. Durable Omnidex job62/ledger57 is completed, error null, and CLI67635 exited normally. Execution23:31:04UTC through acceptance took20minutes33seconds, plus planning/publication. No extra owner response was required. This was a steered pilot: supervisor approved the scoped proposal, avoided overlapping rate-limited login runs, retained completed UI evidence, and independently verified/published the result. No framework changes or manual ledger mutations. Initial new-request routing required canceling the previously delivered job61 before creating job62; this is retained as pilot friction, not claimed autonomous completion.
+All required behavior was verified across passing focused30-test/526-assertion checks, production builds and actual WorkNet main/supplemental/independent UI evidence. Earlier harness permission/fixture/CA/selector/navigation/rate-limit failures and reviewer network interruption remain explicitly documented; no claim every attempt passed. Final required coverage is complete. Native audit confirmed all27 task synthetic identities inactive, secrets cleared and unused invitations revoked; fixture audit history retained. Browser contexts and disposable containers closed; task private console directory removed. Existing accounts, tenant preferences, unrelated applications and services preserved; no external messages sent. Unrelated Omnidex source edits remain uncommitted. Stop here.
+
+Invitation domain selection pilot, 2026-10-23:
+Owner requests clinecthealthcare.com and emergence.com choices for Clinect staff invitation requests. Phoenix starts clean at185ed3867 on service-engine-integration. Existing canonical normalization discards pasted domains and forces the original domain, so both selector and downstream normalization need the scoped change. Preserve default domain, exact two-domain eligibility, permissions/MFA/invitation flow and prior account-switch work. Started installed Omnidex normal CLI20773 with ordinary request; no implementation hints or direct workload edits. Verify both choices and pasted addresses in the rebuilt actual UI using synthetic fixtures/local capture without external messages. Resources23GiB available RAM,22GiB disk free; one heavy operation at a time. Publication remains supervisor-owned; no Jenkins trigger.
+
+Job63/ledger58 planning produced one appropriately scoped task. Initial approval combined Approve and start with existing fixture/mail-preservation constraints; Omnidex rejected it as incompatible state changes require clarification. Supervisor repeated only Approve and start, without owner intervention, ledger edits or framework changes. This is observed pilot friction.
+
+Domain task execution step321 began23:55:59UTC. Native scoped implementation and42 focused tests/714 assertions pass; production assets building. Supervisor reviewed a prepared SMTP proof fixture and found it would update shared system_mail_settings (including toggling enabled) despite eventual restoration. Sent explicit feedback not to run that fixture and to isolate test mail configuration/capture while preserving shared delivery, real credentials and shared throttle state. Preserve completed source/tests; no framework/workload implementation edits by supervisor. This is a recorded test-isolation intervention, not autonomous completion evidence.
+
+Supervisor used normal /interrupt followed by /redirect on job63 to make the verification isolation constraint authoritative while retaining code,42-test evidence and completed builds. Prepared capture container existed, but read-only checks before and after interruption found no shared-mail snapshot: the rejected setup had not activated. Redirect requires isolated synthetic settings/mail capture in the actual application plus final rebuilt shared WorkNet UI proof, no real provider credentials, shared mail/throttle mutation, source copies or unrelated changes. This is explicit supervisor intervention and planning friction, with no owner question or framework patch.
+
+Job63 ledger58 revised to isolate verification; resumed step323 at00:03:29UTC. Accepted source and42-test/714-assertion evidence retained; production assets44.06s and API image build completed. The abandoned shared-config fixture was removed. Current isolated test runtime uses the built application image, synthetic PostgreSQL settings/credentials, dedicated Valkey/session/cache/throttle state and SMTP capture on an internal network, with only a localhost gateway. No shared mail mutation or real provider credentials. Shared API was recreated to run the new image. Supervisor read the fixture configuration and independently passed actual WorkNet selector/default/keyboard checks at1440/390 at00:05:29UTC with no submission or mail: invitation-domain-final.log/.json/.png. Visually inspected390px screenshot: both allowed choices, selected Emergence and fields/buttons fit. Isolated request/delivery proof and review still pending.
+
+
+Supervisor publication and closeout — dual staff invitation domains, 2026-10-24 UTC:
+Published Phoenix commit 1f642a42fb60fa0191dbc2d5e6f197dfe3821c2e (Allow Emergence staff invitation requests) to service-engine-integration. Local/remote heads exactly match; Phoenix source is clean. Olympus and Hestia source remain clean and unchanged. The healthy local API runs image sha256:e998a7ba1d50dd3b987ddea6cac55e799f29d27ea0a25445df451bb4784e429a; supervisor independently compared seven affected sources/assets with no mismatches. No Jenkins trigger or remote deployment; ready for the owner's update.
+Acceptance includes 42 focused tests/714 assertions, successful production assets and API builds, actual isolated invitation delivery/acceptance with the same image, and rebuilt shared WorkNet UI proof at 1440/390 with keyboard access and zero POSTs. Both selected domains, pasted-address precedence, exact persisted/captured recipients, invalid-input rejection, retained input after failure, real SMTP failure/retry, basic permissions, required MFA, CSRF and account switching passed. Native independent review repeated the actual affected flows, found no issues and accepted step323 at 00:12:42 UTC. Omnidex v0.5.0 Charmeleon job63/ledger58 is durably completed, error null; CLI20773 exited normally with status0.
+Original execution23:55:59 UTC through acceptance took16minutes43seconds, including supervisor interruption/redirect and revised execution from00:03:29 UTC; planning/publication are additional. This was a steered pilot: supervisor clarified approval phrasing and enforced isolated mail verification using normal interrupt/redirect after identifying the prepared shared-mail fixture. The workload record's earlier 'Owner clarification' means supervisor enforcement of existing owner preservation requirements, not a new owner answer. Rejected shared-mail setup never activated. Completed work was retained; no framework changes or manual ledger mutations. Harness/runtime/throttle issues and the pre-existing broad SQLite migration/view blocker remain accurately documented; no claim that every attempt passed or autonomous completion occurred. No extra owner input was needed.
+All disposable execution/review containers, networks, database/session/capture state and synthetic TLS private files were removed; browser contexts closed. Review cleanup.json independently records cleanup and healthy shared API. Shared mail configuration, credentials, throttle state, real identities and unrelated services were preserved; no external messages sent. Retained artifacts are ignored synthetic/redacted proof and reusable harnesses. Root UI evidence is publish/invitation-domain-final.log/.json and screenshots; native independent evidence is storage/smoke/staff-domains/review-765402. Unrelated Omnidex source edits remain untouched and uncommitted. Requested work is delivered; stop here.
+
+
+Standard demo catalog pilot, 2026-10-24 UTC:
+Owner requests KOOS/HOOS and the standard PROs forms, Measure surveys and corresponding enabled-product content in demo mode. Phoenix begins clean at1f642a42f on service-engine-integration. Existing demo definitions are a generic recovery check-in and short visit-experience survey. Started installed Omnidex v0.5.0 Charmeleon normal CLI23576 from production-suite with the ordinary outcome, existing-demo preservation, canonical content/scoring reuse, actual UI acceptance and isolated synthetic verification constraints. No source implementation supplied or edited by supervisor. Resources23GiB available RAM/22GiB disk; one heavy operation at a time. Publication remains supervisor-owned; no Jenkins trigger or external messages.
+
+Supervisor catalog-source checkpoint — 2026-10-24 UTC:
+Omnidex job64/ledger59/step325 began execution00:17:44UTC and returned a specific catalog question at00:22:11UTC; durable state is waiting_input with error null. Shared library has zero surveys/versions; reviewed install template has no survey versions. The52-survey/version SDK snapshot is the TOC/customer1000051 catalog; several question-definition files are Git LFS pointers in this checkout and git-lfs is unavailable. Shared questionnaire classes exist, but no complete reusable catalog graph was located. No patient/activity snapshots were inspected or imported. Supervisor asked the owner which existing customer/catalog should define the standard demo set; this is a missing reference/version-selection decision, not a permission requirement from AGENTS.md. The asynchronous question remains pending. Native was asked to retain state and continue useful source-independent inspection; no new approval gate or fabricated clinical content is authorized.
+Application source remains clean at1f642a42f and behavior unchanged. No implementation, tests/builds or final UI proof for this request are complete; all acceptance remains open. Task-only PsySH directory /var/www/storage/app/standard-catalog-proof removed and absence checked; disposable inspection container auto-removed. No external messages, shared configuration changes, commits, pushes or deployments. Existing ignored inspection evidence retained for resumption; no task cancellation or claim of completion.
+
+
+Standard demo catalog source clarification, 2026-10-24 UTC:
+Owner identified Pocket Axiom collected training/history data as the source. SSH pocket is reachable; supervisor found /home/gryph/Projects/clinect/api/storage/app/survey-learning with existing KOOS/HOOS instrument artifacts, Measure/TOC/import source SQLite databases, and dataset-hub/20260918-v1 with aggregate outcome/knowledge packages and histories. Read-only SQLite schema inspection confirms source definition tables for surveys, versions, pages, sections, children, questions, prompts, fields and aggregates. No patient rows/text/history exported or copied. Remote services/state unchanged. Reopened Omnidex CLI77441 for retained job64/ledger59; first long continuation returned unavailable job state transition, so repeated as a direct answer to the pending source question using the discovered location. This is observed workflow friction, not a new owner permission request. Resources23GiB available RAM/23GiB disk.
+
+Pocket Axiom read-only source confirmed: imports/toc-202208-v3 contains50 surveys/50versions/47pages/251sections/641children/377questions; imports/measure-local-202509 contains79surveys/79versions/34pages/207sections/442children/628questions; imports/tlhoc-20251211-v3 contains52surveys/52versions/48pages/253sections/648children/378questions. Definition table schemas include prompts, fields and scoring aggregates. Named instruments include KOOS/HOOS JR left/right and gates, QuickDASH body-region variants/gates, ODI/NDI and multiple Measure visit surveys. Only schema, definition names and aggregate counts were read; no responses or histories exported. Direct answer to the pending question resumed the same step325 at02:14:25UTC without another plan/approval. Native confirmed the source blocker resolved and is tracing runtime definition/scoring mappings. No application implementation or delivery claim yet.
+
+Pocket continuation packaging checkpoint: native verified six canonical HOOS/KOOS/PHQ/GAD source hashes against Axiom manifests and ran existing DemoPlannerTest (7tests/1430assertions, baseline only). Native asked whether private definitions may go into Git. Supervisor read exact remote storage/app/survey-learning/AXIOM-DATA-NOTICE.md: dataset contents and recovery credentials must not be committed; sanitized receipts/tooling/docs may be private-repo versioned. Selected separate private survey-library asset using existing delivery/import mechanisms, preserving notice and original normal-flow acceptance; no new owner permission sought. First answer sent during execution did not resolve the later durable question. Longer post-question answer containing proceed again returned unavailable job state transition; repeated exactly Keep a separate library asset. This is further CLI interpretation/delivery friction. No framework patch or manual ledger change. Task remains incomplete until actual implementation and full consumer proof.
+
+Owner explicit standard-set clarification during retained job64: seed all standard surveys, including NPS, PROs such as HOOS/KOOS, suicide-risk instruments, GAD, VR12 and the rest of the standard catalog. This extends the named acceptance examples, not a six-file subset or replacement objective. Sent verbatim owner clarification through CLI77441 while execution step325 resumed at02:23:51UTC after the short private-asset answer. Canonical full content, variants, scoring and synthetic histories remain required.
+
+Supervisor scope and source clarification for retained job64, 2026-10-24 UTC:
+The owner's latest explicit requirement is: "should seed in all the standard surveys, NPS, PROS like HOOS/KOOS, suicide risk, GAD, VR12, etc". This is the full standard set, not a six-file subset. Preserve canonical instrument content, branches, scoring and interpretation in new setup, additive installed-demo updates and synthetic generated history; all original actual-software acceptance remains required. The local Survey Engine has existing PHQ9/ASQ and EPDS/ASQ source classes in client1000053 and1000153 under surveys/2022/8. Read-only Pocket survey-name inventories confirm NPS, GAD and VR-12 in the collected sources. This statement records owner requirements and discovered source evidence, not a completion claim.
+Supervisor resolved the packaging and archive-read questions under existing owner authority: retain definition-only catalogs as private library assets, obey AXIOM-DATA-NOTICE.md, and extract only definitions from the original archives referenced by those Axiom manifests. Do not inspect/export patient activity or credentials, mutate remote sources, publish raw datasets to Git, or create a hidden local-only dependency. Prove the asset reaches the actual application through the existing import/delivery mechanisms. These were supervisor answers, not additional owner interventions. The short archive answer resumed step325 at02:29:47UTC. No source implementation has yet been accepted; do not stop at source investigation or treat documentation/baseline checks as the requested outcome.
+
+Native definition-only extraction succeeded: TOC64distributions/53sets, Measure247distributions/85sets; scoring-field tables empty, canonical code remains the scoring source. Assets are retained privately under storage/smoke/standard-catalog. At02:33:56UTC step325 returned kind done while explicitly admitting the feature unimplemented and all three criteria open; native independent review began02:33:59UTC. Supervisor sent direct scope feedback that extraction/docs are preparation and cannot establish acceptance, retained all source evidence and decisions, repeated the full explicitly named standard set, and required actual implementation/software proof with no further owner decision pending. This is an execution-completeness intervention, not an autonomy claim or framework modification.
+
+Supervisor interrupted redundant review of unimplemented feature through normal /interrupt and /redirect on retained job64. Review confirmed only documentation changes and began repeating baseline tests/assets inspection; this cannot establish the requested application behavior. Redirect explicitly retains extracted sources and resolved private-asset/archive-read decisions, the full owner-named set (NPS, HOOS/KOOS and other PROs, suicide risk, GAD, VR-12, Measure), installed-demo preservation and normal private-asset delivery, and requires actual implementation and software proof before review. No framework patch, manual ledger mutation, source copy or new owner answer. This is recorded execution/acceptance friction and supervisor steering, not autonomous completion.
+
+The redirect retained job64/ledger59 and produced revision4, then Omnidex replayed queued earlier supervisor feedback as sequential planning amendments to revisions5,6,7 (private asset delivery, full standard set, real implementation). No source work lost. This added repeated planning/read overhead after the scope was already consolidated. Supervisor waited for the final proposal and sent only Approve and start for revision7. Required full list and private deployment integration are now explicit in the finite task; no further owner answer or permission is pending. Native task remains unimplemented/unverified at this checkpoint.
+
+Step327 resumed02:41:08UTC and implemented a narrow installer preservation fix, with7new tests/19assertions passing: preserve active-version choice, explicit inactivity and original attribution; validate package roots, conflict preservation and rollback/retry. Full catalog remains unimplemented. At02:45:37UTC native again returned kind done while admitting all feature acceptance open; review reran the7tests and confirmed the live library empty and synthetic demo generic-only, with edited installer not yet rebuilt. Source preservation code remains retained, not accepted as overall completion.
+Supervisor used normal interrupt/redirect to restructure the same finite ledger into three sequential outcome-focused implementation items: private global catalog delivery, additive demo installation and actual canonical workflows, then ongoing synthetic history/generation plus final full-software pass. All original scope/acceptance retained, including NPS/HOOS/KOOS/suicide risk/GAD/VR12/Measure/standard forms; no new approval or convergence system. Shared standard definitions sourced from customer catalogs are explicitly allowed; customer branding/campaigns are excluded. No extra owner input, source edits by supervisor, framework modification or manual ledger mutation. This is a response to repeated premature execution handoffs and preserves prior artifacts/tests.
+
+Supervisor staging-data cleanup — 2026-10-24 UTC:
+Native's original definition-table extracts included source delivery configuration in distribution addresses JSON; a value-free check found nonempty credential fields in64TOC and247Measure rows. The catalog compiler already projects only id/name/language and distribution-set memberships into its shipped asset. Supervisor applied that same projection to the task-owned staging JSON files and removed the redundant full raw SQL extracts, preserving all distribution identities/mappings and original remote archives. No credential value was printed by the check or cleanup. Sanitized provenance receipt storage/smoke/standard-catalog/delivery-field-redaction.json records original export and sanitized-file hashes and counts; it contains no values. This corrects earlier blanket statements that no credentials had been copied into staging. Do not reintroduce delivery configuration into catalog staging, assets or test fixtures. No source application code, provider configuration or remote data changed; no messages sent. Existing compiled assets remain subject to normal final fidelity/integrity checks and source-hash lineage is recorded in the redaction receipt.
+
+Supervisor verification observations — 2026-10-24 03:02 UTC:
+- Retried standard-catalog-proof PostgreSQL fixture uses its own standard-catalog-proof_pgsql_data volume and standard-catalog-proof_data network; inspected actual mounts. Shared PostgreSQL remains healthy; error-pattern scan over the preceding25minutes found no FATAL/PANIC/startup/checkpoint corruption errors. This does not excuse the initial shared-volume fixture mistake.
+- New Dockerfile default uses ghcr.io/clinect/standard-survey-library:axiom-20261023-v1. Local image exists with digest sha256:56cadaa1614b5feb33c7c9f7b441611601189105722a6fd64ed8c69155580f9b, but a registry manifest read using the configured Docker credentials returned denied. Existing gh authentication identifies the configured owner, but package enumeration returns HTTP403 lacking read:packages scope. Thus registry publication/availability and delivery through Jenkins are NOT established by the successful local build. Existing normal deployment access must be exercised; no Jenkins trigger or remote deployment is authorized.
+- Asset inventory reports48TOC+49Measure survey definitions plus supplemental PHQ9ASQ/EPDSASQ resources and9stock forms. Supplemental resources alone do not establish usable suicide-risk surveys. Current installer does not consume canonical_definition resource packages; merely marking such versions downloadable does not prove normal consumer support. This remains a concrete acceptance check for the ongoing implementation.
+
+Supervisor source/delivery follow-up — 2026-10-24 03:10 UTC:
+- Read-only Pocket search of surveys/survey_versions in29imports/*/source.sqlite3 databases found no ASQ,EPDS,or suicide-risk survey metadata. No activity tables were queried. Existing local PHQ9ASQ/EPDSASQ canonical classes reference ASQ question IDs5346–5351, absent from both current catalog datasets. Bundled classes alone do not establish usable named-family coverage.
+- Existing gh credentials can read the private clinect/phoenix repository and releases and report ADMIN repository access, although GHCR package reads are denied. This is available delivery context; no private asset was uploaded, no release created, no Jenkins job triggered, and no remote deployment performed by supervisor.
+
+Supervisor full-catalog coverage check — 2026-10-24 03:21 UTC:
+Read-only surveys/survey_versions metadata comparison across29Pocket imports found57additional name/class pairs outside the chosen toc-202208-v3 and measure-local-202509 sources. Many are duplicates, customer-branded visits, or old containers, but there are clear additional standard definitions: PROMIS Global Health Survey/promisGlobal, PROMIS Self-Efficacy - Medications/promisSEMeds, Primary Care PTSD Screen for DSM-5 (PC-PTSD-5)/pcPTSD5 in imports/forms-demo-nested-2021/source.sqlite3; WOMAC Hip/womacHip in imports/pros-202511/source.sqlite3, tlhoc-20251211-v3, tlhoc-local-202510-v1, and toc-local-202601. These need eligibility accounting under the original all-standard-surveys request; coverage of129records from just two sources is not coverage of the complete collected standard catalog. No activity/history tables were read or exported. This is newly located source evidence, not added product scope.
+
+Supervisor ongoing-pilot checkpoint — 2026-10-24 03:51 UTC:
+- Job64/ledger59 remains in execution step329 (first of three approved outcomes, revision10). CLI session77441 remains open. No requested outcome is accepted or complete. No commits, pushes, private asset publication, Jenkins trigger, or remote deployment have occurred for this feature.
+- Native has implemented the private catalog builder/import command, global publisher extension, bootstrap/upgrade integration, and installer corrections for active-version/actor preservation, read-only immutable library permissions, tenant locale labels/delivery defaults, PostgreSQL booleans, and unsupported NULL source metadata. Non-null unsupported metadata still fails rather than being discarded. Publisher now records reused immutable survey/version IDs across asset revisions; this is being exercised. DemoCatalog, DemoGenerator, and DemoScoring integration has not started.
+- Actual isolated bootstrap and repeated normal clinect update/upgrade/startup passes completed; invalid-graph and interrupted-import checks rolled back partial catalog writes and retained an existing fixture library entry. Native reported17tests/41assertions passing before subsequent compatibility additions; later focused runs exited0, with final totals still to be recorded. This is partial catalog-boundary evidence, not full feature/UI acceptance.
+- Three synthetic provisioning runs remained failed at the last direct status read. Observed errors included immutable-library write locking, an Appointix baseline uniqueness failure, and a missing survey_versions.config column. Supervisor checked all97versions: config is NULL everywhere in the current asset. The latest importer handles unsupported NULL metadata, but no successful full consumer run has yet been observed.
+- A later API rebuild hit GitHub HTTP403 downloading pinned RoadRunner. Native added an explicit optional checksum-verified RoadRunner cache-image input and rebuilt successfully using a task-owned cached binary. Most recently observed API proof image: sha256:2244632d1e45099bbe615891c9106e0a514eba6b8f11ebb5b081b252d8a7edee; further catalog changes remain in progress. Shared WorkNet API was independently confirmed still running its earlier e998a7ba1d50 image and healthy.
+- Task-owned full fixture uses project standard-catalog-proof, explicitly namespaced volumes/networks, and loopback ports18080/18443. Disposable fixture services, generated secrets/certificates/backups, images/cache tags and test scripts require cleanup at completion; do not remove shared clinect-production resources. Recent resources:20GiB available RAM,23GiB disk free.
+- Supervisor sent one additional normal CLI message with the newly located PROMIS/PC-PTSD/WOMAC source coverage, denied registry access, available private-repository access, and failed consumer statuses. These are unresolved acceptance findings within the existing scope. No repeated feedback or framework edits were made. This remains a supervised pilot with substantial recorded intervention, not evidence of autonomous completion.
+
+Supervisor focused redirect — 2026-10-24 03:55 UTC:
+The active native execution was still operating on the two-source97-version asset, while confirmed additional standard definitions, inaccessible registry delivery, and three failed consumer runs remained outside its effective context. Supervisor used normal /interrupt followed by /redirect to bring those concrete findings into the same job64/ledger59 and retain the three approved outcomes, source changes, private extracts, test evidence, and isolated fixture. This was a deliberate scope/verification correction, not an elapsed-time failure or framework modification. Omnidex moved from waiting_input into Planning normally. The redirected request forbids extraction restarts, implementation replacement, new inaccessible build prerequisites, partial prerequisite-only completion, privilege weakening, shared-resource changes, Jenkins triggers, and remote deployments. It retains supervision of publication and all original final software/UI criteria. This is another recorded supervisor intervention; no autonomy claim is supported.
+
+Supervisor actual Jenkins-path check — 2026-10-24 04:09 UTC:
+The owner-supplied test-production-deploy job obtains jenkins/pipelines/clinect-production-deploy/Jenkinsfile from PRIVATE clinect/dev-ops, branch mh-jenkins-proddeploy (confirmed from retained Jenkins84 console and current read-only GitHub Contents API). It calls jenkins/shared-library/vars/clinectDeploy.groovy, which invokes the remote Olympus CLI deploy command through vars/sshCommand.groovy. The current helper binds only the existing SSH private-key credential; it does not forward a GitHub HTTP token. It does not use app-phoenix/Jenkinsfile to perform this deployment. Therefore modifying Phoenix Jenkinsfile alone does not establish this actual deployment path. The new build-local prepare-release.py call runs on the remote operator host; whether that host already has usable gh authentication is unverified because the known target pros-dev.clinect.internal is inaccessible here. Do not silently assume new remote-host credentials or require manual per-customer setup. Existing private GitHub repository/release access remains available to the supervisor (rechecked successfully). Preserve the no-Jenkins-trigger/no-remote-deployment constraint while implementing and locally exercising the applicable delivery/credential boundary. No dev-ops source checkout was located at the two conventional clinect paths; no source copy/checkout or remote mutation was made.
+
+Supervisor standard-catalog pilot checkpoint — 2026-10-24 04:40 UTC:
+- Omnidexv0.5.0 Charmeleon, CLI77441, same job64/ledger59, frozen revision16. Native step331 executed from03:59:58 to04:36:05UTC, explicitly returned outcome1 incomplete; independent review finished04:40:27UTC and automatically started another execution session at04:40:30UTC on the same step. No restart, new job, manual ledger mutation or Omnidex framework edit.
+- Catalog draft accounts for531survey rows across29collected sources:459included surveys/468versions,287resources,9stockforms. Fidelity/reproducibility checks pass. Private draftSHA41b781c73300d1a039743c7c578ff303ecbd4c36ed32f2a7e54ed96d5af09c87 remains unaccepted. Current image still carries intermediate1ab8929...asset. Raw dataset contents stay outside Git.
+- Installer corrections now allow all3retained queued provisioning runs to succeed. Supervisor independently read successful durable states; NPS retries completed04:32:22/24UTC. Repeat native installation and a subsequent API/provisioner restart preserve counts, immutable mappings, delivery baselines, active versions and attribution. Actual fixture image sha256:8a6c173d409a0b7d1b27333e0e6a9ae7906dda52d930387aa6a89f35ba29a35c. FocusedPHP20tests/54assertions and5retrieval tests plus build orchestration pass. No whole-feature/UI acceptance.
+- Supervisor answered source-ID clarification: EPDSASQ duplicate3302 declares two explicit scores3/2; source scorer resolves field identity then sums its value. New code-owned identities may preserve both choices and source lineage; no historical responses or clinical meaning may change. Supplied actual dev-ops Jenkins remote-SSH boundary and the GitHub Actions missing preparation finding through normal CLI; these became retained planning amendments. No new owner intervention.
+- Independent review found45packages missing class-referenced question rows,25with zero questions, including PC-PTSD-5 incorrectly marked downloadable. Bundled PHQ9ASQ/EPDSASQ still produce0selectablepackages. Private release is unpublished(HTTP404); completeasset pins/download/build lifecycle/UI proof and actual Jenkins credential path remain open. These are implementation gaps, not accepted results. Next execution is addressing them.
+- Supervisor browser-only check successfully rendered isolated /clinect/login using normal interface, forwarding admitted clinectsurvey.com HTTPS requests only to loopback18443 and aborting other origins. No credentials entered, no remote request, no state change; browser closed. This proves fixture browser access only.
+- Same three overall outcomes remain incomplete: completecatalogdelivery/consumerproof; automaticfresh/existingdemoreconciliation with canonical workflows/scoring; ongoing synthetichistories and final actualsoftware/UI acceptance. No private release publication, commit,push,Jenkins trigger,remote deployment or external message for this feature. Retained namespaced proof resources still need scoped cleanup at completion. This remains a supervised run with recorded interventions, not an autonomy-success claim.
+
+
+Execution completion scope correction — 2026-10-24T15:37:10.570321+00:00
+
+Observed job 64 / ledger 59 / frozen 52, execution step 355: event 940312 reports the assigned catalog delivery outcome implemented and verified, with independent review and separate later ledger items outstanding. Parser event 940328 returned continue, and the same executor started another turn at event 940338 to inspect already completed work. This is an execution-scope routing defect, not evidence that the application feature failed. Supervisor paused the same job through normal empty-draft Ctrl+C; durable status waiting_input, error null, frozen 52. No framework edits occurred during the live evidence run.
+
+The existing execution-response prompt now classifies only obligations of the assigned ledger item. Other ledger items, subsequent independent review/code-owned acceptance and separately supervised publication do not keep completed execution running. Required work in the current item still prevents completion even when an executor labels it later work. No keyword routing, model stages, state owner, parser schema, model route, content limit, timeout or workload-domain rule was added. Added one controller-routing case and four domain-neutral semantic regressions (two completion cases and two unfinished-current-item counterexamples).
+
+Verification: go test ./internal/codingagent ./internal/codex passed. The configured real Codex gpt-6.1-sol / low parser passed 17 execution cases in 69.572 seconds, including all four new cases, questions, permission requests, inaccessible capability, fixable failure, partial progress, owner waiver and unsupported waiver. The unanchored execution- selector also included two existing Omnidex-only saved examples; this selection mistake is recorded rather than claiming all cases were synthetic. The separate exact private 76 KB job-input replay was rejected by automatic approval review as unauthorized external transmission; it was not run, its private fixture was removed, and the temporary corpus override was reverted. The original input remains in PostgreSQL. Live evidence is retained in the ignored parser-task-scope-20261024 directory; only public test results were inspected.
+
+Normal core build and installed-software handoff verification are pending at this entry. Preserve all application source work, the published asset, fixture data and all three original outcomes. No application source was hand-edited, no source push or remote deployment occurred. This is another recorded supervisor intervention, not an autonomy claim.
+
+
+Installed completion-scope fix and actual handoff — 2026-10-24T15:40:11.614972+00:00
+
+Normal scripts/build-core.sh (including the UI build) passed. Installed Omnidex v0.5.0 binary SHA256 9ae0237172cf0cfc1ce68d09e1e6e5c9fe1c6e4ba0806192a36ea95bc0493287 replaced c8f7546aa17b0665ec86521856fd0d278485b10799a2205b6b1d08a5876c15d2 while job 64 was paused and no other jobs were running/queued/pending. Verified /proc/756041/exe matches the new hash; healthz on 127.0.0.1:18090 returned 200 with PostgreSQL/Redis healthy. No state/schema/configuration/model route was changed.
+
+The first reconnect resume attempt was blocked by automatic approval review because CLI history replay displayed an old shared-mail fixture instruction. Read-only current-state checks established selected job64, channel cli-chat-877fbf42f325dc652ad2fbbfda19fbee, production-suite workspace, waiting_input/frozen52, and the current catalog delivery item p_b86d6186be27_1_task. The UI then explicitly showed reconnected to active job64. Retried normal Resume. was approved after those checks; no mail fixture or shared mail configuration was run or changed.
+
+Actual software acceptance for this parser correction: retained execution reported completion without repeating effects (event940491), still naming separate later ledger outcomes and independent review. Updated parser routed done (940515). Code opened a fresh independent review session (940519/940520), thread01a16e90-d92d-73e2-9733-6a65cbd823ea / turn01a16e90-dcd3-7663-9c6f-f70465374ca3 on the same job64, ledger59, frozen52, step355. This is normal live handoff evidence using a fresh equivalent completion report, not a claim that the separately rejected exact private replay ran. Catalog review and the two automatic-demo outcomes are still open.
+
+
+### Product-assignment pilot continuation — 2026-10-24T17:47:46.420157+00:00
+
+Job64/ledger59 retained the product-assignment outcome and all three original catalog/demo items. Supervisor normal UI runs on clean image0681d80a02e4c8a77a06df90eae0c8af2c52127443595169365a891056fd3c04 twice found save notification loss: form33 after clearing and form35 after Incident Management. The latter correlated POST saving to the actual redirected GET; no preceding save failure was logged. Original synthetic48responses/403answers remained unchanged. Application implementation is still Omnidex-owned; supervisor only inspected, ran owned UI fixtures and recorded failures.
+
+Observed friction: ordinary diagnostic replies were accepted while executionstep363 continued. The supervisor ultimately redirected the same task to ensure both failures reached a fresh correction session. Planningstep364 then opened three fresh plan threads while reconciling the latest redirect and earlier queued feedback; this added delay and repeated inspection of already retained evidence. Final proposal64 preserved all four IDs/order and all other task payloads byte-for-byte, adding the overlap/validation correction only to the current item. Supervisor inspected the exact diff and approved it through normal CLI. No internal ledger mutation or framework-source edit occurred during this evidence run. This is a steered run with multiple supervisor interventions, not autonomous completion. Acceptance remains open pending the corrected actual-software pass and independent review.
+
+
+Store-scope continuation — 2026-10-24T17:54:22.435425+00:00
+Owner added a Survey & Forms Store with full download/order/completion/report-export acceptance. Supervisor preserved the existing job and original items. The earlier compound approval of proposal64 was rejected as incompatible state changes require clarification; no authority was frozen by that attempt. An initial raw multiline CLI redirect submitted only its first line, and later stale input was rejected; this was a supervisor input-protocol mistake, corrected with a complete single-line reply. Proposal65 captured the complete new task but assigned the new item rank4 while moving existing tasks to2/3/4, contrary to requested rank1. A normal rank-only correction produced66; diff inspection proved only the new item rank changed. Supervisor submitted the simple approval reply Approve proposal66. Existing source implementation/evidence remained retained, and no internal ledger or framework-source mutation was used. These are additional observed interventions; no autonomy or low-friction claim.
+
+
+Product-assignment corrected software pass — 2026-10-24T18:20:59.303472+00:00
+Job64/ledger59/frozen68, executionstep371 returned done and opened fresh independent review thread01a16f24-4628-77a1-aa3c-7e78358aa8a4. Native normal UI proof passed30saves including originalform33/form35. Supervisor independently passed16normal UI saves on clean image76347faa664ad2882e4cb955b4a3a77a051a9cf63340896f3f27ff1438058c82: both resource types, all six products, clearing, validation/correction, reopening and cancellation, with real SSE/WebSocket and no failures/retries. Original48responses/403answers remain byte-fingerprint equivalent. This successful final pass follows multiple observed application failures and supervisor interventions; it is not an autonomy claim. Review is pending; the new Survey & Forms Store task is next, followed by preserved original catalog/demo tasks. No source commit/push or deployment has occurred.
+
+
+Survey Store accepted; queued planning correction — 2026-10-24T21:08:35.337291+00:00
+
+Job64/ledger59/frozen68 accepted Survey & Forms Store task p_8d80569cc584_1_task at event998706, 2026-10-24T20:57:59.967986Z. Independent review01a16faf-4c19-78c3-b1b3-12250c69b180 passed on local APIimage9d49f14eb3c7d4567507fd35b9468f0a1ca6e6885fae85ed226c12e1357b2c45. Root independently piloted full graph download, Ad Hoc, GAD7 answer/score persistence, Insurance submission, normal reports and exports, restart/repeat preservation, pagination and security boundaries. Temporary fixture license7 was removed and original license fingerprint restored. Original48responses/403answers preserved. Detailed failures, retries, source/image receipts and successful final UI passes remain in Phoenix docs/task-evidence/rolling-demo.txt and storage/smoke/survey-store. No source push or deployment is claimed.
+
+A subsequent request to reorder only pending demo work exposed a framework failure: old queued temporary-license instructions replayed after later explicit correction, and amend retained new owner context rather than restoring the accepted Store contract. Proposals70/71 were not approved; the same job was interrupted before any accepted work reopened. The current task-neutral fix supplies later explicit authority alongside older queued messages, keys retained planning replies by that authority, and extends the existing Restore action to fetch the exact last-frozen accepted task in code. History is retained, ordering stays independent, and internal schema/state ownership is unchanged. No application implementation was hand-patched and no framework changes occurred during a live evidence run.
+
+Verification so far: complete codingagent/worker/queue/codex/api unit packages pass; real local PostgreSQL accepted-contract carry, exact restoration/history/replay/refreeze and tombstone tests pass. The first new integration run used a negative public read-limit fixture and failed; that test option was corrected, without changing product limits or weakening behavior. Build and normal software restoration/reconciliation pilot remain pending.
+
+
+Installed accepted-contract restoration and queued-authority pilot — 2026-10-24T21:11:26.608917+00:00
+
+Normal build passed; running Omnidexv0.5.0 SHA256 cf705a1060ef760ce17887257f1d29d9706d173677dad45c28d7e3a71d68a7b3, PID3747206, PostgreSQL/healthz healthy. Job64 was paused with no other active jobs before both service restarts. The first Restore API request correctly rejected a disconnected workspace after restart. Normal CLI reconnection restored workspace authority. The first implementation then encountered the existing SQL changed-agreed-content guard: the stale task had been marked agreed, a case omitted from the original test. No mutation committed. Restoring now sets normal proposed review state while retaining the saved accepted semantic contract; the expanded real-PG regression covers an already-agreed stale draft, history, replay, normal proposal approval and accepted carry after refreeze. No schema or guard weakening.
+
+Actual normal POST/v1/jobs/64/plan/decisions restore returned200/revision72. Read-only coding_agent_task_contract_matches confirmed both Store and product match frozen68 exactly. The supervisor issued a normal redirect preserving72 and explicitly resolving completed old fixture instructions. Real planning calls1001863/1002095 received newer_owner_direction alongside unchanged queued text; public response1002311 explicitly gave the later direction precedence and retained proposal72 without amendments. No fixture/license or application changes were replayed. Final planning drain, approval/refreeze and first-pending-task handoff remain to verify. All failures and additional supervisor interventions remain recorded; this is not autonomous completion.
+
+
+Accepted-state pilot completed — 2026-10-24T21:14:20.889497+00:00
+
+All retained queued planning replies drained to zero without changing proposal72 task content. Public responses1002311/1002536/1002798/1003105/1003683 recognized later authority and retained completed findings as evidence without reopening accepted work. This added approximately three minutes of sequential planning overhead and remains observed friction. Final exact diff contained only task ranks/review_state. Normal CLI Approve proposal72 produced73/agreed; separate Start froze74. PostgreSQL confirms p_df0e39fffb54_1_task and p_8d80569cc584_1_task remain accepted, all three remaining tasks ready, and normal execution began on the first pending demo reconciliation item. Same job64/ledger59, no manual database mutation or new workload. The rebuilt running SHA remains cf705a1060ef760ce17887257f1d29d9706d173677dad45c28d7e3a71d68a7b3. This establishes actual software acceptance of the queued-authority/restoration correction after the recorded failed first live attempt. No further Omnidex source changes during the resumed workload evidence run.
+
+
+Demo reconciliation workload checkpoint — 2026-10-24T22:00:44.890147+00:00
+
+Same job64/ledger59/frozen74, executionstep383, taskp_fc686717f58f_2_task, native thread01a16fc3-85bd-7210-be6d-86675823ebcb. Omnidex alone changes application source; supervisor has made no application implementation edits or CLI interventions since the accepted-state recovery handoff. Store/product remain accepted. The separate ongoing canonical activity task and actual Jenkins credential proof remain pending.
+
+Observed actual-software failures and recovery: fresh customer5 provision runc2c03268-d107-4837-b3c7-54767ae3d8d1 initially failed because the sealed baseline lacked forms.product_license before stock seeding. The first migration-order correction ran before tenant identity and was refused by the existing lease check. Corrected identity→migration→seeding recovered the same run to normal UI Ready (supervisor visually inspected fresh-provision-ready-final.png). A browser retry initially sampled the old failed status before the run succeeded; preserved as a harness failure. Real PostgreSQL injected interruption rolled back12checked tables. Fresh demo setup then hit the existing RoadRunner request limit during whole-catalog import. Omnidex moved definitions onto the existing provisioning worker (independent from activity permissions, encrypted exact tenant/program scope, no work timeout), retaining scheduler reconciliation for upgrades. Initial concurrent Update setup waited on the import lock; the pending-work path now returns normally, with two actual UI updates passing while paused.
+
+The first background import rolled back after an original instrument heading exceeded varchar255. New workload migration2026_10_24_060000_preserve_canonical_layout_text uses full text; no source content shortened. Redis retry object-key order also caused a typed identity comparison failure; canonical key order now preserves exact values/types, with regression coverage. The executor temporarily paused only the isolated provisioning queue, rebuilt/restarted the fixture and resumed the retained retry through normal migration/broker controls. The second import began21:48UTC and is still actively advancing at this checkpoint, about376MiB within its1GiB worker allocation. Customer5 remains paused/pending; no complete catalog acceptance yet. Expected475versions. UI waits for durable completion; current source additionally optimizes schema reads and missing-only reconciliation, which still needs a rebuilt runtime pass after this import.
+
+Verified so far:38focusedtests/125assertions; real PG Store installer and identity allocator suites; exact stock-form reuse preserves names, explicit unassignment and inactive versions while rejecting different definition content; non-demo tick writes nothing. Existing accepted family-specific normal completion/scoring evidence is retained for unchanged behavior. Latest artifacts are Phoenix storage/smoke/demo-catalog; full application record is docs/task-evidence/rolling-demo.txt. No new owner input, credential change, external message, production deployment, source commit or push. Do not call demo reconciliation complete before full import, coverage/mappings, actual patient workflows, preservation/retry/restart and independent review pass.
+
+
+Demo full-volume failure — 2026-10-24T22:03:46.048643+00:00
+Native public event1010795 reports that the full catalog import exceeded PHP512MiB before commit and automatically retried on the same image. Earlier root activity metadata established active work, not successful completion; the new transaction timestamp confirms a retry. Native executor will pause only the isolated provisioning queue and cancel only this known-failing import transaction, then release decoded package state as import proceeds while preserving rollback coverage. No full-catalog acceptance is established. Retain the long-run duration, resource failure, automatic retry and stopped browser as observed friction. Root did not hand-patch application code or discard accepted data.
+
+
+Full catalog success and actual UI recovery finding — 2026-10-24T22:36:43.236355+00:00
+
+Batched streaming retry completed on APIimageba5bb8b7986b6f8a6d9b35a77c8dec008838c11a475d96861ab4095fc6691e69. Root independently read customer5:475versions, pending=false, last_errorNULL, enabled=false. Worker memory stayed roughly124–128MiB. Normal concurrent UI updates took326ms/90ms and full reconciliation completed without resuming generation. Full proof passed470surveys/five reused stock forms/470canonical graphs/100701translated identities, repeated upgrades, missing receipts and24-table preservation including temporary customizations/active-version changes. Customer6 provisioned normally with no manually selected catalog versions. No final task acceptance yet.
+
+Root visual inspection of paused-background-reconciliation-final.png found that the Generation summary retained the obsolete reconciliation-failed message despite durable success. This was recorded in the existing application evidence and sent via normal CLI. It became planning amendment1011347 rather than current execution feedback. Root then redirected the same current task, preserving all passed work and both clients. Proposals75/76 modify onlyp_fc686717f58f_2_task: original objective prefix/criteria retained, recovery UI requirement appended, explicit final scrolled visual check added, both exact owner messages retained. Other task payloads/order unchanged. This is two supervisor interventions (finding and redirect), not owner input or an autonomous-success claim.
+
+Normal Approve proposal76 resumed execution after authority processing; root verified frozen78/running rather than issuing a redundant Start. Product and Store remain accepted, same job64/ledger59. Executionstep385/thread01a1700e-ce96-7133-9f73-5d282dbb772f resumes UI correction, remaining prepared patient/scoring cases and final source build; no reimport of completed client5, discovery restart, fixture recreation, new task, schema reset or framework source change. The separate canonical ongoing activity item and actual Jenkins credential proof remain pending.
+
+
+Live catalog summary recovery verified — 2026-10-24T22:41:39.317199+00:00
+
+Same job64/ledger59/frozen78/taskp_fc686717f58f_2_task. Native public event1014677 reports the already-open normal page cleared its obsolete failure through polling, retained Paused, and displayed 475 versions reconciled without refresh/navigation. Root independently inspected live-recovery-completed-475.png and confirmed the actual scrolled content shows the cleared Generation summary and completed475 status together. Running isolated API image sha256:3a7b67f2671b5584c872f3919445727913419d67f1476349fba0a24f5ca0fcce is healthy. Remaining prepared family/locale/patient completion and final fresh-client checks are still running; task acceptance, ongoing activity and Jenkins credential proof remain open. No new root intervention or application implementation edit.
+
+
+Demo product-default clarification — 2026-10-24T22:43:19.609534+00:00
+
+Actual family chooser exposed460unassigned imported parents, correctly excluded by the accepted product filter. Native event1015456 requested the missing initial demo mapping; the prior generic Store contract deliberately preserves unassigned source metadata. Supervisor supplied semantic demo defaults from the requested families: NPS/patient experience/Measure to Measure; named clinical outcome/risk questionnaires to PROs; standard intake forms to Engage. Limited initialization/reconciliation to new or provably untouched catalog-owned demo assignments, preserving explicit customer values/null, history, active versions, licenses and generic Store behavior. Unknown classifications must remain specific unresolved questions, not broad guessed mappings. This is a third supervisor intervention since frozen74, and the prepared family run is not yet passing. No manual tenant assignment or application patch performed.
+
+
+Demo clarification delivery friction — 2026-10-24T22:45:16.502996+00:00
+
+Native public event1015835 proves normal Engage Insurance order/completion and durable submitted response. Execution1015955 still asked the product-mapping question after the supervisor had answered through the normal CLI; response1016056 routed continue. Root redirected the same task with the queued exact clarification and all accepted contracts/evidence retained, avoiding repeated execution without the missing context. This is a fourth intervention, not additional owner input. No framework edits during the active evidence run. Proposal inspection/normal approval remain pending.
+
+
+Demo clarification approved and resumed — 2026-10-24T22:48:58.080772+00:00
+
+Exact proposal79diff against78 changed only the current demo task objective/owner context/review state; all original criteria, prior objective prefix, other payloads and task ranks were retained. Normal conversational Approve proposal79 incorrectly asked again, claiming plan items were absent although read-only authoritative state confirmed all five. Root used existing empty-line CLI ledger controls, selected the current pending task, approved it with Space, and confirmed freeze/start. Revision81is frozen/running with product and Store still accepted; normal executionstep387/thread01a17019-a374-7821-9e74-e3e042fac32b is implementing demo defaults and preserving prior evidence. This extra approval-path intervention is recorded as friction; no DB patch, framework edit or new owner input.
+
+
+Normal-save product preservation failure — 2026-10-24T22:54:39.928900+00:00
+
+Root independently checked the actual SaveSurvey::handle against isolated client5: explicitNULL with otherwise unchanged fields returns302without changing parent xmin. Then reused current verify-product-defaults.php with only its direct-SQLNULLpreparation replaced by that normal handler. On running imaged371c9ff5ebd1022ccaffbbb0029e20d49567a61cf2ce312ed83955586508e67, untouched-import initialization passed but normal-save explicitNULL preservation failed: product becamepros. Every case rolled back; no durable fixture or source mutation. Root recorded exact results in existing application evidence and redirected the same current task for correction under existing preservation acceptance. Current39tests/129assertions and direct-SQLpreservation results do not close this actual handler failure. Count now seven supervisor interventions since frozen74 including finding/redirect and CLI approval fallback; no owner input or autonomy claim. Exact new proposal review/approval and remaining patient workflows are pending.
+
+
+Preservation correction rebuilt; test precondition advanced — 2026-10-24T22:59:13.070268+00:00
+
+Proposal82 retained all prior criteria and added explicit normal-save preservation coverage only to the current task. Root used existing CLI approval controls; frozen84/step389/thread01a17021-2d8a-7893-8614-f4a07c44532f runs with both product/Store tasks still accepted. Running corrected APIimagec49a2c28e88f62facfb14b0179674c16bc06e63554563607591431c6c071dfa7 is healthy. Root repeated its failing probe, but the established fixture no longer satisfied initialNULL because normal background reconciliation had already assigned defaults; the probe stopped at its precondition without mutation. This is neither a regression failure nor a passing replay. Native event1022104 records the same condition and will prepare one existing synthetic definition explicitly for handler/browser proof, record fixture intervention and restore its PROs choice through the editor. Root did not patch data or replay further tests.
+
+
+Normal editor preservation correction verified — 2026-10-24T23:00:19.773515+00:00
+
+On corrected c49a2c28e88f62facfb14b0179674c16bc06e63554563607591431c6c071dfa7, product-default-normal-handler.log passes eleven meaningful cases, including real unchangedNULL save, omitted field, assignment, repeat/recovery, edits and active-version preservation. normal-explicit-null-ui.log passes normal editor save→reconciliation→reopen preserving Unassigned; normal-explicit-null-post-restart.log passes retained Unassigned after restart and restores PROs through the normal editor. Root independently read those safe result records and visually inspected explicit-null-after-reconciliation.png and explicit-null-restart-restored-pros.png. Native deliberately prepared one existing synthetic definition after automatic repair removed the test precondition; retain this fixture intervention. The corrected image also repeats live error recovery, paused475status and concurrent updates. Family normal AdHoc/patient workflows have resumed; overall reconciliation and later tasks remain unfinished.
+
+
+Fresh full catalog and family checkpoint — 2026-10-24T23:09:34.950161+00:00
+
+Normal client6first demo setup completed475versions without per-instrument selections, using retained provisioned client clinect_demo_catalog_fresh_proof. Root independently read both synthetic DBs: client5enabled=false/client6enabled=true, each475versions/pending=false/last_errorNULL. Worker memory observed126.2MiB, available RAM~21GiB/disk17GiB; native waited for the active import before the next build. No client5full reimport.
+Eleven normal patient cases completed: NPS, multiple Measure instruments, HOOSright, KOOSleft, GAD7, VR12, PROMISGlobalHealth, PROMISSelfEfficacyMedications, PCPTSD5, WOMACHip, GAD2/7followup. First ten durable responses passed fresh deployed-original rescoring. Gate selection then exposed an overly strict receipt check: shared choices can predate their later installer adoption. Native first suspected automatic assignment changes, then corrected that diagnosis using concrete provenance. It now allows earlier shared-row adoption while exact parent/version installation and later customer-edit rejection remain tested. Focused gate default/edit checks pass; rebuilt runtime and remaining gates/languages/scoring checks are proceeding. This was native-detected, with no new root steering. Full task and later daily-activity/dashboard acceptance remain open.
+
+
+Full normal family workflows and durable preservation — 2026-10-24T23:21:10.475087+00:00
+
+Final running imagea67fb46121bcfdca735865c91456f8e5b1bbc3a1cb75891e00b3c32fd8eb78a4. Root independently compared named completion records against the26prepared cases; all26are covered. A prior25/26checkpoint identified HOOSboth as still absent and was recorded in application evidence; native subsequently completed it through generated followups. Root visually inspected completed-163botheng.png. canonical-rescore-summary.json records35submittedresponses/339answers,27original-score matches and8originally unscored cases. All8EPDSchoice/locale combinations preserve intended saved identities. Existing decorative thank-you image remains broken; completion and durable answers work.
+Final source passes live error recovery in~3.5seconds with paused475status. Normal final setup controls pass on both clients after restart. Root independently executed the actual read-only11-table/config bounded fingerprint for client6after final upgrade and for client5after completed responses, recovery, repeatedupdates and finalrestart; both pass. Thus all completed interactions/configuration checked are preserved without excluding newly added later rows from historical comparison. Source scope, private immutable asset, synthetic identities/credentials and accepted Store/product work remain intact. Current task independent review/acceptance and later canonical daily activity/dashboard task are still open; Jenkins configured-credential proof remains unavailable. No application hand-patch, external message, deployment, source commit or push.
+
+
+Reconciliation execution-to-review handoff — 2026-10-24T23:25:34.230547+00:00
+
+Native event1026511reports outcome2execution complete with39tests,15preservation cases,26normalfamilyflows, both475versiondemos, explicitNULL/editor/restart preservation, liveerrorrecovery and canonical35responses/339answers. Four extra canonical families remain unassigned (weeklyProgress, preCataractQuestionnaire, rosTriggerTemplate, covid2020); named required families are covered and externalCAT exclusion retained. Parser1026531routesdone despite correctly naming later outcome3/overall work. Fresh independent review started automatically at1026535/1026536, thread01a1703b-1926-7113-b9a4-4a755a888b7c, same step389/frozen84. No additional root steering or framework edits. Do not confuse execution completion with accepted outcome2or overall feature completion; review and later tasks remain open.
+
+
+Demo reconciliation accepted; ongoing activity started — 2026-10-24T23:31:38.403885+00:00
+
+Independent review1027901finds no actionable defect. It independently passes39PHPtests/sixJSchecks, real save/reconciliation/UIerrorrecovery/restart/preservation and original rescoring37responses/342answers across clients5/6, plus verifies the retained26family and fullgraph/recovery evidence. Review1028042routesdone; authoritative task_accepted1028043at2026-10-24T23:30:47.595305Z accepts p_fc686717f58f_2_task under frozen84. Bothpriorproduct/Store tasks remain accepted. Runtimeimagea67fb46121bcfdca735865c91456f8e5b1bbc3a1cb75891e00b3c32fd8eb78a4 remains healthy.
+Normal code-owned advancement1028048/1028049opens fresh executionthread01a17040-b4dc-7363-8692-57aad933072c for existingp_fc686717f58f_3_task, samejob64/ledger59/step389/frozen84. Native identifies the actual remaining gap: existinggenerator still uses the two original generic surveys. It will extend ongoing canonical activity and prove dashboards/reports/pause/recovery/restart while preserving accepted histories. No root restart/replan/approval/input needed for this handoff. Final daily-activity acceptance and actual Jenkins credential proof remain open.
+
+
+Ongoing activity component checkpoint — 2026-10-24T23:38:28.424637+00:00
+
+Current taskp_fc686717f58f_3_task has unintegrated DemoStandardActivity selection with41tests/137assertions. Read-only real-client6probe resolves460available definitions (333PROs/121Measure/6Engage), walks each before repeat and preserves the program row. Selection uses current active versions, assignments, actual ordering membership and licenses. Scheduler integration/native canonical completion/scoring and final activity/UI acceptance remain outstanding; no scheduled-history success is claimed. Native records another broad legacy-source search emitting credential-bearing lines from legacy-survey-engine/application/config/dmgaz/clean_demo.php. Root did not inspect/reproduce values; native states no credentials were used, changed, copied into containers or added to implementation. Preserve that actual exposure/deviation record and avoid broad private-config searches. No new root steering, owner question, deployment or source push.
+
+
+First native synthetic completion — 2026-10-24T23:51:58.950208+00:00
+
+Same current outcome3/job64/frozen84. Native partial checkpoint1029106was correctly routedcontinue1029126and resumed the same executionthread automatically; no root input. Catalog selection and native synthetic completion now connect to DemoGenerator with an additive history cursor, preserving prior generic histories. Native Survey owns original serialization/scoring/gate callbacks and one transaction per untouched synthetic order; Phoenix holds no transaction while invoking its runtime peer.
+First runtime tick seeded12canonical-activity appointments but completed0; subsequent actual retries failed, not accepted. Publicevent1030613reports the first nativeorder completed with nofailure after correcting a transport route and legacydriver insert-ID assumption, using the response table own sequence. Earlier attempts rolled back. Native also reports revoking the transient synthetic capability sent during the initial public-route attempt; this test routing/exposure deviation is retained without reproducing capability values. Source credential exposures remain separately recorded. Current fast development runtime/source checks are not final rebuilt-image acceptance; complete canonical histories, scores, actual scheduler/recovery, dashboards/reports and final review remain outstanding. No overall success, production deployment or source push claimed.
+
+
+Broad canonical history runtime checkpoint — 2026-10-25T00:06:53.426085+00:00
+
+Root independently read client6canonical-activity state after the first reported success:1completedappointment/1native response,9pending/2interactive. Native fresh original GADrescore matches8savedanswers. A separate synthetic client7/clinect_demo_catalog_activity_proof uses84historicaldays, preserving clients5/6settings and records. Its catalog import completed and broad generation is running in the same isolated fixture. Observed normal history ticks report0completed/150failed, then107completed/28failed and86completed/50failed; these are failed/partial iterations, not a passing gauntlet. Native continues valid orders, keepsfailedonesretryable and is correcting legacygates/optionalreputationhook behavior while independentrescore runs over hundreds of durable responses.
+After the insert-ID defect, root independently recomputed bounded hashes for client6previously saved surveyresponses/questionanswers/nativeformresponses against activity-client6-before.json:3responses/5answers/0nativeforms preserved exactly. No readout of answer content or mutation. Current development runtime is not final rebuilt-image acceptance. Remaining: complete broad participation/scoring, rollback/retry/cancellation/pause/restart, no-background-delivery proof, actual dashboards/scorecards/reports and final independentreview; originalJenkinscapabilitylimitation remains. No new root steering or ownerinput during this outcome.
+
+
+Supervisor checkpoint — canonical daily activity (job64/ledger59/frozen84), 2026-10-25T00:23:36.941568+00:00
+- Store and full catalog reconciliation remain accepted; ongoing activity task p_fc686717f58f_3_task is still executing. This is not completion evidence. No new owner decision or supervisor steering was required during this checkpoint.
+- Read-only aggregate check of owned synthetic client7 found328completed,539pending and613interactive canonical appointments, plus596native responses. The fifth broad batch still recorded85failedorders; later recovery/full-coverage acceptance remains necessary.
+- Independently summarized484fresh-original rescoring passes:200scored,284intentionally unscored,5834saved answers. Retained recovery logs report real transaction-failure rollback, repeat/capability/tenant isolation, and native-process interruption/rollback/restart/retry passes. The initial interruption attempt failed and was recovered; do not call the entire pilot failure-free.
+- Independently viewed the original dashboard500and the corrected normal dashboard showing50appointments in view,1152pending PROs and118not contacted. Browser locator corrections remain test-harness friction; scorecard/report/unattended scheduler coverage is not yet accepted.
+- Runtime inspection confirms API/scheduler/native engine still have explicit development source mounts. Final self-contained builds, mount removal, restart/source alignment, normal software pass and fresh independent review remain outstanding.
+
+- Further supervised observations in the same activity run: real scheduler growth is independently confirmed at 1,720 native responses across 443 survey versions. The real owned-minute scheduler report selected 1 client, skipped 6 peers, ran 4 due events and recorded 0 failures. Native cancellation/opened-order preservation and exact paused-program preservation passed after correcting the first paused-tick metadata write. The saved-count and header mismatch in the normal report was independently visible; its cached gauge retained 596 answers / 27.6% while the summary had advanced. Native identified the same issue and is adding demo-progress cache versioning; this remains pending rebuilt/UI acceptance.
+- Independently inspected image-only API/scheduler 4c6280e18f23205e5139087f97e561601084328ccfa154210c47a22d6edc11ba and native 3cbf5669e4ce2539f0eb200e2ec80f33d712f5b1ad183129ac89ec31b1cce2c8 running without development source mounts. Post-restart normal GAD-7 scorecard visibly shows score 6; the authenticated dashboard/scorecard/report pass succeeds after earlier stale-login automation failures. Full generated-response rescoring then passes 1,720 responses, 671 scored, 0 failed through original deployed scorers. The cache fix requires a later API image and repeat affected UI checks; independent review and whole-feature acceptance are still outstanding. No root steering or new owner decision was introduced during this checkpoint.
+
+Supervisor checkpoint — report freshness and native forms, 2026-10-25
+
+- Root independently used the normal authenticated report on the owned loopback runtime and observed 2,737 requests, 1,720 answers and 62.8% capture, with consistent numeric values. The report cache correction is verified in actual software. Screenshot: bin/ledger-freeze-20261022/evidence/local-olympus/publish/supervisor-final-report-freshness.png. The browser and its scoped proxy were closed. Earlier stale-cache evidence remains retained.
+- Root repeated the read-only bounded preservation checks for clients5/6: all eleven historical interaction tables and generator configuration passed. The client6 comparison accounts only for measured new canonical appointments added to existing day totals; it does not waive other historical changes. The first read-only check lost its tool session handle and was repeated to capture its result; neither invocation mutated data.
+- New synthetic client8 exposed a real Registration POST500 caused by conflicting hidden scalar and editable dateOfBirth fields. The responsible Blade context producer was corrected. A subsequent403 was the test harness bypassing the normal patient entry gate; the harness was corrected without changing authorization. Native logs then record normal Registration and Insurance completion. The normal Telehealth screen correctly remains gated in this deployment; enabled Telehealth completion is not claimed.
+- The initial generator incorrectly saved two Telehealth readiness responses despite that disabled feature. Native recorded and corrected only those two untouched task-owned test records and added capability/permission checks. This is a real failed iteration, not a passing initial run. Payment and pharmacy workflows requiring provider/reference interaction remain interactive.
+- Root independently compared fifteen affected source files with the final image-only API/scheduler f1b0401234bdacdc95c6436b8d84edf03f1dec5036ad7f80b6a63eb21b4935e2 and native Survey 8ec3a56682f2438df87d24025b3493997999b7971bbe10375ebb9f4a65cf9863: all matched and no development/preparation source mounts remained. Focused native runtime/permission gates now report success. The injected form-save fault rolled back both the form and preceding GAD response; retry reports one completion and zero failures. Final recovery UI, post-restart preservation and independent review remain pending.
+- No new root steering or owner decision was needed during this activity phase. Native implementation and harness corrections, the edge reload after a changed container address, and the recorded failed tests remain observable friction. No zero-intervention autonomous-success claim, production deployment, source commit/push or actual Jenkins credential proof is made.
+
+Ongoing activity execution completed; independent review started — 2026-10-25T02:18:54Z
+
+Native final restart logs independently read by root preserve all eleven bounded historical tables and configuration for clients5,6,7,8. Root visually inspected the final normal Registration completion screen and post-restart activity report; the latter retains 2,737 requests, 1,720 answers and 62.8% capture. Native final UI log confirms dashboard, GAD scorecard and report rendering. Existing decorative thank-you illustration is still broken; successful submission and durable response evidence are separate from that cosmetic issue.
+
+Execution completion1037860was correctly routed done1037880 for the current activity task despite separate remaining delivery work. Omnidex automatically opened fresh reviewthread01a170da-8dac-7041-9187-c19ebe2fb0d2 at1037884/1037885, without root approval/replan or framework changes. The review is still running; this is execution completion, not accepted whole-feature or actual Jenkins credential proof. Prepared fixtures, enrolled credentials, accepted Store/reconciliation results and source edits remain intact.
+
+Ongoing activity accepted; delivery credential remains inaccessible — 2026-10-25T02:24:40Z
+
+Independent review1039539 passed41tests/137assertions, native contracts, fresh original rescoring across29instrument classes, current1,720-response receipt consistency, real idempotent ticks, normal new ordering/completion, dashboards/scorecards/reports and all four11-table/config preservation checks. All460currently selectable definitions had generated orders. Retained scheduler, interruption/retry, pause/resume, restart and unchanged consumer delivery evidence were checked. Root independently read the review's safe result logs. Review1039704routed done and task_accepted1039705accepted p_fc686717f58f_3_task. All four application tasks remain accepted under job64/ledger59/frozen84.
+
+Normal code-owned advancement1039710/1039711opened executionthread01a170df-d037-7243-8385-05981250a363 for the final existing catalog delivery item. It reused retained passes and confirmed fresh deployed recovery of the original response4's ten saved answers with zero external lookups. Native1039925/1039927correctly identifies the remaining recorded gap: no approved execution path for the actual Jenkins github-container-registry credential. Workstation-authenticated private asset retrieval and synthetic local helper/SSH/Olympus proofs remain distinct; no Jenkins trigger or remote deployment is authorized. No Jenkins/password-manager tool connection is available. The published immutable asset671877548 and SHA2566466327fd7146de8e2897f98c383d140dd5346d1afeee9c21afabb25534e7f55 remain unchanged. Credentials were not requested as values or extracted. Do not report the actual Jenkins credential as verified or whole delivery acceptance complete.
+
+There were no new supervisor steering messages or owner decisions during the entire ongoing-activity execution/review and handoff. This does not erase the earlier supervisor interventions, application defects, harness retries, isolation deviation and framework repairs recorded above. Final locally running API/scheduler and native images remain f1b0401234bdacdc95c6436b8d84edf03f1dec5036ad7f80b6a63eb21b4935e2 / 8ec3a56682f2438df87d24025b3493997999b7971bbe10375ebb9f4a65cf9863. Root-owned browser/proxy processes are closed; fixtures, enrolled secrets, accepted work, source changes and evidence are retained. No source commit/push or production rollout was performed in this continuation.
+
+Final blocked-check intervention — 2026-10-25
+
+The final delivery executor accurately requested an approved Jenkins execution path or sanitized verification receipt at1039927/1040045. However parser1040067routed continue and automatically resumed the same thread at1040072/1040073 to search again for a receipt that had not been supplied. This is additional product friction, not new delivery evidence. Supervisor used the normal /interrupt control once, preserving job64/ledger59/frozen84. Independent read-only state confirms waiting_input, errorNULL, all four application tasks accepted and only the delivery task ready. No framework source was changed during this workload run. The user was informed that the repeated blocked check had been stopped; it must not be described as an automatic clean wait. Root then exited its own CLI normally. Resume only after the remaining capability/evidence is available or the owner changes that requirement.
+
+Owner extension — existing client matching and peer comparison, 2026-10-25
+
+The owner requested matching existing client surveys/forms to Store definitions so the Store bridges differing customer database architectures and supports peer comparisons. Root inspected existing Store download mappings, the survey-only manual mapping service/manager endpoint and current benchmark code. No application source was changed by root. Relevant working agreements were read; the authoritative Phoenix tree is already extensively dirty from retained work. Resource check: about21GiB available RAM and12GiB disk free; reuse established dependencies and the owned standard-catalog-proof runtime, one heavy operation at a time.
+
+Root reconnected its normal CLI and submitted one complete /redirect on the same job64/ledger59, quoting the owner's request unchanged and supplying functional acceptance: normal UI matching of existing surveys/forms and relevant questions/choices/versions, meaningful authorized aggregate peer comparison, differing local identities, preserved customer definitions/history/scoring, visible incompatible/customized/unmatched content, correction/unlink invalidation, repeat/recovery, and rebuilt normal UI/AdHoc/report/export proof after restart. Existing accepted contracts and source/evidence are retained; the inaccessible Jenkins credential proof stays pending after this feature. No production-data copies, external sends, remote deployment, source copies/worktrees, commits/push or framework changes are authorized by this continuation. Same enrolled synthetic credentials and loopback-only browser isolation are retained. Planningstep390/thread01a170e2-e97f-7e41-8224-32e97fc3b1e0 started normally at1040282/1040283; concrete proposal inspection and normal approval remain pending. This is supervised feature work, not an autonomy claim.
+
+Matching task approved and executing — 2026-10-25T02:33:57Z
+
+Proposal85 added p_ca169a8827af_1_task with the requested functional criteria and preserved all five previous payloads byte-for-byte, but incorrectly placed the new task at rank5 after blocked delivery rank4. Root supplied one rank-only correction. Proposal86 changed only the two pending ranks and their mechanical review state; all four accepted task contracts remained exact. Normal CLI controls approved the displayed matching task and restored agreement to the previously approved delivery contract after moving it last. Automatic approval review initially rejected a combined navigation/approval because the selected target was not visibly established; navigation-only inspection resolved it. A second rejection interpreted restoring the deferred contract's agreement as executing Jenkins. Read-only old/new state and control-source inspection established that the action only restores the existing agreement after a rank change; the same approval then succeeded. No bypass, credential operation, Jenkins trigger or new authority was introduced.
+
+The normal freeze/start control showed delayed completion while the durable plan was still proposed; server health and database wait checks were normal. Closing the root-owned CLI through its normal Ctrl-D control exposed the queued completion output. Native execution had started at1043172/1043173 on step393/thread01a170e8-5660-7fa1-8340-319bd3ecde7b. Read-only authoritative state confirms frozen89/running, errorNULL, four accepted tasks retained, matching task next and delivery last. Record this approval/launch-control friction without asserting an unproved root cause. The root CLI is closed; worker progress continues. Omnidex has begun the existing Store/mapping/reporting implementation; no application acceptance is yet established.
+
+Peer audience clarified by owner — 2026-10-25
+
+Root asked one focused audience question while independent matching work continued. The owner explicitly chose: Customer users see anonymous peer benchmarks; Clinect staff can compare named customers. Root forwarded this unchanged through a normal /redirect on the same job/task, retaining implementation progress, all existing acceptance and four accepted contracts. Added functional proof for both UI/report/export audiences, staff selection of named customers, and rejection of customer-side attempts to request named peer data. No new global switch, approval gate or credential setup is requested. This is an owner clarification and supervised steering, not an autonomy claim.
+
+Before the redirect, native1044556reported draft matching/persistence and scoped test-runner failures; the corrected runner passed3compatibility tests/6assertions. Native1045736then reported a successful production image build and disposable PostgreSQL migration proof using existing owner/runtime roles, with that test DB/login cleaned up. Page/section instruction compatibility was added after that build and still requires inclusion in the final image. UI, peer aggregation/authorization, preserved-history and full workflow acceptance remain pending. Root did not hand-edit the application or run a production operation.
+
+Audience-only amendment resumed — 2026-10-25T02:49:24Z
+
+Root compared proposal90 against frozen89: only current matching task owner_context, review_state and appended criterion5 changed. Its original objective and all four existing criteria remain exact; every other task payload/order is unchanged. Criterion5 retains the owner's anonymous-customer/named-Clinect decision and normal UI/export/access-isolation proof. Root used normal CLI controls, first visibly selecting the matching task, then approving it and confirming freeze/start. No permission rejection or new scope change occurred in this approval. Same job64/ledger59 is frozen92/running, errorNULL, with executionstep395/thread01a170f6-77a8-70d0-8de4-69efa4f4c875 starting at1046807/1046808. Existing source/test progress and accepted work remain retained; actual feature acceptance is still pending.
+
+Existing-definition pilot checkpoint — 2026-10-25, incomplete
+
+Root independently captured read-only before-state fingerprints for all eleven history/configuration boundaries in each retained synthetic client, including all rows then present: client5=35survey responses/1native form response; client6=5/0; client7=1,720/0; client8=92/7. Metadata/hashes only are retained in ignored bin/ledger-freeze-20261022/evidence/local-olympus/publish/peer-matching-supervisor-baseline.json. No response content was printed or modified. Final preservation comparisons remain pending.
+
+Native reported and corrected a real selector-widget option-shape rendering failure. Root independently viewed the initial502after runtime recreation and the subsequent report500, then the rebuilt matching and report screens rendering normally. The first displayed GAD report still had no eligible current version; this was not accepted as functional comparison evidence. Native1050237identified sparse package rows versus installed SQL defaults as the cause and reused the installer's storage projection/concrete defaults in comparison. The meaning, choice, scale, calculation and instruction checks remain required. Native also addressed ambiguous many-to-one downloaded matching, product-unassigned Store versions using explicit or unambiguous current-client product scope, and named staff access through existing central permissions. Those changes still require the complete actual-software verification.
+
+Expanded focused runs pass5tests/12assertions, and builds include production frontend assets. Existing-system and disposable migration checks are recorded in the app fixture logs; root does not conflate them with UI acceptance. A normal pre-link Ad Hoc order was created and its respondent flow opened, but saved completion and meaningful peer results are not yet established at this checkpoint. Root observed the actual UI screenshots and safe result records only, supplied no implementation patches/hints, and has sent no further steering since the owner's audience clarification. Resource check still shows about21GiB available RAM/11GiB disk free; no shared cleanup or concurrent heavy operation was initiated by root.
+
+Observed benchmark gap and scoped correction — 2026-10-25
+
+Native1051037reports real-role save/recovery checks passing after a missing survey_library_mapping_audits grant was exposed; the earlier migration harness had masked that permission failure. A migration now supplies append-only audit access to the application role. Root independently inspected safe logs and actual generated named/anonymous CSV structures: current1response versus named peer2responses; anonymous aggregate3peer clients/5responses. Both exports have only denominators, answer counts and selected-response counts, plus an unconditional whole-instrument non-comparability note. Source comparison_state also unconditionally sets whole_instrument_comparable=false. The customer View-as-user browser step still failed, so full audience acceptance is not established by the filenames or those output rows.
+
+Root sent one normal /redirect retaining the same task and all progress to finish meaningful benchmarks: comparable question/choice rates, established native report metrics and saved original scores where full definition/scoring equivalence is established, automatic exact-download reuse, and explicit exclusions for partial/incompatible/unknown score semantics. Required actual UI/CSV proof covers unequal populations for a retained scored clinical standard and complete NPS/Measure definition while preserving existing role, mapping, AdHoc, history, retry and restart criteria. No invented formulas, new general scoring system, changed definitions/history, altered immutable asset, new global switch, new task, framework edit or delivery expansion. This is an additional supervisor correction based on observed output; do not claim the draft counts-only report completed the owner's peer-benchmarking outcome.
+
+Benchmark completion amendment resumed — 2026-10-25T03:15:49Z
+
+Root compared proposal93 against frozen92: only the matching task's owner_context/review_state and appended criterion6 changed. Original objective and all five criteria, including explicit audience controls, remain exact. Other task payloads and order are unchanged. Normal displayed-item approval and freeze/start produced frozen95/running with executionstep397/thread01a1710e-a76f-7b12-9109-3327f3accf96 at1053455/1053456. Native1053556confirmed the observed counts-only/unconditional-score-exclusion gap and is tracing existing score/metric ownership. No root application implementation edits, extra owner questions or new scope were introduced. Final feature and independent review acceptance remain open.
+
+Independent stored-score arithmetic checkpoint — 2026-10-25
+
+Native1054224reports a source-backed GAD probe with current saved sum0/count1 and peer sum33/count5/mean6.6. Root independently read only the known synthetic clients' saved score JSON through PostgreSQL, without calling the new report code. Client5/version826 has1response/one numeric score0; client6/version95 has2responses/two scores totaling0; client7/version95 has3responses/three scores totaling33; client8/version95 has0responses. Independent Python Decimal parsing confirms the response-weighted peer mean33/5=6.6, not an average of customer means, and confirms zero is counted. An initial SQL numeric regex omitted valid native numeric strings and is retained as a diagnostic in peer-gad-supervisor-sql-baseline.json; it is not claimed as a passing score-parity query. The independent native-format parse corrected that observation without changing data. No patient/answer payloads were printed. These are aggregate/component observations before final UI/export, mutation-invalidation, restart and acceptance proof; later normal test responses may legitimately advance totals.
+
+Pending independent comparison finding — 2026-10-25
+
+Root invoked the running API's SurveyLibraryComparisonDefinition::compare with two synthetic definition contracts sharing identical question meaning, radio scale and two identical labeled/value choices. Only choice identities and their collection/database retrieval order differed. The deployed component returned partial/customized with differences=[choices]. This is a read-only component finding with no database or application mutation, not a full browser reproduction. Equivalent choice contracts must not become ineligible solely because independent databases assign/retrieve identities differently; no clinical choice values or meaning were reversed. Root recorded this unresolved case while current benchmark/UI work continues, to be corrected and covered before final acceptance. It has not yet been delivered as another executor redirect; no passing result is claimed.
+
+Choice identity/order finding delivered — 2026-10-25
+
+After native1054810identified and corrected missing sentiment projection and recorded NPS current−100/2answers versus peers−43/7answers, the independent original-SQL/native metric logs passed GAD populations1/5 and NPS populations2/7. The normal UI run resumed after a stale-revision automation wait error, then still failed at native form reviewed mapping. These are retained partial results, not accepted UI completion.
+
+Root forwarded the independent choice-ID/retrieval-order false exclusion through one normal /redirect before final acceptance. The same task, six existing criteria, original scoring/metric parity, source/build progress, fixture histories, named/anonymous policy and remaining UI/form/recovery work are retained. The correction requires compatibility to survive independent ID/retrieval-order permutations without ignoring real meaning, scale, value, declared-order, branch or ambiguity changes; normal UI and focused regressions must prove it. No additional feature/task, formula, customer-history edit, framework change or delivery work is authorized. This is another recorded supervisor intervention; the finding remains unresolved until rebuilt verification.
+
+Choice-order amendment resumed — 2026-10-25T03:33:54Z
+
+Root compared proposal96 against frozen95: the current task's original objective remains an exact prefix, all six acceptance criteria remain exact, and every other task payload/order is unchanged. Only the reported regression/verification context extends the current objective and owner context. Normal CLI displayed-item approval and confirmation produced frozen98/running with execution399/thread01a1711f-362e-7753-9688-b20b3afe8239 at1057508/1057509. Freeze/start again displayed delayed completion; closing only the root-owned CLI with its normal Ctrl-D control exposed the queued start output. No proved root cause or framework correction is claimed. Native1056033also identified bracketed native form keys being parsed as nested request arrays and corrected the submission representation at the existing boundary; rebuilt normal form-save proof remains pending. Existing task acceptance is still incomplete.
+
+Rebuilt regression and synthetic-history failure — 2026-10-25
+
+Root repeated the original read-only choice permutation in the rebuilt API: status exact, differences empty, exit0. Focused native checks reached11tests/37assertions after retaining declared ordering and rechecking stored eligibility under current rules. Normal UI passed the native-form stage but failed at independent existing-survey matching; full feature acceptance remains pending.
+
+Native1058532reported a client5 response-table preservation mismatch, and root independently confirmed the same mismatch against the earlier supervisor baseline. All35bounded response rows remain, but their hash changed; the other ten table counts/hashes and program configuration remain exact. Root's first harness invocation also exposed JSON-object key-order sensitivity in the helper's PHP strict-array comparison. The root harness now compares the unchanged bounded read/hash results as JSON dictionaries, retaining exact counts, upper bounds, hashes and configuration checks; it still fails specifically on survey_responses. No baseline was replaced. Read-only metadata shows the retained GAD response now lacks its previously saved score.
+
+Native1058733identified its negative missing-score helper escaping rollback across tenant switching and requested restoration authority. Root answered through normal chat authorizing only repair of that task-owned synthetic fixture from retained original score data, independently checked by the deployed original scorer and required to match the original supervisor fingerprint. This is not permission to invent a zero, silently rebaseline or alter real customer histories. The helper must move destructive negative probes to scoped disposable data so retained histories cannot be changed. Failure evidence, restoration/intervention and remaining acceptance must be recorded. Restoration and final preservation are not yet verified. Root reconnected a normal CLI; no application implementation patch or SQL write was performed by root.
+
+Independent audience pass and restart alignment — 2026-10-25, preservation still open
+
+Root's fresh normal staff login/MFA and separate browser context passed named GAD and complete NPS selection, customer View-as-user anonymous reports, both CSV exports, and four customer attempts to request named UI/CSV data returning403. All59browser CONNECT requests were routed to owned127.0.0.1:18443; no public application traffic, authentication bypass or disabled normal event stream was used. Eight staff event streams were observed; this root pass did not itself open a WebSocket. The browser/proxy were closed normally. Native's separate matching run observed58stream messages and one live WebSocket, no failed saves and no downloads. Native1059285also recorded the mapped GAD Ad Hoc completion: seven answers, saved original score6 reproduced independently by the deployed original scorer, and follow-up report/correction/unlink/relink checks. These results precede final fixture restoration and are not full acceptance.
+
+Root's original bounded history comparison independently passes all11tables/configuration for clients6,7and8; client5still fails only survey_responses. The normal fixture-repair reply was admitted at23:39:51EDT through the existing semantic boundary with receipt “Message accepted by the current workflow,” same job64/frozen98, no approval requirement or contract change. Native has not yet demonstrated the restoration. Root did not duplicate the reply or substitute SQL repair.
+
+After the affected-role restart, root checked11changed application/controller/view/route/migration files against the running image: all hashes match. API, queue, scheduler and provisioning all run sha256:bd39cfb7e3456b84d91c38d60c600e93d61bdba719c7d68f8c7add02c81856af; native Survey remains the accepted sha256:8ec3a56682f2438df87d24025b3493997999b7971bbe10375ebb9f4a65cf9863. All are running without source/preparation mounts. Native1059500reports the independent/reversed choice fixture passed normal UI matching for all three questions, with audited restoration of the original links. Post-restart native-form audience checks are still being completed. Final original-history preservation, fresh review acceptance and deferred Jenkins credential proof remain open.
+
+Paused repair answer resumed without changing the ledger — 2026-10-25T03:54:22Z
+
+Native1060004correctly distinguished new post-AdHoc/restart snapshots from the still-failing original history baseline. The form-report permission check also preserved existing FormPolicy: staff normal form UI/export passed; the retained customer account without form-admin permission received403. Native1060382/1060402ended execution with an explicit restoration question rather than claiming complete acceptance. The earlier normal answer had been durably admitted but had no resolution receipt and was not consumed by the active execution. Root supplied the same scoped repair authorization to the now-paused question, explicitly identifying the old queued answer as the same decision, not additional work. Normal CLI resumed the same step399/frozen98, with fresh execution thread01a17131-f574-7af0-a200-6a9bdfafdd62 at1060408/1060409; no contract amendment, new task or reapproval was needed. Native1060449acknowledged the restoration and original-fingerprint requirements. Record this additional communication/friction; restoration remains unverified.
+
+Before restoration, root independently compared browser CSVs against read-only PostgreSQL arithmetic without invoking the new report implementation: peer GAD sum33/count5/mean6.6; named client6sum0/count2; current client5sum6/count1with2responses and the disclosed missing original score. NPS raw sentiment counts match current0promoters/2detractors/2answers=−100 and anonymous peers1/4/7=−43; named client6has0/1/1=−100. These passing arithmetic checks accurately reflect the damaged fixture and do not prove original-history preservation. The current-client CSV must be recaptured and rechecked after restoration.
+
+Exact restoration and final independent software verification — 2026-10-25
+
+Native1061037reports the authorized restoration committed only after reproducing the frozen fingerprint. Two preceding attempts were rolled back because their original-scorer context types differed from the original patient execution path; their failed evidence remains retained. Root independently reran the unchanged original before-state baselines and confirmed all11history/configuration boundaries for each of clients5,6,7and8, both immediately after restoration and after the subsequent affected-service restart. No baseline was replaced and no retained response was waived from comparison. The changed negative-test helper is now read-only with respect to histories.
+
+Native1061349reports repaired-state normal UI/CSV parity, four forbidden customer named-data requests returning403, and all four original baselines passing. Root independently performed a fresh-login post-restoration/restart browser pass: both named GAD/NPS cases passed, then opening anonymous GAD timed out. No response/page diagnostic was captured in that first attempt, so the cause is unconfirmed. A targeted anonymous-only retry passed GAD and NPS HTML/CSV plus all four named-data403checks, with unchanged application code and normal streams enabled (36owned loopback connections,5event streams). Native separately reported a follow-up visible-metric capture timing out at login; this is retained as browser-run friction, not erased by passing repeats. Root's final browser metadata explicitly identifies the split named-first/anonymous-retry evidence; no clean single-pass or zero-friction claim is made. Both root-owned browser/proxy runs terminated and cleaned their own processes.
+
+Root independently recalculated final exports from saved native score JSON using Python Decimal and raw PostgreSQL sentiment counts, without invoking the new report implementation: current GAD2responses/2saved scores/sum6/mean3; named client6two zero scores/mean0; anonymous peers5scores/sum33/mean6.6. Complete NPS current0promoters/2detractors/2answers=−100; named client6=0/1/1=−100; anonymous peers1/4/7=−43. All UI CSV numerators, denominators, sums and means match. Original-history preservation is now independently verified; fresh task review/acceptance remains pending. Jenkins proof is still unchanged and unavailable.
+
+Visible language-selection defect found before acceptance — 2026-10-25
+
+Native1062219reports visible score-row/UI/CSV parity and restoration of temporary audience permissions; native1062381completed execution and review began at1062385/1062386in thread01a17139-cdde-7761-bd0c-673e6e48539c. Root directly viewed the final visible GAD and NPS screenshots and confirmed their numeric rows match the independent calculations. The GAD screenshot also exposed a task-scoped display defect: the English report/question shows Spanish answer label Para nada. The comparison display selects labels from multilingual prompt collections without following the active interface language.
+
+Root sent one normal /redirect retaining the same task, all six criteria, exact restored histories, repaired arithmetic, audience/AdHoc/restart evidence and four accepted prior contracts. The correction is limited to original question/choice label selection in matching, reports and CSVs under the active language and existing fallback behavior. Preserve all multilingual semantic content, identities, links, original scoring, numerical results and immutable asset bytes; no invented translation, new language control, task, global switch or unrelated redesign. Rebuilt normal UI/export and focused language/fallback checks must precede fresh review. This is an additional concrete supervisor finding/intervention. The label correction remains pending; do not present the previously verified calculations as final feature acceptance.
+
+Locale correction and delayed-answer reconciliation resumed — 2026-10-25T04:14:20Z
+
+Proposal99extended only the current matching objective/context for the observed label defect; original objective prefix, all six criteria, IDs/ranks and every other task payload remained exact. The previously queued restoration answer was then processed through a second planning session on the same step400. Native1065063/1065459recognized the already-completed exact restoration and explicitly prohibited repeating writes or replacing baselines. Proposal100preserved the complete locale objective and all original criteria/contracts, appending constraints to preserve the repair and finish the originally requested disposable negative missing-score proof across tenant switching/failure/retry. It did not reopen the restoration or add a task. Record this delayed-message planning overhead; no further owner decision was requested.
+
+Root inspected the complete amendment, visibly selected task5 in normal CLI controls, approved it and confirmed freeze/start. The console again displayed delayed start; root checked read-only state/database wait metadata and considered the normal API fallback but performed no API mutation. The normal console operation completed as frozen102/running, execution401/thread01a17144-3b17-7ef2-96ca-e8ec066a7e67at1066232/1066233. The root-owned CLI was closed normally. Native1066359acknowledged preserved restoration and the two remaining scoped corrections. Omnidex source remains unchanged during this workload; final application acceptance remains pending.
+
+Final language, isolated-negative-case and supervisor UI proof — 2026-10-25
+
+Native completed the scoped locale correction with12tests/49assertions. Actual English named/anonymous GAD and NPS pages/CSVs pass, including customer named-data403checks. Normal profile selection of Spanish preserves original Spanish labels; all56question/choice numerical rows and other non-label CSV values remain identical to English. Selecting Vietnamese, for which the original questionnaire has no text, uses the existing English fallback: its entire CSV is byte-for-byte identical to English. The original profile language, activation and temporary audience roles were restored. No new translations, language controls, authentication changes or semantic definition filtering were introduced.
+
+The missing-score negative proof now uses its own disposable database/role and session-private relation, with explicit connection ownership. It exercisesNULL, native-format zero and6, an actual tenant switch, injected failure and retry; expected response count3/missing1/saved count2/sum6passes. Root independently confirmed the disposable database and role are absent afterward. Original retained history is not the destructive-test fixture. Native's final comparison passes all44original bounded table fingerprints and all4configurations after rebuild/restart, normal language/matching/report work and audience cleanup; the unchanged supervisor baseline remains authoritative. Original scoring again reproduces restored response6and mapped AdHoc response36(score6from7answers).
+
+Root independently verified11production source/controller/view/route/migration hashes against the running API, with API/queue/scheduler/provisioner all running sha256:eea8f875518f2aac619e8fea3eda58a546b5be9a020bfac45d3d03a905631908 and no source/preparation mounts. Native Survey remains sha256:8ec3a56682f2438df87d24025b3493997999b7971bbe10375ebb9f4a65cf9863. A fresh normal staff login/MFA browser pass on that image passes named GAD/NPS HTML and CSV; original English Not at all appears in both GAD surfaces and Spanish Para nada is absent. This final root run was deliberately named-only after customer-fixture cleanup; earlier root anonymous/isolation proof and final native anonymous-language proof are recorded separately, not conflated. All30connections used the owned loopback proxy,5normal SSEstreams were observed, and the browser/proxy exited0and closed. No source patch, external message or production operation was performed by root.
+
+Native1069074completed execution and requested fresh independent review. Reviewer1069672independently reports12/49focused checks and all44original table/four configuration fingerprints passing;1070164reports named/anonymous UI/CSV, customer403isolation, independent arithmetic and deployed original scorer parity passing. Final matching/cleanup review and authoritative task acceptance remain pending at this checkpoint. Existing browser retry/session-transition failures, supervisor corrections and exact synthetic-score restoration remain recorded; this was a supervised pilot, not hands-off completion. Jenkins configured-credential proof remains unavailable, unchanged and deferred.
+
+Independent review found a remaining native-choice ambiguity defect — 2026-10-25
+
+Reviewer1071090/1071414reproduced a real deployed comparison failure: native form choices sharing a declared value overwrite one another during projection. Local No/0plusYes/0therefore incorrectly compares exact/eligible to canonical Yes/0. This violates the existing ambiguity/semantic-equivalence criterion, rather than a formatting preference or added requirement. Other focused/migration/UI/audience/CSV/language/fallback/scoring checks passed, and all44original history fingerprints/four configurations remain exact. The reviewer left implementation unchanged and cleaned its fixtures; invalid MFA-code/browser retries remain recorded, not claimed as an application authentication fix.
+
+Review response1071594requested this correction. Omnidex automatically dispatched fresh execution1071600/1071601on the same step401/frozen102, thread01a1715d-0903-7821-8b6a-4d4da9ab3b15. Native1071638acknowledged the scoped defect and read-only retained-history requirement. No root redirect, reapproval, new task, owner question or implementation patch was necessary for this review-to-correction transition. Four accepted tasks and the deferred last Jenkins task remain unchanged. Matching/peer task acceptance is still incomplete pending the correction, affected actual-software checks and fresh review.
+
+Native ambiguity correction and independent customer UI recovery — 2026-10-25
+
+Root independently reproduced the native duplicate-value defect on imageeea8f875518fusing in-memory synthetic form definitions: duplicates on either the local or canonical side falsely passed both downloaded and previously reviewed eligibility; unique choices in reversed retrieval order correctly remained exact. No database fixture or source was changed by that probe. After Omnidex's correction, the identical probe on sha256:f62f6f308fad0c564afa5927a791eaa160077f2cd54c33cd54c2660e23088288passes all3cases: ambiguous choices are partial/customized and excluded from both routes, while the valid order permutation remains exact. Both before/after records are retained in peer-native-choice-*.json. Root confirmed11source hashes and all4API roles align with that image, without source/preparation mounts; native Survey remains unchanged. Native focused checks pass11tests/68assertions, actual native-form/English matching and named GAD/NPS UI/CSV pass, and original scoring/history checks pass.
+
+Native's repeated customer-mode browser attempts ended at/loginafter normal View as user. Native1073880/1074341asked for an established fixture recovery, accurately leaving that fresh anonymous check incomplete. Execution response1074363continued the same thread instead of pausing for an answer. Root coordinated one temporary normal-control pause to avoid overlapping browser tests: the API first returned409because no client workspace connection was available; reconnecting the normal CLI and replaying the same operation returned200/waiting_input. CLI history replay again produced large output. This was an additional supervisor intervention, not an owner decision or application fix.
+
+With Omnidex paused, root used the existing prepare-peer-audience-fixture.php helper and its preserved receipt, then ran the existing supervisor-peer-ui.cjs in a fresh context with PEER_ONLY_ANONYMOUS=1and PEER_EXPECT_ENGLISH=1. Normal staff login/MFA, selected-client entry and View as user succeeded. Anonymous GAD/NPS pages and CSVs pass; English original labels pass; no named customers appear, and all4named HTML/CSV tampering requests return403. All37connections used the owned loopback proxy,5ordinary SSEstreams were observed, and the browser exited0. The existing helper restored the original activation/roles in finally; no password, authenticator, user identity, source or history was changed. Proof is retained in supervisor-peer-ui/native-ambiguity-anonymous.log, its screenshots/CSVs and result.json. This establishes a successful fresh-browser flow, not a proven root cause or fix for the earlier combined-session failures.
+
+After fixture restoration, root independently rechecked all44original bounded tables and4program configurations: exact matches. Raw saved-score/answer calculations again match the new anonymous CSVs: current GAD6/2=3, peers33/5=6.6, current NPS−100, anonymous NPS−43. Named values remain unchanged and independently match their retained exports. Final fresh review/authoritative task acceptance is still pending; Jenkins remains unchanged, unavailable and last. No application hand patch, Omnidex source edit, commit/push or deployment occurred.
+
+Existing-definition matching and peer benchmarks accepted — 2026-10-25T04:59:30Z
+
+Root resumed the unchanged frozen102task through the normal API with the independent customer-UI proof. Native1074803also confirmed its retained report-only browser run completed successfully for both audiences; it recorded the failures and unconfirmed session-transition cause without changing authentication. Execution1074936/1074956completed, then a fresh independent review started at1074960/1074961in thread01a17169-bdbf-7833-a7b8-bec168e220d1. Reviewer1075925independently passed fresh named/anonymous GAD/NPS UI/CSV, four customer named-data403checks and original SQL/scorer arithmetic. Final1076174reports13tests/74assertions, migrations, matching, language/fallback behavior, isolated missing-score failure/retry/cleanup, all44original table fingerprints and4configurations passing, with no outstanding findings and no implementation changes during review. Receipt: app-phoenix/storage/smoke/existing-matching/independent-review-final/review-result.json.
+
+Authoritative task_accepted1076335accepts p_ca169a8827af_1_task on job64/ledger59/step401/frozen102. The four earlier accepted contracts remain accepted. Omnidex advanced to the final deferred Jenkins task and did a read-only capability/receipt audit, reporting the same unavailable configured-credential proof; no Jenkins trigger, credential download, build/deployment or application/fixture change occurred. Root then used normal interrupt control200to stop further work. Final read-only state is waiting_input, errorNULL, frozen102, five tasks accepted and only p_b86d6186be27_1_task ready/pending. The root-owned CLI exited0normally, with the repeated large-history replay retained as pilot friction; no root browser/proxy remains.
+
+Final retained software: API, queue, scheduler and provisioner all run f62f6f308fad0c564afa5927a791eaa160077f2cd54c33cd54c2660e23088288; API is healthy. Native Survey8ec3a56682f2438df87d24025b3493997999b7971bbe10375ebb9f4a65cf9863is healthy. Disposable peer_missing_score databases/roles are absent. Omnidex remains v0.5.0 Charmeleon: CLI019af11cf1c654c9a17d4989a9f4fc57a94c4542422623f8d69a0adfde9a3268; running service PID3747206retains cf705a1060ef760ce17887257f1d29d9706d173677dad45c28d7e3a71d68a7b3. No framework source changed during this workload evidence run.
+
+Delivered locally: existing survey/native-form matching without replacement downloads; reviewed links and corrections; compatible question/rate/original-score benchmarks; customer anonymous aggregates and authorized Clinect named comparisons; matching report/CSV populations; actual AdHoc completion/original scoring; exclusion of ambiguous or semantically incompatible definitions; original labels under the current language/fallback; restart and exact retained-history preservation. This was supervised work with multiple concrete corrections, an exactly restored synthetic-score test failure, browser retries and a final verification handoff, not autonomous completion. Source remains uncommitted/unpushed by this task and no remote delivery is claimed. Actual Jenkins configured-credential verification remains unavailable and is the sole deferred delivery check. Pilot stopped after acceptance.
+
+Product applicability throughout shared product pages — 2026-10-25, started
+
+Owner requests automatic product filtering across Measure, PROs and Engage shared pages, explicitly including AdHoc selections, tasks and responses and the other overlapping navbar destinations. Root submitted the unchanged owner wording through normal /redirect on existing job64/ledger59, with one next bounded implementation task before the deferred Jenkins proof. Preserve all five accepted contracts, source/fixtures/evidence, existing product assignment semantics, user/tenant permissions, practice and other selections; carry the appropriate product context through lists, selectors, details, search, pagination, fragments/modals, exports and relevant submissions. Verify product switching and independent browser tabs, retain legitimate shared applicability and intentionally global administration, and avoid a new global toggle or adjacent redesign. Normal UI proof on rebuilt software under all three product entries is required.
+
+Normal CLI connection25898again replayed large historical output before admitting the request. Planning402/thread01a17171-5cf9-76d0-bf58-bb0a451a1018started at1076717/1076718;1076754acknowledges one task before Jenkins with five accepted contracts closed/unchanged. No application or Omnidex implementation hand edit by root, extra owner question, source commit/push or remote operation. Memory about20GiB available, disk11GiB free; only one heavy operation at a time. Existing dirty work in both authoritative trees is preserved. Current accepted application image is f62f6f308fad0c564afa5927a791eaa160077f2cd54c33cd54c2660e23088288.
+
+Root captured new read-only before-state fingerprints for this new task in ignored publish/product-scope-supervisor-baseline.json, covering all current rows in eleven history tables plus generator configuration for each of four retained synthetic clients. These supplement rather than replace the older peer-matching baselines and include the previously accepted new AdHoc response. No content or credentials were printed or changed. Implementation and acceptance for product-wide shared-page filtering remain pending.
+
+Product-scope task approved and started — 2026-10-25T05:08:41Z
+
+Proposal103preserves all five accepted task payloads/review states exactly and adds p_6b91b652cb77_1_task with five criteria covering the full shared-nav audit, consistent applicability/authorization, independent tab/wizard/user state, rebuilt normal UI under all three products and preservation/documentation/review. Jenkins differs only by rank5→6and review state reset for reordering; its semantic contract is unchanged. Although the planner stated new task rank5/Jenkins rank6, both persisted at rank6. Root corrected only the new task's rank through the existing deterministic normal API reorder control, producing104without another model-planning call or framework/database edit.
+
+Root reviewed the concrete task and preserved semantic contracts before normal API approval. An initial call used the wrong action alias review and returned400with no mutation; the documented set_review_state action succeeded for the new task and the moved unchanged prior-approved Jenkins item, producing105/106. All seven tasks then had unique ranks0–6and agreed review states, with the five accepted payloads byte-for-byte unchanged. Normal freeze returned107/frozen; execution403/thread01a17176-0047-7f71-9e45-1ab8dcf1b41fstarted at1079104/1079105. The root-owned CLI exited0; the worker continues. No source was hand-patched or task approval requested from the owner again. Jenkins remains last and deferred. Current new before-state response counts are client5=36/1native form,6=5/0,7=1720/0,8=92/7. Actual product-filtering acceptance remains pending.
+
+Product filtering implementation checkpoint and draft regression — 2026-10-25
+
+Native1079234/1079688traced shared area filtering and clarified that area is an accepted compatibility projection of product_license; that contract remains preserved while shared readers use the assignment owner directly. The AdHoc product-switch path previously cleared session-wide wizard state. Native1079881reports interleaved-product/reset/practice checks passing, and identifies detail pages accepting a record's own area despite a conflicting requested gate. Native1080478extends the audit to mixed-product PROs daily/comprehensive dashboards, progress editors and Engage worklists, including child items and totals. Native1081376finds unfiltered AdHoc collection search and ambiguous form/survey version IDs; type-qualified parent applicability fixes these paths. Focused checks pass68assertions and PHP syntax. Native1081666reports disposable PostgreSQL proof for mixed containers, all three products, overlapping IDs, accepted legacy aliases and progress totals, with the temporary database/role removed.
+
+The first production/frontend build passed and installed ff786874d957c0133147fe467125898bd3ca02fe67e3074ad4c4b14b6c67d241. The first normal UI audit reached client4, where Engage is correctly unlicensed; native1081777switched to retained all-three-product synthetic clients5–8without changing entitlements. Root additionally captured read-only product assignment hashes for each retained client's462surveys/5forms in product-scope-assignment-baseline.json. The older accepted baselines and new before-task history baseline remain unchanged. Browser, persistence, export and final review acceptance are still pending.
+
+Root independently tested continuity of a recognized pre-change PROs draft using only an in-memory session and the deployed ApplicationState/AdhocOrderState classes. The identical supervisor-product-draft-continuity.py probe passes on originalf62f6f308fadwith selected survey816and practice1; on rebuiltff786874d957the selected surveys becomeNULLwhile practice1remains. Before/after product-draft-continuity-*.json records are retained. This is actual-runtime component evidence, not a claimed old-to-new browser reproduction. No real account, session store, Redis or database history was modified, so no data restoration is required.
+
+Root delivered this concrete in-scope preservation finding through normal interrupt/resume controls, both200, on unchanged frozen107/task403. No new task, refreeze, accepted-contract change or user decision was requested. The feedback requires preserving recognized existing drafts, product isolation, explicit reset and newer selections, followed by affected checks and normal UI proof. Execution resumed1082293/1082294in the same thread with turn01a17184-038b-7c12-869d-11eb81d962db; native1082332acknowledges the defect. The root CLI exited0after another large-history replay. This is a supervisor correction during the pilot, not autonomous completion. Implementation correction and all remaining acceptance remain open.
+
+Draft correction installed; full product UI proof pending — 2026-10-25
+
+Native1082504reports focused checks for importing a recognized legacy draft once, preserving newer product-specific selections and preventing explicit reset from reviving old data. The normal UI also exposed an app-dock read of AdHoc state outside a product context; native corrected that read boundary without using a different tab's product. The next installed production image is ec3a730a886b0dd4e700f4f8432854c815f63d11416d5b710a14ddd3efb6a266. Root reran the identical independent in-memory actual-runtime continuity probe only after the image changed: selected survey816and practice1are retained, exit0. The old passing baseline, failedff786proof and new passingec3aproof remain separate artifacts. No stored account/session or tenant data was changed by these probes. Normal options, records, persistence, exports, full final preservation and fresh independent review for the product-filtering task remain pending.
+
+Product UI and persistence checkpoint — 2026-10-25
+
+Native normal AdHoc UI compares full visible survey ID sets to database expectations: 334 PROs, 122 Measure and 1 Engage selectable survey. Root independently verified those exact IDs using raw product_license columns, and verified the five expected Engage form-version IDs through their assigned parent forms; the latter is classification evidence only, not yet a form-option UI pass. Evidence is product-scope-independent-option-classification.json. Browser harness navigation, transient success locators and duplicated toggle IDs required corrections; failed receipts remain. Native1084890 reports the normal UI retaining legacy draft survey816/practice1 and a completed PROs order. Native1085916 and persisted-orders.log confirm actual orders38/39/40 selecting PROs816/Measure724/Engage1004 respectively, with only the intended survey in each item set. No external invitations were sent.
+
+Normal task creation passed for PROs and Measure after correcting only the owned synthetic task template's invalid hard-coded sentiment reference; original sentiments and unrelated templates remain unchanged. Actual worklist verification then found a current row alongside a cached zero status summary; native is correcting the scoped count/export path. Focused tests currently pass3tests/85assertions. Shared dashboards, mixed children, form options, response details, exports, Virtual Concierge and final cold-start/source alignment remain under audit. Source changes after the earlier ec3a image require a final rebuild and actual-software pass; no task acceptance is claimed. Root prepared current-task history/assignment preservation and broader source/image verification scripts without changing application implementation. Existing before-task baselines remain untouched. Jenkins is unchanged, deferred and unverified.
+
+Independent form-options UI pass — 2026-10-25
+
+Root independently checked current preservation during execution: all44bounded original history-table fingerprints, all4generator configurations and all8survey/form product-assignment tables match the new before-task baselines. These are interim checks; later fixture cleanup still requires final verification. The same in-memory legacy-draft probe also passes on newly installed d5296f95d4cc2d3504595ce90809ab6cc9a1f12aea16d18f3f77df3a4f36bbbf.
+
+After confirming no native browser runner was active, root ran a separate normal-login/MFA browser form-selection check on that image. Through each product's normal navbar AdHoc entry, synthetic patient selection and Forms tab, the full visible ID sets equal independently verified database assignments: PROs0, Measure0, Engage5(form versions1–5). The fixture's five forms are all Engage-assigned; the empty other-product lists are expected. Visually inspected the Engage screenshot showing Insurance, Patient Pay, Patient Registration, Pharmacy and Telehealth Visit. No order submission, outbound message, session reset, entitlement change or application patch occurred. Root's fresh browser and loopback proxy closed normally with exit0;28connections routed to the local owned stack,57unrelated requests blocked,4ordinary SSEresponses and50SSEmessages observed. Receipts/screenshots/harness provenance are in ignored publish/supervisor-product-ui. Native continues the remaining linked-surface/UI/export audit; no final acceptance claimed.
+
+Linked-surface and pagination verification checkpoint — 2026-10-25
+
+Native extended existing product applicability to Virtual Concierge index/badge/snapshot/SSE/timeline, mixed-order communication history/compose/resubmit, product-aware API selectors and valid shared stock events. No new permission or stored product classification was added; Engage uses its canonical license/Intake alias and existing resource authority. Disposable PostgreSQL checks pass mixed child IDs/progress, foreign active-item suppression, linked response readers, serializable initiating survey populations and shared event-only containers for all three products. Focused checks pass4tests/91assertions. No outbound message or EHR action was executed.
+
+On installed8ba830ba5a235b14fbf7b30401a0199cce23087563b619033010875c58c936d4, root's expanded verifier matches156authoritative source files and all6API roles, including export/Reverb, with no source/preparation mounts; native Survey remains8ec3a566. The original isolated draft probe passes on this image too. Root independently verifies browser expectations via raw stored product_license joins, without AreaScope/forProduct: PROs33responses/34requests/331answers, Measure3responses/6requests/15answers. Exact response/request ID sets also match. Receipt: product-scope-independent-record-classification.json.
+
+The next native UI run first asserted the task percentage before its deferred component loaded; waiting for the actual component confirms the current count. A subsequent real failure showed response pagination dropping gate. Native1087260/1087685traced affected pagination/metric-refresh paths to PHP's global query array under the retained runtime and changed them to the active request query bag. This supersedes the8ba830source-alignment checkpoint and requires a new rebuilt pass. Native1088404reports PostgreSQL checks passing again and every PROs response/request page matching after the pagination rebuild; answer-total UI diagnosis, remaining mixed details/exports/restart and independent review remain open. Failed UI receipts are retained. No additional supervisor correction, owner question, application hand patch, framework change or remote delivery occurred.
+
+Task exports pass; normal Comments export remains open — 2026-10-25
+
+Real UI checking exposed existing optional-sentiment dereferences in grouped answers and response detail templates, producing500for valid saved answers. Native removed the unused/display-only assumptions without changing history/scoring. Native1090205reports all331PROs answers, response detail, foreign-product detail denial and mixed-event PROs request-link checks passing. Mixed editor's first403came from the harness's wrong practice ID; the actual fixture practice passes and shows only item39. A submitted foreign item42returns422before any write (native1090292); practice/authorization were not weakened.
+
+Actual task exports initially failed because whole-column spreadsheet formulas evaluated about a million rows for a one-row status summary and exhausted PHP memory. Native bounded the task-export formulas to actual status rows; no memory-limit increase or shared export framework change. Failed attempts remain recorded. Normal UI created one additional owned PROs task so populations differ, then two product tabs queued their own CSVs while preserving the initiating context. Actual downloaded exports1/2contain PROs2and Measure1; the fixed export completes in about0.1seconds (native1089676). Root independently parsed both CSVs and compared totals/status counts against raw tasks.area SQL; both pass, with file hashes in product-scope-independent-task-export-parity.json. A separate read-only runtime check confirms this fixture resolves mail.send=falseand the array driver; no external notification was sent or configuration persisted.
+
+Comments report UI renders scoped Measure data, but the normal export POST still returns500before queuing. A deployed-controller diagnostic with filter=[]does create an export; the broad browser polling loop later downloaded file4. Root identified that this is not normal-button proof and recorded the distinction without intervening. Native1090828independently confirms controller/worker success versus continuing browser failure and is tracing the actual HTTP request. Do not treat file4as normal UI acceptance. An unauthenticated/api probe correctly returned401; native will use existing normal web controls instead of changing auth or adding credentials. Comments UI export, remaining draft/linked/restart checks, final source/data verification and fresh independent review remain pending. No new owner question, supervisor correction, application hand patch or remote operation occurred.
+
+Normal Comments export and independent global-admin UI pass — 2026-10-25
+
+Native1090917traced the browser-only export failure to the existing privacy-v1agreement guard on the synthetic tenant5shadow user1. The isolated helper verifies no pre-existing agreement, creates owned receipt2, and confirms original agreement1for user2remains. This is a temporary test-account prerequisite, not an application guard change; receipt2must be removed during cleanup. Native1091115reports the normal browser POST succeeding. final-linked-gauntlet-fixture.log explicitly checks the export POST response before waiting for the resulting file6. Comments CSV parity passes30rows, preserving existing multilingual row behavior (response1=2, response2=2, response3=26). Root independently parsed the CSV, verified all three responses have raw product_license=measure, and matched row multiplicities to the retained raw SQL receipt. Initial root parsing expected integer-only cells; corrected to the existing ID - sentiment display format, with no product/data change. Receipt: product-scope-independent-comments-export-parity.json. The earlier diagnostic file4remains excluded from normal-UI proof.
+
+Saved searches previously used one URI across shared product pages. Native corrected the existing state owner so new product searches/pins remain separate while legacy URI-only searches stay shared and unchanged; focused checks pass5tests/99assertions. Actual saved-filter/draft continuation checks are still running. Native1091457also found missing gate propagation from shared grid links into progress/compose/refresh/prefill, and is correcting those links and linked prefill reads/submitted IDs. Public patient-token and global administration behavior remain in scope for preservation.
+
+After confirming no native browser runner was active, root independently repeated normal form-choice navigation and checked global survey administration on installed797b6b0f712ec25d3dcce79dc14af7bc4e4e7862abc5330059839e4be34d2b3b. Full option identities still match PROs0/Measure0/Engage5. After all product switches, the actual global admin page displays462surveys and its ungated normal count endpoint returns462. The container was running before the runner was created. Normal login/MFA,44loopback-routed connections,5SSEresponses/51messages, no browser retries; browser/proxy closed with exit0. Results: publish/supervisor-product-global-ui/current-runtime-result.json. No order submission, account reset, application hand patch or outbound send. Later linked-prefill source changes still require their own affected rebuild/UI/restart acceptance; legal/saved-filter fixture cleanup, final preservation and fresh independent review remain open.
+
+Product worklists, saved searches and linked readers — 2026-10-25
+
+Native1091651reports separate PROs/Measure saved searches and pins passing through normal UI while the legacy shared filter remains available. Engage live presence shows applicable request32and hides mixed PROs request30in snapshot, timeline and SSE. Later mixed-history scoring checks caught a misplaced product filter in an adjacent legacy reader; native moved it to the intended reader and preserved the failed receipts. Disposable PostgreSQL checks now retain exact PROs[1], Measure[3,4]including accepted unresolved history, Engage[2]and all global histories; temporary database/role cleanup succeeds. Original scoring and labels remain unchanged.
+
+Native1092748and final-dashboard-draft-settled-ui.log confirm normal PROs Daily/Comprehensive and Engage worklists, all-three-product episode identities against independent SQL, and mixed prefill showing applicable item39while denying foreign item42with403. Normal SSE/WebSocket/background services stayed enabled (9SSEresponses,6WebSocket connections). Legacy draft survey816/practice1remains selected. The interleaved-product test retains PROs816after Measure724is selected in another tab. Its next altered-submission check initially labeled its error as a foreign-ID acceptance; native1092841traced the actual request shape to malformed string input being normalized into an empty array and clearing the valid draft. Native is correcting input validation and checking malformed input and a proper foreign-product array separately, with draft retention and explicit product-only reset. No additional root coding correction or application hand patch. Final UI, temporary fixture cleanup, current-image/source alignment, exact preservation and independent task acceptance remain pending.
+
+Final product UI and preservation pass — 2026-10-25
+
+Native1092946and wizard-validation-final-ui.log confirm the rebuilt final wizard passes malformed and typed foreign-product submissions with422before state changes, a fresh request retains PROs816, and explicit PROs reset leaves Measure724selected in its other tab. Native temporary cleanup removes only owned saved searches1/2/3and their pins, owned privacy agreement2and owned presence30/32; original agreement1/user2is preserved. Normal proof orders38/39/40, mixed child41and owned task fixtures3/4/5remain as evidence. Original legacy-draft component probe passes again.
+
+Root independently verifies final running image29fd7bade93d88a392c6542e2ae33c95a7430d09a65140c7080b6167225069b1against192authoritative changed source/assets and all6API roles, all running without source/preparation mounts. Native Survey remains8ec3a56682f2438df87d24025b3493997999b7971bbe10375ebb9f4a65cf9863. After native fixture cleanup, supervisor-product-preservation.py exits0with all44bounded original history-table fingerprints, all4generator configurations and all8raw survey/form product-assignment tables matching the unchanged before-task baselines. This baseline includes prior accepted response36; no rebaseline or history restoration occurred in this task. Files product-scope-supervisor-images.json, product-scope-supervisor-preservation.json and product-scope-assignment-preservation.jsonretain the exact receipts. These checks do not claim coverage of unrelated table histories.
+
+The normal CLI is connected solely to stop the pilot after authoritative acceptance and before the unavailable deferred Jenkins proof. This is not yet an independent-review acceptance claim. No additional owner decision, supervisor coding correction, application hand edit, framework modification, credential reset, outbound message, remote operation or commit/push occurred.
+
+Final linked-read audit finds legacy compatibility gap — 2026-10-25
+
+After the earlier final checks, native continued the bounded shared-link audit. Normal Response Insights options match raw SQL:176PROs questions and14Measure questions. A legacy forms/dashboard/fetch_current assertion then failed because the fragment displayed generic distribution titles rather than survey names. Root read the retained rendered fragment only: two Your forms rows were present for mixed event30under gate=pros. Native1093237independently confirms the customer-bound legacy handler used an unfiltered item query; no root correction was sent. Default, NoPM and OneHealth current-item handlers now reuse existing ResourceQueryAccess narrowing, and explicit product reads retain permitted/selected practice restrictions. Unscoped/global behavior remains separate. The compose/history modal also now carries the initiating gate, including gate/practice on its send form; no send was executed.
+
+Native built the compatibility correction and then the compose-context correction. The earlier29fd7source-image alignment checkpoint is superseded; rebuilt focused UI, updated final alignment and independent task acceptance remain open. Failed title assertions and rendered fragment remain retained, and the corrected test checks actual row counts plus an empty foreign-product result rather than treating generic titles as record identity. This is additional native self-diagnosis during the same frozen task, not a new scope, user decision, supervisor coding correction or application hand patch. Root visually inspected the already-passing mixed PROs prefill and Engage worklist screenshots. No production/remote operation, external communication, credential change or data restoration occurred.
+
+Queued export context completion remains under verification — 2026-10-25
+
+Native1093471reports additional existing-control propagation fixes: compose links/form and validation recovery retain gate/practice; dashboard export forms and shared props retain gate; queued dashboard exports capture product in existing access metadata and recheck canonical tenant license in the worker. Ungated administration retains existing behavior. These are related submitted/queued paths in the frozen shared-page task. final-export-scope-units.log passes6tests/103assertions. Several incremental builds were needed as this late linked-flow audit found further gaps; the final rebuilt focused browser/export pass and independent acceptance are still pending. Earlier image29fd7and its UI receipts remain valid checkpoints for their tested behavior, not proof of these later source changes. No new owner decision or root coding correction was delivered.
+
+Late compatibility/export actual-software proof passes — 2026-10-25
+
+Root verifies installede9b6269a985e5a4f91e231b54f4442e085ae53ba619059c6e10185e42517b5cbagainst199current source/assets across all6running API roles with no source/preparation mounts. Native Survey remains8ec3a566. Native cold restart and syntax checks pass. The first new current-item marker fixture failed before any write because survey_requests has no form_data column; no schema/definition/distribution change followed. Native1093725corrected the fixture to distinct opened_at values on owned requests38/41, then restored exact original values with hashes. No root intervention was needed.
+
+final-linked-opened-export-ui.log passes normal PROs/Measure task/response entry and Response Insights options176/14against SQL, mixed current-item identity/count filtering, empty foreign200response and unchanged ungated shared contents, scoped compose with foreign404, validation recovery retaining context, and batch preview. Normal queued Comments POST302after switching to a PROs tab creates export7and downloads successfully. Eight ordinary SSEresponses/54messages observed; no new WebSocket connection is claimed for this run, while earlier full worklist pass observed6. No positive send occurred. Temporary legal agreement3was created only for the isolated shadow fixture, then removed; original agreement1hash is exact. Marker requests38/41were restored exactly. The failed fixture/browser receipts remain retained.
+
+Root independently confirms export7is byte-exact to the previously raw-SQL-verified Measure file: SHA2561a7c9ffab6e48ef1e30f216ff26acd4dab24a20e9ac9b216950516f2928841f8,30rows(response1:2,2:2,3:26), no foreign products. New receipt product-scope-final-comments-export-parity.jsonreferences the original independent parity without replacing it. After this UI/cleanup, root reruns preservation: all44bounded original history tables,4generator configurations and8product-assignment tables match unchanged before-task baselines. Original response36is still included, and no rebaseline or data restoration occurred. Final independent review/authoritative acceptance remains pending.
+
+Final Forms selector proof on e9b6269 — 2026-10-25
+
+Native refreshed the normal Forms-tab proof on the final build. Initial preparation/read-command errors and a failed Engage expectation were harness failures: the probe used an obsolete adhoc-select prefix instead of the rendered toggle-forms controls. Native1094216corrected the probe only, without application changes. form-options-controls-retry-ui.log and native1094376pass exact visible identities: PROs[], Measure[], Engage[1,2,3,4,5], with practice3retained through all three normal flows. Root inspected the current Engage screenshot as well. These are read-only definition choices, not a new native-form submission. Existing normal saved orders and prior native-form completion proof remain separately identified. Final current-image source alignment199files/all6roles,6tests/103assertions, focused real PostgreSQL checks, final linked/queued-export proof and exact preservation remain passing. Fresh independent review and authoritative task acceptance are still pending; no additional supervisor coding correction or owner decision.
+
+Independent review: Search Builder redraw gap — 2026-10-25
+
+Execution report1094536and execution_response1094556mark the bounded execution done. Fresh independent review starts1094560/1094561on thread01a17237-c207-7eb3-9b57-41d4a555f0e4, turn01a17237-c491-7cc3-941e-7fd27956ca00, at08:40:19Z. Reviewer independently reruns6tests/103assertions and all38disposable PostgreSQL checks, with database/role removed. Normal reviewer UI confirms task lists, full response/request pagination,331PROs/15Measure answers and mixed event children38/41. New actual task CSVs again match raw SQL2PROs/1Measure with normal SSE/WebSockets active. Deployed draft continuity and all44original history fingerprints pass.
+
+Review1095990finds one confirmed remaining in-scope defect: adding a Search Builder group drops gate on its redraw POST. The PROs picker expands334→462and offers foreign Measure survey724; Measure expands122→462and offers PROs816. An initial probe saw only the unloaded selector placeholder and did not establish leakage; the subsequent real loaded-choice check establishes the gap. This is a real shared-control behavior failure, not a formatting or review preference. Current task acceptance remains open pending correction and affected rebuilt UI checks; existing accepted tasks and evidence are retained. No owner question or additional root coding correction has been sent.
+
+Automatic review correction handoff — 2026-10-25
+
+Review response 1096501 at 08:47:14Z returns the confirmed Search Builder finding and preserves the completed checks, including independent normal legacy-draft, cross-tab and reset proof. Omnidex automatically opens fresh execution thread 01a1723e-27d8-7ee1-88b0-b031e94785e8 / turn 01a1723e-2abc-7c02-beee-c5cc7cabea02 at 08:47:19Z on the same step403/frozen107. No owner decision, root resume or source patch was needed. Native1096619acknowledges only the remaining redraw context gap, and1096624changes the existing filter-policy controller and editor template. Current e9b6269runtime proof is consequently superseded for these two changed surfaces; rebuilt affected UI and fresh independent acceptance remain pending. All earlier accepted tasks, before-state fingerprints and completed evidence remain intact.
+
+Search Builder correction verified; fresh review running — 2026-10-25
+
+The automatic correction changes the existing filter-policy controller and editor template to retain the initiating gate across redraws; 11 focused JavaScript checks pass. Runtime image 1305e6a5d45838e66029e9720e06255e10695c1849a2f0b5477763a330a16748 is built and all six retained API roles are restarted. Root independently matches 202 authoritative source/assets across those six running roles with no source/preparation mounts; native Survey remains 8ec3a566. The deployed legacy-draft probe still retains survey 816/practice 1, and native original-history/configuration checks pass.
+
+filter-redraw-final.log proves normal Add Group keeps PROs at 334 and Measure at 122 options, excludes foreign 724/816, and sends the proper gate on the fragment POST. Normal SSE remains enabled. The first probe additionally assumed an Engage Responses destination existed, but that page is absent from Engage navigation and correctly returns 404. Native stopped only the owned stalled probe and corrected this test assumption without adding navigation or widening a guard. Existing Engage dashboard, AdHoc and Concierge proofs remain applicable. Failed probe receipts remain retained.
+
+Execution response 1097512 closes this correction at 08:52:18Z. Fresh independent review begins 1097516/1097517 at 08:52:21Z on thread 01a17242-c633-7200-b5b2-57a2502f6bed / turn 01a17242-c8fa-7a02-ab86-da9923bf86cb, still step 403 and frozen 107. No additional owner decision, root coding correction, framework edit, commit/push or remote deployment occurred. Authoritative acceptance remains pending.
+
+Product applicability accepted and pilot stopped — 2026-10-25 09:01 UTC
+
+Fresh independent review 01a17242-c633-7200-b5b2-57a2502f6bed found no remaining defects. It independently passed 11 JavaScript tests, 6 PHP tests / 103 assertions, 38 PostgreSQL checks, real browser record/pagination/detail and all-three-product AdHoc choices, new PROs/Measure task CSVs (2/1), repeated Search Builder redraws (334/122), legacy draft continuation, separate-tab/reset and invalid-selection recovery. Normal SSE and WebSocket activity remained enabled. The authenticated Comments CSV matched native SQL (30 rows across three Measure responses) and the previously independently verified bytes. Original 44 history-table fingerprints, four configurations, product assignments and immutable catalog bytes remain unchanged. Review report: app-phoenix/storage/smoke/product-workflows/independent-review-r3-report.txt.
+
+Authoritative review_response 1099418 and task_accepted 1099419 were recorded at 2026-10-25T09:01:26Z for p_6b91b652cb77_1_task, step 403, frozen revision 107. The prepared guard then used the normal interrupt endpoint, HTTP 200. Read-only verification confirms job64 waiting_input, error NULL, generation39, current/frozen107; all six requested tasks are accepted and the unchanged deferred Jenkins task remains ready. Receipts: ignored publish/product-final-interrupt.json and product-final-interrupt-result.json. The normal CLI exited 0. No product-proof browser runners remain; task-owned compiled helper caches are absent. The retained isolated application runtime remains running on API image 1305e6a5d45838e66029e9720e06255e10695c1849a2f0b5477763a330a16748 and native Survey 8ec3a56682f2438df87d24025b3493997999b7971bbe10375ebb9f4a65cf9863. Root verified 202 source/assets and all six API roles without source/preparation mounts.
+
+Delivered in the authoritative source tree and verified through the rebuilt local software: product applicability follows shared AdHoc choices, records, tasks, responses/answers, worklists, linked modals, Search Builder, counts/pagination, saved filters and queued exports; legitimate shared and global administration behavior remains available within existing authority. Practice and per-product drafts are preserved. This was supervised work, not an autonomy claim: approximately 3 hours 53 minutes from task start to acceptance, one supervisor correction for pre-existing draft continuity, multiple native harness/build iterations, and one genuine independent-review finding corrected automatically without another owner decision or root resume. No application implementation was hand-patched by root. No Omnidex framework change, original-history restoration, source commit/push, remote deployment, external invitation or Jenkins attempt occurred during this task. Jenkins configured-credential proof remains unavailable, deferred and unverified. Current requested feature acceptance is complete; the pilot is stopped.
+
+
+Slack DM chat integration requested — 2026-10-25
+
+Owner requests staff-chat notifications in Slack and replies attributed to their Clinect user, clarifies Slack DMs only, and supplies company workspace https://clinect.slack.com. Root starts the existing Omnidex job64 through its normal CLI and submits a single scoped planning redirect before the deferred Jenkins proof. Six accepted tasks at frozen107/generation39 remain preserved. No source patch, commit, push, deployment, external message or Jenkins attempt is authorized by this task. Normal staff chat and in-app notifications remain authoritative; account linking must preserve canonical Clinect identity and customer/room membership. Configuration must be accessible through the application UI without production env editing.
+
+Discovery finds an existing Slack error-alert webhook only; no two-way chat bridge, bot app credentials, installation or connected Slack tool is available. The old alert webhook is not used for chat or testing. Official Slack OAuth, message.im, message delivery and signed-request documentation was consulted. Implementation and local actual-software checks may proceed independently; live provider DM/reply acceptance requires authorized app installation and test destination and remains unverified. Resource snapshot: about21GiB available RAM,16GiB disk free/99percent used; one heavy operation at a time and preserve shared resources. Existing retained synthetic runtime is available.
+
+Owner clarifications incorporated before implementation: workspace clinect.slack.com; canonical Clinect users live in central system settings, support clinecthealthcare.com/emergence.com emails and sync to existing client shadow users. One central linkage must serve the corresponding authorized client identities. Owner additionally requests a Connections tab in user settings with Slack and GitHub connections. Root steers the same new task through normal Omnidex messages; GitHub scope is authenticated account linking/status/disconnect, not added repository operations. Provider setup remains UI-accessible. Real Slack and GitHub app configuration/authorization remain unavailable, so fixture evidence cannot establish live provider acceptance. Six accepted task contract fingerprints were captured and independently verified unchanged at revision108.
+
+Connections task frozen and executing — 2026-10-25
+
+Task p_098ad1821154_1_task captures Slack DMs for clinect.slack.com, canonical central-user linkage with existing authorized client shadows for both email domains, and the requested user-settings Connections tab with authenticated Slack/GitHub linking, status and disconnect. GitHub scope is account linkage, no repository operations. All six earlier task contracts remain byte-equivalent under sorted-JSON fingerprints. Normal ledger controls place this task rank6 and deferred Jenkins rank7, retain prior agreement and approve the concrete requested task. Normal freeze receipt gives revision115/generation42. No internal SQL writes or application code patches by root.
+
+Observed supervision friction: the initial CLI connection replays very large prior history; one owner amendment raced a ledger revision and was rejected as changed state, then was reapplied once by explicit redirect. Planner assigned duplicate rank7 to the new/deferred tasks and reset the deferred item's review marker; root corrected ordering and restored agreement using normal deterministic controls, without replanning or changing the deferred contract. These are interventions, not autonomous success evidence. Provider app access remains unavailable.
+
+Supervisor source review finds test-only CLINECT_PROVIDER_FIXTURE_ORIGIN and hard-coded fixture URL added to shipped ProviderClient/config. Root requests that provider simulation remain confined to disposable verification infrastructure and the shipped override be removed, without dictating implementation. Two normal terminal feedback attempts are rejected as stale session/ledger state. Normal lifecycle interrupt/resume both return200 at unchanged frozen115/generation42 and preserve completed work. This is the first source-level supervisory correction within this task; root has not changed application implementation. Source review also identifies final verification areas: incoming-reply notifications and other recipients, full reply text, failure visibility, and normal settings navigation. Initial automated evidence is2tests/13assertions plus syntax checks; no live provider acceptance claimed.
+
+Independent full Slack reply reproduction — 2026-10-25
+
+Root posts a synthetic signed event through the normal local /clinect/slack/events endpoint to the retained synthetic customer5 chat, then lets the normal background service process it. No artisan/manual processing command, DB write or source patch is used. Receipt connections-full-reply-probe.json records HTTP200 and3122expected characters. Read-only result connections-full-reply-result.json observes status processed, one matching message and correct existing shadow sender, but only2000characters; ending marker and link are lost. This is a real runtime content-loss defect, not a harness timeout. Root submits an outcome-level correction through normal interrupt/resume controls (both200, frozen115/generation42unchanged), requiring full text/links, actual UI proof and affected checks while retaining accepted work and prior evidence. This is the second implementation correction from root in this task; live provider acceptance remains unavailable.
+
+Independent ordering reproduction — 2026-10-25
+
+Root submits two signed synthetic replies to the same existing test thread in first/second order, with provider timestamps in that order. The normal background service marks both processed but stores second/first as conversation sequences4/5. No manual processing command or DB mutation was used. connections-order-probe.json and connections-order-result.json preserve the request/order evidence. Root returns this concrete defect through normal interrupt/resume (both200, frozen115/generation42unchanged), requiring preserved incoming/outgoing conversation ordering, affected checks and rebuilt normal UI proof alongside the text-loss fix. This is the third supervisor implementation correction in the task; no root application code patch.
+
+Independent corrected-image pass and live UI observation — 2026-10-25
+
+All six API roles run image bfb077e216ff6ba509ad0cb5c028a70c1564e7abf4f28cbdcb5666ad8208bb40; host/running RealtimeChat and SlackChat hashes match. Independent new signed-event probes use automatic processing only. connections-full-reply-after-result.json passes3128/3128characters, full ending/link, one message and correct shadow identity. connections-order-after-result.json passes first/second order at sequences7/8. Original failing receipts remain unchanged. Native separately proves3790characters, links, ordered bursts, duplicate-event suppression and normal UI rendering after reload.
+
+Root independently opens normal settings/chat after real login/MFA. A stale retained auth state and one MFA navigation attempt were harness obstacles; no credentials, MFA state or sessions were reset. New signed reply Synthetic-live-UI-reply-7d2ccaad-b778-4b40-92e9-85149ef78032 is accepted09:45:28UTC and processed09:46:02UTC, but is absent from the already-open chat through09:46:58UTC. Root did not capture page visibility, so foreground-vs-hidden-tab cause remains unresolved. connections-live-ui-failure.json preserves the observation. A fourth verification correction is delivered through normal interrupt/resume, requiring automatic visible-chat update proof and a responsible fix only if needed; no forced reload, feature bypass or source patch by root. Existing provider and text/order evidence remains retained.
+
+Visible-chat check remains open after first stream fix — 2026-10-25
+
+Native finds that the lazy SSE reader resolves tenant stream names after middleware restores central configuration and adds captured stream bindings plus a regression check. Focused checks pass3tests/18assertions. Image2ac5e29cffe707221ebe259fc00f581451343c8593b053ad3ed82e49f8e5e538is running. Root repeats its actual UI probe after normal MFA/client entry and explicitly brings the chat foreground: visibility visible and document focused both before the signed event and at the end. New event42a6b605-c0e1-4e4a-a77e-2a9dd8e44793still does not appear during90seconds without reload. Native independently reproduces the same gap and continues tracing actual SSE/browser handling. No additional root correction was needed because the active task is already investigating this failure. Original failures and partial fix evidence remain separate; live-update acceptance is not complete.
+
+Independent open-chat and Connections UI pass — 2026-10-25
+
+Native identifies a second real stream defect: the reader exits after its first nonempty batch, and reconnecting at the current tail can skip the following content event. The corrected reader retains its stream window and resumes only authorized topic cursors. Focused cursor/stream checks pass 12 tests/69 assertions. Image 864695f557eea1c1acd75e7185d3f06d0054beb0c6159c40927dad4e57946c10 is running for the new proof.
+
+Root's independent supervisor-connections-ui/result.json now passes after normal login/MFA and client handoff, reusing only that browser's authenticated session. The existing full 3,128-character reply renders exactly. New signed fixture event 5fdc9892-a572-46dc-b9ef-f9a8d86f07d6 appears once in the already-open, visible, focused chat after 17,495 ms, through automatic background processing and ordinary SSE, without reload or forced snapshot. Normal settings navigation opens Connections with Slack/GitHub controls; screenshot visually inspected. Native separately proves a full 3,800-character reply/link and ordered replies with duplicate submissions through its visible UI. Original failed receipts remain retained. Provider recovery and final cleanup are still in progress; live Slack/GitHub acceptance remains unavailable without product app credentials. No additional supervisor source correction, external message, commit, push or deployment.
+
+Independent normal Send failure — 2026-10-25
+
+At the prior checkpoint, 223 current source/assets matched image 864695 across all six API roles; no source/preparation mounts. All 44 bounded original history tables, four generator configurations and eight product-assignment tables still match their original baselines (connections-supervisor-preservation.json and connections-assignment-preservation.json). Native subsequently adds a staff-room visibility check to the repaired stream path; its focused 13 tests/73 assertions and new build pass, but deployment/UI acceptance of that later change remain open.
+
+Native's recovery browser cannot submit a new chat message, so provider recovery has not yet been exercised. Root independently reproduces through normal UI with its existing authenticated session: supervisor-connections-send-ui/result.json selects room c2312449-96ec-4f1d-9939-5ae78747cbce, fills marker 490bd4c2-7b1a-4151-a234-7cfd4098c1e0, and clicks visible Send. After 30 seconds, no messages POST, no rendered message, and the draft is empty. Successful typing requests instead reference c8ca8de4-d758-449c-849f-d062550e73b1. The screenshot and safe request-path trace are retained. No provider control, credential or application source was changed by root. A fifth outcome correction is delivered through normal interrupt/resume (both 200), preserving frozen revision 115/generation 42 and prior accepted tasks. Require correct selected-room send and draft preservation if unsent before completing provider recovery; do not treat this as a Slack failure. Current task remains in progress.
+
+Refined Send evidence corrects readiness interpretation — 2026-10-25
+
+The preceding root probe did not wait for the selected room's own composer before filling the existing input. It therefore does not establish draft loss in a fully loaded selected room. Root explicitly corrects that interpretation. supervisor-connections-send-ready-ui/result.json waits for the requested room's composer, then types marker 3759b33e-d362-43fd-847a-76da294e3afd with ordinary keystrokes. The message POST targets the correct room, returns HTTP 429, and retains the entire unsent draft. A single short message produces 145 typing requests (144 observed 200 responses); the 429 cause remains unestablished. The root browser is closed afterward. No application edits or provider-mode changes by root. A sixth feedback intervention (an evidence correction/refinement, not a new feature) uses normal interrupt/resume, both 200, same frozen115/generation42. It tells native to avoid treating the earlier readiness race as proof of fully loaded draft loss, investigate only confirmed ordinary-chat failures, and preserve authorization. Both original and refined receipts remain retained.
+
+Independent rebuilt Send pass — 2026-10-25
+
+Native identifies typing traffic consuming the existing shared user request allowance. It preserves those protections, coalesces typing updates, suppresses redraw-induced blur traffic, prevents duplicate concurrent sends, and retains newer drafts with visible failure feedback. Focused JavaScript controller checks pass 13 tests; PHP stream/security checks pass 13 tests/73 assertions. Rebuilt image ad9bb1682d2d07ed37f5d1a3f391d5cd84f33f9a5fbcd1ef7761e09b94d439e9 is running.
+
+Root independently repeats the selected-composer, ordinary-keystroke test on this image. supervisor-connections-send-final-ui/result.json passes: two typing requests, one correct-room message POST with HTTP 200, one visible saved message, and the successful draft clears. Marker 9ce6149c-5887-466c-aa74-5349a50c7d68 is synthetic and unique. No special request interception, manual backend processing, source patch or provider-mode change is used. Native's separate normal UI has also created its two recovery messages and is checking automatic retry/order; provider recovery, final cleanup and live-provider acceptance remain separately open. No additional root correction.
+
+Provider recovery UI passes — 2026-10-25
+
+connections-supervisor-images-ad9bb168.json verifies 225 current source/assets and all six API roles on ad9bb168, without source/preparation mounts; Survey remains unchanged. Native recovery-result.json passes all four Slack cases through normal UI and automatic background processing: rate_limited, token_revoked, missing_scope and provider_unavailable. Original messages remain visible, later messages wait behind predecessors, and recovery delivers exactly once in order. Revoked credentials and missing permissions show actionable Connections feedback and recover through verified same-account reconnect. Root's separate successful UI message also appears exactly once at the synthetic provider.
+
+GitHub cancellation preserves the saved link; authentication failure and successful reconnect pass in normal UI. One strict text locator matched both the inline alert and notification; native corrects only the observer and continues without repeating cancellation. Native separately reports a two-worker duplicate/restart receipt check passing; this targeted component check is not substituted for automatic-background UI evidence. Current final restart, multi-client UI and cleanup remain in progress. Real Slack and GitHub acceptance is still unavailable without their product app credentials, and no external message, commit, push or remote deployment occurred.
+
+Final execution proof and independent review — 2026-10-25
+
+Native final restart matches encrypted setting digests, all three central provider connections, generations and existing shadows for clients5/6. Final visible UI on ad9bb168 passes ordinary keystrokes/Send (two typing requests), full3,800-character reply/link, ordered burst, exactly three intended messages and three in-app alerts without reload. A second authorized client receives its fresh reply automatically under its existing shadow. Browser-network failure retains the draft with truthful feedback; ordinary retry saves once with no duplicate. Durable final receipts record14delivered notifications,29processed incoming events and4intentional rejected events, with no pending work at the execution checkpoint. The temporary customer5/6 chat flags are restored to absent, and the44original bounded clinical histories/four configurations remain unchanged. Source/embedded catalog hash6466327fd7146de8e2897f98c383d140dd5346d1afeee9c21afabb25534e7f55is unchanged. Root's disposable browser/proxy processes have closed, and its auth-private.json is removed; receipts/screenshots remain.
+
+Execution1120509reports done at10:32:03UTC, explicitly leaving both real-provider acceptance paths incomplete. Omnidex automatically opens independent review1120513/1120514on thread01a1729e-1b56-7ed3-8d87-2123deb960ef. Synthetic provider infrastructure and data are retained for this review, not claimed cleaned up yet. Reviewer independently reruns13PHP/13JavaScript checks and source-image comparisons successfully. Its fresh account-linking browser has setup failures under diagnosis; no new product defect or final task acceptance is yet established. Six earlier accepted tasks and the deferred Jenkins item remain unchanged. Root has not patched application implementation or added a review stage.
+
+Independent review confirms one valid-text defect — 2026-10-25
+
+Reviewer's initial reconnect refusal was correct: the shared synthetic provider had selected the other synthetic user's account. Its observer chooses the matching verified fixture identity and continues. independent-review/result.json then passes fresh UI configuration/save/reopen, disconnect/reconnect for both providers, secret non-rendering, selected-room Send with two typing requests, offline draft retention, and automatic visible3,689-character reply/link plus ordered burst and three in-app alerts under the existing shadow. Focused boundary checks verify encrypted credentials and explicit existing mappings in clients5/6, rejecting inactive/stale/foreign and email-only mappings. No application change was needed for those checks.
+
+Review1121205identifies one actual remaining defect: a valid signed text reply containing only `0` returnsHTTP200 but creates neither durable event receipt nor chat message. Event intake's PHP empty check discards this nonempty string. Normal accepted events process, unauthorized sender/unknown-thread events reject, and bot/bad-signature events remain excluded. Correction and affected rebuilt-software proof are pending; existing passes are retained. This finding comes from Omnidex's independent review, not another root coding intervention.
+
+Connections local closeout; real-provider acceptance pending — 2026-10-25
+
+Review1121644automatically hands the valid-text finding to fresh execution1121650/1121651on the same frozen115/task. No owner action or root code patch is needed. Event intake now preserves the string `0` while rejecting blank/non-text payloads. Focused PHP checks pass14tests/76assertions. Final image37add24933121c1358a527dfef279fd10a8253ae33ea1ccf2d047b623c4a7285is built and restarted across all six API roles. zero-reply/result.json proves two identical signed requests produce exactly one message with body`0` under existing customer5/shadow3, one in-app alert, and automatic visible-chat appearance without reload. All44original history fingerprints/four configurations still match, and temporary chat flags are restored. Earlier13JavaScript checks,37real PostgreSQL/Redis component checks, full-text/order/recovery/restart/multi-client UI results remain retained separately.
+
+Execution1122586stops at the real-provider boundary with response kind permission. Authoritative job64is waiting_input, frozen115/generation42; the Connections item remains ready/unaccepted, six earlier tasks remain accepted, and deferred Jenkins remains ready/unchanged without retry. This is implemented and locally verified work, not full live-provider acceptance. Authorized Slack app installation/credentials and a real DM/threaded-reply round trip remain missing; GitHub separately needs an authorized OAuth app and real account-linking round trip. No waiver is inferred and no repeat owner question is sent.
+
+Root final cleanup validates that all three provider links and both app configurations are synthetic and no delivery/event work remains pending. It uses the existing disconnect service to clear the three personal credentials, then deletes only the two validated synthetic app configurations, preserving users, mapped shadows, chat history and receipts. The six retained API roles are recreated on the final immutable image without temporary TLS mounts; only standard-catalog-proof-connections-fixture-1 is removed. Other retained services/data stay intact. The owned CLI cache is removed using its runtime UID after root-UID traversal was denied; cleanup succeeds without changing permissions. Supervisor browser authentication state is removed and browser/proxy processes have exited. Reproducible fixture inputs and evidence remain in ignored task locations.
+
+connections-supervisor-images-final.json verifies225current source/assets, all six API roles and no source/preparation mounts; Survey stays8ec3a566. connections-cleanup-final.json confirms zero provider app configurations, zero stored personal provider credentials, three disconnected synthetic links, zero pending events/deliveries, no provider fixture container, and HTTP200from the local sign-in page. API/Reverb health is healthy and all six roles are running. Omnidex CLI exits normally with /exit; the guard has stopped. No application implementation was written by root, no subagents were spawned, and no commits, pushes, production deployments, external real-data messages or Jenkins runs occurred. Local task work is now stopped pending real provider setup.
+
+Native client learning and suggestions requested — 2026-10-25
+
+Owner requests Axiom-inspired vector/statistical suggestions inside Phoenix, with no Axiom integration: learn a client's own staff decisions and custom labels from its existing and ongoing actions. Root finds the local canonical Axiom checkout at /home/gryph/Projects/clinect/axiom and reads source/README/privacy guidance only. Its scorer uses controlled-term vectors, learned classification parameters and weighted cosine topic matching. No private model bundle, customer dataset or remote Pocket data is read/copied. Phoenix already has explicit staff-attributed tags/sentiments, task assignment/status events and response-review decisions; these are existing application boundaries, not an invitation to add unrelated clinical automation.
+
+Root sends an ordinary /redirect request through installed Omnidex v0.5.0 Charmeleon in the authoritative production-suite workspace. Job64 enters planning. Requested outcome is one cohesive native client-specific learning/suggestion task before the unavailable Slack/GitHub proof and deferred Jenkins. Preserve all eight prior contracts/implementation/evidence, including six accepted tasks; keep both blocked proofs pending without retry. The task includes attributable historical/current decisions, corrections, indexed vector/statistical retrieval, honest support/uncertainty, authorized staff-confirmed UI actions and automatic durable background maintenance. No cross-client pooling, unaccepted-prediction training, external AI/Axiom runtime dependency, private Axiom asset copying, extra approval/global gates, or source-history overwrite. Scope includes actual existing classification/decision surfaces rather than an isolated example or unused framework.
+
+Root will pilot actual rebuilt local software using synthetic data and ordinary staff workflows, preserve other retained data/resources, and record measured results separately from predictive-accuracy claims. Initial host pressure: about21GiBavailable RAM and15GiBfree disk; one heavy operation at a time. No application source edits, new source copies/worktrees, subagents, commits/pushes, remote deployment, Jenkins or external real-data messages. Current retained app image is37add249; cleaned Connections provider infrastructure must not be recreated. Baseline task plan/fingerprints are retained in suggestions-plan-before.json and suggestions-prior-task-contracts.json. The CLI session is40953; planning details and final implementation/verification remain pending.
+
+Native suggestions plan approved and running — 2026-10-25
+
+Planning step410 creates p_c83be0fc6db7_1_task. Root compares the concrete plan with suggestions-plan-before.json: all six accepted task contracts are byte-for-byte unchanged, and the two pending contracts differ only by ordering/review state. Through normal plan decisions, root puts the new task at rank6, restores agreement on the unchanged pending contracts and freezes revision121/generation43. The unavailable Connections and Jenkins proofs remain unaccepted at ranks7/8. Execution step411 starts in fresh thread01a172b5-cf32-7d11-a68d-cb8371e5d268. The normal-interrupt guard session97951 watches acceptance of the new task and six existing accepted tasks, then stops before either unavailable proof. CLI40953 remains attached. No implementation feedback, root application patch or owner intervention has been needed at this point.
+
+Native suggestions implementation and initial checks — 2026-10-25
+
+Execution step411 adds client-local sparse lexical TF-IDF vectors, a PostgreSQL change journal and rebuildable examples/term index, background processing on the existing tenant scheduler, authorized task suggestion/dismissal controls, and investigation review suggestion integration. This is ongoing implementation, not acceptance. Initial focused checks pass2tests/8assertions. Disposable PostgreSQL checks pass fresh migration, repeat processing, explicit attribution, correction/removal, changed-context invalidation, historical source backfill, derived-state rebuild and rollback. The term lookup uses its primary index; this is not yet full retrieval performance evidence.
+
+Root independently uses normal password/MFA/client handoff to inspect the retained task-creation UI. It exposes both title and narrative fields. No application data is changed by this preflight; the browser/proxy exits and task-private authentication state is retained only for the forthcoming UI proof. Root will test realistic narrative cases, client isolation, corrections, authorization and common-term retrieval performance after final rebuild/restart. Read-only review concerns are provisional while implementation continues. No root application patch or implementation feedback has occurred; no new owner intervention is needed.
+
+Native suggestions intervention1: removal learning lost on the next pass — 2026-10-25
+
+Root independently extends the disposable PostgreSQL scenario to run a second idle reconciliation after an attributable unassignment. The first pass retains one active remove_assignee example; the next pass drops the count to zero without any further source action. The expected persistence assertion fails. This is a concrete derived-state regression, not a normal-UI acceptance result. Root used a separate staff_decisions_supervisor database on the task-owned isolated PostgreSQL service; the disposable test container and separate database are removed immediately afterward. The original builder fixture and retained application data remain untouched. Repro/source fingerprint/result are retained in suggestions-removal-reconciliation.*.
+
+Root sends outcome-level correction through normal interrupt/resume, preserving frozen revision121 and the same native task. Both operations returnHTTP200; request/receipt files are retained. The correction asks for removal/correction evidence to survive idle passes, retry and restart while genuine re-additions still supersede it, followed by affected checks and actual rebuilt-software proof. Root does not patch application source or provide an implementation. The prior stop guard exits at the temporary waiting_input state and is restarted after resume. Full acceptance remains pending.
+
+Independent correction retest and realistic-context UI setup — 2026-10-25
+
+Root reruns the unchanged removal regression in its separate disposable PostgreSQL database. The same second-pass assertion now passes with one active explicit removal example; the database/container are again removed. This establishes the responsible code correction, with running-UI recovery still pending. Omnidex separately reproduces the initial failure and verifies repeated passes, a fresh indexer, re-addition and subsequent removal.
+
+Both retained client migrations succeed through the existing operator. Root creates isolated task-owned configuration in client5 (type7/version6/group2, tags qx42#3 and mv77#4, existing neutral sentiment8), separate from the builder’s type6 fixtures. A first test-harness eval invocation includes a PHP opening tag and fails before execution; corrected invocation succeeds transactionally. No original definitions are edited. Through normal staff UI, root creates tasks9–14 with the identical title “Supervisor synthetic case review”: four narratives labeled through the normal tag modal (two transport/access and two billing/refund), then two distinct unlabeled narratives. All six narratives persist and sixteen staff event-stream responses are observed. No training decisions are inserted directly. Browser/proxy processes exit.
+
+The initial normal-UI observation on tasks13/14 shows pending learning and zero indexed cases in both. This is recorded as incomplete behavior, not a pass or a narrative-ranking failure. Root has not run a manual training command; automatic indexing is being diagnosed by the active Omnidex execution. Configuration, created-case receipts, rendered panels and private test-session state are in the ignored publish artifacts.
+
+Native suggestions intervention2: real case narratives ignored — 2026-10-25
+
+Omnidex autonomously diagnoses that the retained clients lack broader operational scheduler capability rows. It adds central native-maintenance dispatch through active tenant resolution/existing queue boundaries, preserving those operational settings. On rebuilt running image09c50ad78c391df1dcefb6aa55abd2e537b56dc2c69fabad4d0aee997d1a371b, the normal11:31UTC decisions:reconcile pass completes in982ms. Root has run no manual indexing/training command.
+
+Root reopens its two held-out narrative cases through the normal UI after automatic indexing. Both transport task13 and billing task14 receive identical tag suggestions: qx42support2/weightedSupport2/cosine1 and mv77support2/weightedSupport2/cosine1. Their original narratives differ and the four attributable training cases were tagged through real staff controls, but all share a generic title. The implemented title-only context cannot distinguish these ordinary cases. Rendered panels, full structured results and screenshots are retained with before-context-fix names; context-quality-before.json records the failed behavior and running image.
+
+Root sends this outcome through normal interrupt/resume (bothHTTP200) on the same frozen121/task, asking for relevant original case content to affect suggestions without requiring title rewriting or admitting decision/outcome leakage. Existing six-case text/labels/titles must remain unchanged for the correction proof. The stop guard is restarted after the brief waiting_input state. This is root intervention2; no root application patch, model-service substitution, invented training label, source-history edit or owner intervention occurred. Full task acceptance remains pending.
+
+Native suggestions intervention3: moved source content remains eligible under the old case — 2026-10-25
+
+Omnidex implements versioned original task/response context and passes focused PostgreSQL checks for original narrative use, later-comment exclusion, edited-input invalidation, deleted-original non-promotion and unchanged historical-input reconstruction. Final context build629b45b4d719aca92202b72a26021f9319844fec5ac53e29b385f85d60b34ce8succeeds and begins restart; the preserved six-case browser correction proof is still pending.
+
+Root independently extends the disposable PostgreSQL scenario to move an answer from response31 to32 after an attributed decision on the original case. The new case context includes it, but the original case still includes it too; one active original-case example continues matching the cached fingerprint and remains eligible before background reconciliation. This fails the required source-relationship invalidation boundary and can let stale context influence retrieval/statistics/explanations. The separate staff_decisions_supervisor database and disposable container are removed after the probe. Repro/result/source fingerprint are retained in suggestions-response-reparent.*. No retained task narrative or real source record is altered.
+
+Root sends outcome-level correction3 through normal interrupt/resume, bothHTTP200, preserving frozen121 and the existing task. It requests proper old/new ownership invalidation, unchanged earlier behavior, ordinary migrations where already applied, and continuation of full rebuilt-software acceptance. The stop guard is restored after resume. No root application implementation, owner intervention, new approval gate or scope expansion occurred.
+
+Independent ownership correction retest — 2026-10-25
+
+Root applies all three current ordinary migrations in its separate disposable PostgreSQL fixture and reruns the same answer-reparent assertion. It passes before background processing: oldContextStillContainsMovedAnswer=false, newContextContainsMovedAnswer=true, oldExamplesStillEligible=0. Existing removal, correction, retry, original-narrative and rebuild assertions also pass. suggestions-response-reparent-retest.json retains results and migration fingerprints. Only fixture migration setup changed to include the new220000 migration; the semantic assertion is unchanged. The separate database and test container are removed. Running-software narrative differentiation and broader final acceptance remain pending.
+
+Independent preserved-narrative browser retest — 2026-10-25
+
+After the ordinary migrations and rebuild/restart, root observes unchanged tasks13/14 through normal browser UI and authorized JSON on image8eb3495068a401fbce1a93191d8c04b691ff1170a277b3afab09774e818958ae. Transport task13 now ranks qx42 first (weighted support0.936, highest cosine0.527) over mv77(0.491,0.287); billing task14 ranks mv77 first(1.047,0.615) over qx42(0.455,0.275). Each tag has two distinct training cases. No manual training, title/label/narrative rewrite or root implementation patch was used. The source-context correction now differentiates these realistic generic-title cases; it does not establish real-world predictive accuracy. Outputs/screenshots are retained with after-context-fix names. A separate read-only layout probe overlapped migration/restart and timed out waiting for its panel; it is being retried on the stable runtime rather than counted as a product failure. Broader staff-control, permissions, coverage, recovery and performance acceptance remains pending.
+
+Root repeats the read-only layout probe after migrations complete. Refresh suggestions is visible and passes Playwright click reachability; the hit-tested point resolves to the actual button. layout-observation.json and layout-full-page.png retain the rendered result. The earlier timeout is not reproduced on the stable runtime. No source cases changed.
+
+Independent retained-data check during native suggestions acceptance — 2026-10-25
+
+Root runs the established bounded read/hash probes against the rebuilt runtime on all four retained synthetic clients. All44original clinical-table fingerprints, all4demo-program configurations and all8original survey/form product-assignment table fingerprints match their earlier baselines. suggestions-supervisor-preservation.json and suggestions-assignment-preservation.json retain results without overwriting prior-task receipts. The read-only CLI probe uses a new task-owned suggestions-supervisor-cli cache directory; remove that exact directory at final cleanup. Remaining feature acceptance continues.
+
+Additional Omnidex-led acceptance progress — 2026-10-25
+
+Builder normal staff-interface pilots apply client5 transport/foo and client6 billing/foo independently, then learn assignments and status decisions from two distinct source cases. Existing confirmation/unassignment/status actions succeed. Recorded removal revision57 remains active after restart and repeated automatic passes without multiplying support. Builder discovers and fixes API route nesting and later generic relationship-route interception autonomously; a focused route regression passes alongside vector checks (3tests/12assertions). Authenticated API acceptance remains pending until the corrected runtime is retested. Builder also corrects removal evidence omitted from target disagreement counts and binds response-review dismissals to original input hashes. No additional root outcome intervention was required.
+
+Builder declared disposable benchmark:1,000synthetic cases,1,000source tags,9,000postings; native index processing5.226seconds/about191cases per second; candidate/cosine kernel30runs median5.928ms,p958.566ms. The benchmark excludes HTTP and authorization, and is not a real-world accuracy or full-request performance claim. Root normal page loads plus authorized suggestion requests on the small retained corpus took1,251ms and740ms for cases13/14, with2SSEresponses. Remaining complete workflow/permission/recovery/performance acceptance and final review remain in progress.
+
+Independent API client isolation proof — 2026-10-25
+
+Root obtains a temporary token from the normal /api/token endpoint using the task-owned synthetic API account, without printing or retaining the token. In the retained local runtime: own-client suggestions200; same token on client6 suggestions401; wrong-product403; anonymous401. Denied responses contain no suggestion items. api-isolation-result.json retains safe results. The exact temporary token is then revoked through its normal token model in client5 using both recorded ID and unique task name; cleanup reports remaining0. Other tokens/users/data remain untouched. Browser/proxy exits. Existing builder API fixture credentials remain for the ongoing task and need their separate final cleanup.
+
+Native review-path acceptance continues — 2026-10-25
+
+Current local runtimee86d75fed6d40378e80bc7f81d127651bc033966aeb108f922f93f1930072fb3 includes the product-gate request-boundary correction for investigation create/review actions. The normal UI productUrl propagates gate, which previously entered a strict operation payload; product authorization remains, with only that transport parameter excluded from the payload. Builder creates synthetic source responses37–41 and a saved analysis/investigation without editing prior clinical rows. Ordinary response-review learning remains unverified; audit is tracing the inline saved-input path versus scoring-audit inputs. The current native ReviewIndexer onlyjoins scoring rows, so ordinary inline-review coverage needs completion before acceptance. Separate disposable failure-recovery probe passes source-save persistence during derived indexing failure and subsequent retry without duplicate support; that is a component result, not final runtime/UI failure-recovery acceptance. Root outcomes remain3interventions and no application source patches.
+
+Native suggestions intervention4: ordinary review rescope loses the saved input — 2026-10-25
+
+Root independently exercises current SavedReviewInputs with an authoritative PrivateStore synthetic run in a network-isolated disposable container. An initial fixture assertion compared JSON property order strictly and failed before testing the product outcome; it was corrected to canonical hash equality. The meaningful result is initialInputFound=true,rescopedInputFound=false,sourceUnchanged=true using the existing InvestigationService::rescope epoch formula. Thus new attributable reviews after ordinary scope changes can remain unlearned without a scoring audit. suggestions-review-epoch.php/result.json retain the repro and current helper fingerprint. No application source or retained data is changed, and the disposable container/tmpfs is removed.
+
+Root sends outcome-level correction4 through normal interrupt/resume, bothHTTP200, preserving frozen121 and prior accepted contracts. It requests correct source resolution across ordinary scope changes/revisiting an analysis while keeping prior review epochs separate, no invented historical context, no mandatory scoring/manual training, and full rebuilt-UI proof. The stop guard is restored after the briefwaiting_input state. Four root interventions total; no owner intervention, application implementation patch, subagent, commit/push/deployment, external real-data message or Jenkins run.
+
+Independent review-scope correction retest passes — 2026-10-25
+
+Root reruns the unchanged canonical-value component probe against corrected SavedReviewInputs. Initial and rescoped epochs both resolve the exact recorded input; sourceUnchanged remains true. suggestions-review-epoch-retest.json retains exit0 and source fingerprint. The helper resolves verified input identity/hash independently from decision-epoch identity; no prior decision is imported by the lookup. Disposable container/tmpfs is removed. Ordinary rebuilt review UI, revisiting scopes and remaining frozen acceptance still require completion; this is component evidence only.
+
+Preserved narrative cases on the later review build — 2026-10-25
+
+Root reopens unchanged held-out tasks13/14 through its existing normal staff session on image79f92bbe9b46154b69f85861d1b373f8ce8c020cb2db3bfc884799bfb122eef6. Both still rank the intended client-defined label first with the earlier support and similarity values; no source narratives, labels, titles or training rows are changed. Browser/proxy processes exit normally. The response-review original-text query has a subsequent source correction and still needs its own rebuilt UI proof. This repeat does not establish final source/image alignment or completion of the broader task.
+
+Native saved-review suggestions appear through automatic processing — 2026-10-25
+
+Builder rebuild0908d86cf232e5bf99e3d871392b1de09d0ca366e6996966a43b1fe172943425 captures the exact original synthetic answer IDs/narratives37–41 in new saved analysis a397fd47-822b-4935-ade8-5950e1485903 and investigation78b522af-fef1-4607-ab60-a4eaef2bdf4b. Earlier immutable attempts are preserved. Normal review checkboxes record included37/38 and excluded39/40 at12:44:33–34UTC. Automatic processing subsequently supplies two included examples to untouched response41 with weighted support1.511 versus excluded0.407. This is lexical similarity/support, not measured predictive correctness. Review actions/results and a visibly rendered expanded suggestion are retained in review-actions-ui.log, review-ui-result.json and review-suggestions-ui.png; root visually inspects the screenshot. Review apply/dismiss/correction/rescope and remaining acceptance are still in progress.
+
+Root's interim246-file image comparison confirms all six API roles use0908d86 with no source/preparation mounts; Survey stays8ec3a566. One controller has a subsequent active source edit, so complete alignment is not yet claimed. The interim receipt is suggestions-supervisor-images-0908.json; repeat the comparison against the final build. Available memory20.5GiB/free disk13.8GiB; no resource cleanup or shared service changes performed.
+
+Review rescope, revisiting, clearing and dismissal in rebuilt software — 2026-10-25
+
+Builder runtime8a0e4a68bf370a407976f6b8a86bbd92486be5bf979e0983ba5eb71d8696c168 passes review-scope-ui.cjs. Scope changes use the normal authenticated rescope API; subsequent reconfirmation, Return to unreviewed and Dismiss use actual browser controls. Both the alternate saved analysis and return to the original analysis begin with five unreviewed records and no inherited suggestions. After two real UI decisions, automatic processing supplies support2 to held-out41 in each fresh epoch. Returning37 to unreviewed immediately reduces held-out support to1; dismissing the remaining Included suggestion yields no suggestion while41 stays unreviewed. Both saved source hashes remain unchanged. review-scope-ui-result.json records13SSEresponses/22messages, no failed saves/retries and0WebSockets. This closes the actual-software counterpart of root correction4; authorization, API/bulk, failure recovery, remaining affected cases, final image alignment and independent task review remain pending. Four root outcome interventions total; none added for these successful checks.
+
+Permission and preservation results after review workflows — 2026-10-25
+
+Root independently repeats the established bounded preservation probe after the review/rescope exercises. All44original clinical-table fingerprints,4demo configurations and8survey/form product-assignment table fingerprints still match the baselines across clients5–8. The root CLI cache remains task-owned and queued for final removal. Builder authorization-api-result.json records real authenticated requests: cross-client bearer401; permitted target with no permitted training cases200 with empty items/indexedCases0/candidates0; out-of-resource-scope403; revoked user permission403. This is API evidence, not a claim of every UI permission state. Builder also excludes configured initial statuses from human-transition learning and adds regression coverage; final rebuild/affected proof and remaining checks continue.
+
+Current implementation alignment and preserved narrative proof — 2026-10-25
+
+Root verifies249current runtime source/assets against running image6ef8f4153259915edbb1a45de6cdddb55f824341b5c50e24b57002defa97778e: no mismatches, all six API roles running the same image, no source/preparation mounts, Survey unchanged8ec3a566. suggestions-supervisor-images-final.json is the current comparison receipt, not a whole-task completion claim; repeat if implementation changes. The root helper includes prior checked files and all current modified/untracked runtime files in the authoritative tree.
+
+Through the existing normal browser session, unchanged held-out13/14 again pass explicit assertions that their independently taught tags rank first. Transport weighted support0.943(qx42) versus0.528(mv77); billing1.067(mv77) versus0.488(qx42). Each has two distinct supporting cases. Permitted indexedCases is now4, consistent with excluding the configured initial statuses. No training command or source-case edits occur, and browser/proxy processes exit. Remaining administration, source-move, recovery/concurrency, cleanup and independent task review continue.
+
+Automatic derived-index recovery added during acceptance — 2026-10-25
+
+Builder extends native background reconciliation to recover missing/damaged task and review vectors/index entries from retained attributable facts. recovery-final-postgres.log passes damaged vectors, missing postings and missing task projections without changing original actor/time/revision or multiplying support. review-recovery-postgres.log passes the corresponding saved-review recovery plus prior correction, unreviewed, rescope and revisit behavior. Focused PHP checks remain5tests/19assertions; lint passes. This is source/component evidence only: these changes follow image6ef8, so its prior249-file comparison and browser results are no longer final-source acceptance. Fresh build/runtime recovery proof and the remaining actual-software scenarios are still pending. No additional root outcome feedback or application-source patch is made.
+
+Operator completion nudge after a pause in observable work — 2026-10-25
+
+The last public implementation/test command completed at13:32:46UTC; the native event stream remained active, but no further public action/result appeared before13:43. Root checks only lifecycle/type metadata and public messages, not model reasoning content. This is an observed pause in useful output, not a demonstrated provider error or an imposed active-work timeout.
+
+Root sends one outcome-level completion nudge via normal interrupt/resume, bothHTTP200, preserving job64/generation43/frozen121/task/step411 and the same thread01a172b5-cf32-7d11-a68d-cb8371e5d268. New turn01a1734d-86ff-74d0-a745-765f89eab54d begins13:43:43UTC. Native immediately acknowledges the retained recovery evidence and resumes public verification commands. Request/receipts are retained as suggestions-progress-steer-1-*; the existing final-stop guard is restarted as session17555. Five root interventions now: four reproduced-defect corrections and one progress nudge. No owner intervention, new ledger/review stage, source patch, reset or scope expansion is introduced. Remaining acceptance continues.
+
+Coordinated independent software verification — 2026-10-25
+
+Root interrupts through the normal lifecycle to avoid concurrent fixture mutations while performing available acceptance itself. Job64 remains waiting_input/generation43/frozen121; this is a coordinated verification hold, not task cancellation. Native completed its recovery build and six-role restart before stopping. Root compares249current files against imagea82fd2a24ea57162302f4aff90479639fd4dcbab23b022585fd3fd1c0313e968: all match, no source/preparation mounts, unchanged Survey8ec3a566. No root application source edits occur.
+
+Prepared label-lifecycle-ui.cjs passes normal existing-account/MFA/client entry and authenticated admin form submission for foo rename, retirement and restore. Suggestions use the renamed label, exclude the retired choice and restore the original label afterward. This uses browser-loaded forms and their ordinary HTTP actions, not literal clicks on each Save. label-lifecycle-ui-result.json and its log record the result.
+
+Root's supervisor-suggestions-recovery.py REPAIR_ONLY pass removes only derived postings and sets derived vectors to null for synthetic task example30 and review example9. The normal scheduler/queue repairs both automatically in33.559seconds without a training invocation, preserving complete source rows, task/review decisions, actor/time/revision and source hashes. Exact proof token is revoked; the temporarily paused isolated queue is unpaused in finally. suggestions-supervisor-recovery.json records these assertions. This is actual scheduler/worker/database proof, separate from UI evidence.
+
+The first normal bulk API attempt returns500 and leaves source tags2/8 unchanged. A read-only middleware probe identifies the synthetic API account4's missing privacy-v1 agreement; the request has not reached the decision writer. This is an incomplete fixture prerequisite and an observed existing API error presentation, not a demonstrated learning regression. No agreement bypass, access change or application patch is made. The full bulk/unavailable-worker save scenario remains unproved; complete normal test-account setup and repeat it. Root's existing preservation probe again passes all44clinical-table fingerprints,4demo settings and8product-assignment table fingerprints across clients5–8. Root intervention count is now6: four reproduced defects, one progress nudge and one coordinated verification hold. No owner intervention.
+
+Fresh existing password/MFA login then passes the final root UI repeat on a82fd2: unchanged13 favors qx42 (weighted0.943 vs0.528), unchanged14 favors mv77 (1.067 vs0.488), each with two distinct supporting cases/indexedCases4. The attempted reused session first failed to reach the panel; this was resolved by normal login, without resetting identity or MFA. Browser/proxy processes exit. Root sends concrete results through normal resumeHTTP200, preserving frozen121/generation43 and the same task; guard38804 now watches for acceptance before deferred work. No further root implementation or fixture mutation is concurrent with native execution.
+
+Bulk-write software proof and affected UI correction — 2026-10-25
+
+Native completes user4's privacy-v1 prerequisite through normal login and agreement submission. api-bulk-recovery.log then passes normal two-record API saves with the isolated queue paused: source choices persist with4pending journal entries; after unpause automatic processing learns both in22.753seconds, and the ordinary suggestion API reports support2. The original sentiments are restored through the same authorized API and learned automatically in66.394seconds. Task-owned proof token is revoked. This closes the earlier fixture prerequisite without widening permissions or bypassing agreement.
+
+Root's read-only layout probe on a82fd2 confirms Refresh suggestions is visible and hit-tested at its actual button, with the preserved learned narrative rankings. The full panel element screenshot was clipped by its scrolling container; layout-full-page.png and layout-observation.json show the actual reachable UI. No root fixture mutation occurs.
+
+Native's review interaction test finds a real focus defect: disabling the clicked action button drops focus before the asynchronous save completes. Native moves focus to the retained checkbox before disabling buttons and builds/restarts the corrected image; final runtime recheck remains pending. Ownership harness stops on valid201creation responses, then duplicate-answer and request-creation permission boundaries; these failures are retained and resolved through fixture preparation without weakening those invariants. Source ownership acceptance is not credited yet. No additional root intervention beyond the six already recorded.
+
+Final rebuilt functional results — 2026-10-25
+
+All six API roles now run fa897356fdd6a55336756d5e15ede5f01e5edac8d6a0c1f3ea184bdab1eac73b. Root's249-file comparison passes with unchanged Survey and no source/preparation mounts. Native interaction-final-result.json proves the same review checkbox stays connected and focused after Return to unreviewed and confirmation. No visible text selection field was present, so selectionPreserved:null is not credited as a text-selection test. Three SSE responses/messages and no failed saves/retries are recorded for that interaction; no WebSocket claim.
+
+ownership-runtime-empty-final.log passes actual normal-API source movement348 from response37 to the task-owned empty42, with the worker paused. Both original/new contexts refresh immediately and old projected examples become ineligible before retrieval. Normal API restoration returns the original text; existing responses and source rows are preserved. Tasks17/18 and their synthetic setup remain attributable evidence. api-status-bulk-final.log proves explicit two-case status transitions and restoration learned under API actor4; repeated processing does not multiply cases. The initial201, duplicate-field, unauthorized request-creation and restart502 harness attempts remain documented; none is waived as success or used to weaken permissions/invariants.
+
+The final running-UI failure scenario deliberately damages task example30, shows truthful suggestions-unavailable feedback, and successfully saves/corrects a different synthetic tag through the normal API while the worker is paused. After unpause, automatic repair completes in271.426seconds and the UI recovers. failure-ui-result.json records unchanged original vector/provenance,28SSEresponses/67messages,0failedsaves/retries and0WebSockets. Root independently observes the still-damaged eligible revision83 during the wait and later observes its repaired vector plus a reset recovery checkpoint; no manual indexing or source fix is invoked. This observed4.5minute repair delay is retained as an operational limit, not described as instant recovery. Earlier33.559second repair remains a separate observed run. Native final preservation fingerprints pass. Cleanup and the normal independent Omnidex review are still outstanding at this record entry.
+
+Final UI state and temporary-resource cleanup — 2026-10-25
+
+Native final-software-ui-selection.log passes unchanged13/14 rendered rankings on fa897356, recovered suggestions on16, focus on its existing Edit link and selected existing heading text retained through an asynchronous suggestions refresh. The refresh is triggered programmatically while focus remains outside the panel; this proves background replacement preserves outside state, not the keyboard focus of the Refresh button itself. Earlier attempts incorrectly assumed this view contained an ordinary input/filter and are retained as harness failures. Final run observes5SSEresponses/messages and no failed saves/retries.
+
+Native credential-cleanup-result.json revokes4task-owned API tokens, deactivates synthetic user4 and retains its identity/history. The task-owned disposable PostgreSQL container/network are removed; retained application services and evidence fixtures stay available. Root removes only supervisor-suggestions-ui/auth-private.json and its own runtime cache at /var/www/storage/smoke/suggestions-supervisor-cli asUID10001; all root browsers/proxies have exited. Six root interventions and no owner intervention remain the measured supervision. Independent Omnidex review is still required before acceptance.
+
+Execution handoff to independent review — 2026-10-25
+
+Execution returns done at14:13:05UTC. Omnidex opens fresh review thread01a17368-7be9-7d72-a2c2-dbb536b59ed3, turn01a17368-810e-7861-9913-cf30a0f409c8 at14:13:11UTC for the same frozen task/step411. Reviewer independently reads code/evidence, verifies current image and begins focused checks plus a normal-UI repeat. Root verifies both the native temporary API credential file and its own private browser session are absent. No task acceptance is inferred from the execution's done response; guard38804 remains active for the actual review outcome.
+
+Independent review finds one actual recovery defect — 2026-10-25
+
+Reviewer passes focused tests, fresh disposable PostgreSQL migration/removal/context/review regressions and a fresh normal-UI narrative/focus repeat. Its additional superseded-status repair scenario finds that replaying an older task-post status deactivates the valid current status projection before checking whether the replayed source is current. In the disposable database the valid current decision remains absent through six ordinary passes. The running fa897356 reproduction removes only older example33 postings, lets the real scheduler process recovery, then observes current example35 inactive and held-out16's status support fall3→2 while source post history remains byte-identical. Evidence: independent-review/superseded-status-repair.json and status-repair-live-result.json. Reviewer restores its exact derived test state and verifies support3; this is test cleanup, not a repair success or acceptance claim.
+
+Review returns one concrete P2 finding at14:19:55UTC. Omnidex automatically starts a fresh corrective execution session for the same task/step411 at14:20:00UTC: thread01a1736e-bbc9-76a0-99e0-d763d733e715, turn01a1736e-bfd2-7c82-adc9-19bd45fb605f. No root intervention, new ledger or scope expansion is introduced; six root interventions remain. Passing evidence is retained, and task acceptance remains incomplete until this responsible-layer correction and affected rebuilt software proof pass.
+
+Status-recovery correction and rebuilt proof — 2026-10-25
+
+Corrective execution moves the current/latest-post identity check before status-family deactivation in DecisionIndexer. It adds the reproduced superseded-status scenario to the PostgreSQL regression script; six fresh-indexer passes preserve the current example. Existing source/context/removal/rollback regressions and5tests/19assertions pass. All six API roles are rebuilt/restarted to4dd920f3f782d8e0987a3f7c3a392802dbaf41b2b812e9657094b40be15724db; root independently compares249files with zero mismatches and confirms no source/preparation mounts and unchanged Survey8ec3a566.
+
+Normal password/MFA UI plus automatic scheduler replay then preserves support3→3 and the exact source-history hash. status-replay-fixed-result.json records the corrected image, current projection active, rendered permitted examples/provenance,7SSEresponses/10messages and no failed saves/retries. The test observes the old durable fact's processed_at change before asserting the result; no manual indexing or source decision is used. An initial harness mistakenly waited for obsolete inactive postings to reappear and was stopped/corrected; it is not credited as product failure or success. Derived test postings are restored in finally; the current active flag is not manually repaired by the corrected proof.
+
+Corrective execution returns done14:26:51UTC. Omnidex opens a fresh review at14:26:55UTC, thread01a17375-12aa-77b2-95dd-fcc4bacad47f, turn01a17375-1628-78e0-8503-88dcfcc47390 for the same frozen task. Root intervention count remains6, with this additional concrete defect discovered/corrected through the normal product review path. Actual independent acceptance is still pending.
+
+Native Phoenix suggestions accepted and pilot closed — 2026-10-25
+
+Independent review returns no findings at14:34:09UTC; authoritative task_accepted evidence1147385 follows immediately. Its fresh focused tests pass5tests/19assertions; disposable PostgreSQL regressions pass migrations/rollback, corrections/removals, input ownership, review scope and repair, including six superseded-status replays. Its own normal-password/MFA UI run observes automatic old-status replay with current support3→3, unchanged source history, correct untouched13/14 label rankings, and rejected wrong-product/missing-bearer requests.15SSEresponses/30messages and no failed saves/retries are observed. All44bounded history fingerprints,4demo configurations and immutable catalog bytes match baseline. Review source/image checks agree with root's249-file comparison of final4dd920f3 across six API roles. Independent repeat benchmark:1000synthetic cases indexed6.50seconds and candidate/cosine kernel median5.11ms, explicitly excluding HTTP/auth and real-world accuracy.
+
+Review evidence and cleanup are retained in app-phoenix/storage/smoke/decision-learning/independent-review-20261025/review-result.json. Normal guard38804 sends interruptHTTP200 after acceptance. suggestions-final-state.json confirms job64 waiting_input, generation43/frozen121, seven accepted tasks including the requested native suggestions, and both unavailable provider/Jenkins tasks still ready/pending. The CLI40953 exits normally through /exit with exit0. Root temporary credentials/cache were already removed; review-owned disposable resources and CLI cache are cleaned, and the verified local application remains running.
+
+Delivered scope: native client-specific lexical vectors, indexed cosine/statistical evidence and staff-confirmed suggestions across attributable tag/sentiment, assignment/removal, status and recorded-review workflows, with automatic backfill/correction/recovery and current authorization boundaries. No Axiom integration/external AI dependency, no calibrated correctness or measured real-world accuracy claim. Observed repair can take minutes; final failure/UI recovery took271.426seconds. Six supervisor interventions were required (four reproduced defects, one progress nudge, one coordinated verification pass); the independent review found one further real status-recovery defect and the normal product workflow corrected it without another owner/root intervention. No owner input was required. No root application-source implementation, commits, pushes or remote deployment occurred. This requested task is complete; deferred proofs remain separately incomplete.
+
+Session warning and protected-page reauthentication pilot — 2026-10-25
+
+Owner corrects the QR-code wording: warn before actual session expiry with Keep me signed in; after expiry/logout, hide protected contents and offer sign-in while retaining the current screen and unsaved work. Root inspection finds the existing session-expiry guard navigates away on authentication failure and suspends affected fetches pending navigation. Scope is the existing Phoenix staff authentication/session boundary, preserving MFA, tenant/account identity, session concurrency, drafts and accepted features. No QR/patient-auth redesign, publication or remote deployment is requested.
+
+Attached installed omni v0.5.0 to authoritative production-suite in CLI46153. Snapshotted job64/ledger59 generation43 frozen121 with seven accepted tasks and two deferred provider/Jenkins proofs. The first public replan request was rejected HTTP400 because the planning endpoint requires an observed revision; no accepted work changed. Corrected request includes fresh exact revision121 and is accepted HTTP200. Request/receipt and plan snapshot are retained under ignored publish/session-* artifacts. New task execution, automated checks and actual-software acceptance are pending. Available memory20GiB and disk14GiB; retain one heavy operation at a time and preserve shared resources.
+
+Ordering correction: new task p_9e429609a84b_1_task was appended at rank9. Supervisor direct reorder to7 did not shift the existing rank7 Connections task; freezing125 selected that deferred task first. Public execution showed read-only Connections inspection. Root stopped it via normal interrupt, then used normal replan to assign distinct ranks7(session),8(Connections),9(Jenkins). No task contract changed; reorder reset the two deferred review states, which were restored to their prior agreed state. Final freeze129 generation45 retains seven accepted tasks and ten total tasks. Guard78515 stops after the eighth requested acceptance. This is one supervisor ordering intervention, not evidence of autonomous completion. New session implementation and actual acceptance remain pending.
+
+Execution415 opens thread01a17384-b3e5-78a3-9b02-0b3eb11e07d0/turn01a17384-b608-73a1-bc88-de2758f62439 at14:43:59UTC. Initial provider response is delayed roughly five minutes, with live worker heartbeats and no reported provider failure; root does not abort active work for elapsed time. Public investigation begins afterward. CLI reports a transcript active-turn mismatch during API-driven replanning, but execution progresses; record this separate observer friction without changing framework source during the workload run.
+
+Root baseline browser passes normal password/MFA login and normal client5 switch. The actual /admin/forms/new page retains synthetic Name/Short Name draft values with staff SSE enabled; no new session UI is present in the baseline. An initial harness used the wrong /create path and failed its field wait, then corrected to the existing /new route; not a product defect. Baseline creates no form or other application data, persists no browser authentication file, and closes browser/proxy. Evidence: publish/supervisor-session-ui/baseline.json. Feature acceptance remains pending.
+
+First implementation and real browser findings: native focused evidence reports25JavaScript tests plus real Redis overlap, flash, revocation, observational TTL and explicit-renewal checks. Production assets finish successfully; six retained API roles restart on95bbd094cc2e777b99b6f6813bf424b231f72e8da4c6e04ad5de55b6beb4cab6. Native browser finds protected content remains visible because Tailwind display utilities override the HTML hidden attribute; correction is in progress. Root's independent pass reproduces the same computed display:flex failure. It separately proves real Redis90second warning, actual renewal to7200seconds, unchanged form name/short name/product draft and zero form submissions, then real own-session expiry. This is partial proof, not acceptance. Root visually inspects warning.png; first-image-result.json records the incomplete result.
+
+Root harness preparation friction is distinguished from product behavior: parallel use of the retained staff account consumed a one-use MFA code; harness now waits for a fresh unused code without changing MFA. A direct PHP fixture bootstrap omitted the normal entrypoint's credential-file hydration and failed safely before touching Redis; switched to normal clinect-api-entrypoint artisan. A local JavaScript index/indexOf typo was corrected. The fixture subsequently succeeds, validates the owned synthetic staff session and changes only that private session's TTL. Browser/proxy processes close after each pass. No application fixture rows or staff account settings have been changed by root. Own CLI cache under storage/smoke/session-supervisor-cli remains to clean at completion.
+
+Corrected image90ede7e9d7cbb3c7bdef037310d60d7f90f649ac5f1c90c36d72b0d328a2c98b matches current AuthController, app wrapper, compiled JS/CSS and manifest. Root's independent actual UI now passes warning/renewal, real own-session expiry, display:none plus hidden/inert/ARIA concealment, Escape resistance, wrong password staying hidden, and existing correct password plus one-use MFA. The original draft remains unchanged with zero submissions. Authentication reaches /dev/system/clients; returning to the retained tenant page and clicking Resume work gives401. This demonstrates that successful authentication does not yet restore the known original client without manual reselection. Evidence: supervisor-session-ui/second-image-result.json and expired-page-hidden.png.
+
+Root supplies that concrete failure through normal interrupt/resume HTTP200, retaining generation45/frozen129/task415. Native's separately discovered default-guard policy failure correction remains in progress and must be retained. Continuation turn01a1739d-855a-7382-a5ec-f47a16e71d50 begins15:11:05UTC in the same execution thread. Guard45391 replaces the stopped guard. Supervisor interventions now2: queue ordering and this reproduced client-context recovery failure; one is a feature defect correction. No application source edits or persisted form rows by root. Whole-feature acceptance remains incomplete.
+
+Image5cea95ec4ea0acac8441378d457d8851c66118386f93143b949fb2893fddb9f3 installs the automatic central-to-tenant recovery bridge. Root confirms relevant source/view and compiled-asset hashes match the running image. Actual normal password/MFA now reaches /staff-session/restored and automatically resumes the original tenant document with200 and zero client selections. Draft fields and PROs choice survive; normal save and reopen match the draft. A harness counter incorrectly watched /admin/forms instead of the actual form action /admin/forms/saving and failed after persistence; corrected it to derive the action from the normal form and count all writes. Read-only inspection confirms one owned synthetic form6 in client5, name Session recovery synthetic1792941452891 (with a space before the timestamp), short_name session_recovery_1792941452891, productpros and no active version. Track this fixture for cleanup; subsequent root proof should reuse it rather than create another. Evidence: supervisor-session-ui/third-image-result.json. Native browser independently reports automatic restoration and remaining field-selection loss; that correction is in progress. Full acceptance is still pending.
+
+Further scoped expiry-failure proof: status-only503 passes concealment because another normal background request detects actual401; unavailable-status-result.json records that result. Whole-backend503 for new browser xhr/fetch/eventsource requests exposes a real gap. A normal status response first establishes the private Redis90second deadline. At17.075seconds beyond it, the protected root remains hidden:false/inert:false/display:flex and the modal remains the approaching-expiry warning. An independent real backend request with the same private cookie returns401. The test changes no server configuration or source rows, only its private browser transport and own session TTL; native SSE remains present initially. Failure receipt: supervisor-session-ui/unavailable-backend-result.json; reproducer: supervisor-session-backend-unavailable.cjs. Root form6 has only unsaved draft changes and is preserved for final proof/cleanup.
+
+Root reports this second feature defect through normal interrupt/resume, preserving generation45/frozen129 and all in-progress automatic handoff, selection, guard and transport corrections. Requirement is concealment at already-known server expiry despite503 or a pending status request, with truthful uncertainty and later identity-bound recovery; no new session policy or work-aborting request timeout. Supervisor interventions now3 (one ordering correction, two reproduced feature defects). No new owner input, application-source edits, commits, pushes or deployments by root. Whole-feature acceptance remains pending.
+
+The known-deadline correction passes33focusedJavaScript checks, including503andpending-status concealment without aborting requests. Native rebuilt image951149c6c74a1f2d0da1b89aa3abb9600188bfa7262a595618595fe30aa0e5fe is now running in all six API roles. Root verifies259source/view/runtime-asset hashes, no source/preparation mounts, and unchanged Survey8ec3a566. Evidence: session-supervisor-images-final.json. Native's first outage reproducer starts during runtime startup and cannot find the login form; no fixture writes occur. Root subsequently confirms the actual loopback HTTPS login endpoint returns200. Browser retry, final save/cleanup and native independent review remain pending. Build-process launch recovery adds test-operation friction but no additional supervisor instruction.
+
+Native's run of the root-authored broad503outage reproducer on951149now proves concealment at17seconds beyond the last verified deadline: true backend401, protected root hidden/inert/display:none. Wrong password and incomplete MFA retain concealment; normal correct password/MFA automatically restores the original client with200and no manual client selection. Same draft DOM/values survive with no writes, but original input selection3–11 returns0–0 after the warning-first path. Native has the failing receipt in storage/smoke/standard-catalog/session-recovery/outage.log and is correcting this scoped state-retention defect. No new root intervention; final acceptance remains pending.
+
+Final independent outage proof on6b2ded098b7bb7c92e1d4ad1dc5ce5291a7afc3381d8792a1ed129d17ffe24dd passes fully. Root process5258 establishes real private Redis90second warning, then browser-only503for all new xhr/fetch/eventsource. At17.064seconds past known expiry the real backend returns401and retained content is hidden/inert/display:none. Wrong login stays hidden; existing correct password/MFA automatically returns original client with200and zero manual selections. Same input node, draft values/product, focus and selection3–11 are restored with zero form writes. Receipt: supervisor-session-ui/unavailable-backend-result.json. Browser/proxy closed. Root confirms259file source-image alignment across all six API roles; Survey unchanged. Native separately proves core recovery/save while investigating an unresolved realWebSocket subscription check. Root final save/reopen/owned-form6UIcleanup is now running.
+
+Final independent normal-interface gauntlet38360passes on6b2ded. Existingpassword/MFA/client5entry, actual Redis90secondwarning, Keepme signedin renewalto7200seconds, real2secondexpiry, hidden/inert/ARIA/display:none and Escape resistance all pass with unchangeddraft/zero writes. Wrongpassword stayslocked; existingpassword/MFA automatically restoresoriginalclient with200and no manualselection. Exactinputnode/URL/draft/product/focus/selection3–11 survive. A normal form6save is sentexactlyonce; reopeningproves durablevalues. Root then deletes onlyownedunusedform6throughnormalFormsUIconfirmation andverifiesitabsent. Receipt:supervisor-session-ui/gauntlet.json; screenshots:expired-page-hidden.png,resumed-and-saved.png. Root visually verifies the locked screen is opaque with only the sign-in modal visible. Bothbrowser/proxyprocessesclosed; no root-ownedapplicationrowsremain. Native taskstillhasremainingcross-tab/connectionchecksandreview; do notcallwholejobaccepted yet.
+
+Independent targeted HTMX check56135 confirms a new scoped regression on image6b2ded: a fresh authenticated task16 page receives200for /explore/tasks/16/suggestions, but remains at Loading staff-decision suggestions. The initial request has no epoch marker; beforeSwap is prevented with shouldSwap:false while current epoch is0and the page is unlocked. No application rows are changed; browser/proxy close. Receipt: supervisor-session-ui/htmx-result.json; reproducer: supervisor-session-htmx.cjs. Native independently identifies and fixes the same startup-order defect before any new root feedback, preserving stale-response rejection after authentication changes. Native also reports task17's original title restored and verified. Root intervention count remains3; next acceptance requires rebuilt HTMX proof and affected recovery regression checks.
+
+The startup regression is fixed in image ad8eec9379b687c791a9a009e7a193e51fa2c61cce0e2d21a6e0a07f841568ca. Root verifies 259 matching files across all six API roles, unchanged Survey and no source mounts. Independent UI check56002 now receives200, tags the initial request with epoch0, allows the swap and displays the suggestions panel with no loading placeholder. No application writes occur. One shared-account MFA code was consumed by the simultaneous native test; root waited for the next unused code without changing authentication policy. Native confirms HTMX refresh and rejection409of a ticket used against another client; account mismatch, cross-tab logout and WebSocket checks remain pending.
+
+Native continuation now passes cross-client409, different-account401 with content hidden, explicit logout locking both tabs, password/MFA recovery in both tabs, and central expiry after browser suspension with retained text/selection. The diagnostic-token page separately returns500from a database privilege error; native preserves privileges and verifies central expiry using the working client-search page. The WebSocket probe's central-host/tenant-origin handshake403 is an edge origin restriction; native is checking the supported same-origin factory configuration without widening that boundary. Native staff screens retain existing SSE.
+
+Supervisor proof/cleanup coordination initially receives409because the workspace connection is unavailable. CLI46153had exited with a socket read timeout; reopening installed omni chat fails on the preexisting transcript 0-active-turn mismatch. A disposable harness calls the unchanged client.OpenWorkspace API with the same installed client identity and retained authoritative directory, restoring the existing transport in session23101. No framework/application source or ledger rows are patched. Normal interrupt/resume then both return200on generation45/frozen129 and preserve all accepted work. The feedback shares passing root receipts and warns that root form6was already deleted through the UI, avoiding reuse of disposed test data. This is supervisor intervention4(coordination and connection recovery), with two prior feature-defect corrections; no new owner input. This is a steered pilot, not an autonomy claim. Native remaining WebSocket verification and fresh review are pending; cleanup must close/remove the owned transport harness.
+
+Root verifies 259 source/runtime files on image9dada06635ee9cda733adf420778ce4e11596bf3f010e19e2b98854ddea7c1fd across all six API roles, Survey unchanged. Native has36JavaScript tests and real Redis overlap/TTL/patient-policy checks passing; remaining WebSocket recovery uses the supported same-origin configuration.
+
+Independent delayed-status browser47560 reproduces a real re-login loop on9dada. After actual private Redis expiry and concealment, a fresh background status request returns401with Set-Cookie; root holds that actual response. Wrong login stays hidden, correct password/MFA then automatically restores original client with200and preserves exact draft/node/selection3–11. Releasing the old expired response subsequently replaces the new browser session: a real status request returns401and the page locks again. This is the already-expired baseline case, distinct from earlier delayed reads that began with a valid session. Test uses an unsaved /admin/forms/new draft, no application-row writes and no form6reuse; browser/proxy close. Reproducer: supervisor-session-late-status.cjs; receipts: supervisor-session-ui/late-status-result.json and retained late-status-failure.json.
+
+Normal session-late-status interrupt/resume both return200on the same generation45/frozen129, preserving accepted work. Supervisor interventions now5: ordering, two earlier feature defects, proof/transport coordination, and this third reproduced feature defect. Guard77241remains active; workspace transport23101remains attached. No owner input or root application-source edits. Acceptance remains incomplete until the late-cookie loop and remaining WebSocket check pass in rebuilt software and native review completes.
+
+The late-cookie correction passes the root-authored browser reproducer in native execution on rebuilt image34d1cecce4b6a8fe97160b40bb5e1c3bb53de12e9acbfa10babbc46eddea011e. The actual already-expired status response is401with no Set-Cookie. Password/MFA automatically restores the client with200and exact draft/node/focus/selection; releasing the held old response leaves the backend status200and the dialog closed. No application rows are created. Native receipt: storage/smoke/standard-catalog/session-recovery/late-status/late-status-result.json and late-status.log. Root verifies259runtime/source hashes in all six roles, unchanged Survey and no source mounts. Remaining work: real WebSocket recovery, final read-only UI check, native review and owned-resource cleanup.
+
+Root compares native late-status-browser.cjs against the original independent reproducer: only artifact-directory, helper-path and owned CLI-cache-path changes; assertions are unchanged. Native socket-result.json now records real private authorization, pause on revocation and successful message delivery after reauthentication, with no errors. final-read-result.json records initial HTMX rendering and refresh, active native staff SSE and visible protected contents. Native's subsequent code review finds a stale response-body gap after headers arrive and adds generation validation at body consumption plus explicit background marking for HTMX reads;38focusedJavaScript tests pass. Final rebuilt body-consumption verification and fresh independent review remain pending. Resources remain18GiBavailable memory and14GiBfree disk; one heavy operation at a time.
+
+Final execution image6f891adcacbb14e9cd269f8a106b182b9f663f61a06957acd7f812b644e51770 matches259checked source/runtime files in all six API roles. Final real-browser receipts pass WebSocket authorization/pause/reconnect/message delivery plus stale-body rejection, native HTMX initial read/refresh and SSE, and held-cookie regression200after fresh MFA. Clinical preservation reconfirms44bounded table fingerprints and4program configurations; Survey unchanged. Browser processes close and both execution/supervisor CLI caches are removed. No root-created forms remain; normal authentication/audit history is preserved. Execution reports done at16:46:36UTC. Fresh independent review thread01a173f5-047b-7953-9a1a-ec710c4ab412 starts16:46:40UTC; review separately passes38JavaScript and realRedis checks and is repeating the private-browser late-response case. Native acceptance remains pending.
+
+Independent review reproduces a remaining in-scope recovery defect on6f891: revoking the private session during task16's initial HTMX suggestions read locks the page; normal password/MFA restores it, but the panel remains Loading staff-decision suggestions with no retry control and no second request. Evidence is retained in app storage/smoke/standard-catalog/session-recovery/independent-review/htmx-interrupted-result.json and htmx-after-recovery.png. The reviewer separately passes the late-cookie browser regression and automated checks. This is a native independent-review finding, not a new supervisor intervention or owner decision. Await the normal correction and repeated affected software proof; acceptance is not complete.
+
+Fresh review completes with exactly one P2 finding: interrupted HTMX reads do not recover after sign-in (criterion3). The reviewer independently passes the other core/late-cookie/socket/body checks, leaves implementation unchanged and cleans review-owned resources. Omnidex automatically starts a corrective execution on the same frozen task at16:52:45UTC, thread01a173fa-9618-7ed3-b25f-14beabc000bb/turn01a173fa-98bb-7760-941a-d82d15cf74a5. No supervisor intervention or owner input is needed for that correction. Scope remains affected safe-read recovery without replaying writes; accepted and deferred tasks remain preserved.
+
+Corrective execution passes the exact interrupted-HTMX browser case on image86c96de715b391f78876d108661c5248d1d98fb1852744589b58c65253dc31cf. Real revocation locks the page; existing password/MFA automatically restores the client; the same document now issues one safe retry (two suggestions requests total), loads the panel, removes its placeholder and keeps native SSE active. No business writes are replayed. Receipt: app storage/smoke/standard-catalog/session-recovery/htmx-recovery-result.json.27targeted checks across the three affected suites pass; source/runtime alignment again matches259files across all six API roles with Survey unchanged. Native correction completed without supervisor or owner intervention; fresh review/acceptance and final transport cleanup remain pending.
+
+Final acceptance — 2026-10-25 17:05:06 UTC. The fresh review found no remaining issue against the frozen session task and independently reproduced automatic recovery of the interrupted panel, with exactly one safe retry, the same document and active SSE. The 27 affected JavaScript checks and real-Redis middleware checks passed; earlier full-suite and browser evidence remains retained. Source/image alignment matches 259 files across all six API roles on 86c96de715b391f78876d108661c5248d1d98fb1852744589b58c65253dc31cf. Original 44 bounded clinical fingerprints and four configurations match; Survey is unchanged.
+
+Job64 / ledger59 / generation45 / frozen129 now has eight accepted tasks, including p_9e429609a84b_1_task. The normal stop guard returned HTTP200 and the job is waiting_input; both provider/Jenkins items remain deferred and ready. No commit, push, remote deployment or external message occurred. The change is running in the retained isolated local runtime. Owned form6 was deleted through the normal UI; task17's original title was restored. Browser/proxy processes, both owned CLI caches, and the temporary workspace-transport process/binary/source are cleaned up. Retained evidence and reproducible test fixtures remain in their established ignored locations. Shared services, data, credentials and preferences are preserved.
+
+Pilot effort: execution began 14:43:59 UTC and acceptance took approximately 2h21m. Five supervisor interventions were needed: one queue-order correction, three independently reproduced feature defects, and proof/cleanup coordination coupled with recovery from the CLI reconnect failure. Native review found and automatically corrected one further interrupted-read defect. No additional owner input was needed. This is a steered completion, not evidence of fully autonomous operation. Separate observed limitations remain: Omnidex CLI reconnect rejected the existing transcript, so the unchanged workspace API transport was used temporarily; the local diagnostic-token page has an unrelated database-privilege500. Native staff UI retains SSE; same-origin WebSocket recovery was verified without changing the deployment's cross-host origin restriction. Sign-in uses the existing authentication tab; retained unsaved work survives session expiry and recovery while the original document stays open, not closing or reloading it.
+
+Release publication — 2026-10-25. The owner explicitly requested committing and pushing all affected Olympus repositories for their Jenkins deployment. Published Survey Engine c626829cda4cffec95eab450ac0c17278c4f8b8f on cc-2026-06-18-multitenant, Phoenix fd858a7b2cecc2c85963fbf546ba28288d875b8a on service-engine-integration, dev-ops 7beb323f9e2602d8d94b7858c9cd72977e1ba27c on mh-jenkins-proddeploy, and Olympus 4c3310e490a067d6c61a634d1b38ec8053693141 on main. Each GitHub branch hash matches its local commit and all four working trees are clean. The source manifest and Jenkins shared-library reference determine these destinations; unrelated historical worktrees and repositories were preserved. No force push, Jenkins invocation, remote deployment or Omnidex job resumption occurred.
+
+Publication checks: refreshed all eight deployment-related remote refs; staged 438 release files across the four repositories, excluding private catalog contents, smoke evidence, credentials and generated caches. Removed one surplus EOF blank line without changing behavior. Staged whitespace checks pass with existing Survey CRLF preserved. Olympus migration-broker tests and upgrade/build orchestration pass, including expected failure scenarios. Phoenix catalog preparation passes seven tests, Jenkins catalog resolution passes three tests, the Groovy deployment contract passes, and four session/chat JavaScript suites pass all 40 tests. Existing rebuilt application/UI acceptance above remains the behavioral evidence; publication did not alter application behavior. Read-only GitHub release metadata confirms the non-draft catalog asset and SHA-256 6466327fd7146de8e2897f98c383d140dd5346d1afeee9c21afabb25534e7f55 match the source pin. Configured Jenkins credential access and live Slack/GitHub provider acceptance remain unverified; publication does not establish those outcomes. No additional owner intervention was required. Commit/remote receipts and focused test logs are retained under the existing ignored publish directory as git-release-commits-20261025.json and git-publish-*.log. Disposable test fixtures and the excluded Python bytecode cache were removed.
+
+
+Omnidex source publication preparation — 2026-10-25. The owner requested committing and pushing the accumulated Omnidex behavior changes after the Olympus release. GitHub main is one existing commit behind local main (69f9f10b); the additional pending work covers CLI failed-job state recovery, native compaction/completion and display handling, incomplete-review correction, same-task progress/resume, empty planning, later owner direction and exact accepted-contract restoration. All 47 source/test/evidence paths were reviewed for scope and secret/artifact patterns; generated binaries, private configuration and ignored pilot fixtures remain excluded. No new behavior or version bump was introduced for publication.
+
+Pre-publication verification passes: all six affected packages (cmd/omni, codex, codingagent, queue, worker and api), Go formatting, diff whitespace, and five real PostgreSQL regression groups covering accepted-contract history/refreeze, one-request execution/review resume, durable progress reconnect/owner pause, empty-plan clarification and failed-job content replies. PostgreSQL used a disposable postgres:18-alpine container with synthetic credentials, loopback-only port and no host data mounts; it was removed afterward. Logs: existing ignored publish/omnidex-publish-go-tests.log and omnidex-publish-postgres-tests.log. Earlier actual CLI/provider/PostgreSQL pilots above remain the behavioral acceptance evidence. Current systemd core PID3747206 is active with SHA-256 cf705a1060ef760ce17887257f1d29d9706d173677dad45c28d7e3a71d68a7b3, and the installed launcher resolves to CLI019af11cf1c654c9a17d4989a9f4fc57a94c4542422623f8d69a0adfde9a3268, matching those pilot builds. No service restart, owner-job resume or new workload was needed for source publication. Known later CLI-reconnect friction recorded above is not claimed resolved. Final commit/remote verification belongs in the ignored publication receipt to keep the committed tree clean.

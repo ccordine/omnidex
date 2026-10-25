@@ -33,7 +33,8 @@ func TestInstalledParserSieveCurrentCorpus(t *testing.T) {
 	var corpus struct {
 		Cases []struct {
 			Name, Role, Source string
-			Task               *codingagent.Task `json:"task"`
+			Task               *codingagent.Task               `json:"task"`
+			Clarifications     []codingagent.TaskClarification `json:"clarifications"`
 			Expected           struct {
 				Tasks    *int     `json:"tasks"`
 				Kind     string   `json:"kind"`
@@ -65,6 +66,7 @@ func TestInstalledParserSieveCurrentCorpus(t *testing.T) {
 			default:
 				call.Task = fixture.Task
 				call.Response = fixture.Source
+				call.Clarifications = fixture.Clarifications
 			}
 			result, err := provider.Run(ctx, call, func(event codingagent.NativeEvent) error {
 				if evidence == nil || len(event.Frame) == 0 {

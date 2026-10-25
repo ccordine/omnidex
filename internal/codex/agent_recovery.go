@@ -1,10 +1,32 @@
 package codex
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/codingagent"
 )
+
+type interruptedAgentTurn struct {
+	*codingagent.IncompleteTaskError
+}
+
+func (failure *interruptedAgentTurn) Unwrap() error { return failure.IncompleteTaskError }
+
+// A retained owner reply authorizes continuation, not replay. First inspect the
+// original turn; only a matching terminal interruption can start a new turn in
+// that same thread. Completed results and still-running turns keep their normal
+// recovery behavior.
+func (connection *connection) recoverOrContinueAgent(call *codingagent.Assignment, result codingagent.Result, event func(codingagent.NativeEvent) error) (codingagent.Result, bool, error) {
+	recovered, err := connection.recoverExecutionResult(*call, result, event)
+	var interrupted *interruptedAgentTurn
+	if call.Reply == "" || (call.Role != codingagent.Execute && call.Role != codingagent.Review) || !errors.As(err, &interrupted) {
+		return recovered, false, err
+	}
+	call.Session = &codingagent.ExecutionSession{ThreadID: recovered.ThreadID, TurnID: recovered.TurnID, State: "interrupted"}
+	recovered.TurnID = ""
+	return recovered, true, nil
+}
 
 // Recover an already-dispatched native turn, never dispatch its prompt again.
 // Interrupted or indeterminate external effects require an owner decision, not
@@ -38,9 +60,17 @@ func (connection *connection) recoverExecutionResult(call codingagent.Assignment
 	if turn.ID != "" && turn.ID != call.Session.PreviousTurnID && (call.Session.TurnID == "" || call.Session.TurnID == turn.ID) && (turn.Status == "interrupted" || turn.Status == "failed") {
 		// A terminal interrupted turn cannot be replayed. Retain its exact thread
 		// and partial effects; only an explicit owner resume may start continuation.
-		if err := event(codingagent.NativeEvent{Session: &codingagent.ExecutionSession{ThreadID: result.ThreadID, TurnID: turn.ID, State: "idle"}}); err != nil {
+		state := "idle"
+		if call.Reply != "" && (call.Role == codingagent.Execute || call.Role == codingagent.Review) {
+			state = "interrupted"
+		}
+		if err := event(codingagent.NativeEvent{Session: &codingagent.ExecutionSession{ThreadID: result.ThreadID, TurnID: turn.ID, State: state}}); err != nil {
 			return result, err
 		}
+		return result, &interruptedAgentTurn{&codingagent.IncompleteTaskError{
+			Reason:   fmt.Sprintf("Original %s turn is %q; retain partial work for authorized continuation without replaying commands.", call.Role, turn.Status),
+			ThreadID: result.ThreadID, TurnID: turn.ID,
+		}}
 	}
 	if turn.ID == "" || turn.ID == call.Session.PreviousTurnID || call.Session.TurnID != "" && call.Session.TurnID != turn.ID || turn.Status != "completed" {
 		return result, &codingagent.IncompleteTaskError{Reason: fmt.Sprintf("Original execution is %q, not complete; inspect partial work before planning continuation, without replaying commands.", turn.Status), ThreadID: result.ThreadID, TurnID: turn.ID}

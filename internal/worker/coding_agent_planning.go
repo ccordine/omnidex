@@ -94,7 +94,7 @@ func (runtime *nativeRuntimeV3) runAgentPlanningAction(configuration codingagent
 	if err := controller.PublishPlanningLedger(agentContext, turn, ledger.Ledger); err != nil {
 		return err
 	}
-	ledger, err = runtime.finishPlanningConversation(agentContext, &controller, ledger)
+	ledger, err = runtime.finishPlanningConversation(agentContext, &controller, ledger, turn)
 	if err != nil {
 		return runtime.planningInputError(agentContext, err)
 	}

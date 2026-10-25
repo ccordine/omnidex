@@ -9,10 +9,11 @@ import (
 // Narrow roles receive one finalized step. Parent objectives and aggregate
 // workloads remain with their code-owned consumers, never the executor.
 func (call Assignment) ValidateTaskContext() error {
-	if call.ExecutionReport != nil && (call.Role != Review || call.ExecutionReport.CallID < 1 || call.ExecutionReport.Response == "") {
-		return fmt.Errorf("execution evidence requires a bound task review")
+	if call.ExecutionReport != nil && ((call.Role != Review && call.Role != Execute) || call.ExecutionReport.CallID < 1 || call.ExecutionReport.Response == "" ||
+		(call.Role == Execute && (call.Session == nil || call.Session.ThreadID == ""))) {
+		return fmt.Errorf("execution evidence requires a bound task review or retained execution")
 	}
-	if !call.Role.IsPlanning() && (call.Continuation != nil || len(call.CompletedTaskIDs) != 0) {
+	if !call.Role.IsPlanning() && (call.Continuation != nil || len(call.CompletedTaskIDs) != 0 || call.NewerOwnerDirection != nil) {
 		return fmt.Errorf("task-local context excludes continuation planning and completed task inventory")
 	}
 	if call.Role == ReviewResponse || call.Role == ExecutionResponse {
@@ -20,7 +21,7 @@ func (call Assignment) ValidateTaskContext() error {
 			len(call.ConstructionFacts) != 0 ||
 			call.PlanningLedger != nil || len(call.PlanningConversation) != 0 || call.PlanningResponse != "" ||
 			len(call.ReadFiles) != 0 || len(call.WriteFiles) != 0 || len(call.DeleteFiles) != 0 ||
-			len(call.Findings) != 0 || call.Session != nil || call.Reply != "" || len(call.Clarifications) != 0 {
+			len(call.Findings) != 0 || call.Session != nil || call.Reply != "" || (call.Role == ReviewResponse && len(call.Clarifications) != 0) {
 			return fmt.Errorf("response parser requires only its source response and task instructions when applicable")
 		}
 		return nil

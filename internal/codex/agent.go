@@ -76,7 +76,11 @@ func (client *Client) Run(parent context.Context, call codingagent.Assignment, e
 	}
 	if call.Role.IsNative() {
 		if call.Session != nil && call.Session.State != "idle" && call.Session.State != "interrupted" {
-			return connection.recoverExecutionResult(call, result, event)
+			var continuing bool
+			result, continuing, err = connection.recoverOrContinueAgent(&call, result, event)
+			if !continuing || err != nil {
+				return result, err
+			}
 		}
 	}
 	prompt, err := renderAgentAssignment(call)
@@ -182,7 +186,7 @@ func retryableAgentSessionError(err error) error {
 
 func agentEvidenceMethod(method string) bool {
 	switch method {
-	case "item/started", "item/completed", "turn/completed", "thread/tokenUsage/updated", "error",
+	case "item/started", "item/completed", "turn/completed", "thread/tokenUsage/updated", "thread/compacted", "error",
 		"item/agentMessage/delta", "item/plan/delta", "item/reasoning/summaryTextDelta", "item/reasoning/summaryPartAdded", "item/commandExecution/outputDelta":
 		return true
 	default:

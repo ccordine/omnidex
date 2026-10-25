@@ -189,6 +189,21 @@ func (controller *Controller) PublishPlanningLedger(ctx context.Context, turn Pl
 			}
 		}
 	}
+	if position == 0 {
+		// A clarification or discussion is still a useful planning reply. Do
+		// not replace it with an empty execution-order heading.
+		text.Reset()
+		for i := len(entries) - 1; i >= 0; i-- {
+			entry := entries[i]
+			if entry.Phase == "planning_draft" && len(entry.Notes) == 3 && entry.Notes[0] == turn.OperationID {
+				text.WriteString(entry.Notes[2])
+				break
+			}
+		}
+		if text.Len() == 0 {
+			text.WriteString("There are no tasks to start yet. Continue planning with what you want done.")
+		}
+	}
 	_, err = controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "planning_response", Role: Plan, PlanningProposal: &ledger, Notes: []string{turn.OperationID, turn.Text, text.String()}})
 	return err
 }

@@ -18,19 +18,20 @@ type Entry struct {
 	Assignment       *Assignment           `json:"assignment,omitempty"`
 	Result           *Result               `json:"result,omitempty"`
 	// Bytes are base64 encoded in JSON so JSONB preserves the original wire frame.
-	Frame             []byte                `json:"frame,omitempty"`
-	Findings          []Finding             `json:"findings,omitempty"`
-	WrittenFiles      []string              `json:"written_files,omitempty"`
-	Notes             []string              `json:"notes,omitempty"`
-	ConstructionFacts []ConstructionFact    `json:"construction_facts,omitempty"`
-	ResponseKind      ExecutionResponseKind `json:"response_kind,omitempty"`
-	Session           *ExecutionSession     `json:"session,omitempty"`
-	NativeInput       *NativeInputRequest   `json:"native_input,omitempty"`
-	InputID           int64                 `json:"input_id,omitempty"`
-	NativeReply       json.RawMessage       `json:"native_reply,omitempty"`
-	ParserCallID      int64                 `json:"parser_call_id,omitempty"`
-	ReviewResponse    *ReviewResponseResult `json:"review_response,omitempty"`
-	Continuation      *TaskContinuation     `json:"continuation,omitempty"`
+	Frame               []byte                `json:"frame,omitempty"`
+	Findings            []Finding             `json:"findings,omitempty"`
+	WrittenFiles        []string              `json:"written_files,omitempty"`
+	Notes               []string              `json:"notes,omitempty"`
+	ConstructionFacts   []ConstructionFact    `json:"construction_facts,omitempty"`
+	ResponseKind        ExecutionResponseKind `json:"response_kind,omitempty"`
+	Session             *ExecutionSession     `json:"session,omitempty"`
+	NativeInput         *NativeInputRequest   `json:"native_input,omitempty"`
+	InputID             int64                 `json:"input_id,omitempty"`
+	NativeReply         json.RawMessage       `json:"native_reply,omitempty"`
+	ParserCallID        int64                 `json:"parser_call_id,omitempty"`
+	ReviewResponse      *ReviewResponseResult `json:"review_response,omitempty"`
+	Continuation        *TaskContinuation     `json:"continuation,omitempty"`
+	NewerOwnerDirection *PlanningDirection    `json:"newer_owner_direction,omitempty"`
 }
 
 // EvidenceStore is the existing queue's journal boundary. It is not a second

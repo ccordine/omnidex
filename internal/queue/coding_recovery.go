@@ -111,7 +111,7 @@ func retainCodingContinuationTx(ctx context.Context, tx pgx.Tx, job model.Job, s
 	var raw []byte
 	err := tx.QueryRow(ctx, `SELECT payload_json FROM evidence WHERE job_id=$1 AND kind='coding_agent' AND payload_json->>'generation'=$2::bigint::text AND payload_json->>'phase'='task_interrupted' AND EXISTS(SELECT 1 FROM coding_agent_tasks task JOIN coding_ledgers ledger ON ledger.id=task.ledger_id WHERE ledger.job_id=$1 AND ledger.state='frozen' AND task.frozen_revision=ledger.frozen_revision AND task.task_item_id=evidence.payload_json->>'task_id' AND task.state='ready') ORDER BY id DESC LIMIT 1`, job.ID, job.CurrentGeneration).Scan(&raw)
 	if err == pgx.ErrNoRows {
-		return nil
+		return retainDispatchedCodingContinuationTx(ctx, tx, job, stepID, ownerText)
 	}
 	if err != nil {
 		return err
@@ -138,7 +138,7 @@ func retainCodingContinuationTx(ctx context.Context, tx pgx.Tx, job model.Job, s
 		session.Session = &codingagent.ExecutionSession{ThreadID: session.Result.ThreadID, TurnID: session.Result.TurnID, State: "idle"}
 	}
 	if session.Session == nil || session.Session.State != "idle" || session.Session.ThreadID != interrupted.Continuation.ThreadID || session.Session.TurnID != interrupted.Continuation.TurnID {
-		return nil
+		return retainDispatchedCodingContinuationTx(ctx, tx, job, stepID, ownerText)
 	}
 	if session.Result != nil {
 		// A completed response must be interpreted again before authorizing native continuation.
@@ -152,6 +152,44 @@ func retainCodingContinuationTx(ctx context.Context, tx pgx.Tx, job model.Job, s
 	}
 	session.Session.State = "interrupted"
 	entry := codingagent.Entry{Generation: job.CurrentGeneration, Phase: "task_resume", TaskID: interrupted.TaskID, Role: session.Role, Session: session.Session, Notes: []string{interrupted.Continuation.Reason, ownerText}}
+	raw, err = json.Marshal(entry)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO evidence(job_id,step_id,kind,payload_json) VALUES($1,$2,'coding_agent',$3)`, job.ID, stepID, raw)
+	return err
+}
+
+// An owner can interrupt a running native turn before the provider has recorded
+// its terminal state. Preserve that owner's resume now; the provider must inspect
+// the exact retained turn before deciding whether continuation can start.
+func retainDispatchedCodingContinuationTx(ctx context.Context, tx pgx.Tx, job model.Job, stepID int64, ownerText string) error {
+	var raw []byte
+	err := tx.QueryRow(ctx, `SELECT payload_json FROM evidence
+ WHERE job_id=$1 AND kind='coding_agent' AND payload_json->>'generation'=$2::bigint::text
+ AND (payload_json->>'phase'='execution_session' OR
+      (payload_json->>'phase'='call_completed' AND payload_json->>'role' IN ('execute','review')))
+ AND EXISTS(SELECT 1 FROM coding_agent_tasks task JOIN coding_ledgers ledger ON ledger.id=task.ledger_id
+   WHERE ledger.job_id=$1 AND ledger.state='frozen' AND task.frozen_revision=ledger.frozen_revision
+   AND task.task_item_id=evidence.payload_json->>'task_id' AND task.state='ready')
+ ORDER BY id DESC LIMIT 1`, job.ID, job.CurrentGeneration).Scan(&raw)
+	if err == pgx.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var session codingagent.Entry
+	if err := json.Unmarshal(raw, &session); err != nil {
+		return err
+	}
+	if session.Session == nil || (session.Role != codingagent.Execute && session.Role != codingagent.Review) ||
+		(session.Session.State != "running" && session.Session.State != "dispatching") {
+		return nil
+	}
+	entry := codingagent.Entry{Generation: job.CurrentGeneration, Phase: "task_resume", TaskID: session.TaskID,
+		Role: session.Role, Session: session.Session,
+		Notes: []string{"Inspect the retained native turn and partial work before continuing; do not replay completed commands.", ownerText}}
 	raw, err = json.Marshal(entry)
 	if err != nil {
 		return err

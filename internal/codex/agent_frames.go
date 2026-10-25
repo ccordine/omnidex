@@ -179,12 +179,6 @@ func consumeAgentFrameTracked(frame rpcFrame, raw json.RawMessage, result *codin
 	if err := validateAgentFrameBinding(frame, result); err != nil {
 		return false, err
 	}
-	if err := nativeContextBoundary(frame, role, result); err != nil {
-		if receiptErr := recordAgentFrame(result, raw, event); receiptErr != nil {
-			return false, receiptErr
-		}
-		return false, err
-	}
 	if err := validateAgentItemsTracked(frame, role, items, closed, true); err != nil {
 		return false, err
 	}
@@ -193,7 +187,19 @@ func consumeAgentFrameTracked(frame rpcFrame, raw json.RawMessage, result *codin
 			return false, err
 		}
 	}
-	return collectAgentFrame(frame, raw, result, role)
+	done, err := collectAgentFrame(frame, raw, result, role)
+	if done && err == nil {
+		// A completed native turn can omit the final notification for an
+		// internal reasoning item. Its unmatched observation does not imply
+		// unfinished work. Retain the receipts and require all effectful items
+		// to close normally; only the validated terminal turn closes reasoning.
+		for id, state := range items {
+			if nativeItemKind(state) == "reasoning" {
+				delete(items, id)
+			}
+		}
+	}
+	return done, err
 }
 
 func agentDeltaItemKind(method string) string {

@@ -182,7 +182,7 @@
       "provenance": "Regression for known informational statements without completion or required-verification evidence.",
       "source": "I modified the exporter implementation.",
       "expected": {
-        "kind": "error"
+        "kind": "continue"
       },
       "task": {
         "id": "fixture-task",
@@ -257,7 +257,7 @@
         "goal": "Run the required protocol checks."
       },
       "expected": {
-        "kind": "error"
+        "kind": "continue"
       }
     },
     {
@@ -281,7 +281,7 @@
         "goal": "Implement the change and verify live-model classification."
       },
       "expected": {
-        "kind": "error"
+        "kind": "continue"
       }
     },
     {
@@ -385,7 +385,115 @@
         "goal": "Preserve review permissions and verify independent-review thread and turn startup."
       },
       "expected": {
-        "kind": "error"
+        "kind": "continue"
+      }
+    },
+    {
+      "name": "execution-partial-authorized-work",
+      "role": "execution_response",
+      "source": "The importer metadata and focused tests are complete. Runtime integration and actual application verification remain unfinished. No owner decision or unavailable capability prevents continuing. Nothing has been delivered.",
+      "task": {
+        "id": "scope-task",
+        "goal": "Implement the importer, integrate it into the runtime, and verify the complete application flow."
+      },
+      "expected": {
+        "kind": "continue"
+      }
+    },
+    {
+      "name": "execution-fixable-failure",
+      "role": "execution_response",
+      "source": "The new export fails its round trip because I have not implemented decoding yet. That remaining implementation and verification are within this task. The installed tools work and no owner answer is needed.",
+      "task": {
+        "id": "scope-task",
+        "goal": "Implement lossless export and import and verify a round trip."
+      },
+      "expected": {
+        "kind": "continue"
+      }
+    },
+    {
+      "name": "execution-preserved-owner-waiver",
+      "role": "execution_response",
+      "source": "Implementation and automated checks are complete. The browser proof was waived by the owner, so I have not run it.",
+      "task": {
+        "id": "scope-task",
+        "goal": "Implement the fix, run its automated checks and verify it through the browser."
+      },
+      "clarifications": [
+        {
+          "question_call_id": 31,
+          "answer_evidence_id": 32,
+          "question": "Is the browser proof still required?",
+          "answer": "Skip browser verification for this task. Complete the implementation and automated checks."
+        }
+      ],
+      "expected": {
+        "kind": "done"
+      }
+    },
+    {
+      "name": "execution-unsupported-waiver",
+      "role": "execution_response",
+      "source": "The implementation and automated checks are complete. I decided to waive the required browser check because it would take additional work. The browser is available.",
+      "task": {
+        "id": "scope-task",
+        "goal": "Implement the fix, run its automated checks and verify it through the browser."
+      },
+      "expected": {
+        "kind": "continue"
+      }
+    },
+    {
+      "name": "execution-complete-other-ledger-items-pending",
+      "role": "execution_response",
+      "provenance": "Domain-neutral regression for a completed item routed to continuation because its report listed separate ledger/review work; includes unfinished-current-item counterexamples.",
+      "source": "The importer delivery outcome is implemented and verified: import, export, fresh installation, normal update and upgrade, and actual application checks. Saved records are unchanged after restart. Evidence and limitations are recorded. No commit, push or deployment occurred. Independent review and the separate scheduled-sync and reporting ledger items remain outstanding.",
+      "task": {
+        "id": "importer-delivery",
+        "goal": "Implement and verify the importer delivery outcome, including import/export, fresh installation, update/upgrade and actual application use. Preserve saved records. Scheduled sync and reporting are separate later ledger items; publication is supervised separately."
+      },
+      "expected": {
+        "kind": "done"
+      }
+    },
+    {
+      "name": "execution-complete-supervised-publication-pending",
+      "role": "execution_response",
+      "provenance": "Domain-neutral regression for a completed item routed to continuation because its report listed separate ledger/review work; includes unfinished-current-item counterexamples.",
+      "source": "Implementation and all required verification for this item are complete. The supervisor will commit and publish after the separate remaining ledger items and independent reviews finish. Nothing is published yet.",
+      "task": {
+        "id": "current-item",
+        "goal": "Implement the requested change and verify it in the application. The supervisor owns committing and publishing after all ledger items have passed review."
+      },
+      "expected": {
+        "kind": "done"
+      }
+    },
+    {
+      "name": "execution-current-item-unfinished-other-items-pending",
+      "role": "execution_response",
+      "provenance": "Domain-neutral regression for a completed item routed to continuation because its report listed separate ledger/review work; includes unfinished-current-item counterexamples.",
+      "source": "The importer is implemented, but its required application check still fails and I have not investigated. The installed runtime works. Independent review and the separate scheduled-sync and reporting ledger items also remain outstanding.",
+      "task": {
+        "id": "importer-delivery",
+        "goal": "Implement the importer and verify it through the actual application. Scheduled sync and reporting belong to separate later ledger items."
+      },
+      "expected": {
+        "kind": "continue"
+      }
+    },
+    {
+      "name": "execution-required-check-relabelled-later-work",
+      "role": "execution_response",
+      "provenance": "Domain-neutral regression for a completed item routed to continuation because its report listed separate ledger/review work; includes unfinished-current-item counterexamples.",
+      "source": "The importer is written and its unit tests pass. I am treating its required real application check as later work, along with independent review and the next ledger item. The application is available, but I have not run that check.",
+      "task": {
+        "id": "importer-delivery",
+        "goal": "Implement the importer, run its unit tests, and verify it through the actual application before reporting this item complete. Independent review and other ledger items follow."
+      },
+      "expected": {
+        "kind": "continue"
       }
     }
   ]

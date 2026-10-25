@@ -15,20 +15,26 @@ func PromptContext(call Assignment) any {
 			failure = call.Continuation.Reason
 		}
 		return struct {
-			Tasks            []LedgerTask        `json:"tasks"`
-			Conversation     []PlanningMessage   `json:"conversation,omitempty"`
-			IncompleteReason string              `json:"incomplete_reason,omitempty"`
-			Clarifications   []TaskClarification `json:"clarifications,omitempty"`
-		}{tasks, call.PlanningConversation, failure, call.Clarifications}
+			Tasks               []LedgerTask        `json:"tasks"`
+			Conversation        []PlanningMessage   `json:"conversation,omitempty"`
+			IncompleteReason    string              `json:"incomplete_reason,omitempty"`
+			Clarifications      []TaskClarification `json:"clarifications,omitempty"`
+			NewerOwnerDirection *PlanningDirection  `json:"newer_owner_direction,omitempty"`
+		}{tasks, call.PlanningConversation, failure, call.Clarifications, call.NewerOwnerDirection}
 	}
 	if call.Role == ReviewResponse || call.Role == ExecutionResponse {
 		instructions := ""
 		if call.Task != nil {
 			instructions = call.Task.Instructions()
 		}
+		var clarifications []TaskClarification
+		if call.Role == ExecutionResponse {
+			clarifications = call.Clarifications
+		}
 		return struct {
-			TaskInstructions string `json:"task_instructions"`
-		}{instructions}
+			TaskInstructions string              `json:"task_instructions"`
+			Clarifications   []TaskClarification `json:"clarifications,omitempty"`
+		}{instructions, clarifications}
 	}
 	if call.Role == Execute || call.Role == Review {
 		type findingText struct {

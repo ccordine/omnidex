@@ -17,13 +17,13 @@ type planningConversationRepository interface {
 	MarkCodingLedgerReviewReady(context.Context, model.StepAttemptAuthority, int64, int64) error
 }
 
-func (runtime *nativeRuntimeV3) finishPlanningConversation(ctx context.Context, controller *codingagent.Controller, ledger queue.CodingLedgerRevision) (queue.CodingLedgerRevision, error) {
-	return finishPlanningConversation(ctx, runtime.svc.repo, runtime.claim.Authority, controller, ledger)
+func (runtime *nativeRuntimeV3) finishPlanningConversation(ctx context.Context, controller *codingagent.Controller, ledger queue.CodingLedgerRevision, direction codingagent.PlanningTurn) (queue.CodingLedgerRevision, error) {
+	return finishPlanningConversation(ctx, runtime.svc.repo, runtime.claim.Authority, controller, ledger, direction)
 }
 
 // Each owner reply is applied to the latest persisted draft, FIFO, on the same
 // attempt. Nothing cancels the current planner/parser or retires later replies.
-func finishPlanningConversation(ctx context.Context, repository planningConversationRepository, authority model.StepAttemptAuthority, controller *codingagent.Controller, ledger queue.CodingLedgerRevision) (queue.CodingLedgerRevision, error) {
+func finishPlanningConversation(ctx context.Context, repository planningConversationRepository, authority model.StepAttemptAuthority, controller *codingagent.Controller, ledger queue.CodingLedgerRevision, currentDirection ...codingagent.PlanningTurn) (queue.CodingLedgerRevision, error) {
 	for {
 		message, err := repository.NextChannelSessionMessage(ctx, authority)
 		if err != nil {
@@ -39,6 +39,10 @@ func finishPlanningConversation(ctx context.Context, repository planningConversa
 		turn := codingagent.PlanningTurn{
 			OperationID: string(message.OperationID), OwnerTurnID: string(message.OperationID),
 			Text: message.Command.Text, ObservedRevision: ledger.Revision,
+		}
+		if len(currentDirection) > 0 && message.AdmittedJob.CurrentGeneration < authority.Generation {
+			latest := currentDirection[0]
+			turn.NewerOwnerDirection = &codingagent.PlanningDirection{OperationID: latest.OperationID, Text: latest.Text}
 		}
 		_, applied, err := repository.CodingLedgerRevisionForOperation(ctx, ledger.LedgerID, turn.OperationID)
 		if err != nil {

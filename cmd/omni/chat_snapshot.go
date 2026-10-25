@@ -262,11 +262,9 @@ func changedMessageTurn(previous, current model.ChannelMessage) (bool, error) {
 	if current.Turn.UpdatedAt.Before(previous.Turn.UpdatedAt) {
 		return false, fmt.Errorf("persisted session message %d moved job state backward in time", current.ID)
 	}
-	if terminalMessageTurn(previous) &&
-		(previous.Turn.Status != current.Turn.Status || previous.Turn.Error != current.Turn.Error ||
-			!previous.Turn.UpdatedAt.Equal(current.Turn.UpdatedAt)) {
-		return false, fmt.Errorf("persisted session message %d changed terminal job state", current.ID)
-	}
+	// The message is immutable, but Turn projects the job's current state.
+	// Server-authorized recovery can resume a failed job and later fail or
+	// complete it again, even between two CLI snapshots.
 	return previous.Turn.Status != current.Turn.Status || previous.Turn.Error != current.Turn.Error, nil
 }
 

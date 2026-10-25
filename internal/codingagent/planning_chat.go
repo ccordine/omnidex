@@ -30,7 +30,7 @@ func (controller *Controller) planningResponse(ctx context.Context, turn Plannin
 		if (entry.Phase != "planning_draft" && !(entry.Phase == "planning_response" && entry.PlanningProposal == nil)) || len(entry.Notes) != 3 {
 			continue
 		}
-		if entry.Notes[0] == turn.OperationID {
+		if entry.Notes[0] == turn.OperationID && samePlanningDirection(entry.NewerOwnerDirection, turn.NewerOwnerDirection) {
 			return entry.Notes[2], nil
 		}
 		conversation = append(conversation, PlanningMessage{Role: "user", Text: entry.Notes[1]},
@@ -39,6 +39,7 @@ func (controller *Controller) planningResponse(ctx context.Context, turn Plannin
 	call := controller.assignment(Plan, nil, controller.Configuration.Planner)
 	call.Objective = &Objective{Instruction: turn.Text}
 	call.PlanningLedger, call.PlanningConversation = ledger, conversation
+	call.NewerOwnerDirection = turn.NewerOwnerDirection
 	call.Continuation = continuation
 	call.CompletedTaskIDs = append([]string{}, controller.CompletedTaskIDs...)
 	call.Clarifications, err = controller.taskClarifications(ctx, "")
@@ -62,8 +63,16 @@ func (controller *Controller) planningResponse(ctx context.Context, turn Plannin
 		return "", err
 	}
 	_, err = controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "planning_draft",
-		Role: Plan, CallID: result.CallID, Notes: []string{turn.OperationID, turn.Text, response}})
+		Role: Plan, CallID: result.CallID, NewerOwnerDirection: turn.NewerOwnerDirection,
+		Notes: []string{turn.OperationID, turn.Text, response}})
 	return response, err
+}
+
+func samePlanningDirection(left, right *PlanningDirection) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
 }
 
 func parsedPlanningDisposition(ledger EngineeringLedger, operations []model.LedgerMutationOperation) model.OwnerTurnDisposition {

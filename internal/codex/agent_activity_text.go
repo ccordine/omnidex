@@ -1,7 +1,6 @@
 package codex
 
 import (
-	"fmt"
 	"strings"
 	"unicode/utf8"
 
@@ -9,10 +8,9 @@ import (
 )
 
 func publishAgentActivityText(activity model.AgentActivity, publish func(model.AgentActivity) error) error {
-	text := activity.Text
-	if !utf8.ValidString(text) || strings.ContainsRune(text, '\x00') {
-		return fmt.Errorf("public activity text is invalid UTF-8 or contains NUL")
-	}
+	// Native evidence retains the original bytes. Its public display projection
+	// must remain renderable even when a command prints binary or partial text.
+	text := strings.ReplaceAll(strings.ToValidUTF8(activity.Text, "\uFFFD"), "\x00", "\uFFFD")
 	for len(text) > model.MaxAgentActivityTextBytes {
 		end := model.MaxAgentActivityTextBytes
 		for !utf8.ValidString(text[:end]) {

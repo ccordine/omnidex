@@ -114,7 +114,8 @@ type ReviewResponseResult struct {
 	ReviewResult
 }
 
-// ExecutionReport retains the original task-local native evidence for independent review.
+// ExecutionReport retains task-local progress for continuation and the completed
+// execution's original native evidence for independent review.
 type ExecutionReport struct {
 	CallID   int64  `json:"call_id"`
 	Round    int64  `json:"round"`
@@ -140,6 +141,7 @@ type Assignment struct {
 	PlanningBaseRevision int64               `json:"planning_base_revision,omitempty"`
 	PlanningLedger       *EngineeringLedger  `json:"planning_ledger,omitempty"`
 	PlanningConversation []PlanningMessage   `json:"planning_conversation,omitempty"`
+	NewerOwnerDirection  *PlanningDirection  `json:"newer_owner_direction,omitempty"`
 	PlanningResponse     string              `json:"planning_response,omitempty"`
 	Response             string              `json:"response,omitempty"`
 	Session              *ExecutionSession   `json:"session,omitempty"`
