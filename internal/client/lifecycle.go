@@ -192,7 +192,7 @@ func (client *Client) postLifecycleControl(
 		}
 	case "interrupt":
 		expectedStatus = model.JobStatusWaiting
-	case "resume", "replan":
+	case "resume", "replan", "plan/item-planner":
 		expectedStatus = model.JobStatusRunning
 	case "cancel":
 		expectedStatus = model.JobStatusCanceled

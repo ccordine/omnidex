@@ -108,6 +108,18 @@ the checks, then a fresh read-only Codex review channel judges only that same
 packet. Code records acceptance and selects the next ready task. No model sees or
 controls the execution queue, sibling tasks, task transitions, or completion.
 
+In the CLI Ledger tab (`Ctrl-B l`), select an item by name with the mouse or
+`j`/`k`, then press Enter to view its details. `n` creates an item, `e` edits its
+details, and `[`/`]` move it up or down. Save manual edits with `Ctrl-S` or the
+Save button; Escape cancels the draft. `p` opens a conversation with the planner
+for that item, retaining its previous exchanges and read-only summaries of
+preceding incomplete tasks so follow-on work can build on the queued outcomes.
+Completed, removed and later items are excluded from those summaries; only the
+selected item can change. Conversational creation uses the current incomplete
+ledger to avoid duplicating queued work. Enter sends the message and `Ctrl-J`
+inserts a newline. These controls
+also appear as buttons within the Ledger pane.
+
 Ordinary CLI messages first pass through a dedicated user-intent interpreter.
 It sees the current available actions, scoped persisted facts, the last two
 exchanges, and any pending question or proposal. Long recent messages are

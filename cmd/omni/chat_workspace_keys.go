@@ -88,8 +88,24 @@ func (source *workspaceInputSource) ReadInputLocked(destination []byte) (int, er
 }
 
 func (source *workspaceInputSource) consume(value byte) error {
+	source.view.mu.Lock()
+	editor := source.view.focus == workspaceLedgerPane && source.view.ledger.editor != nil && !source.view.prefix
+	source.view.mu.Unlock()
+	if editor && value != 2 {
+		return source.consumeLedgerEditor(value)
+	}
 	if len(source.candidate) > 0 || value == '\x1b' {
 		source.candidate = append(source.candidate, value)
+		if bytes.HasPrefix(source.candidate, []byte("\x1b[<")) {
+			if value == 'M' || value == 'm' {
+				sequence := string(source.candidate)
+				source.candidate = nil
+				if value == 'M' {
+					return source.view.ledgerMouse(sequence)
+				}
+			}
+			return nil
+		}
 		for _, sequence := range [][]byte{bracketedPasteStart, bracketedPasteEnd, []byte("\x1b[5~"), []byte("\x1b[6~"), []byte("\x1b[A"), []byte("\x1b[B")} {
 			if bytes.Equal(source.candidate, sequence) {
 				if bytes.Equal(sequence, bracketedPasteStart) {
@@ -174,6 +190,9 @@ func (source *workspaceInputSource) consume(value byte) error {
 func (view *chatWorkspace) key(key byte, page bool) error {
 	view.mu.Lock()
 	defer view.mu.Unlock()
+	if view.focus == workspaceLedgerPane && view.ledger.editor != nil && !view.prefix && key != 2 {
+		return view.ledgerEditorKeyLocked(key)
+	}
 	if key == 2 {
 		view.prefix = !view.prefix
 		return view.drawLocked()
@@ -262,6 +281,9 @@ func (view *chatWorkspace) key(key byte, page bool) error {
 		view.help = false
 		return view.drawLocked()
 	}
+	if view.focus == workspaceLedgerPane && key == 27 && view.ledger.details {
+		return view.ledgerKeyLocked('b')
+	}
 	if view.focus == workspaceLedgerPane && key != 'i' && key != 27 && key != 'g' && key != 'G' {
 		return view.ledgerKeyLocked(key)
 	}
@@ -308,7 +330,7 @@ func (view *chatWorkspace) scrollLocked(delta int) {
 
 func (source *workspaceInputSource) reviewing() bool {
 	source.view.mu.Lock()
-	sessions := source.view.focus == workspaceSessionsPane
+	sessions := source.view.focus == workspaceSessionsPane || source.view.focus == workspaceLedgerPane
 	source.view.mu.Unlock()
 	return !sessions && source.review != nil && source.review()
 }

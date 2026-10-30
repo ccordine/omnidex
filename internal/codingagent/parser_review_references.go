@@ -2,7 +2,6 @@ package codingagent
 
 import (
 	"encoding/json"
-	"fmt"
 )
 
 func MapParserResponse(call Assignment, content json.RawMessage) (json.RawMessage, error) {
@@ -19,8 +18,9 @@ func MapParserResponse(call Assignment, content json.RawMessage) (json.RawMessag
 	return json.Marshal(review)
 }
 func DecodeReviewResponse(call Assignment, content json.RawMessage) (ReviewResponseResult, error) {
-	if call.Task == nil {
-		return ReviewResponseResult{}, fmt.Errorf("review parser requires one code-selected task")
+	taskID := ""
+	if call.Task != nil {
+		taskID = call.Task.ID
 	}
 	var parsed struct {
 		Kind     ExecutionResponseKind `json:"kind"`
@@ -35,7 +35,7 @@ func DecodeReviewResponse(call Assignment, content json.RawMessage) (ReviewRespo
 	}
 	out := ReviewResponseResult{Kind: parsed.Kind, ReviewResult: ReviewResult{Findings: []Finding{}, Verification: call.Response}}
 	for _, finding := range parsed.Findings {
-		out.Findings = append(out.Findings, Finding{TaskID: call.Task.ID, File: finding.File, Observation: finding.Observation})
+		out.Findings = append(out.Findings, Finding{TaskID: taskID, File: finding.File, Observation: finding.Observation})
 	}
 	return out, nil
 }

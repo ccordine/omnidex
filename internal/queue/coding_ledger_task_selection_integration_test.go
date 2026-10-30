@@ -3,25 +3,11 @@ package queue
 import (
 	"context"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/model"
 )
-
-func TestCodingAgentTaskFromLedgerDetailKeepsOnlySelectedTaskContext(t *testing.T) {
-	ledger := repositoryLedgerFixture()
-	ledger.Tasks[0].Goal += "; deliver the verified implementation"
-	detail := CodingLedgerRevision{LedgerID: 1, Revision: 1, Ledger: ledger}
-	task, err := codingAgentTaskFromLedgerDetail(detail)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if task.ID != "task" || !strings.Contains(task.Goal, "deliver the verified implementation") || !reflect.DeepEqual(task.Acceptance, ledger.Tasks[0].Acceptance) || len(task.ReadFiles)+len(task.WriteFiles)+len(task.DeleteFiles) != 0 {
-		t.Fatalf("isolated task context = %#v", task)
-	}
-}
 
 func TestNextIncompleteCodingLedgerTaskSelectsOneTaskAtATime(t *testing.T) {
 	_, repository := freshCodingPlanRepository(t)

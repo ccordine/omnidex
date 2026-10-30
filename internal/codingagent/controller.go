@@ -22,9 +22,8 @@ type Controller struct {
 	CompletedTaskIDs  []string
 }
 
-// RunTask executes one database-selected ledger task and then opens a fresh,
-// independent review for that same task. It does not plan, load sibling tasks, or
-// perform aggregate review.
+// resumeTask executes and independently reviews one database-selected item.
+// The outer loop selects the next item and calls ReviewGoal after the last one.
 func (controller *Controller) resumeTask(ctx context.Context, task Task) error {
 	if err := controller.validateTaskExecution(); err != nil {
 		return err

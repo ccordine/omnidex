@@ -162,7 +162,7 @@ func (controller *Controller) orderPlanningAdditions(ctx context.Context, curren
 }
 
 // PublishPlanningLedger is called only with a committed ledger projection.
-// Draft prose remains evidence; approval displays this exact persisted sequence.
+// Retain the planning conversation alongside the authoritative persisted order.
 func (controller *Controller) PublishPlanningLedger(ctx context.Context, turn PlanningTurn, ledger EngineeringLedger) error {
 	entries, err := controller.Evidence.Read(ctx)
 	if err != nil {
@@ -173,14 +173,32 @@ func (controller *Controller) PublishPlanningLedger(ctx context.Context, turn Pl
 			return nil
 		}
 	}
+	var discussion string
+	for i := len(entries) - 1; i >= 0; i-- {
+		entry := entries[i]
+		if entry.Phase == "planning_draft" && len(entry.Notes) == 3 && entry.Notes[0] == turn.OperationID {
+			discussion = entry.Notes[2]
+			break
+		}
+	}
 	tasks := append([]LedgerTask{}, ledger.Tasks...)
 	sort.Slice(tasks, func(i, j int) bool {
 		return tasks[i].Rank < tasks[j].Rank || tasks[i].Rank == tasks[j].Rank && tasks[i].ID < tasks[j].ID
 	})
 	var text strings.Builder
-	fmt.Fprintf(&text, "Proposal ledger %s, revision %d. Execution order:\n", ledger.ID, ledger.Revision)
+	if discussion != "" {
+		fmt.Fprintf(&text, "%s\n\n", discussion)
+	}
+	if turn.ItemID == "" {
+		fmt.Fprintf(&text, "Proposal ledger %s, revision %d. Execution order:\n", ledger.ID, ledger.Revision)
+	} else {
+		fmt.Fprintf(&text, "Selected item · ledger revision %d:\n", ledger.Revision)
+	}
 	position := 0
 	for _, task := range tasks {
+		if turn.ItemID != "" && task.ID != turn.ItemID {
+			continue
+		}
 		if task.Disposition == model.LedgerDispositionActive {
 			position++
 			fmt.Fprintf(&text, "\n%d. %s\n", position, task.Goal)
@@ -193,17 +211,11 @@ func (controller *Controller) PublishPlanningLedger(ctx context.Context, turn Pl
 		// A clarification or discussion is still a useful planning reply. Do
 		// not replace it with an empty execution-order heading.
 		text.Reset()
-		for i := len(entries) - 1; i >= 0; i-- {
-			entry := entries[i]
-			if entry.Phase == "planning_draft" && len(entry.Notes) == 3 && entry.Notes[0] == turn.OperationID {
-				text.WriteString(entry.Notes[2])
-				break
-			}
-		}
+		text.WriteString(discussion)
 		if text.Len() == 0 {
 			text.WriteString("There are no tasks to start yet. Continue planning with what you want done.")
 		}
 	}
-	_, err = controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "planning_response", Role: Plan, PlanningProposal: &ledger, Notes: []string{turn.OperationID, turn.Text, text.String()}})
+	_, err = controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "planning_response", TaskID: string(turn.ItemID), Role: Plan, PlanningProposal: &ledger, Notes: []string{turn.OperationID, turn.Text, text.String()}})
 	return err
 }

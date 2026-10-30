@@ -18,6 +18,7 @@ const (
 // observed revision comes from the persisted proposal, never model output or
 // conversation memory.
 type PlanningTurn struct {
+	ItemID              model.LedgerItemID `json:"item_id,omitempty"`
 	OperationID         string             `json:"operation_id"`
 	OwnerTurnID         string             `json:"owner_turn_id"`
 	Text                string             `json:"text"`
@@ -54,11 +55,58 @@ type InitialPlanningProposal struct {
 }
 
 type DirectPlanningAction struct {
+	Move        int                      `json:"move,omitempty"`
+	Item        *model.LedgerTask        `json:"item,omitempty"`
 	Kind        model.LedgerMutationKind `json:"kind"`
 	TargetID    model.LedgerItemID       `json:"target_id"`
 	ReviewState model.LedgerReviewState  `json:"review_state,omitempty"`
 	Rank        *int64                   `json:"rank,omitempty"`
 	Rationale   string                   `json:"rationale"`
+}
+
+// Manual task contents are already explicit owner input. Code supplies identity
+// and lifecycle fields without asking a model to reinterpret the edit.
+func DirectPlanningItemMutation(ledger EngineeringLedger, turn PlanningTurn, action DirectPlanningAction) (LedgerMutation, error) {
+	if action.Kind == model.LedgerMutationReorder && action.Move != 0 {
+		return moveLedgerItem(ledger, turn, action)
+	}
+	if action.Kind != model.LedgerMutationAdd && action.Kind != model.LedgerMutationAmend {
+		return DirectPlanningMutation(turn, action)
+	}
+	if action.Item == nil {
+		return LedgerMutation{}, fmt.Errorf("task contents are required")
+	}
+	task := *action.Item
+	var original *model.LedgerTask
+	if action.Kind == model.LedgerMutationAdd {
+		var rank int64
+		for _, item := range ledger.Tasks {
+			rank = max(rank, item.Rank+1)
+		}
+		task.LedgerItem = LedgerItem{ID: model.LedgerItemID("manual-" + turn.OperationID), Rank: rank,
+			Provenance:  model.LedgerProvenance{Kind: "owner_turn", Reference: turn.OwnerTurnID, Revision: ledger.Revision + 1},
+			Disposition: model.LedgerDispositionActive, ReviewState: model.LedgerReviewProposed}
+	} else {
+		found := false
+		for index := range ledger.Tasks {
+			item := &ledger.Tasks[index]
+			if item.ID == action.TargetID {
+				task.LedgerItem, original, found = item.LedgerItem, item, true
+				break
+			}
+		}
+		if !found {
+			return LedgerMutation{}, fmt.Errorf("selected task does not exist")
+		}
+	}
+	bindPlanningDetails(&task, original, model.LedgerProvenance{Kind: "owner_turn", Reference: turn.OwnerTurnID, Revision: ledger.Revision + 1})
+	op := model.LedgerMutationOperation{Kind: action.Kind, Item: &model.LedgerMutationItem{Task: &task}, Rationale: action.Rationale}
+	if action.Kind == model.LedgerMutationAmend {
+		op.TargetID = task.ID
+	}
+	mutation := LedgerMutation{OperationID: turn.OperationID, BaseRevision: turn.ObservedRevision, OwnerTurnID: turn.OwnerTurnID,
+		OwnerTurnDisposition: model.RepresentedOwnerTurn([]model.LedgerItemID{task.ID}), Operations: []model.LedgerMutationOperation{op}}
+	return mutation, mutation.Validate()
 }
 
 // DirectPlanningMutation converts an explicit UI action to a mutation without
@@ -151,13 +199,30 @@ func (controller *Controller) PlanPlanningMutation(ctx context.Context, ledger E
 	if ledger.Revision != turn.ObservedRevision {
 		return LedgerMutation{}, fmt.Errorf("planning turn observed revision %d but database revision is %d", turn.ObservedRevision, ledger.Revision)
 	}
-	response, err := controller.planningResponse(ctx, turn, &ledger)
+	input := ledger
+	if turn.ItemID != "" {
+		input.Tasks = nil
+		for _, task := range ledger.Tasks {
+			if task.ID == turn.ItemID {
+				input.Tasks = append(input.Tasks, task)
+			}
+		}
+		if len(input.Tasks) == 0 {
+			return LedgerMutation{}, fmt.Errorf("selected ledger item is unavailable")
+		}
+	}
+	preceding := precedingIncompletePlanningTasks(ledger, turn.ItemID, controller.CompletedTaskIDs)
+	response, err := controller.planningResponse(ctx, turn, &input, preceding...)
 	if err != nil {
 		return LedgerMutation{}, err
 	}
 	call := controller.planningAssignment(PlanningMutation, mutationPlanningQuestion,
-		"Which planning ledger updates are expressed in this conversation response?", turn, &ledger)
+		"Which planning ledger updates are expressed in this conversation response?", turn, &input)
 	call.Route = controller.Configuration.LedgerParser
+	call.PrecedingIncompleteTasks = preceding
+	if turn.ItemID != "" {
+		call.ConstructionFacts = append(call.ConstructionFacts, ConstructionFact{Kind: "selected_ledger_item", Quote: selectedItemPlanningScope})
+	}
 	call.PlanningResponse = response
 	call.ValidationNotes, err = controller.planningValidationNotes(ctx, turn.OperationID)
 	if err != nil {
@@ -174,6 +239,18 @@ func (controller *Controller) PlanPlanningMutation(ctx context.Context, ledger E
 		return LedgerMutation{}, controller.rejectPlanningParse(ctx, turn, PlanningMutation, result.CallID, err)
 	}
 	operations := parsed.Operations
+	if turn.ItemID != "" {
+		operations = nil
+		for _, op := range parsed.Operations {
+			if op.Item == nil || op.Item.Task == nil {
+				continue
+			}
+			task := *op.Item.Task
+			task.LedgerItem = input.Tasks[0].LedgerItem
+			operations = []model.LedgerMutationOperation{{Kind: model.LedgerMutationAmend, TargetID: turn.ItemID, Item: &model.LedgerMutationItem{Task: &task}, Rationale: op.Rationale}}
+			break
+		}
+	}
 	mutation := LedgerMutation{
 		OperationID: turn.OperationID, OwnerTurnID: turn.OwnerTurnID,
 		BaseRevision: turn.ObservedRevision, Operations: operations,
@@ -196,10 +273,14 @@ func (controller *Controller) planningAssignment(role Role, name, question strin
 	call.PlanningQuestionID = name
 	call.PlanningBaseRevision = turn.ObservedRevision
 	call.PlanningLedger = ledger
+	call.CompletedTaskIDs = append([]string{}, controller.CompletedTaskIDs...)
+	if turn.ItemID != "" {
+		call.CompletedTaskIDs = nil
+	}
 	payload := struct {
-		OwnerTurn *PlanningTurn      `json:"owner_turn"`
-		Ledger    *EngineeringLedger `json:"ledger,omitempty"`
-	}{OwnerTurn: &turn, Ledger: ledger}
+		OwnerTurn *PlanningTurn          `json:"owner_turn"`
+		Ledger    *PlanningLedgerContext `json:"ledger,omitempty"`
+	}{OwnerTurn: &turn, Ledger: ActivePlanningLedgerContext(ledger, call.CompletedTaskIDs...)}
 	encoded, _ := json.Marshal(payload)
 	call.ConstructionFacts = []ConstructionFact{
 		{Kind: "engineering_question", Quote: name + ": " + question},

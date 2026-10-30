@@ -36,11 +36,12 @@ func advanceReplannedJobTx(
 	result, err := tx.Exec(ctx, `
 		UPDATE jobs
 		SET current_generation=$2, status=$3, result=NULL, error=NULL,
-		    completed_at=NULL, updated_at=NOW()
+		    completed_at=NULL, updated_at=NOW(),
+		    metadata=CASE WHEN $8::text='' AND NOT $10::boolean THEN metadata-'ledger_item_planning' ELSE jsonb_set(metadata,'{ledger_item_planning}',jsonb_build_object('item_id',$8::text,'operation_id',$9::text,'manual',$10::boolean)) END
 		WHERE id=$1 AND current_generation=$4
 		  AND status IN ($5, $6, $7)
 	`, command.JobID, newGeneration, model.JobStatusRunning, currentGeneration,
-		model.JobStatusPending, model.JobStatusRunning, model.JobStatusWaiting)
+		model.JobStatusPending, model.JobStatusRunning, model.JobStatusWaiting, command.PlanningItemID, string(command.OperationID), command.ManualPlanning)
 	if err != nil {
 		return model.Job{}, fmt.Errorf("advance job %d to generation %d: %w", command.JobID, newGeneration, err)
 	}

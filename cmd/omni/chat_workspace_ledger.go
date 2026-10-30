@@ -13,25 +13,35 @@ import (
 )
 
 type workspaceLedgerRequest struct {
+	text                        string
 	key                         byte
 	jobID, generation, revision int64
 	action                      client.DirectPlanningAction
 }
 
 type workspaceLedger struct {
+	editor          *ledgerEditor
+	details         bool
+	hits            []ledgerHit
 	snapshot        ledgerapi.CodingLedgerRevision
 	selected        model.LedgerItemID
 	offset          int
 	followSelection bool
 	opened, loading bool
+	saving          bool
 	feedback        string
+	notice          string
 	requests        chan workspaceLedgerRequest
 }
 
 func (view *chatWorkspace) ledgerRequestLocked(request workspaceLedgerRequest) error {
 	select {
 	case view.ledger.requests <- request:
+		view.ledger.notice = ""
 		view.ledger.loading = true
+		if request.key != 'r' {
+			view.ledger.saving = true
+		}
 		view.ledger.feedback = "Loading ledger…"
 	default:
 		view.ledger.feedback = "Ledger request in progress"
@@ -49,6 +59,10 @@ func (view *chatWorkspace) ledgerTasksLocked() []model.LedgerTask {
 
 func (view *chatWorkspace) ledgerKeyLocked(key byte) error {
 	panel := &view.ledger
+	if key == 'b' {
+		panel.details, panel.offset = false, 0
+		return view.drawLocked()
+	}
 	if key == 'r' {
 		return view.ledgerRequestLocked(workspaceLedgerRequest{key: 'r'})
 	}
@@ -74,10 +88,27 @@ func (view *chatWorkspace) ledgerKeyLocked(key byte) error {
 	if key == 't' {
 		return view.ledgerRequestLocked(workspaceLedgerRequest{key: 't'})
 	}
-	if len(tasks) == 0 || panel.loading {
+	if key == 'n' && !panel.saving {
+		return view.openLedgerEditorLocked("new")
+	}
+	if len(tasks) == 0 || panel.saving {
 		return view.drawLocked()
 	}
 	task := tasks[selected]
+	if panel.snapshot.State == "frozen" && (key == 'a' || key == 'd') {
+		panel.feedback = "Review controls are read-only for the executable revision; edit an item to open a new proposal."
+		return view.drawLocked()
+	}
+	if key == '\r' || key == '\n' {
+		panel.details, panel.offset = true, 0
+		return view.drawLocked()
+	}
+	if key == 'e' {
+		return view.openLedgerEditorLocked("edit")
+	}
+	if key == 'p' {
+		return view.openLedgerEditorLocked("planner")
+	}
 	request := workspaceLedgerRequest{key: key, jobID: panel.snapshot.JobID, generation: panel.snapshot.Generation, revision: panel.snapshot.Revision,
 		action: client.DirectPlanningAction{TargetID: task.ID, Rationale: "explicit terminal ledger item control"}}
 	switch key {
@@ -97,25 +128,11 @@ func (view *chatWorkspace) ledgerKeyLocked(key byte) error {
 		if neighbor < 0 || neighbor >= len(tasks) {
 			return view.drawLocked()
 		}
-		rank := tasks[neighbor].Rank
-		if key == ']' {
-			if rank == int64(^uint64(0)>>1) {
-				panel.feedback = "No higher rank available"
-				return view.drawLocked()
-			}
-			rank++
-		} else if rank > 0 {
-			rank--
-		} else if task.ID > tasks[neighbor].ID {
-			panel.feedback = "No lower nonnegative rank; move the preceding item down"
-			panel.offset = 0
-			return view.drawLocked()
-		}
-		request.action.Kind, request.action.Rank = model.LedgerMutationReorder, &rank
+		request.action.Kind, request.action.Move = model.LedgerMutationReorder, neighbor-selected
 	default:
 		return view.drawLocked()
 	}
-	if panel.snapshot.State != "proposed" {
+	if panel.snapshot.State != "proposed" && panel.snapshot.State != "revising" && panel.snapshot.State != "frozen" {
 		panel.feedback = "Ledger is read-only in state " + panel.snapshot.State
 		return view.drawLocked()
 	}
@@ -137,7 +154,9 @@ func (view *chatWorkspace) acceptLedger(snapshot ledgerapi.CodingLedgerRevision)
 	}
 
 	if !same {
-		view.ledger.selected, view.ledger.offset = "", 0
+		if current.JobID != snapshot.JobID || current.LedgerID != snapshot.LedgerID {
+			view.ledger.selected, view.ledger.offset = "", 0
+		}
 	}
 	view.ledger.snapshot = snapshot
 	tasks := view.ledgerTasksLocked()
@@ -152,18 +171,28 @@ func (view *chatWorkspace) acceptLedger(snapshot ledgerapi.CodingLedgerRevision)
 		view.ledger.offset = 0
 	}
 	view.ledger.loading = false
-	view.ledger.feedback = "Server confirmed"
+	if view.ledger.notice != "" {
+		view.ledger.feedback = view.ledger.notice
+	} else {
+		view.ledger.feedback = "Server confirmed"
+	}
 	return view.drawLocked()
 }
 
 func (view *chatWorkspace) ledgerLinesLocked(width int) []string {
 	panel := &view.ledger
+	if panel.editor != nil {
+		return view.ledgerEditorLinesLocked(width)
+	}
+	panel.hits = nil
 	snapshot := panel.snapshot
 	lines := []string{panel.feedback}
 	if snapshot.JobID == 0 {
 		return append(lines, "No ledger loaded. r refreshes the current job.")
 	}
-	lines = append(lines, fmt.Sprintf("Job #%d · revision %d · %s", snapshot.JobID, snapshot.Revision, snapshot.State), "", "ORDERED ITEMS")
+	lines = append(lines, fmt.Sprintf("Job #%d · revision %d · %s", snapshot.JobID, snapshot.Revision, snapshot.State),
+		"[New] [Edit] [Planner] [Up] [Down] [Refresh] [Back]", "", "ORDERED ITEMS")
+	itemRows := map[int]model.LedgerItemID{}
 	if snapshot.State == "frozen" {
 		lines = append(lines, "Approved executable revision")
 	}
@@ -188,7 +217,10 @@ func (view *chatWorkspace) ledgerLinesLocked(width int) []string {
 			selected = &copy
 		}
 		label := strings.Join(strings.Fields(task.Goal), " ")
-		lines = append(lines, ansi.Truncate(safeConsoleText(fmt.Sprintf("%s%d. %s", marker, i+1, label)), max(1, width), "…"))
+		if !panel.details {
+			itemRows[len(lines)] = task.ID
+			lines = append(lines, ansi.Truncate(safeConsoleText(fmt.Sprintf("%s%d. %s", marker, i+1, label)), max(1, width), "…"))
+		}
 	}
 	if selected != nil {
 		task := *selected
@@ -206,12 +238,33 @@ func (view *chatWorkspace) ledgerLinesLocked(width int) []string {
 				lines = append(lines, "  "+path)
 			}
 		}
+		for _, message := range snapshot.PlanningMessages {
+			if message.ItemID == task.ID {
+				label := "Planner"
+				if message.Role == "user" {
+					label = "You"
+				}
+				lines = append(lines, "", label+": "+message.Text)
+			}
+		}
 	}
 	if len(tasks) == 0 {
 		lines = append(lines, "No items")
 	}
 	var wrapped []string
-	for _, line := range lines {
+	for index, line := range lines {
+		if id := itemRows[index]; id != "" {
+			panel.hits = append(panel.hits, ledgerHit{row: len(wrapped), left: 0, right: width, item: id})
+		}
+		if strings.HasPrefix(line, "[New]") {
+			for _, button := range []struct {
+				label string
+				key   byte
+			}{{"New", 'n'}, {"Edit", 'e'}, {"Planner", 'p'}, {"Up", '['}, {"Down", ']'}, {"Refresh", 'r'}, {"Back", 'b'}} {
+				start := strings.Index(line, "["+button.label+"]")
+				panel.hits = append(panel.hits, ledgerHit{row: len(wrapped) + start/max(1, width), left: start % max(1, width), right: (start % max(1, width)) + len(button.label) + 2, key: button.key})
+			}
+		}
 		wrapped = append(wrapped, strings.Split(ansi.Hardwrap(safeConsoleText(line), max(1, width), true), "\n")...)
 	}
 	return wrapped

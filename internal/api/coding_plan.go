@@ -87,7 +87,7 @@ func (s *Server) applyCodingPlanDecisions(w http.ResponseWriter, r *http.Request
 	}
 	turn := codingagent.PlanningTurn{OperationID: request.OperationID, OwnerTurnID: request.OwnerTurnID,
 		Text: request.OwnerTurnText, ObservedRevision: request.Revision}
-	mutation, err := codingagent.DirectPlanningMutation(turn, request.Action)
+	mutation, err := codingagent.DirectPlanningItemMutation(current.Ledger, turn, request.Action)
 	if err == nil {
 		var result queue.CodingLedgerRevision
 		result, err = s.repo.ApplyCodingLedgerControl(r.Context(), queue.ApplyCodingLedgerMutationCommand{
@@ -132,13 +132,10 @@ func (s *Server) freezeCodingPlan(w http.ResponseWriter, r *http.Request, jobID 
 	}
 	var result queue.CodingLedgerRevision
 	if err == nil {
-		result, err = s.repo.FreezeCodingLedger(r.Context(), queue.FreezeCodingLedgerCommand{
+		result, err = s.repo.FreezeAndStartCodingLedger(r.Context(), queue.FreezeCodingLedgerCommand{
 			LedgerID: current.LedgerID, Revision: request.Revision, OperationID: request.OperationID,
 			OwnerTurnID: request.OwnerTurnID, OwnerTurnText: request.OwnerTurnText,
 		})
-	}
-	if err == nil {
-		err = s.repo.CompleteCodingLedgerReview(r.Context(), jobID, result.LedgerID, result.Revision)
 	}
 	if err != nil {
 		writeError(w, codingPlanMutationStatus(err), err.Error())

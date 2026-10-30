@@ -20,6 +20,7 @@ func TestTaskPacketNativeExecutionAndReviewProtocol(t *testing.T) {
 		Constraints:  []string{"Preserve accepted work."}, ReadFiles: []string{"input.go"}, WriteFiles: []string{"output.go"},
 		FileResponsibilities: []model.TaskFileResponsibility{{Path: "output.go", Action: "create", Responsibility: "Implement routing."}},
 		Acceptance:           []model.TaskAcceptance{{ID: "routing", Text: "Research is separate.", Verification: []string{"Run routing tests."}}}}
+	task.Payload, _ = json.Marshal(task.LedgerTask())
 	for _, role := range []codingagent.Role{codingagent.Execute, codingagent.Review} {
 		t.Run(string(role), func(t *testing.T) {
 			call := codingagent.Assignment{JobID: 30, Generation: 2, Role: role, Task: &task, Root: t.TempDir(), Route: codingagent.Route{Provider: "codex", Model: "fixture"}, ReadFiles: []string{"input.go", "output.go"}, Clarifications: []codingagent.TaskClarification{{Question: "Which format?", Answer: "CSV", QuestionCallID: 11, AnswerEvidenceID: 12}}}
@@ -65,7 +66,11 @@ func TestTaskPacketNativeExecutionAndReviewProtocol(t *testing.T) {
 			}
 			turn := requests[4]["params"].(map[string]any)
 			literal := turn["input"].([]any)[0].(map[string]any)["text"].(string)
-			if literal != task.Instructions() {
+			want := task.Instructions()
+			if role == codingagent.Execute {
+				want = string(task.Payload)
+			}
+			if literal != want {
 				t.Fatal("provider-bound current obligation is incomplete")
 			}
 			background := requests[3]["params"].(map[string]any)["items"].([]any)[0].(map[string]any)["content"].([]any)[0].(map[string]any)["text"].(string)
@@ -81,5 +86,61 @@ func TestTaskPacketNativeExecutionAndReviewProtocol(t *testing.T) {
 				t.Fatal("isolated ordinary sessions changed")
 			}
 		})
+	}
+}
+
+func TestRawReviewFeedbackResumesExecutorProtocol(t *testing.T) {
+	feedback := "  Reviewer result:\n\nCorrect the output in output.txt.\nPreserve `literal` punctuation.  \n"
+	call := codingagent.Assignment{JobID: 30, Generation: 2, Role: codingagent.Execute, Root: t.TempDir(),
+		Task:    &codingagent.Task{ID: "packet", Goal: "Implement the approved item.", Payload: json.RawMessage(`{"goal":"original obligation"}`)},
+		Route:   codingagent.Route{Provider: "codex", Model: "fixture"},
+		Session: &codingagent.ExecutionSession{ThreadID: "original-executor", TurnID: "previous-turn", State: "idle"}, ReviewFeedback: feedback}
+	if err := validateAgentAssignment(call); err != nil {
+		t.Fatal(err)
+	}
+	writer := &protocolWriter{}
+	responses := "{\"id\":1,\"result\":{}}\n{\"id\":2,\"result\":{\"model\":\"fixture\",\"thread\":{\"id\":\"original-executor\"}}}\n{\"id\":3,\"result\":{\"turn\":{\"id\":\"correction-turn\"}}}\n"
+	conn := &connection{input: writer, output: bufio.NewReader(bytes.NewBufferString(responses))}
+	thread, _, err := conn.startAgentThread(call, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt, err := renderAgentAssignment(call)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err = conn.startAgentTurn(call, thread, prompt); err != nil {
+		t.Fatal(err)
+	}
+	scan := bufio.NewScanner(strings.NewReader(writer.String()))
+	resumed, delivered := false, false
+	for scan.Scan() {
+		var req struct {
+			Method string         `json:"method"`
+			Params map[string]any `json:"params"`
+		}
+		if err := json.Unmarshal(scan.Bytes(), &req); err != nil {
+			t.Fatal(err)
+		}
+		switch req.Method {
+		case "thread/start":
+			t.Fatal("review correction created a replacement conversation")
+		case "thread/resume":
+			resumed = req.Params["threadId"] == "original-executor"
+		case "turn/start":
+			input := req.Params["input"].([]any)
+			text := input[0].(map[string]any)["text"]
+			delivered = req.Params["threadId"] == "original-executor" && len(input) == 1 && text == feedback
+		}
+	}
+	if err := scan.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if !resumed || !delivered {
+		t.Fatal("raw reviewer text did not reach the retained executor thread unchanged")
+	}
+	call.Session = nil
+	if err := call.ValidateTaskContext(); err == nil {
+		t.Fatal("review feedback silently accepted without its executor conversation")
 	}
 }

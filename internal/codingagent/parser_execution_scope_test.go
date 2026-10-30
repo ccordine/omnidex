@@ -44,8 +44,12 @@ func (p *executionScopeProvider) Run(ctx context.Context, call Assignment, event
 		content = json.RawMessage(`{"kind":"done","findings":[],"verification":"Independent verification complete."}`)
 	}
 	if call.Role == Execute || call.Role == Review {
-		if call.Session != nil {
-			p.t.Fatal("reused native session")
+		if call.Role == Execute && call.ReviewFeedback != "" {
+			if call.Session == nil || call.Session.ThreadID != "fresh-execute" || call.Session.TurnID != "turn-execute" {
+				p.t.Fatal("review feedback lost its executor session")
+			}
+		} else if call.Session != nil {
+			p.t.Fatal("initial execution or independent review reused a session")
 		}
 	}
 	if err := event(NativeEvent{Frame: json.RawMessage(`{"fixture":"execution-scope"}`)}); err != nil {

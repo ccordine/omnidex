@@ -155,6 +155,9 @@ func runChatSession(config chatSessionConfig) (resultErr error) {
 				config.Cancel()
 				return nil
 			}
+			if view := session.ledgerWorkspace(); view != nil && view.interruptLedgerEditor() {
+				continue
+			}
 			if session.mode == sessionintent.Research && session.researchCancel != nil {
 				if err := session.cancelSelectedResearch(); err != nil {
 					if err := session.renderer.system("%v", err); err != nil {

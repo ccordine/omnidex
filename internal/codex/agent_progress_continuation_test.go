@@ -10,13 +10,12 @@ import (
 	"github.com/gryph/omnidex/internal/codingagent"
 )
 
-func TestNativeProgressContinuesTheRetainedThread(t *testing.T) {
+func TestNativeProgressUsesFreshContextWithRetainedReport(t *testing.T) {
 	writer := &protocolWriter{}
 	responses := "{\"id\":1,\"result\":{}}\n{\"id\":2,\"result\":{\"model\":\"fixture\",\"thread\":{\"id\":\"retained-thread\"}}}\n{\"id\":3,\"result\":{}}\n{\"id\":4,\"result\":{\"turn\":{\"id\":\"next-turn\"}}}\n"
 	conn := &connection{input: writer, output: bufio.NewReader(bytes.NewBufferString(responses))}
 	call := codingagent.Assignment{Role: codingagent.Execute, Root: t.TempDir(), Route: codingagent.Route{Model: "fixture", Effort: "low"},
 		Task:            &codingagent.Task{ID: "retained-task", Goal: "Finish and verify both outputs."},
-		Session:         &codingagent.ExecutionSession{ThreadID: "retained-thread", TurnID: "completed-turn", State: "idle"},
 		ExecutionReport: &codingagent.ExecutionReport{CallID: 21, Round: 1, Response: "First output is complete. The second output and verification remain unfinished."}}
 	if err := call.ValidateTaskContext(); err != nil {
 		t.Fatal(err)
@@ -66,14 +65,13 @@ func TestNativeProgressContinuesTheRetainedThread(t *testing.T) {
 			}
 		}
 	}
-	if methods["thread/resume"] != 1 || methods["turn/start"] != 1 || methods["thread/start"] != 0 || methods["thread/turns/list"] != 0 {
-		t.Fatalf("completed progress was replayed or started a new thread: %v", methods)
+	if methods["thread/resume"] != 0 || methods["turn/start"] != 1 || methods["thread/start"] != 1 || methods["thread/turns/list"] != 0 {
+		t.Fatalf("continuation did not use a fresh context with durable progress: %v", methods)
 	}
 	// An owner interruption remains distinct from ordinary progress. Its actual
 	// continuation instruction takes precedence and is never manufactured.
-	call.Session.State = "interrupted"
 	call.Reply = "Resume, preserving the completed first output."
-	prompt, err = renderAgentAssignment(call)
+	prompt, err = renderAgentContext(call)
 	if err != nil || !strings.Contains(prompt, call.Reply) {
 		t.Fatal("owner continuation was hidden by the progress report", err)
 	}

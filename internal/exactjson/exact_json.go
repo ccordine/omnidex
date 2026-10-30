@@ -94,21 +94,7 @@ func validateShape(value any, target reflect.Type, path string, allowUnknown boo
 		if !ok {
 			return nil
 		}
-		fields := make(map[string]reflect.Type, target.NumField())
-		for index := 0; index < target.NumField(); index++ {
-			field := target.Field(index)
-			if field.PkgPath != "" {
-				continue
-			}
-			name := strings.Split(field.Tag.Get("json"), ",")[0]
-			if name == "-" {
-				continue
-			}
-			if name == "" {
-				name = field.Name
-			}
-			fields[name] = field.Type
-		}
+		fields := exactStructFields(target)
 		for name, nested := range object {
 			fieldType, exists := fields[name]
 			if !exists {
@@ -138,6 +124,48 @@ func validateShape(value any, target reflect.Type, path string, allowUnknown boo
 		}
 	}
 	return nil
+}
+
+// encoding/json promotes exported fields of untagged embedded structs. Keep
+// the exact-name check on that same representation instead of treating the
+// embedded Go type name as a JSON property.
+func exactStructFields(target reflect.Type) map[string]reflect.Type {
+	fields := map[string]reflect.Type{}
+	for index := 0; index < target.NumField(); index++ {
+		field := target.Field(index)
+		name := strings.Split(field.Tag.Get("json"), ",")[0]
+		typeOf := field.Type
+		if typeOf.Kind() == reflect.Pointer {
+			typeOf = typeOf.Elem()
+		}
+		if field.PkgPath == "" && field.Anonymous && name == "" && typeOf.Kind() == reflect.Struct {
+			for name, kind := range exactStructFields(typeOf) {
+				fields[name] = kind
+			}
+		}
+	}
+	for index := 0; index < target.NumField(); index++ {
+		field := target.Field(index)
+		if field.PkgPath != "" {
+			continue
+		}
+		name := strings.Split(field.Tag.Get("json"), ",")[0]
+		if name == "-" {
+			continue
+		}
+		typeOf := field.Type
+		if typeOf.Kind() == reflect.Pointer {
+			typeOf = typeOf.Elem()
+		}
+		if field.Anonymous && name == "" && typeOf.Kind() == reflect.Struct {
+			continue
+		}
+		if name == "" {
+			name = field.Name
+		}
+		fields[name] = field.Type
+	}
+	return fields
 }
 
 func walkUniqueObject(decoder *json.Decoder) error {

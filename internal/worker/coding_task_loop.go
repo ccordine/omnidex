@@ -15,9 +15,17 @@ func (runtime *nativeRuntimeV3) runCodingTaskLoop(ctx context.Context, codex *co
 			return err
 		}
 		if task == nil {
-			return nil
+			request, err := runtime.codingLedgerRequest()
+			if err != nil {
+				return err
+			}
+			return runtime.runWithSessionMessages(ctx, func(reviewCtx context.Context) error {
+				return codex.ReviewGoal(reviewCtx, codingagent.Objective{Instruction: request.Instruction, Clarifications: request.Feedback})
+			})
 		}
-		if err := runtime.runWithSessionMessages(ctx, func(taskCtx context.Context) error { return codex.RunTask(taskCtx, *task) }); err != nil {
+		if err := runtime.runWithSessionMessages(ctx, func(taskCtx context.Context) error {
+			return codex.RunTask(taskCtx, *task)
+		}); err != nil {
 			return err
 		}
 		if err := runtime.svc.repo.AcceptCodingLedgerTask(ctx, runtime.claim.Authority, task.ID); err != nil {

@@ -100,6 +100,8 @@ type SubmitJobFeedbackCommand struct {
 }
 
 type ReplanJobCommand struct {
+	ManualPlanning         bool                       `json:"-"`
+	PlanningItemID         model.LedgerItemID         `json:"-"`
 	OperationID            model.LifecycleOperationID `json:"operation_id"`
 	JobID                  int64                      `json:"job_id"`
 	Feedback               string                     `json:"feedback"`

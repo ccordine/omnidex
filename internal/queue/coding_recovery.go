@@ -18,7 +18,11 @@ func codingRecoveryStepTx(ctx context.Context, tx pgx.Tx, job model.Job) (int64,
  JOIN job_steps step ON step.job_id=ledger.job_id AND step.generation=$2
  WHERE ledger.job_id=$1 AND ledger.state='frozen' AND ledger.frozen_revision=ledger.current_revision
  AND step.action='v3_coding' AND step.superseded_at_generation IS NULL
- AND (( $3='failed' AND step.status='failed') OR
+ AND (( $3='failed' AND (step.status='failed' OR
+      (step.status='pending' AND step.current_attempt=0 AND EXISTS(
+        SELECT 1 FROM job_steps planning WHERE planning.job_id=step.job_id
+        AND planning.generation=step.generation AND planning.action='v3_coding_plan'
+        AND planning.status='failed' AND planning.superseded_at_generation IS NULL)))) OR
       ($3='waiting_input' AND step.status='waiting_input' AND EXISTS(
         SELECT 1 FROM job_lifecycle_operations operation WHERE operation.job_id=$1
         AND operation.kind='interrupt_job' AND operation.step_id=step.id
@@ -33,6 +37,9 @@ func resumeFrozenCodingTx(ctx context.Context, tx pgx.Tx, job model.Job, ownerTe
 	stepID, err := codingRecoveryStepTx(ctx, tx, job)
 	if err != nil {
 		return model.Job{}, fmt.Errorf("frozen coding recovery is unavailable: %w", err)
+	}
+	if err := recoverApprovedPlanningBoundaryTx(ctx, tx, job, stepID); err != nil {
+		return model.Job{}, err
 	}
 	if err := retainCodingContinuationTx(ctx, tx, job, stepID, ownerText); err != nil {
 		return model.Job{}, err
@@ -52,6 +59,39 @@ func resumeFrozenCodingTx(ctx context.Context, tx pgx.Tx, job model.Job, ownerTe
 		return model.Job{}, err
 	}
 	return scanLockedJobTx(ctx, tx, job.ID)
+}
+
+// A failed planner may already have left a complete proposal that the owner
+// subsequently approved. Its frozen receipt satisfies planning. Record why
+// execution never started, then use the ordinary failed-step recovery below.
+// The failed planning attempt and its error remain as evidence; no task is
+// accepted and no execution attempt is invented.
+func recoverApprovedPlanningBoundaryTx(ctx context.Context, tx pgx.Tx, job model.Job, stepID int64) error {
+	if job.Status != model.JobStatusFailed {
+		return nil
+	}
+	var status string
+	if err := tx.QueryRow(ctx, `SELECT status FROM job_steps WHERE id=$1 FOR UPDATE`, stepID).Scan(&status); err != nil {
+		return err
+	}
+	if status != model.StepStatusPending {
+		return nil
+	}
+	result, err := tx.Exec(ctx, `UPDATE job_steps SET status='completed',
+ output='Owner-approved frozen ledger recovered after planning failure',updated_at=clock_timestamp()
+ WHERE job_id=$1 AND generation=$2 AND action='v3_coding_plan' AND status='failed'
+ AND superseded_at_generation IS NULL`, job.ID, job.CurrentGeneration)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() != 1 {
+		return ErrCodingLedgerState
+	}
+	_, err = tx.Exec(ctx, `UPDATE job_steps SET status='failed',
+ error='Execution did not start because planning failed: ' || $2,
+ finished_at=clock_timestamp(),updated_at=clock_timestamp()
+ WHERE id=$1 AND status='pending' AND current_attempt=0`, stepID, job.Error)
+	return err
 }
 
 func pauseFrozenCodingTx(ctx context.Context, tx pgx.Tx, job model.Job, descriptor lifecycleOperationDescriptor) (LifecycleJobResult, bool, error) {

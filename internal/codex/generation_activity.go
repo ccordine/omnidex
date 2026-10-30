@@ -2,7 +2,6 @@ package codex
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"github.com/gryph/omnidex/internal/codingagent"
 	"github.com/gryph/omnidex/internal/model"
@@ -13,7 +12,6 @@ import (
 // receipts, station output, prompts or execution capabilities.
 type semanticActivityStream struct {
 	identity codingagent.Result
-	items    map[string]string
 	public   *agentActivityStream
 }
 
@@ -22,7 +20,6 @@ func newSemanticActivityStream(threadID, turnID string, observer func(model.Agen
 	if observer == nil {
 		return stream
 	}
-	stream.items = map[string]string{}
 	stream.public = newAgentActivityStream(codingagent.Assignment{Role: codingagent.Plan}, &stream.identity, func(event codingagent.NativeEvent) error {
 		if event.Activity != nil {
 			return observer(*event.Activity)
@@ -39,11 +36,8 @@ func (stream *semanticActivityStream) consume(frame rpcFrame, raw json.RawMessag
 	if err := validateAgentFrameBinding(frame, &stream.identity); err != nil {
 		return err
 	}
-	if err := validateAgentItems(frame, codingagent.Plan, stream.items); err != nil {
+	if err := validateAgentItems(frame, codingagent.Plan); err != nil {
 		return err
-	}
-	if frame.Method == "turn/completed" && len(stream.items) != 0 {
-		return fmt.Errorf("semantic turn ended with incomplete native public items")
 	}
 	return stream.public.observe(codingagent.NativeEvent{Frame: raw})
 }

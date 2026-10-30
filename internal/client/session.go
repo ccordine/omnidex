@@ -136,7 +136,7 @@ func validateChatSessionSnapshot(
 		return err
 	}
 	if snapshot.ActiveJob == nil {
-		return validateChatSessionActiveTurn(snapshot.Messages, nil, 0)
+		return validateChatSessionActiveTurn(snapshot.Messages, nil, 0, snapshot.HasMore)
 	}
 	userMessageID, err := validateClientActiveJob(
 		snapshot.Channel,
@@ -146,7 +146,7 @@ func validateChatSessionSnapshot(
 	if err != nil {
 		return err
 	}
-	return validateChatSessionActiveTurn(snapshot.Messages, &snapshot.ActiveJob.Job, userMessageID)
+	return validateChatSessionActiveTurn(snapshot.Messages, &snapshot.ActiveJob.Job, userMessageID, snapshot.HasMore)
 }
 
 func validateChatSessionMessageTurn(message model.ChannelMessage) error {
@@ -396,6 +396,7 @@ func validateChatSessionActiveTurn(
 	messages []model.ChannelMessage,
 	activeJob *model.Job,
 	activeUserMessageID int64,
+	hasMore bool,
 ) error {
 	planningConversation := false
 	if activeJob != nil && len(activeJob.Metadata) > 0 {
@@ -439,6 +440,9 @@ func validateChatSessionActiveTurn(
 		return fmt.Errorf("chat session transcript has an active turn without an active job")
 	}
 	if activeJob != nil && activeTurns != 1 {
+		if planningConversation && activeTurns == 0 && hasMore && len(messages) > 0 && messages[0].ID > activeUserMessageID {
+			return nil
+		}
 		return fmt.Errorf("chat session transcript contains %d active turns for job %d", activeTurns, activeJob.ID)
 	}
 	return nil

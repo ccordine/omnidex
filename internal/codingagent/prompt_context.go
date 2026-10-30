@@ -15,17 +15,25 @@ func PromptContext(call Assignment) any {
 			failure = call.Continuation.Reason
 		}
 		return struct {
-			Tasks               []LedgerTask        `json:"tasks"`
-			Conversation        []PlanningMessage   `json:"conversation,omitempty"`
-			IncompleteReason    string              `json:"incomplete_reason,omitempty"`
-			Clarifications      []TaskClarification `json:"clarifications,omitempty"`
-			NewerOwnerDirection *PlanningDirection  `json:"newer_owner_direction,omitempty"`
-		}{tasks, call.PlanningConversation, failure, call.Clarifications, call.NewerOwnerDirection}
+			PrecedingIncompleteTasks []PlanningTaskPrerequisite `json:"preceding_incomplete_tasks,omitempty"`
+			ItemScope                []ConstructionFact         `json:"item_scope,omitempty"`
+			Tasks                    []LedgerTask               `json:"tasks"`
+			Conversation             []PlanningMessage          `json:"conversation,omitempty"`
+			IncompleteReason         string                     `json:"incomplete_reason,omitempty"`
+			Clarifications           []TaskClarification        `json:"clarifications,omitempty"`
+			NewerOwnerDirection      *PlanningDirection         `json:"newer_owner_direction,omitempty"`
+			CompletedTaskIDs         []string                   `json:"completed_task_ids,omitempty"`
+		}{call.PrecedingIncompleteTasks, call.ConstructionFacts, tasks, call.PlanningConversation, failure, call.Clarifications, call.NewerOwnerDirection, call.CompletedTaskIDs}
 	}
 	if call.Role == ReviewResponse || call.Role == ExecutionResponse {
 		instructions := ""
 		if call.Task != nil {
 			instructions = call.Task.Instructions()
+		} else if call.Objective != nil {
+			instructions = call.Objective.Instruction
+			for _, clarification := range call.Objective.Clarifications {
+				instructions += "\n" + clarification
+			}
 		}
 		var clarifications []TaskClarification
 		if call.Role == ExecutionResponse {
@@ -48,21 +56,24 @@ func PromptContext(call Assignment) any {
 
 		return struct {
 			ExecutionReport  *ExecutionReport    `json:"execution_report,omitempty"`
+			Objective        *Objective          `json:"objective,omitempty"`
 			Task             *Task               `json:"task"`
 			Findings         []findingText       `json:"findings,omitempty"`
 			PreviousResponse string              `json:"previous_response,omitempty"`
 			Reply            string              `json:"reply,omitempty"`
 			Clarifications   []TaskClarification `json:"clarifications,omitempty"`
-		}{call.ExecutionReport, call.Task, findings, call.Response, call.Reply, call.Clarifications}
+		}{call.ExecutionReport, call.Objective, call.Task, findings, call.Response, call.Reply, call.Clarifications}
 	}
 	return struct {
-		Objective            *Objective             `json:"objective,omitempty"`
-		WorkspaceFiles       []string               `json:"workspace_files,omitempty"`
-		ConstructionFacts    []ConstructionFact     `json:"construction_facts,omitempty"`
-		ValidationNotes      []string               `json:"validation_notes,omitempty"`
-		PlanningLedger       *PlanningLedgerContext `json:"planning_ledger,omitempty"`
-		PlanningConversation []PlanningMessage      `json:"conversation,omitempty"`
-		Continuation         *TaskContinuation      `json:"continuation,omitempty"`
-		Clarifications       []TaskClarification    `json:"clarifications,omitempty"`
-	}{call.Objective, call.ReadFiles, call.ConstructionFacts, call.ValidationNotes, ActivePlanningLedgerContext(call.PlanningLedger, call.CompletedTaskIDs...), call.PlanningConversation, call.Continuation, call.Clarifications}
+		PrecedingIncompleteTasks []PlanningTaskPrerequisite `json:"preceding_incomplete_tasks,omitempty"`
+		Objective                *Objective                 `json:"objective,omitempty"`
+		WorkspaceFiles           []string                   `json:"workspace_files,omitempty"`
+		ConstructionFacts        []ConstructionFact         `json:"construction_facts,omitempty"`
+		ValidationNotes          []string                   `json:"validation_notes,omitempty"`
+		PlanningLedger           *PlanningLedgerContext     `json:"planning_ledger,omitempty"`
+		PlanningConversation     []PlanningMessage          `json:"conversation,omitempty"`
+		Continuation             *TaskContinuation          `json:"continuation,omitempty"`
+		Clarifications           []TaskClarification        `json:"clarifications,omitempty"`
+		CompletedTaskIDs         []string                   `json:"completed_task_ids,omitempty"`
+	}{call.PrecedingIncompleteTasks, call.Objective, call.ReadFiles, call.ConstructionFacts, call.ValidationNotes, ActivePlanningLedgerContext(call.PlanningLedger, call.CompletedTaskIDs...), call.PlanningConversation, call.Continuation, call.Clarifications, call.CompletedTaskIDs}
 }

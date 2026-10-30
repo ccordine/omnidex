@@ -6,8 +6,8 @@ import (
 )
 
 // TaskLedgerCompletionRecap reports the database-driven task loop. Completion
-// authority comes from NextIncompleteCodingLedgerTask returning no remaining
-// task; this function only renders the task acceptance evidence.
+// follows item acceptance and the final original-goal review; this function
+// only renders the task acceptance evidence.
 func TaskLedgerCompletionRecap(entries []Entry, taskCount, maxBytes int) (string, error) {
 	if taskCount < 1 {
 		return "", fmt.Errorf("task ledger completion recap requires authoritative accepted task counts")

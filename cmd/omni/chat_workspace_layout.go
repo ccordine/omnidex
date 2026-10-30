@@ -146,6 +146,15 @@ func (view *chatWorkspace) frameLocked() ([]string, int, int, bool) {
 	activity := view.activityLinesLocked(max(1, activityWidth))
 	if view.focus == workspaceLedgerPane && !reviewing {
 		lines = view.ledgerLinesLocked(columns)
+		if view.ledger.editor != nil {
+			caret, _ := view.ledgerEditorCursorLocked(columns)
+			if caret < view.ledger.offset {
+				view.ledger.offset = caret
+			}
+			if caret >= view.ledger.offset+bodyHeight {
+				view.ledger.offset = caret - bodyHeight + 1
+			}
+		}
 		if view.ledger.followSelection {
 			view.revealLedgerSelectionLocked(columns, bodyHeight)
 			view.ledger.followSelection = false
@@ -221,7 +230,13 @@ func (view *chatWorkspace) frameLocked() ([]string, int, int, bool) {
 		hint = "  j/k scroll · PgUp/PgDn page · G latest · i compose · Ctrl-B z zoom"
 	}
 	if view.focus == workspaceLedgerPane {
-		hint = "  j/k select · PgUp/PgDn scroll · a agree · d discuss · x remove · s restore · [/] reorder · r refresh · t retry"
+		hint = "  Click/Enter view · n new · e edit · p planner · [/] move · b list · r refresh · a agree · x remove"
+		if view.ledger.editor != nil {
+			hint = "  Tab next field · Shift-Tab previous · Ctrl-S save · Esc cancel"
+			if view.ledger.editor.mode == "planner" {
+				hint = "  Enter send · Ctrl-J newline · Esc back · only the selected item is edited"
+			}
+		}
 	}
 	if view.focus == workspaceSessionsPane {
 		hint = "  j/k select · Enter switch · r refresh · i compose"
@@ -245,6 +260,11 @@ func (view *chatWorkspace) frameLocked() ([]string, int, int, bool) {
 		view.helpFrameLocked(frame)
 	}
 	visible := view.cursorVisible && view.focus == workspaceCompose && !view.help && view.conversationOffset == 0 && row >= 2 && row < h-2
+	if view.focus == workspaceLedgerPane && view.ledger.editor != nil && !view.help {
+		r, c := view.ledgerEditorCursorLocked(columns)
+		row, column = 2+r-view.ledger.offset, min(w-1, c+2)
+		visible = row >= 2 && row < h-2
+	}
 	return frame, row, column, visible
 }
 

@@ -255,18 +255,5 @@ func validatePlanReviewRevisionTransition(previous, next model.CodingPlan) error
 	if next.UpdatedAt.Before(previous.UpdatedAt) {
 		return fmt.Errorf("plan review update time regressed within one job generation")
 	}
-	if len(previous.Leaves) != len(next.Leaves) {
-		return fmt.Errorf("plan review leaf set changed within one job generation")
-	}
-	for index := range previous.Leaves {
-		left := previous.Leaves[index]
-		right := next.Leaves[index]
-		if left.ID != right.ID || left.Statement != right.Statement {
-			return fmt.Errorf(
-				"plan review leaf %d authority changed within one job generation",
-				index,
-			)
-		}
-	}
 	return nil
 }

@@ -20,6 +20,7 @@ func codingLedgerRevisionResponse(value queue.CodingLedgerRevision) ledgerapi.Co
 		pending[i] = ledgerapi.CodingPlanningAmendment{OperationID: item.OperationID, Revision: item.Revision, Text: item.Text}
 	}
 	return ledgerapi.CodingLedgerRevision{
+		PlanningMessages:  value.PlanningMessages,
 		PendingAmendments: pending,
 		LedgerID:          value.LedgerID, JobID: value.JobID, Generation: value.Generation,
 		Revision: value.Revision, BaseRevision: value.BaseRevision,

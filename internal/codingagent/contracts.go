@@ -68,6 +68,7 @@ func (config Configuration) Validate() error {
 }
 
 type Task struct {
+	Payload              json.RawMessage                `json:"-"`
 	Objective            string                         `json:"objective,omitempty"`
 	OwnerContext         []model.TaskContext            `json:"owner_context,omitempty"`
 	Constraints          []string                       `json:"constraints,omitempty"`
@@ -123,33 +124,35 @@ type ExecutionReport struct {
 }
 
 type Assignment struct {
-	ExecutionReport      *ExecutionReport    `json:"execution_report,omitempty"`
-	JobID                int64               `json:"job_id"`
-	Generation           int64               `json:"generation"`
-	Role                 Role                `json:"role"`
-	Task                 *Task               `json:"task,omitempty"`
-	Objective            *Objective          `json:"objective,omitempty"`
-	ConstructionFacts    []ConstructionFact  `json:"construction_facts,omitempty"`
-	Findings             []Finding           `json:"findings,omitempty"`
-	ValidationNotes      []string            `json:"validation_notes,omitempty"`
-	Root                 string              `json:"root"`
-	ReadFiles            []string            `json:"read_files"`
-	WriteFiles           []string            `json:"write_files"`
-	DeleteFiles          []string            `json:"delete_files"`
-	Route                Route               `json:"route"`
-	PlanningQuestionID   string              `json:"planning_question_id,omitempty"`
-	PlanningBaseRevision int64               `json:"planning_base_revision,omitempty"`
-	PlanningLedger       *EngineeringLedger  `json:"planning_ledger,omitempty"`
-	PlanningConversation []PlanningMessage   `json:"planning_conversation,omitempty"`
-	NewerOwnerDirection  *PlanningDirection  `json:"newer_owner_direction,omitempty"`
-	PlanningResponse     string              `json:"planning_response,omitempty"`
-	Response             string              `json:"response,omitempty"`
-	Session              *ExecutionSession   `json:"session,omitempty"`
-	Reply                string              `json:"reply,omitempty"`
-	Context              string              `json:"context,omitempty"`
-	Continuation         *TaskContinuation   `json:"continuation,omitempty"`
-	Clarifications       []TaskClarification `json:"clarifications,omitempty"`
-	CompletedTaskIDs     []string            `json:"completed_task_ids,omitempty"`
+	ReviewFeedback           string                     `json:"review_feedback,omitempty"`
+	ExecutionReport          *ExecutionReport           `json:"execution_report,omitempty"`
+	JobID                    int64                      `json:"job_id"`
+	Generation               int64                      `json:"generation"`
+	Role                     Role                       `json:"role"`
+	Task                     *Task                      `json:"task,omitempty"`
+	Objective                *Objective                 `json:"objective,omitempty"`
+	ConstructionFacts        []ConstructionFact         `json:"construction_facts,omitempty"`
+	Findings                 []Finding                  `json:"findings,omitempty"`
+	ValidationNotes          []string                   `json:"validation_notes,omitempty"`
+	Root                     string                     `json:"root"`
+	ReadFiles                []string                   `json:"read_files"`
+	WriteFiles               []string                   `json:"write_files"`
+	DeleteFiles              []string                   `json:"delete_files"`
+	Route                    Route                      `json:"route"`
+	PlanningQuestionID       string                     `json:"planning_question_id,omitempty"`
+	PlanningBaseRevision     int64                      `json:"planning_base_revision,omitempty"`
+	PlanningLedger           *EngineeringLedger         `json:"planning_ledger,omitempty"`
+	PrecedingIncompleteTasks []PlanningTaskPrerequisite `json:"preceding_incomplete_tasks,omitempty"`
+	PlanningConversation     []PlanningMessage          `json:"planning_conversation,omitempty"`
+	NewerOwnerDirection      *PlanningDirection         `json:"newer_owner_direction,omitempty"`
+	PlanningResponse         string                     `json:"planning_response,omitempty"`
+	Response                 string                     `json:"response,omitempty"`
+	Session                  *ExecutionSession          `json:"session,omitempty"`
+	Reply                    string                     `json:"reply,omitempty"`
+	Context                  string                     `json:"context,omitempty"`
+	Continuation             *TaskContinuation          `json:"continuation,omitempty"`
+	Clarifications           []TaskClarification        `json:"clarifications,omitempty"`
+	CompletedTaskIDs         []string                   `json:"completed_task_ids,omitempty"`
 }
 
 type PlanningMessage struct {
@@ -171,8 +174,8 @@ func (result Result) ValidateFor(role Role, route Route) error {
 	if result.Provider != route.Provider || result.Model != route.Model || !result.Completed || !json.Valid(result.Content) {
 		return fmt.Errorf("provider returned an unbound or incomplete result")
 	}
-	if role.IsNative() && (result.ThreadID == "" || result.TurnID == "") {
-		return fmt.Errorf("native execution requires its original thread and turn identities")
+	if role.IsNative() && result.ThreadID == "" {
+		return fmt.Errorf("native execution requires its original thread identity")
 	}
 	return nil
 }

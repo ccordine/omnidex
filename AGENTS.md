@@ -36,7 +36,7 @@ These instructions apply to Codex developing this repository. The product workfl
 
 - Codex changes Omnidex; Omnidex produces the application used to test it. Use ordinary requests and inspect the real result. Do not hand-build, scaffold, patch, or supply intermediate implementation hints to the workload.
 - Fix task-neutral framework defects between runs. Do not change framework source during an evidence run or encode the current workload's domain into framework helpers, prompts, templates, or adapters.
-- Use disposable workload fixtures without cloning the Omnidex source. For an autonomy claim, use a fresh workload workspace, keep evaluation criteria out of the builder's context, and record model inputs/results and interventions. A steered run is not evidence of autonomous completion.
+- Pilot workloads in the existing checkout, branch, and running environment under the owner's environment rule, including its current data and in-progress changes. For an autonomy claim, keep evaluation criteria out of the builder's context and record model inputs/results and interventions. A steered run is not evidence of autonomous completion.
 - Functional interaction tests may deliberately exercise user edits, clarification, and cancellation; describe that interaction accurately. Keep elaborate autonomy-benchmark requirements scoped to autonomy claims.
 
 ## Reference material

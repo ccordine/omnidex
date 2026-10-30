@@ -139,10 +139,10 @@ func (repository *Repository) NextIncompleteCodingLedgerTask(
 	if action != "v3_coding" {
 		return nil, fmt.Errorf("coding ledger task selection requires the execution step")
 	}
-	var ledgerID, revision int64
-	var taskID model.LedgerItemID
+	var selected codingagent.Task
+	var payload json.RawMessage
 	err = tx.QueryRow(ctx, `
-		SELECT ledger.id,ledger.frozen_revision,task.task_item_id
+		SELECT version.payload
 		FROM coding_ledgers ledger
 		JOIN coding_agent_tasks task
 		  ON task.ledger_id=ledger.id
@@ -161,27 +161,9 @@ func (repository *Repository) NextIncompleteCodingLedgerTask(
 		  AND task.state='ready'
 		ORDER BY version.rank,task.fairness_key
 		LIMIT 1
-	`, authority.JobID).Scan(&ledgerID, &revision, &taskID)
+	`, authority.JobID).Scan(&payload)
 	if err != nil {
 		if err == pgx.ErrNoRows {
-			var incomplete bool
-			if err := tx.QueryRow(ctx, `
-				SELECT EXISTS(
-				    SELECT 1
-				    FROM coding_ledgers ledger
-				    JOIN coding_agent_tasks task
-				      ON task.ledger_id=ledger.id
-				     AND task.frozen_revision=ledger.frozen_revision
-				    WHERE ledger.job_id=$1
-				      AND ledger.state='frozen'
-				      AND task.state NOT IN ('accepted','cancelled')
-				)
-			`, authority.JobID).Scan(&incomplete); err != nil {
-				return nil, err
-			}
-			if incomplete {
-				return nil, fmt.Errorf("coding task ledger has incomplete tasks but none are dependency-ready")
-			}
 			if err := tx.Commit(ctx); err != nil {
 				return nil, err
 			}
@@ -192,11 +174,11 @@ func (repository *Repository) NextIncompleteCodingLedgerTask(
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
-	detail, err := repository.completeCodingLedgerTaskDetail(ctx, ledgerID, revision, taskID)
-	if err != nil {
+	if err := json.Unmarshal(payload, &selected); err != nil {
 		return nil, err
 	}
-	return codingAgentTaskFromLedgerDetail(detail)
+	selected.Payload = payload
+	return &selected, nil
 }
 
 func (repository *Repository) AcceptCodingLedgerTask(
@@ -247,27 +229,6 @@ func (repository *Repository) AcceptCodingLedgerTask(
 	if state != "ready" {
 		return fmt.Errorf("coding ledger task %s is %s instead of ready", taskID, state)
 	}
-	detail, err := readCodingLedgerRevisionTx(ctx, tx, ledgerID, revision, CodingLedgerReadOptions{
-		Limit: -1, RelatedTaskID: model.LedgerItemID(taskID),
-	})
-	if err != nil {
-		return err
-	}
-	task, err := codingAgentTaskFromLedgerDetail(detail)
-	if err != nil {
-		return err
-	}
-	configuration, err := frozenCodingLedgerConfigurationTx(ctx, tx, authority.JobID)
-	if err != nil {
-		return err
-	}
-	entries, err := codingAgentCompletionEntriesTx(ctx, tx, authority.JobID, authority.Generation)
-	if err != nil {
-		return err
-	}
-	if err := validateCodingTaskAcceptanceJournal(entries, authority.Generation, configuration, *task); err != nil {
-		return err
-	}
 	result, err := tx.Exec(ctx, `
 		UPDATE coding_agent_tasks
 		SET state='accepted',state_version=state_version+1,
@@ -281,17 +242,6 @@ func (repository *Repository) AcceptCodingLedgerTask(
 		return fmt.Errorf("coding ledger task %s changed before acceptance", taskID)
 	}
 	return tx.Commit(ctx)
-}
-
-func (repository *Repository) completeCodingLedgerTaskDetail(ctx context.Context, ledgerID, revision int64, taskID model.LedgerItemID) (CodingLedgerRevision, error) {
-	return repository.CodingLedgerTaskDetail(ctx, ledgerID, revision, taskID)
-}
-
-func codingAgentTaskFromLedgerDetail(detail CodingLedgerRevision) (*codingagent.Task, error) {
-	if len(detail.Ledger.Tasks) != 1 {
-		return nil, fmt.Errorf("coding ledger task selection requires exactly one task")
-	}
-	return codingAgentTaskFromLedger(detail.Ledger, detail.Ledger.Tasks[0].ID)
 }
 
 func codingAgentTaskFromLedger(ledger model.EngineeringLedger, id model.LedgerItemID) (*codingagent.Task, error) {

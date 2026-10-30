@@ -8,6 +8,7 @@ import (
 	"os"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/codingagent"
@@ -16,20 +17,21 @@ import (
 )
 
 type amendmentTaskProvider struct {
-	t               *testing.T
 	task            codingagent.Task
-	duringExecution func()
+	duringExecution func(context.Context) error
 	roles           []codingagent.Role
 }
 
-func (p *amendmentTaskProvider) Run(_ context.Context, call codingagent.Assignment, event func(codingagent.NativeEvent) error) (codingagent.Result, error) {
+func (p *amendmentTaskProvider) Run(ctx context.Context, call codingagent.Assignment, event func(codingagent.NativeEvent) error) (codingagent.Result, error) {
 	p.roles = append(p.roles, call.Role)
 	if call.Role == codingagent.Execute || call.Role == codingagent.Review {
 		if call.Task == nil || !reflect.DeepEqual(*call.Task, p.task) {
-			p.t.Fatal("pending input changed native frozen packet")
+			return codingagent.Result{}, fmt.Errorf("pending input changed native frozen packet")
 		}
 		if call.Role == codingagent.Execute {
-			p.duringExecution()
+			if err := p.duringExecution(ctx); err != nil {
+				return codingagent.Result{}, err
+			}
 		}
 	}
 	if err := event(codingagent.NativeEvent{Frame: json.RawMessage(`{"fixture":"amendment-boundary"}`)}); err != nil {
@@ -106,27 +108,43 @@ func testPlanningAmendmentWorker(t *testing.T, unchanged bool) {
 		t.Fatal(err)
 	}
 	var messageID model.LifecycleOperationID
-	native := &amendmentTaskProvider{t: t, task: *task, duringExecution: func() {
+	messageConsumed := make(chan struct{}, 1)
+	native := &amendmentTaskProvider{task: *task, duringExecution: func(taskCtx context.Context) error {
 		message := command
 		message.OperationID, _ = model.NewLifecycleOperationID()
 		messageID = message.OperationID
 		message.ExpectedJobID = &executor.Job.ID
 		message.ExpectedGeneration = &executor.Authority.Generation
 		message.Text = "Move the task later without changing its accepted work."
-		if _, err := repo.SubmitChannelSessionTurn(ctx, message); err != nil {
-			t.Fatal(err)
+		if _, err := repo.SubmitChannelSessionTurn(taskCtx, message); err != nil {
+			return err
 		}
-		if result, err := repo.ResolveChannelSessionMessage(ctx, queue.ResolveChannelSessionMessageCommand{Authority: executor.Authority, OperationID: message.OperationID, Kind: assemblyline.ObjectiveKindWorkspaceMutation}); err != nil || result.Replanned {
-			t.Fatal("amendment interrupted native execution", err)
+		select {
+		case <-messageConsumed:
+		case <-taskCtx.Done():
+			return fmt.Errorf("queued message was not consumed during native execution: %w", taskCtx.Err())
 		}
-		still, err := repo.NextIncompleteCodingLedgerTask(ctx, executor.Authority)
-		if err != nil || !reflect.DeepEqual(still, task) {
-			t.Fatal("frozen packet changed", err)
+		still, err := repo.NextIncompleteCodingLedgerTask(taskCtx, executor.Authority)
+		if err != nil {
+			return err
 		}
+		if !reflect.DeepEqual(still, task) {
+			return fmt.Errorf("pending message changed the frozen task")
+		}
+		return nil
 	}}
 	runtime := &nativeRuntimeV3{svc: &Service{repo: repo}, ctx: ctx, claim: executor, action: "v3_coding"}
+	runtime.sessionMessages = &channelSessionMessageConsumer{
+		claim: executor, repository: repo,
+		kind: sessionKindFunc(func(assemblyline.ConversationObjectiveKindInput) (assemblyline.ConversationObjectiveKindDecision, int, error) {
+			return assemblyline.ConversationObjectiveKindDecision{Schema: assemblyline.ConversationObjectiveKindSchemaV1, Kind: assemblyline.ObjectiveKindWorkspaceMutation}, 0, nil
+		}),
+		resolved: func(model.LifecycleOperationID) { messageConsumed <- struct{}{} },
+	}
+	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	controller := &codingagent.Controller{JobID: executor.Job.ID, Generation: executor.Authority.Generation, Root: local.scope.Root, Configuration: configuration, Providers: map[string]codingagent.Provider{"native": native}, Environment: planningBoundaryEnvironment{}, Evidence: repo.CodingAgentEvidence(executor.Authority)}
-	if err = runtime.runCodingTaskLoop(ctx, controller); !errors.Is(err, queue.ErrStaleStepAttempt) {
+	if err = runtime.runCodingTaskLoop(runCtx, controller); !errors.Is(err, queue.ErrStaleStepAttempt) {
 		t.Fatal("task boundary did not enter replan", err)
 	}
 	var accepted string

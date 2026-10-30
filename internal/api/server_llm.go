@@ -78,6 +78,8 @@ func (s *Server) handleJobByID(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		switch action {
+		case jobItemPlanItemPlanner:
+			s.planCodingLedgerItem(w, r, id)
 		case jobItemResume:
 			s.resumeJob(w, r, id)
 		case jobItemFeedback:

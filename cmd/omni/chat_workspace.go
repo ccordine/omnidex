@@ -65,7 +65,7 @@ func newChatWorkspace(output io.Writer, width, height int) (*chatWorkspace, erro
 	view.ledger.requests = make(chan workspaceLedgerRequest, 1)
 	columns, _ := view.editorSizeLocked()
 	view.conversation, view.review = newWorkspaceScreen(columns), newWorkspaceScreen(columns)
-	if err := writeTerminalControl(output, "\x1b[?1049h\x1b[2J\x1b[H"); err != nil {
+	if err := writeTerminalControl(output, "\x1b[?1049h\x1b[?1000h\x1b[?1006h\x1b[2J\x1b[H"); err != nil {
 		return nil, err
 	}
 	return view, nil
@@ -78,7 +78,7 @@ func (view *chatWorkspace) Close() error {
 		return nil
 	}
 	view.closed = true
-	return writeTerminalControl(view.output, "\x1b[0m\x1b[?25h\x1b[?1049l")
+	return writeTerminalControl(view.output, "\x1b[?1000l\x1b[?1006l\x1b[0m\x1b[?25h\x1b[?1049l")
 }
 
 func (view *chatWorkspace) Write(value []byte) (int, error) {

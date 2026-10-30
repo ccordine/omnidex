@@ -59,7 +59,37 @@ func (r *Repository) CurrentCodingLedgerForJob(ctx context.Context, jobID int64)
 		return CodingLedgerRevision{}, false, err
 	}
 	result, err := r.readCompleteCodingLedger(ctx, ledgerID, 0)
+	if err == nil {
+		result.PlanningMessages, err = r.codingLedgerItemMessages(ctx, jobID)
+	}
 	return result, err == nil, err
+}
+
+func (r *Repository) codingLedgerItemMessages(ctx context.Context, jobID int64) ([]model.LedgerPlanningMessage, error) {
+	rows, err := r.pool.Query(ctx, `SELECT payload_json->>'task_id',payload_json->'notes' FROM evidence WHERE job_id=$1 AND kind='coding_agent' AND payload_json->>'phase'='planning_draft' AND COALESCE(payload_json->>'task_id','')<>'' ORDER BY id`, jobID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var messages []model.LedgerPlanningMessage
+	seen := map[string]bool{}
+	for rows.Next() {
+		var itemID model.LedgerItemID
+		var raw []byte
+		if err := rows.Scan(&itemID, &raw); err != nil {
+			return nil, err
+		}
+		var notes []string
+		if err := json.Unmarshal(raw, &notes); err != nil {
+			return nil, err
+		}
+		if len(notes) != 3 || seen[notes[0]] {
+			continue
+		}
+		seen[notes[0]] = true
+		messages = append(messages, model.LedgerPlanningMessage{ItemID: itemID, Role: "user", Text: notes[1]}, model.LedgerPlanningMessage{ItemID: itemID, Role: "assistant", Text: notes[2]})
+	}
+	return messages, rows.Err()
 }
 
 func (r *Repository) CodingLedgerRevisionForOperation(ctx context.Context, ledgerID int64, operationID string) (int64, bool, error) {
@@ -444,9 +474,6 @@ func (r *Repository) CodingLedgerTaskDetail(
 	})
 	if err != nil {
 		return CodingLedgerRevision{}, err
-	}
-	if len(task.Ledger.Tasks) != 1 || task.Ledger.Tasks[0].ID != taskID {
-		return CodingLedgerRevision{}, pgx.ErrNoRows
 	}
 	return task, nil
 }

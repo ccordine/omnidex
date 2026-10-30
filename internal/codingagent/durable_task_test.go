@@ -34,7 +34,7 @@ func (provider *durableTaskProvider) Run(_ context.Context, call Assignment, eve
 	content := json.RawMessage(`"Task completed."`)
 	switch call.Role {
 	case Execute:
-		if call.Session != nil || call.Task == nil || call.Task.Goal != provider.task.Goal || call.Reply != "CSV" || len(call.Clarifications) != 1 {
+		if call.Session != nil || call.Task == nil || call.Task.Goal != provider.task.Goal || len(call.Clarifications) != 1 || call.Clarifications[0].Answer != "CSV" {
 			provider.t.Fatalf("execution was not reconstructed from durable task state: %+v", call)
 		}
 		raw, _ := json.Marshal(PromptContext(call))

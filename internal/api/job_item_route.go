@@ -12,16 +12,17 @@ const maxJobItemPathBytes = 128
 type jobItemAction string
 
 const (
-	jobItemRead          jobItemAction = ""
-	jobItemHistory       jobItemAction = "history"
-	jobItemFeedback      jobItemAction = "feedback"
-	jobItemResume        jobItemAction = "resume"
-	jobItemInterrupt     jobItemAction = "interrupt"
-	jobItemReplan        jobItemAction = "replan"
-	jobItemCancel        jobItemAction = "cancel"
-	jobItemPlanRead      jobItemAction = "plan"
-	jobItemPlanDecisions jobItemAction = "plan/decisions"
-	jobItemPlanFreeze    jobItemAction = "plan/freeze"
+	jobItemRead            jobItemAction = ""
+	jobItemHistory         jobItemAction = "history"
+	jobItemFeedback        jobItemAction = "feedback"
+	jobItemResume          jobItemAction = "resume"
+	jobItemInterrupt       jobItemAction = "interrupt"
+	jobItemReplan          jobItemAction = "replan"
+	jobItemCancel          jobItemAction = "cancel"
+	jobItemPlanRead        jobItemAction = "plan"
+	jobItemPlanDecisions   jobItemAction = "plan/decisions"
+	jobItemPlanFreeze      jobItemAction = "plan/freeze"
+	jobItemPlanItemPlanner jobItemAction = "plan/item-planner"
 )
 
 func decodeJobItemRoute(request *http.Request) (int64, jobItemAction, error) {
@@ -49,7 +50,7 @@ func decodeJobItemRoute(request *http.Request) (int64, jobItemAction, error) {
 		action = jobItemAction(strings.Join(parts[1:], "/"))
 		switch action {
 		case jobItemResume, jobItemHistory, jobItemFeedback, jobItemInterrupt, jobItemReplan, jobItemCancel,
-			jobItemPlanRead, jobItemPlanDecisions, jobItemPlanFreeze:
+			jobItemPlanRead, jobItemPlanDecisions, jobItemPlanFreeze, jobItemPlanItemPlanner:
 		default:
 			return 0, "", fmt.Errorf("job item action is not registered")
 		}

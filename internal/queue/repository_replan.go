@@ -2,6 +2,7 @@ package queue
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -57,6 +58,18 @@ func replanJobTx(
 	if existing, found, err := loadLifecycleOperationTx(ctx, tx, descriptor, command.JobID); err != nil {
 		return LifecycleJobResult{}, err
 	} else if found {
+		var metadata struct {
+			Item struct {
+				Manual bool               `json:"manual"`
+				ID     model.LedgerItemID `json:"item_id"`
+			} `json:"ledger_item_planning"`
+		}
+		if err := json.Unmarshal(existing.ResultJob.Metadata, &metadata); err != nil {
+			return LifecycleJobResult{}, err
+		}
+		if metadata.Item.ID != command.PlanningItemID || metadata.Item.Manual != command.ManualPlanning {
+			return LifecycleJobResult{}, ErrLifecycleOperationConflict
+		}
 		if err := requireReplanReplayTx(ctx, tx, existing, command); err != nil {
 			return LifecycleJobResult{}, err
 		}
@@ -82,6 +95,12 @@ func replanJobTx(
 		}
 	} else {
 		return LifecycleJobResult{}, fmt.Errorf("lock coding ledger for job %d: %w", command.JobID, ledgerErr)
+	}
+	if command.PlanningItemID != "" {
+		var id string
+		if err := tx.QueryRow(ctx, `SELECT item.item_id FROM coding_ledgers ledger JOIN coding_ledger_revision_items item ON item.ledger_id=ledger.id AND item.revision=ledger.current_revision JOIN coding_ledger_item_versions version ON version.ledger_id=item.ledger_id AND version.item_id=item.item_id AND version.revision=item.item_revision WHERE ledger.job_id=$1 AND item.item_id=$2 AND version.disposition='active'`, command.JobID, command.PlanningItemID).Scan(&id); err != nil {
+			return LifecycleJobResult{}, err
+		}
 	}
 	job, currentGeneration, err := applyReplanJobTx(ctx, tx, command, job)
 	if err != nil {

@@ -58,19 +58,18 @@ func TestResearchTransportReadOnlyDiskAndLiveWeb(t *testing.T) {
 
 func TestResearchProtocolRetainsToolReceiptsAndRejectsWriteItems(t *testing.T) {
 	result := codingagent.Result{ThreadID: "research-thread", TurnID: "research-turn"}
-	open, closed := map[string]string{}, map[string]string{}
 	for _, method := range []string{"item/started", "item/completed"} {
 		raw := json.RawMessage(`{"method":"` + method + `","params":{"threadId":"research-thread","turnId":"research-turn","item":{"id":"read-command","type":"commandExecution","status":"completed","aggregatedOutput":"observed disk bytes"}}}`)
 		var frame rpcFrame
 		if err := json.Unmarshal(raw, &frame); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := consumeResearchFrame(frame, raw, &result, open, closed); err != nil {
+		if _, err := consumeResearchFrame(frame, raw, &result); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if len(result.Evidence) != 2 || len(open) != 0 {
-		t.Fatal("lost native receipts", result.Evidence, open)
+	if len(result.Evidence) != 2 {
+		t.Fatal("lost native receipts", result.Evidence)
 	}
 	for _, kind := range []string{"fileChange", "mcpToolCall", "collabAgentToolCall"} {
 		raw := json.RawMessage(`{"method":"item/started","params":{"item":{"type":"` + kind + `"}}}`)
@@ -78,7 +77,7 @@ func TestResearchProtocolRetainsToolReceiptsAndRejectsWriteItems(t *testing.T) {
 		if err := json.Unmarshal(raw, &frame); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := consumeResearchFrame(frame, raw, &result, open, closed); err == nil {
+		if _, err := consumeResearchFrame(frame, raw, &result); err == nil {
 			t.Fatal("forbidden Research item accepted", kind)
 		}
 	}

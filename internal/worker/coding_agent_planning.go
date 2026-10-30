@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/gryph/omnidex/internal/codingagent"
@@ -67,8 +68,38 @@ func (runtime *nativeRuntimeV3) runAgentPlanningAction(configuration codingagent
 		OwnerTurnID: fmt.Sprintf("owner:%d:%d", runtime.claim.Job.ID, runtime.claim.Authority.Generation),
 		Text:        request.planningText(exists), ObservedRevision: request.ObservedLedgerRevision,
 	}
+	var scoped struct {
+		Item struct {
+			Manual bool               `json:"manual"`
+			ID     model.LedgerItemID `json:"item_id"`
+		} `json:"ledger_item_planning"`
+	}
+	if err := json.Unmarshal(runtime.claim.Job.Metadata, &scoped); err != nil {
+		return err
+	}
+	turn.ItemID = scoped.Item.ID
 	if request.PlanningOperationID != "" {
 		turn.OperationID = request.PlanningOperationID
+	}
+	if scoped.Item.Manual {
+		for existing.State == "revising" {
+			updated, updateErr := runtime.svc.repo.ProposeUnchangedCodingLedger(agentContext, queue.ProposeUnchangedCodingLedgerCommand{LedgerID: existing.LedgerID, Revision: existing.Revision, OperationID: turn.OperationID, OwnerTurnID: turn.OwnerTurnID, OwnerTurnText: turn.Text})
+			if errors.Is(updateErr, queue.ErrCodingLedgerRevision) {
+				existing, _, err = runtime.svc.repo.CurrentCodingLedgerForJob(agentContext, runtime.claim.Job.ID)
+				if err != nil {
+					return err
+				}
+				continue
+			}
+			if updateErr != nil {
+				return updateErr
+			}
+			existing = updated
+		}
+		if _, err := runtime.finishPlanningConversation(agentContext, &controller, existing, turn); err != nil {
+			return err
+		}
+		return errCodingLedgerReviewPending
 	}
 	alreadyApplied := false
 	if exists {
@@ -91,7 +122,8 @@ func (runtime *nativeRuntimeV3) runAgentPlanningAction(configuration codingagent
 	if err != nil {
 		return runtime.planningInputError(agentContext, err)
 	}
-	if err := controller.PublishPlanningLedger(agentContext, turn, ledger.Ledger); err != nil {
+	ledger, err = publishCurrentPlanningLedger(agentContext, runtime.svc.repo, &controller, turn, ledger)
+	if err != nil {
 		return err
 	}
 	ledger, err = runtime.finishPlanningConversation(agentContext, &controller, ledger, turn)
@@ -153,9 +185,6 @@ func createCodingLedgerPlanningTransaction(
 	if err != nil {
 		return queue.CodingLedgerRevision{}, err
 	}
-	for index := range proposal.Ledger.Tasks {
-		bindPlanningTaskSource(&proposal.Ledger.Tasks[index], nil, turn, 1)
-	}
 	created, err := repository.CreateCodingLedger(ctx, queue.CreateCodingLedgerCommand{
 		JobID: jobID, OperationID: turn.OperationID, OwnerTurnID: turn.OwnerTurnID,
 		OwnerTurnText: turn.Text, OwnerTurnDisposition: proposal.OwnerTurnDisposition,
@@ -183,10 +212,12 @@ func applyCodingLedgerPlanningTransaction(
 		return queue.CodingLedgerRevision{}, err
 	}
 	if current.Revision != turn.ObservedRevision {
-		return queue.CodingLedgerRevision{}, fmt.Errorf(
-			"planning turn observed revision %d but database revision is %d",
-			turn.ObservedRevision, current.Revision,
-		)
+		if direct != nil {
+			return queue.CodingLedgerRevision{}, queue.ErrCodingLedgerRevision
+		}
+		// Intake already admitted the owner's text. Concurrent controls do not
+		// invalidate it; interpret it against the current durable proposal.
+		turn.ObservedRevision = current.Revision
 	}
 	var mutation codingagent.LedgerMutation
 	if direct != nil {
@@ -197,38 +228,50 @@ func applyCodingLedgerPlanningTransaction(
 	if err != nil {
 		return queue.CodingLedgerRevision{}, err
 	}
-	if len(mutation.Operations) == 0 {
-		if current.State == "revising" {
-			return repository.ProposeUnchangedCodingLedger(ctx, queue.ProposeUnchangedCodingLedgerCommand{
-				LedgerID: ledgerID, Revision: current.Revision, OperationID: turn.OperationID,
-				OwnerTurnID: turn.OwnerTurnID, OwnerTurnText: turn.Text,
-			})
+	for {
+		if err := ctx.Err(); err != nil {
+			return queue.CodingLedgerRevision{}, err
 		}
-		return current, nil
-	}
-	if direct == nil {
-		for index := range mutation.Operations {
-			op := &mutation.Operations[index]
-			if (op.Kind != model.LedgerMutationAdd && op.Kind != model.LedgerMutationAmend) || op.Item == nil || op.Item.Task == nil {
+		if len(mutation.Operations) == 0 {
+			if current.State == "revising" {
+				proposed, err := repository.ProposeUnchangedCodingLedger(ctx, queue.ProposeUnchangedCodingLedgerCommand{
+					LedgerID: ledgerID, Revision: current.Revision, OperationID: turn.OperationID,
+					OwnerTurnID: turn.OwnerTurnID, OwnerTurnText: turn.Text,
+				})
+				if !errors.Is(err, queue.ErrCodingLedgerRevision) {
+					return proposed, err
+				}
+				current, err = readCompleteCodingLedger(ctx, repository, ledgerID)
+				if err != nil {
+					return queue.CodingLedgerRevision{}, err
+				}
 				continue
 			}
-			var retained *model.LedgerTask
-			for taskIndex := range current.Ledger.Tasks {
-				if current.Ledger.Tasks[taskIndex].ID == op.Item.Task.ID {
-					retained = &current.Ledger.Tasks[taskIndex]
-					break
-				}
-			}
-			bindPlanningTaskSource(op.Item.Task, retained, turn, current.Revision+1)
+			return current, nil
 		}
+		applied, err := repository.ApplyCodingLedgerMutation(ctx, queue.ApplyCodingLedgerMutationCommand{
+			LedgerID: ledgerID, OwnerTurnText: turn.Text, Mutation: mutation,
+		})
+		if !errors.Is(err, queue.ErrCodingLedgerRevision) || direct != nil {
+			return applied, err
+		}
+		latest, err := readCompleteCodingLedger(ctx, repository, ledgerID)
+		if err != nil {
+			return queue.CodingLedgerRevision{}, err
+		}
+		if rebased, ok := rebasePlanningControls(current.Ledger, latest.Ledger, mutation); ok {
+			mutation = rebased
+		} else {
+			// The task meaning changed, so the retained response must be interpreted
+			// against that new context. Mechanical control changes never need this.
+			turn.ObservedRevision = latest.Revision
+			mutation, err = controller.PlanPlanningMutation(ctx, latest.Ledger, turn)
+			if err != nil {
+				return queue.CodingLedgerRevision{}, err
+			}
+		}
+		current = latest
 	}
-	applied, err := repository.ApplyCodingLedgerMutation(ctx, queue.ApplyCodingLedgerMutationCommand{
-		LedgerID: ledgerID, OwnerTurnText: turn.Text, Mutation: mutation,
-	})
-	if err != nil {
-		return queue.CodingLedgerRevision{}, err
-	}
-	return applied, nil
 }
 
 func readCompleteCodingLedger(
@@ -239,6 +282,9 @@ func readCompleteCodingLedger(
 	const pageSize = 1000
 	var complete queue.CodingLedgerRevision
 	for offset := 0; ; offset += pageSize {
+		if err := ctx.Err(); err != nil {
+			return queue.CodingLedgerRevision{}, err
+		}
 		page, err := repository.ReadCodingLedger(ctx, ledgerID, queue.CodingLedgerReadOptions{
 			Limit: pageSize, Offset: offset,
 		})
@@ -249,7 +295,9 @@ func readCompleteCodingLedger(
 			complete = page
 			complete.Ledger.Tasks = nil
 		} else if page.Revision != complete.Revision {
-			return queue.CodingLedgerRevision{}, fmt.Errorf("coding ledger changed while loading planning context")
+			// Restart the projection if a control changed it between pages.
+			offset = -pageSize
+			continue
 		}
 		count := codingLedgerPageItemCount(page.Ledger)
 		appendCodingLedgerPage(&complete.Ledger, page.Ledger)

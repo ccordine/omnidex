@@ -49,6 +49,7 @@ type CodingPlanningAmendment struct {
 }
 
 type CodingLedgerRevision struct {
+	PlanningMessages      []model.LedgerPlanningMessage     `json:"planning_messages,omitempty"`
 	PendingAmendments     []CodingPlanningAmendment         `json:"pending_amendments,omitempty"`
 	LedgerID              int64                             `json:"ledger_id"`
 	JobID                 int64                             `json:"job_id"`

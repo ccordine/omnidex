@@ -25,7 +25,7 @@ func codingExecutionResponseTx(ctx context.Context, tx pgx.Tx, jobID, stepID, ge
 		return response, err
 	}
 	response.ID = id
-	if response.TaskID == "" && response.NativeInput == nil && response.Phase != "planning_incomplete" || response.CallID < 1 || len(response.Notes) != 1 ||
+	if response.CallID < 1 || len(response.Notes) != 1 ||
 		(response.NativeInput == nil && response.ResponseKind != codingagent.ExecutionQuestion && response.ResponseKind != codingagent.ExecutionPermission) {
 		return response, fmt.Errorf("execution is not awaiting a parsed question or permission request")
 	}

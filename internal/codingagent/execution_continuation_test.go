@@ -71,9 +71,9 @@ func (p *progressProvider) Run(_ context.Context, a Assignment, emit func(Native
 			}
 			report = progressReport
 		case 2:
-			if a.Session == nil || a.Session.ThreadID != thread || a.Session.TurnID != "turn-1" || a.Session.State != "idle" ||
+			if a.Session != nil ||
 				a.ExecutionReport == nil || a.ExecutionReport.Response != progressReport || a.ExecutionReport.CallID < 1 || a.ExecutionReport.Round != 1 || a.Reply != "" {
-				p.t.Fatalf("partial execution lost its session, report or authority: %+v", a)
+				p.t.Fatalf("fresh continuation lost its retained report or authority: %+v", a)
 			}
 			if bytes, err := os.ReadFile(file); err != nil || string(bytes) != "effect-1" {
 				p.t.Fatal("retained first effect changed", err)
@@ -86,10 +86,9 @@ func (p *progressProvider) Run(_ context.Context, a Assignment, emit func(Native
 				report = "An actual owner answer, authorization or unavailable runtime now prevents completion."
 			}
 		case 3:
-			if !p.rejectFirstReview || a.Session != nil || a.ExecutionReport != nil || len(a.Findings) != 1 {
-				p.t.Fatal("review correction did not start fresh with its finding")
+			if !p.rejectFirstReview || a.Session == nil || a.Session.ThreadID != "task-thread" || a.Session.TurnID != "turn-2" || a.ReviewFeedback != "Inspected both files. Correct the second output in second.txt." || a.ExecutionReport != nil || len(a.Findings) != 1 {
+				p.t.Fatal("review correction lost the original executor conversation or raw reviewer response")
 			}
-			thread = "correction-thread"
 			file = filepath.Join(a.Root, "second.txt")
 		default:
 			p.t.Fatal("unexpected execution replay")
@@ -251,14 +250,40 @@ func TestPartialExecutionPreservesCancellationAuthorityAndBlockers(t *testing.T)
 	}
 }
 
-func TestPartialExecutionStillUsesFreshCorrectionAfterReview(t *testing.T) {
-	c, task, p, _, _ := progressFixture(t)
-	p.rejectFirstReview = true
-	if err := c.RunTask(t.Context(), task); err != nil {
-		t.Fatal(err)
-	}
-	if p.executions != 3 || p.reviews != 2 {
-		t.Fatalf("correction changed: executions=%d reviews=%d", p.executions, p.reviews)
+func TestReviewFeedbackReturnsToExecutorAcrossRestart(t *testing.T) {
+	for _, restart := range []bool{false, true} {
+		t.Run(fmt.Sprint(restart), func(t *testing.T) {
+			c, task, p, s, _ := progressFixture(t)
+			p.rejectFirstReview = true
+			crash := errors.New("fixture stopped after durable review")
+			if restart {
+				s.after = func(e Entry) error {
+					if e.Phase == "task_reviewed" {
+						s.after = nil
+						return crash
+					}
+					return nil
+				}
+			}
+			err := c.RunTask(t.Context(), task)
+			if restart {
+				if !errors.Is(err, crash) || p.executions != 2 || p.reviews != 1 {
+					t.Fatalf("wrong checkpoint: %v", err)
+				}
+				recovered := c
+				err = recovered.RunTask(t.Context(), task)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if p.executions != 3 || p.reviews != 2 {
+				t.Fatalf("correction replayed: executions=%d reviews=%d", p.executions, p.reviews)
+			}
+			calls := len(p.roles)
+			if err := c.RunTask(t.Context(), task); err != nil || len(p.roles) != calls {
+				t.Fatal("accepted work replayed", err)
+			}
+		})
 	}
 }
 

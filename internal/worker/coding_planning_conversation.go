@@ -34,6 +34,13 @@ func finishPlanningConversation(ctx context.Context, repository planningConversa
 			if errors.Is(err, queue.ErrPendingChannelSessionMessage) {
 				continue // Intake raced with the waiting transition; it stays durable.
 			}
+			if errors.Is(err, queue.ErrCodingLedgerRevision) {
+				ledger, err = readCompleteCodingLedger(ctx, repository, ledger.LedgerID)
+				if err != nil {
+					return ledger, err
+				}
+				continue
+			}
 			return ledger, err
 		}
 		turn := codingagent.PlanningTurn{
@@ -60,7 +67,8 @@ func finishPlanningConversation(ctx context.Context, repository planningConversa
 				return ledger, err
 			}
 		}
-		if err := controller.PublishPlanningLedger(ctx, turn, ledger.Ledger); err != nil {
+		ledger, err = publishCurrentPlanningLedger(ctx, repository, controller, turn, ledger)
+		if err != nil {
 			return ledger, err
 		}
 		if _, err := repository.ResolvePlanningSessionMessage(ctx, authority, message.OperationID); err != nil {

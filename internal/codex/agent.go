@@ -3,7 +3,6 @@ package codex
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -33,14 +32,6 @@ func (client *Client) Run(parent context.Context, call codingagent.Assignment, e
 	var connection *connection
 	if call.Role.IsNative() {
 		environment := os.Environ()
-		if call.Role == codingagent.Execute || call.Role == codingagent.Review {
-			dependencies, dependencyErr := prepareExecutionDependencies(ctx)
-			if dependencyErr != nil {
-				return result, dependencyErr
-			}
-			defer func() { runErr = errors.Join(runErr, dependencies.close()) }()
-			environment = dependencies.environment
-		}
 		connection, err = startExecutionConnection(ctx, client.command, call.Root, environment)
 	} else {
 		connection, err = startParserConnection(ctx, client.command, call.Root, scratch)
@@ -87,13 +78,15 @@ func (client *Client) Run(parent context.Context, call codingagent.Assignment, e
 	if err != nil {
 		return result, err
 	}
-	contextReceipt, err := connection.injectAgentContext(call, thread.Thread.ID)
-	if err != nil {
-		return result, retryableAgentSessionError(err)
-	}
-	if len(contextReceipt) != 0 {
-		if err := recordAgentFrame(&result, contextReceipt, event); err != nil {
-			return result, err
+	if call.Role != codingagent.Execute || len(call.Findings) != 0 || call.ExecutionReport != nil || len(call.Clarifications) != 0 {
+		contextReceipt, err := connection.injectAgentContext(call, thread.Thread.ID)
+		if err != nil {
+			return result, retryableAgentSessionError(err)
+		}
+		if len(contextReceipt) != 0 {
+			if err := recordAgentFrame(&result, contextReceipt, event); err != nil {
+				return result, err
+			}
 		}
 	}
 	if call.Role.IsNative() {
@@ -121,13 +114,11 @@ func (client *Client) Run(parent context.Context, call codingagent.Assignment, e
 			return result, err
 		}
 	}
-	items := map[string]string{}
-	closedItems := map[string]string{}
 	consume := func(frame rpcFrame, raw json.RawMessage) (bool, error) {
 		if resumedUsageSnapshot(call, frame) {
 			return false, nil
 		}
-		return consumeAgentFrameTracked(frame, raw, &result, call.Role, items, closedItems, event)
+		return consumeAgentFrame(frame, raw, &result, call.Role, event)
 	}
 	finished := false
 	for _, notification := range pending {
@@ -163,9 +154,6 @@ func (client *Client) Run(parent context.Context, call codingagent.Assignment, e
 			err = fmt.Errorf("agent session ended before its terminal frame")
 		}
 		return result, retryableAgentSessionError(err)
-	}
-	if len(items) > 0 {
-		return result, fmt.Errorf("agent ended with incomplete native items")
 	}
 	mapped, err := codingagent.MapParserResponse(call, result.Content)
 	if err != nil {

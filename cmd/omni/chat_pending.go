@@ -152,7 +152,7 @@ func (session *chatSession) acknowledgePendingResolution(
 	if resolution == nil {
 		return nil
 	}
-	if resolution.action == string(planMutationLedger) || resolution.action == string(planMutationDecision) ||
+	if resolution.action == string(planMutationLedger) || resolution.action == string(planMutationLedgerPlanner) || resolution.action == string(planMutationDecision) ||
 		resolution.action == string(planMutationFreeze) {
 		return session.renderer.system(
 			"job %d · %s resolved", resolution.jobID, resolution.action,

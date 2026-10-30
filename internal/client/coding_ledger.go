@@ -15,11 +15,26 @@ type PlanningTurn struct {
 	ObservedRevision               int64
 }
 type DirectPlanningAction struct {
+	Move        int                      `json:"move,omitempty"`
+	Item        *model.LedgerTask        `json:"item,omitempty"`
 	Kind        model.LedgerMutationKind `json:"kind"`
 	TargetID    model.LedgerItemID       `json:"target_id"`
 	ReviewState model.LedgerReviewState  `json:"review_state,omitempty"`
 	Rank        *int64                   `json:"rank,omitempty"`
 	Rationale   string                   `json:"rationale"`
+}
+
+func (client *Client) PlanCodingLedgerItem(ctx context.Context, channel model.Channel, workspaceIdentity string, jobID int64, turn PlanningTurn, itemID model.LedgerItemID, manual ...bool) (model.Job, error) {
+	payload := struct {
+		Manual            bool               `json:"manual,omitempty"`
+		OperationID       string             `json:"operation_id"`
+		ItemID            model.LedgerItemID `json:"item_id"`
+		Text              string             `json:"text"`
+		Revision          int64              `json:"revision"`
+		WorkspaceRoot     string             `json:"workspace_root"`
+		WorkspaceIdentity string             `json:"workspace_identity"`
+	}{len(manual) > 0 && manual[0], turn.OperationID, itemID, turn.Text, turn.ObservedRevision, channel.WorkspaceRoot, workspaceIdentity}
+	return client.postLifecycleControl(ctx, channel, workspaceIdentity, jobID, model.LifecycleOperationID(turn.OperationID), "plan/item-planner", payload)
 }
 
 func (client *Client) CodingLedger(ctx context.Context, channel model.Channel, workspaceIdentity string, jobID int64) (ledgerapi.CodingLedgerRevision, error) {

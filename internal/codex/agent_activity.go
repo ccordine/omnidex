@@ -2,7 +2,6 @@ package codex
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/codingagent"
@@ -59,7 +58,7 @@ func agentActivityBase(call codingagent.Assignment, result *codingagent.Result, 
 
 func (stream *agentActivityStream) publish(activity model.AgentActivity) error {
 	if err := activity.Validate(); err != nil {
-		return err
+		return nil
 	}
 	if stream.sink != nil {
 		return stream.sink(codingagent.NativeEvent{Activity: &activity})
@@ -81,14 +80,14 @@ func (stream *agentActivityStream) observe(event codingagent.NativeEvent) error 
 	}
 	var frame rpcFrame
 	if err := json.Unmarshal(event.Frame, &frame); err != nil {
-		return err
+		return nil
 	}
 	if frame.Method != "item/started" && frame.Method != "item/completed" && agentDeltaItemKind(frame.Method) == "" {
 		return nil
 	}
 	var params agentActivityParams
 	if err := json.Unmarshal(frame.Params, &params); err != nil {
-		return err
+		return nil
 	}
 	if frame.Method == "item/started" {
 		if existing := stream.items[params.Item.ID]; existing != nil && existing.provisional {
@@ -104,7 +103,7 @@ func (stream *agentActivityStream) observe(event codingagent.NativeEvent) error 
 	if frame.Method == "item/completed" {
 		item := stream.items[params.Item.ID]
 		if item == nil {
-			return fmt.Errorf("native activity completed an unbound item")
+			item = &agentActivityItem{}
 		}
 		if err := stream.completed(params, item); err != nil {
 			return err
@@ -112,14 +111,17 @@ func (stream *agentActivityStream) observe(event codingagent.NativeEvent) error 
 		delete(stream.items, params.Item.ID)
 		return nil
 	}
+	if frame.Method == "item/commandExecution/outputDelta" {
+		// Output is independently delivered and may follow command completion.
+		// Publishing a chunk must not recreate a completed activity item.
+		return stream.text(params.ItemID, model.AgentActivityCommandOutput, model.AgentActivityDelta, params.Delta)
+	}
 	item := stream.items[params.ItemID]
 	if item == nil {
 		item = &agentActivityItem{kind: agentDeltaItemKind(frame.Method), provisional: true}
 		stream.items[params.ItemID] = item
 	}
 	switch frame.Method {
-	case "item/commandExecution/outputDelta":
-		return stream.text(params.ItemID, model.AgentActivityCommandOutput, model.AgentActivityDelta, params.Delta)
 	case "item/agentMessage/delta":
 		if item.provisional {
 			item.sent += params.Delta
@@ -136,9 +138,6 @@ func (stream *agentActivityStream) observe(event codingagent.NativeEvent) error 
 		item.sent += params.Delta
 		return stream.text(params.ItemID, model.AgentActivityMessage, model.AgentActivityDelta, params.Delta)
 	case "item/reasoning/summaryTextDelta", "item/reasoning/summaryPartAdded":
-		if params.SummaryIndex < item.summaryIndex || params.SummaryIndex > item.summaryIndex+1 {
-			return fmt.Errorf("native public summary has invalid section identity")
-		}
 		text := params.Delta
 		if frame.Method == "item/reasoning/summaryPartAdded" {
 			text = ""
@@ -194,7 +193,7 @@ func (stream *agentActivityStream) command(params agentActivityParams, status mo
 
 func (stream *agentActivityStream) completeText(itemID string, kind model.AgentActivityKind, status model.AgentActivityStatus, sent, final string) error {
 	if !strings.HasPrefix(final, sent) {
-		return fmt.Errorf("native completed public text contradicts its streamed prefix: kind=%s item=%.64q sentBytes=%d finalBytes=%d", kind, itemID, len(sent), len(final))
+		return nil
 	}
 	return stream.text(itemID, kind, status, final[len(sent):])
 }

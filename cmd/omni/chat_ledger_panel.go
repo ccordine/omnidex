@@ -7,9 +7,11 @@ import (
 
 	"github.com/gryph/omnidex/internal/client"
 	"github.com/gryph/omnidex/internal/ledgerapi"
+	"github.com/gryph/omnidex/internal/model"
 )
 
 const planMutationLedger planMutationKind = "coding_ledger_control"
+const planMutationLedgerPlanner planMutationKind = "coding_ledger_planner"
 
 func (session *chatSession) ledgerWorkspace() *chatWorkspace {
 	if session.renderer.console == nil {
@@ -26,10 +28,15 @@ func (session *chatSession) ledgerFeedback(text string) error {
 	view.mu.Lock()
 	defer view.mu.Unlock()
 	view.ledger.loading = false
+	view.ledger.saving = false
 	if text != "Server confirmed" {
 		view.ledger.offset = 0
 	}
 	view.ledger.feedback = safeConsoleText(text)
+	view.ledger.notice = ""
+	if text != "Server confirmed" {
+		view.ledger.notice = view.ledger.feedback
+	}
 	return view.drawLocked()
 }
 
@@ -53,12 +60,14 @@ func (session *chatSession) refreshLedgerPanel() error {
 	}
 	jobID, generation := session.active.Job.ID, session.active.Job.CurrentGeneration
 	view.mu.Lock()
-	if view.ledger.snapshot.JobID != jobID || view.ledger.snapshot.Generation != generation {
+	if view.ledger.snapshot.JobID != jobID {
 		view.ledger.snapshot = ledgerapi.CodingLedgerRevision{}
 		view.ledger.selected, view.ledger.offset = "", 0
 	}
 	view.ledger.loading = true
-	view.ledger.feedback = "Loading ledger…"
+	if view.ledger.snapshot.JobID == 0 && view.ledger.notice == "" {
+		view.ledger.feedback = "Loading ledger…"
+	}
 	drawErr := view.drawLocked()
 	view.mu.Unlock()
 	if drawErr != nil {
@@ -89,7 +98,7 @@ func (session *chatSession) acceptLedgerPanelRequest(request workspaceLedgerRequ
 		return session.refreshLedgerPanel()
 	}
 	if request.key == 't' {
-		if session.pendingPlan == nil || session.pendingPlan.kind != planMutationLedger {
+		if session.pendingPlan == nil || (session.pendingPlan.kind != planMutationLedger && session.pendingPlan.kind != planMutationLedgerPlanner) {
 			return session.ledgerFeedback("No unresolved ledger control")
 		}
 		return session.runLedgerPanelMutation(session.pendingPlan)
@@ -101,6 +110,17 @@ func (session *chatSession) acceptLedgerPanelRequest(request workspaceLedgerRequ
 		return session.ledgerFeedback("A previous message remains unresolved")
 	}
 	desired := pendingPlanMutation{kind: planMutationLedger, jobID: request.jobID, generation: request.generation, revision: request.revision, ledgerAction: &request.action}
+	if view := session.ledgerWorkspace(); view != nil {
+		view.mu.Lock()
+		desired.prepare = view.ledger.snapshot.State == "frozen"
+		view.mu.Unlock()
+	}
+	if request.key == 'p' {
+		desired.kind = planMutationLedgerPlanner
+		desired.plannerText = request.text
+		desired.targetID = request.action.TargetID
+		desired.ledgerAction = nil
+	}
 	pending, err := session.planMutationOperation(desired)
 	if err != nil {
 		return session.ledgerFeedback(err.Error())
@@ -112,6 +132,31 @@ func (session *chatSession) runLedgerPanelMutation(pending *pendingPlanMutation)
 	err := session.replayPendingPlanMutation(pending, false)
 	if err == nil {
 		session.pendingPlan = nil
+		if pending.kind == planMutationLedgerPlanner {
+			if view := session.ledgerWorkspace(); view != nil {
+				view.mu.Lock()
+				view.ledger.editor = nil
+				view.ledger.details = true
+				view.ledger.offset = 0
+				view.mu.Unlock()
+			}
+			if err := session.reloadSnapshot(); err != nil {
+				return err
+			}
+			return session.ledgerFeedback("Planner message sent; replies appear in this item's conversation.")
+		}
+		if pending.ledgerAction != nil && pending.ledgerAction.Item != nil {
+			if view := session.ledgerWorkspace(); view != nil {
+				view.mu.Lock()
+				view.ledger.editor = nil
+				view.ledger.details = true
+				view.ledger.offset = 0
+				if pending.ledgerAction.Kind == "add" {
+					view.ledger.selected = "manual-" + model.LedgerItemID(pending.operationID)
+				}
+				view.mu.Unlock()
+			}
+		}
 		// The review editor keeps its selection and input authority. Only its
 		// server snapshot changes, using the same existing projection contract.
 		if session.planReview != nil && session.planReview.snapshot.JobID == pending.jobID {
@@ -144,6 +189,11 @@ func (session *chatSession) runLedgerPanelMutation(pending *pendingPlanMutation)
 }
 
 func (session *chatSession) replayLedgerPanelMutation(pending *pendingPlanMutation, authoritative bool) error {
+	if pending.prepare && !pending.prepared {
+		if err := session.prepareLedgerManualEdit(pending, authoritative); err != nil {
+			return err
+		}
+	}
 	if pending.ledgerAction == nil {
 		return fmt.Errorf("ledger control lacks its exact action")
 	}

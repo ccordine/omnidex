@@ -155,27 +155,6 @@ func TestPlanReviewRevisionCannotRewriteImmutableAuthority(t *testing.T) {
 			},
 			message: "update time regressed",
 		},
-		{
-			name: "leaf order",
-			mutate: func(plan *model.CodingPlan) {
-				plan.Leaves[0], plan.Leaves[1] = plan.Leaves[1], plan.Leaves[0]
-			},
-			message: "leaf 0 authority",
-		},
-		{
-			name: "leaf statement",
-			mutate: func(plan *model.CodingPlan) {
-				plan.Leaves[0].Statement = "A different outcome."
-			},
-			message: "leaf 0 authority",
-		},
-		{
-			name: "leaf set",
-			mutate: func(plan *model.CodingPlan) {
-				plan.Leaves = plan.Leaves[:len(plan.Leaves)-1]
-			},
-			message: "leaf set",
-		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -188,6 +167,29 @@ func TestPlanReviewRevisionCannotRewriteImmutableAuthority(t *testing.T) {
 			if _, _, err := reconcilePlanReviewState(state, revised); err == nil ||
 				!strings.Contains(err.Error(), test.message) {
 				t.Fatalf("immutable %s error = %v", test.name, err)
+			}
+		})
+	}
+}
+
+func TestPlanReviewNewRevisionAcceptsManualItemChanges(t *testing.T) {
+	for name, mutate := range map[string]func(*model.CodingPlan){
+		"rename":  func(plan *model.CodingPlan) { plan.Leaves[0].Statement = "Renamed task" },
+		"reorder": func(plan *model.CodingPlan) { plan.Leaves[0], plan.Leaves[1] = plan.Leaves[1], plan.Leaves[0] },
+		"remove":  func(plan *model.CodingPlan) { plan.Leaves = plan.Leaves[:len(plan.Leaves)-1] },
+		"add": func(plan *model.CodingPlan) {
+			plan.Leaves = append(plan.Leaves, model.CodingPlanLeaf{ID: "new-item", Statement: "New manual item", Decision: model.CodingPlanDecisionPending})
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			state := mustPlanReviewState(t, eligiblePlanReviewFixture(t))
+			revised := eligiblePlanReviewFixture(t)
+			revised.Revision++
+			revised.UpdatedAt = revised.UpdatedAt.Add(time.Second)
+			mutate(&revised)
+			next, change, err := reconcilePlanReviewState(state, revised)
+			if err != nil || change != planReviewSnapshotRevisionChanged || len(next.snapshot.Leaves) != len(revised.Leaves) {
+				t.Fatal("manual revision was rejected", err)
 			}
 		})
 	}

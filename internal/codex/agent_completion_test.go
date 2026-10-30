@@ -1,70 +1,41 @@
 package codex
 
 import (
-	"bytes"
 	"encoding/json"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/codingagent"
 )
 
-func TestTerminalTurnClosesUnmatchedReasoningOnly(t *testing.T) {
-	for _, fixture := range []struct {
-		name, status, turnID string
-		unfinishedCommand    bool
-		wantDone             bool
-		wantOpen             int
-	}{
-		{"completed reasoning", "completed", "turn", false, true, 0},
-		{"unfinished command", "completed", "turn", true, true, 1},
-		{"failed turn", "failed", "turn", false, false, 1},
-		{"interrupted turn", "interrupted", "turn", false, false, 1},
-		{"different turn", "completed", "other", false, false, 1},
-	} {
-		t.Run(fixture.name, func(t *testing.T) {
+// Commands and prose are intermediate output. The native terminal turn event
+// completes the entire call, after which its final message can be parsed.
+func TestNativeRunWaitsForWholeTurnCompletion(t *testing.T) {
+	for _, role := range []codingagent.Role{codingagent.Execute, codingagent.Review} {
+		t.Run(string(role), func(t *testing.T) {
 			result := codingagent.Result{ThreadID: "thread", TurnID: "turn"}
-			open, closed := map[string]string{}, map[string]string{}
-			inputs := []json.RawMessage{
-				json.RawMessage(`{"method":"item/started","params":{"threadId":"thread","turnId":"turn","item":{"id":"reason","type":"reasoning"}}}`),
-				json.RawMessage(`{"method":"item/started","params":{"threadId":"thread","turnId":"turn","item":{"id":"command","type":"commandExecution"}}}`),
+			frames := []string{
+				`{"method":"item/completed","params":{"threadId":"thread","turnId":"turn","item":{"id":"command","type":"commandExecution","status":"completed","exitCode":0}}}`,
+				`{"method":"item/commandExecution/outputDelta","params":{"threadId":"thread","turnId":"turn","itemId":"command","delta":"last command output"}}`,
+				`{"method":"item/completed","params":{"threadId":"thread","turnId":"turn","item":{"id":"progress","type":"agentMessage","phase":"commentary","text":"Checking the result."}}}`,
+				`{"method":"item/completed","params":{"threadId":"thread","turnId":"turn","item":{"id":"answer","type":"agentMessage","phase":"final_answer","text":"Work finished."}}}`,
+				`{"method":"turn/completed","params":{"threadId":"thread","turn":{"id":"turn","status":"completed"}}}`,
 			}
-			if !fixture.unfinishedCommand {
-				inputs = append(inputs, json.RawMessage(`{"method":"item/completed","params":{"threadId":"thread","turnId":"turn","item":{"id":"command","type":"commandExecution","status":"completed","exitCode":0}}}`))
-			}
-			terminal, err := json.Marshal(map[string]any{"method": "turn/completed", "params": map[string]any{
-				"threadId": "thread", "turn": map[string]any{"id": fixture.turnID, "status": fixture.status,
-					"items": []map[string]string{{"id": "answer", "type": "agentMessage", "phase": "final_answer", "text": "Verified retained work."}}},
-			}})
-			if err != nil {
-				t.Fatal(err)
-			}
-			inputs = append(inputs, terminal)
-			for i, raw := range inputs {
+			for index, raw := range frames {
 				var frame rpcFrame
-				if err := json.Unmarshal(raw, &frame); err != nil {
+				if err := json.Unmarshal([]byte(raw), &frame); err != nil {
 					t.Fatal(err)
 				}
-				done, err := consumeAgentFrameTracked(frame, raw, &result, codingagent.Execute, open, closed, nil)
-				if i != len(inputs)-1 {
-					if done || err != nil {
-						t.Fatalf("nonterminal frame ended assignment: done=%v err=%v", done, err)
-					}
-					if _, present := open["reason"]; !present {
-						t.Fatal("reasoning closed before terminal confirmation")
-					}
-					continue
+				done, err := consumeAgentFrame(frame, json.RawMessage(raw), &result, role, nil)
+				if err != nil {
+					t.Fatal(err)
 				}
-				if done != fixture.wantDone || (err == nil) != fixture.wantDone || len(open) != fixture.wantOpen {
-					t.Fatalf("terminal handling: done=%v err=%v open=%v", done, err, open)
+				wantDone := index == len(frames)-1
+				if done != wantDone || result.Completed != wantDone {
+					t.Fatalf("frame %d: completed=%v, want %v", index, done, wantDone)
 				}
 			}
-			if len(result.Evidence) != len(inputs) {
-				t.Fatal("lost original receipts")
-			}
-			for i, raw := range inputs {
-				if !bytes.Equal(raw, result.Evidence[i]) {
-					t.Fatalf("changed original receipt %d", i)
-				}
+			if string(result.Content) != `"Work finished."` {
+				t.Fatalf("parser input is not the final message: %s", result.Content)
 			}
 		})
 	}

@@ -124,21 +124,21 @@ func TestWorkspaceLedgerDirectControlsCarryExactDisplayedAuthority(t *testing.T)
 			if view.ledger.snapshot.Revision != 3 || view.ledger.snapshot.Ledger.Tasks[1].ReviewState != model.LedgerReviewProposed {
 				t.Fatal("optimistic mutation")
 			}
-			if key == '[' && (request.action.Rank == nil || *request.action.Rank != 0) {
+			if key == '[' && request.action.Move != -1 {
 				t.Fatalf("up rank: %+v", request)
 			}
-			if key == ']' && (request.action.Rank == nil || *request.action.Rank != 21) {
+			if key == ']' && request.action.Move != 1 {
 				t.Fatalf("down rank: %+v", request)
 			}
 		})
 	}
 }
 
-func TestWorkspaceLedgerReadOnlyStates(t *testing.T) {
+func TestWorkspaceLedgerTerminalReadOnlyStates(t *testing.T) {
 	view, _ := testWorkspace(t, 100, 24)
 	openLedgerPane(t, view)
 	snapshot := panelLedgerFixture()
-	snapshot.State = "frozen"
+	snapshot.State = "completed"
 	if err := view.acceptLedger(snapshot); err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +147,7 @@ func TestWorkspaceLedgerReadOnlyStates(t *testing.T) {
 	}
 	select {
 	case <-view.ledger.requests:
-		t.Fatal("frozen mutation enabled")
+		t.Fatal("completed ledger mutation enabled")
 	default:
 	}
 	if !strings.Contains(view.ledger.feedback, "read-only") {
@@ -231,11 +231,12 @@ func TestWorkspaceLedgerReorderBoundaries(t *testing.T) {
 		selected              model.LedgerItemID
 		key                   byte
 		firstRank, secondRank int64
+		move                  int
 	}{
 		{name: "first cannot move up", selected: "panel-first", key: '[', firstRank: 0, secondRank: 10},
-		{name: "zero tie cannot precede lower identity", selected: "panel-second", key: '[', firstRank: 0, secondRank: 10},
+		{name: "zero tie can move up", selected: "panel-second", key: '[', firstRank: 0, secondRank: 0, move: -1},
 		{name: "last cannot move down", selected: "panel-removed", key: ']', firstRank: 0, secondRank: 10},
-		{name: "maximum rank cannot move down", selected: "panel-first", key: ']', firstRank: 0, secondRank: int64(^uint64(0) >> 1)},
+		{name: "maximum rank can move down", selected: "panel-first", key: ']', firstRank: 0, secondRank: int64(^uint64(0) >> 1), move: 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			view, _ := testWorkspace(t, 100, 24)
@@ -256,8 +257,13 @@ func TestWorkspaceLedgerReorderBoundaries(t *testing.T) {
 			}
 			select {
 			case request := <-view.ledger.requests:
-				t.Fatalf("boundary dispatched %+v", request)
+				if test.move == 0 || request.action.Move != test.move {
+					t.Fatalf("unexpected move %+v", request)
+				}
 			default:
+				if test.move != 0 {
+					t.Fatal("valid move was blocked by a rank boundary")
+				}
 			}
 		})
 	}

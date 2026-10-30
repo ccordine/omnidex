@@ -91,7 +91,11 @@ func TestLedgerPanelAuthoritativeReadControlsAndReconciliation(t *testing.T) {
 			task.Disposition = model.LedgerDispositionActive
 			task.ReviewState = model.LedgerReviewProposed
 		case model.LedgerMutationReorder:
-			task.Rank = *body.Action.Rank
+			if body.Action.Rank != nil {
+				task.Rank = *body.Action.Rank
+			} else {
+				task.Rank += int64(body.Action.Move)
+			}
 		default:
 			t.Errorf("unexpected control %q", body.Action.Kind)
 		}

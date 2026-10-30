@@ -47,10 +47,9 @@ func (client *Client) Research(parent context.Context, root, question string, ba
 		return "", evidence, fmt.Errorf("research turn lacks its native identity")
 	}
 	result.TurnID = id
-	open, closed := map[string]string{}, map[string]string{}
 	finished := false
 	for _, notification := range pending {
-		done, err := consumeResearchFrame(notification.frame, notification.raw, &result, open, closed)
+		done, err := consumeResearchFrame(notification.frame, notification.raw, &result)
 		if err != nil {
 			return "", evidence, err
 		}
@@ -64,14 +63,11 @@ func (client *Client) Research(parent context.Context, root, question string, ba
 		if frame.ID != nil {
 			return "", evidence, fmt.Errorf("research requested interactive input")
 		}
-		finished, err = consumeResearchFrame(frame, connection.lastFrame, &result, open, closed)
+		finished, err = consumeResearchFrame(frame, connection.lastFrame, &result)
 		if err != nil {
 			return "", evidence, err
 		}
 
-	}
-	if len(open) != 0 {
-		return "", evidence, fmt.Errorf("research ended with incomplete native items")
 	}
 	if err := json.Unmarshal(result.Content, &answer); err != nil {
 		return "", evidence, err
@@ -104,7 +100,7 @@ func (connection *connection) startResearchThread(root string, route codingagent
 	return thread, err
 }
 
-func consumeResearchFrame(frame rpcFrame, raw json.RawMessage, result *codingagent.Result, open, closed map[string]string) (bool, error) {
+func consumeResearchFrame(frame rpcFrame, raw json.RawMessage, result *codingagent.Result) (bool, error) {
 	var params struct {
 		Item struct {
 			Type string `json:"type"`
@@ -117,5 +113,5 @@ func consumeResearchFrame(frame rpcFrame, raw json.RawMessage, result *codingage
 		return false, fmt.Errorf("research attempted a forbidden item: %s", params.Item.Type)
 	}
 	// No event callback: retain the native receipts in the durable answer evidence.
-	return consumeAgentFrameTracked(frame, raw, result, codingagent.Plan, open, closed, nil)
+	return consumeAgentFrame(frame, raw, result, codingagent.Plan, nil)
 }

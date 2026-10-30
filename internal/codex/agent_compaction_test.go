@@ -13,7 +13,6 @@ func TestNativeCompactionContinuesSameAssignment(t *testing.T) {
 	for _, role := range []codingagent.Role{codingagent.Plan, codingagent.Execute, codingagent.Review} {
 		t.Run(string(role), func(t *testing.T) {
 			result := codingagent.Result{ThreadID: "thread", TurnID: "turn"}
-			open, closed := map[string]string{}, map[string]string{}
 			var evidence []json.RawMessage
 			call := codingagent.Assignment{Role: role}
 			if role != codingagent.Plan {
@@ -42,13 +41,13 @@ func TestNativeCompactionContinuesSameAssignment(t *testing.T) {
 				if err := json.Unmarshal([]byte(input), &frame); err != nil {
 					t.Fatal(err)
 				}
-				done, err := consumeAgentFrameTracked(frame, json.RawMessage(input), &result, role, open, closed, stream.observe)
+				done, err := consumeAgentFrame(frame, json.RawMessage(input), &result, role, stream.observe)
 				if err != nil || done != (i == len(inputs)-1) {
 					t.Fatalf("frame %d interrupted or prematurely completed assignment: done=%v err=%v", i, done, err)
 				}
 			}
-			if !result.Completed || string(result.Content) != `"Verified retained work."` || result.ThreadID != "thread" || result.TurnID != "turn" || len(open) != 0 || len(stream.items) != 0 {
-				t.Fatalf("lost assignment state after compaction: %+v, open=%v activity=%v", result, open, stream.items)
+			if !result.Completed || string(result.Content) != `"Verified retained work."` || result.ThreadID != "thread" || result.TurnID != "turn" || len(stream.items) != 0 {
+				t.Fatalf("lost assignment state after compaction: %+v, activity=%v", result, stream.items)
 			}
 			if len(evidence) != len(inputs) {
 				t.Fatalf("lost evidence: got %d frames, want %d", len(evidence), len(inputs))
@@ -77,7 +76,7 @@ func TestNativeContextFailureHonorsProviderRetryStatus(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		done, err := consumeAgentFrame(frame, raw, &result, codingagent.Execute, map[string]string{}, nil)
+		done, err := consumeAgentFrame(frame, raw, &result, codingagent.Execute, nil)
 		var incomplete *codingagent.IncompleteTaskError
 		if done || result.Completed || (retry && err != nil) || (!retry && !errors.As(err, &incomplete)) || len(result.Evidence) != 1 {
 			t.Fatalf("retry=%v: lost failure, retry or evidence: done=%v err=%v result=%+v", retry, done, err, result)

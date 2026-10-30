@@ -9,157 +9,34 @@ import (
 	"github.com/gryph/omnidex/internal/codingagent"
 )
 
-const nativeItemStateSeparator = "\x00"
-const nativeItemProvisionalPhase = "__delta_before_start__"
-
-func nativeItemState(kind, phase string) string {
-	if phase == "" {
-		return kind
-	}
-	return kind + nativeItemStateSeparator + phase
-}
-
-func nativeItemKind(state string) string {
-	kind, _, _ := strings.Cut(state, nativeItemStateSeparator)
-	return kind
-}
-
-func nativeItemPhase(state string) string {
-	_, phase, _ := strings.Cut(state, nativeItemStateSeparator)
-	return phase
-}
-
-func validateAgentItems(frame rpcFrame, role codingagent.Role, open map[string]string) error {
-	return validateAgentItemsMode(frame, role, open, false)
-}
-
-func validateAgentItemsMode(frame rpcFrame, role codingagent.Role, open map[string]string, allowProvisional bool) error {
-	return validateAgentItemsTracked(frame, role, open, nil, allowProvisional)
-}
-
-func validateAgentItemsTracked(frame rpcFrame, role codingagent.Role, open, closed map[string]string, allowProvisional bool) error {
-	if frame.Method == "turn/completed" {
-		for id := range closed {
-			delete(closed, id)
-		}
-		return nil
-	}
-	if kind := agentDeltaItemKind(frame.Method); kind != "" {
-		if kind == "commandExecution" && !role.IsNative() {
-			return &agentInferenceFailure{message: "task agent attempted native command execution", retryable: false}
-		}
-		if kind == "plan" && !role.IsNative() {
-			return fmt.Errorf("non-planning agent emitted a native plan")
-		}
-		var params struct {
-			ItemID string `json:"itemId"`
-		}
-		if err := json.Unmarshal(frame.Params, &params); err != nil {
-			return err
-		}
-		if params.ItemID == "" {
-			return fmt.Errorf("native agent delta lacks its item identity")
-		}
-		state, exists := open[params.ItemID]
-		if !exists {
-			if !allowProvisional {
-				return fmt.Errorf("native agent delta belongs to an unbound item")
-			}
-			// Codex app-server can emit the first delta immediately before its
-			// item/started notification. Bind that delta provisionally to this
-			// already-validated thread and turn; the later start must confirm the
-			// same kind, and an unfinished provisional item still fails the turn.
-			open[params.ItemID] = nativeItemState(kind, nativeItemProvisionalPhase)
-			return nil
-		}
-		if nativeItemKind(state) != kind {
-			return fmt.Errorf("native agent delta kind differs from its bound item")
-		}
-		return nil
-	}
-	if frame.Method != "item/started" && frame.Method != "item/completed" {
-		return nil
+func validateAgentItems(frame rpcFrame, role codingagent.Role) error {
+	if agentDeltaItemKind(frame.Method) == "commandExecution" && !role.IsNative() {
+		return &agentInferenceFailure{message: "task agent attempted native command execution", retryable: false}
 	}
 	var params struct {
 		Item struct {
-			ID     string `json:"id"`
-			Type   string `json:"type"`
-			Status string `json:"status"`
-			Phase  string `json:"phase"`
+			Type string `json:"type"`
 		} `json:"item"`
 	}
 	if err := json.Unmarshal(frame.Params, &params); err != nil {
 		return err
 	}
-	item := params.Item
-	if item.ID == "" {
-		return fmt.Errorf("native agent item lacks identity")
-	}
-	if !role.IsNative() && (item.Type == "commandExecution" || item.Type == "fileChange") {
+	if !role.IsNative() && (params.Item.Type == "commandExecution" || params.Item.Type == "fileChange") {
 		return &agentInferenceFailure{message: "task agent attempted a native side effect", retryable: false}
 	}
-	if item.Type == "dynamicToolCall" && !role.IsNative() {
+	if params.Item.Type == "dynamicToolCall" && !role.IsNative() {
 		return &agentInferenceFailure{message: "agent attempted an ungranted dynamic tool", retryable: false}
 	}
-	if item.Type == "plan" && role != codingagent.Plan && !role.IsNative() {
+	if params.Item.Type == "plan" && role != codingagent.Plan && !role.IsNative() {
 		return fmt.Errorf("non-planning agent emitted a native plan")
 	}
-	if !role.IsNative() && (item.Type == "enteredReviewMode" || item.Type == "exitedReviewMode") {
+	if !role.IsNative() && (params.Item.Type == "enteredReviewMode" || params.Item.Type == "exitedReviewMode") {
 		return &agentInferenceFailure{message: "agent attempted repository review mode outside its task packet", retryable: false}
-	}
-	if frame.Method == "item/started" {
-		if _, exists := closed[item.ID]; exists {
-			return fmt.Errorf("native item identity reused")
-		}
-		if state, exists := open[item.ID]; exists {
-			if nativeItemPhase(state) != nativeItemProvisionalPhase || nativeItemKind(state) != item.Type {
-				return fmt.Errorf("native item identity reused")
-			}
-			open[item.ID] = nativeItemState(item.Type, item.Phase)
-			return nil
-		}
-		if item.Type == "agentMessage" && item.Phase == "final_answer" {
-			// The native server can abandon an output-limited structured final
-			// answer and start its complete replacement in the same turn without
-			// emitting item/completed for the superseded item. Preserve every
-			// receipt, but let exactly one explicit replacement own completion.
-			superseded := ""
-			for id, state := range open {
-				if nativeItemKind(state) != "agentMessage" || nativeItemPhase(state) != "final_answer" {
-					continue
-				}
-				if superseded != "" {
-					return fmt.Errorf("native agent left multiple final answers open")
-				}
-				superseded = id
-			}
-			delete(open, superseded)
-		}
-		open[item.ID] = nativeItemState(item.Type, item.Phase)
-		return nil
-	}
-	state, exists := open[item.ID]
-	if !exists || nativeItemKind(state) != item.Type {
-		return fmt.Errorf("native agent completed an unbound item")
-	}
-	if item.Status == "inProgress" || item.Status == "in_progress" {
-		return fmt.Errorf("native agent item is unfinished")
-	}
-	delete(open, item.ID)
-	if closed != nil {
-		closed[item.ID] = item.Type
 	}
 	return nil
 }
 
 func recordAgentFrame(result *codingagent.Result, raw json.RawMessage, event func(codingagent.NativeEvent) error) error {
-	count := len(raw)
-	if event == nil {
-		for _, frame := range result.Evidence {
-			count += len(frame)
-		}
-	}
-
 	owned := append(json.RawMessage(nil), raw...)
 	if event != nil {
 		if err := event(codingagent.NativeEvent{Frame: owned}); err != nil {
@@ -171,15 +48,11 @@ func recordAgentFrame(result *codingagent.Result, raw json.RawMessage, event fun
 	return nil
 }
 
-func consumeAgentFrame(frame rpcFrame, raw json.RawMessage, result *codingagent.Result, role codingagent.Role, items map[string]string, event func(codingagent.NativeEvent) error) (bool, error) {
-	return consumeAgentFrameTracked(frame, raw, result, role, items, nil, event)
-}
-
-func consumeAgentFrameTracked(frame rpcFrame, raw json.RawMessage, result *codingagent.Result, role codingagent.Role, items, closed map[string]string, event func(codingagent.NativeEvent) error) (bool, error) {
+func consumeAgentFrame(frame rpcFrame, raw json.RawMessage, result *codingagent.Result, role codingagent.Role, event func(codingagent.NativeEvent) error) (bool, error) {
 	if err := validateAgentFrameBinding(frame, result); err != nil {
 		return false, err
 	}
-	if err := validateAgentItemsTracked(frame, role, items, closed, true); err != nil {
+	if err := validateAgentItems(frame, role); err != nil {
 		return false, err
 	}
 	if agentEvidenceMethod(frame.Method) {
@@ -187,19 +60,7 @@ func consumeAgentFrameTracked(frame rpcFrame, raw json.RawMessage, result *codin
 			return false, err
 		}
 	}
-	done, err := collectAgentFrame(frame, raw, result, role)
-	if done && err == nil {
-		// A completed native turn can omit the final notification for an
-		// internal reasoning item. Its unmatched observation does not imply
-		// unfinished work. Retain the receipts and require all effectful items
-		// to close normally; only the validated terminal turn closes reasoning.
-		for id, state := range items {
-			if nativeItemKind(state) == "reasoning" {
-				delete(items, id)
-			}
-		}
-	}
-	return done, err
+	return collectAgentFrame(frame, raw, result, role)
 }
 
 func agentDeltaItemKind(method string) string {
@@ -328,8 +189,8 @@ func collectAgentResultItem(result *codingagent.Result, role codingagent.Role, i
 	default:
 		return nil
 	}
-	if len(result.Content) != 0 || strings.TrimSpace(content) == "" {
-		return fmt.Errorf("agent returned a missing or duplicate final response")
+	if strings.TrimSpace(content) == "" {
+		return nil
 	}
 	if role == codingagent.Plan || role == codingagent.Execute || role == codingagent.Review {
 		encoded, err := json.Marshal(content)

@@ -18,6 +18,9 @@ const (
 )
 
 type pendingPlanMutation struct {
+	prepare      bool
+	prepared     bool
+	plannerText  string
 	kind         planMutationKind
 	jobID        int64
 	generation   int64
@@ -102,7 +105,7 @@ func (session *chatSession) planMutationOperation(
 	if pending := session.pendingPlan; pending != nil {
 		if pending.kind == desired.kind && pending.jobID == desired.jobID &&
 			pending.generation == desired.generation && pending.revision == desired.revision &&
-			pending.leafID == desired.leafID && pending.decision == desired.decision && reflect.DeepEqual(pending.ledgerAction, desired.ledgerAction) {
+			pending.leafID == desired.leafID && pending.decision == desired.decision && pending.plannerText == desired.plannerText && pending.targetID == desired.targetID && reflect.DeepEqual(pending.ledgerAction, desired.ledgerAction) {
 			return pending, nil
 		}
 		return nil, fmt.Errorf(
@@ -128,6 +131,18 @@ func (session *chatSession) replayPendingPlanMutation(
 		return fmt.Errorf("pending plan mutation is required")
 	}
 	switch pending.kind {
+	case planMutationLedgerPlanner:
+		turn := client.PlanningTurn{OperationID: string(pending.operationID), OwnerTurnID: "terminal-" + string(pending.operationID), Text: pending.plannerText, ObservedRevision: pending.revision}
+		request := func(ctx context.Context) (model.Job, error) {
+			return session.client.PlanCodingLedgerItem(ctx, session.channel, session.workspaceIdentity, pending.jobID, turn, pending.targetID)
+		}
+		var err error
+		if authoritative {
+			_, err = awaitAuthoritativeChatRequest(session.ctx, session.signals, request)
+		} else {
+			_, err = awaitChatRequest(session.ctx, session.signals, request)
+		}
+		return err
 	case planMutationLedger:
 		return session.replayLedgerPanelMutation(pending, authoritative)
 	case planMutationDecision:

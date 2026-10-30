@@ -18,21 +18,14 @@ func (*protocolWriter) Close() error { return nil }
 
 func TestManifestRoleSettingsReachNativeProtocol(t *testing.T) {
 	instructions := agentRoleInstructions(codingagent.Review)
-	for _, required := range []string{"Actually run the verification", "do not request routine command approval", "Preserve scope and authority checks", "essential missing information or authority", "Do not modify the implementation", "Inspect only this task"} {
+	for _, required := range []string{"completely fulfilled", "actual software", "existing tools and dependencies", "Do not modify the implementation", "original goal"} {
 		if !strings.Contains(instructions, required) {
 			t.Fatalf("review instructions lack %q", required)
 		}
 	}
 	for _, role := range []codingagent.Role{codingagent.Execute, codingagent.Review} {
-		instructions := agentRoleInstructions(role)
-		handoff := "after your response"
-		if role == codingagent.Execute {
-			handoff = "after the execution reports completion"
-		}
-		for _, required := range []string{"frozen task", handoff, "not prerequisites for completing", "do not request routine command approval"} {
-			if !strings.Contains(instructions, required) {
-				t.Fatalf("%s instructions lack %q", role, required)
-			}
+		if !strings.Contains(agentRoleInstructions(role), codingagent.FrozenItemPhaseInstructions) {
+			t.Fatal("native phase was left to historical task context")
 		}
 	}
 	defaults := manifest.Defaults().Coding()
@@ -49,7 +42,11 @@ func TestManifestRoleSettingsReachNativeProtocol(t *testing.T) {
 			responses := fmt.Sprintf("{\"id\":1,\"result\":{}}\n{\"id\":2,\"result\":{\"model\":%q,\"thread\":{\"id\":\"exact-thread\"}}}\n{\"id\":3,\"result\":{\"turn\":{\"id\":\"exact-turn\"}}}\n", fixture.route.Model)
 			connection := &connection{input: writer, output: bufio.NewReader(bytes.NewBufferString(responses))}
 			call := codingagent.Assignment{Role: fixture.role, Root: t.TempDir(), Route: fixture.route,
-				Objective: &codingagent.Objective{Instruction: "Exact current owner request."}, Task: &codingagent.Task{Goal: "Exact frozen task."}}
+				Task: &codingagent.Task{Goal: "Exact frozen task.", Payload: json.RawMessage(`{"goal":"Exact frozen task."}`)}}
+			if fixture.role == codingagent.Plan {
+				call.Task = nil
+				call.Objective = &codingagent.Objective{Instruction: "Exact current owner request."}
+			}
 			thread, _, err := connection.startAgentThread(call, "")
 			if err != nil {
 				t.Fatal(err)
@@ -80,7 +77,7 @@ func TestManifestRoleSettingsReachNativeProtocol(t *testing.T) {
 					if fixture.role == codingagent.Plan && (request.Params["sandbox"] != "read-only" || request.Params["approvalPolicy"] != "never") {
 						t.Fatal("planning permissions changed")
 					}
-					if request.Params["developerInstructions"] != agentRoleInstructions(fixture.role) || request.Params["developerInstructions"] == "" {
+					if request.Params["developerInstructions"] != agentRoleInstructions(fixture.role) {
 						t.Fatal("role instructions were not dispatched at the developer boundary")
 					}
 					if (fixture.role == codingagent.Execute || fixture.role == codingagent.Review) && (request.Params["sandbox"] != "danger-full-access" || request.Params["approvalPolicy"] != "never") {
@@ -103,11 +100,12 @@ func TestManifestRoleSettingsReachNativeProtocol(t *testing.T) {
 	}
 }
 
-func TestExecutionPromptRetainsTaskWithDurableReply(t *testing.T) {
-	call := codingagent.Assignment{Role: codingagent.Execute, Task: &codingagent.Task{Goal: "Complete only this task."},
+func TestExecutionPromptUsesEntireStoredItemUnchanged(t *testing.T) {
+	payload := json.RawMessage(`{ "id":"task", "goal":"Complete only this task.", "rank":5, "acceptance":[{"text":"Actually works"}] }`)
+	call := codingagent.Assignment{Role: codingagent.Execute, Task: &codingagent.Task{Goal: "Complete only this task.", Payload: payload},
 		Reply: "Persisted answer.", Session: &codingagent.ExecutionSession{ThreadID: "old-thread", State: "idle"}}
 	prompt, err := renderAgentAssignment(call)
-	if err != nil || prompt != call.Task.Goal {
+	if err != nil || prompt != string(payload) {
 		t.Fatalf("execution relied on native history for its task: %q %v", prompt, err)
 	}
 }

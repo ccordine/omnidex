@@ -41,7 +41,7 @@ func (r *Repository) MarkCodingLedgerReviewReady(ctx context.Context, authority 
 		if err != nil {
 			return err
 		}
-		return fmt.Errorf("coding ledger proposal changed before review")
+		return fmt.Errorf("%w: coding ledger proposal changed before review", ErrCodingLedgerRevision)
 	}
 	if err := terminalizeStepAttemptTx(ctx, tx, authority, model.StepAttemptCompleted); err != nil {
 		return err

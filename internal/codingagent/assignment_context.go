@@ -2,15 +2,18 @@ package codingagent
 
 import (
 	"fmt"
-
-	"github.com/gryph/omnidex/internal/model"
 )
 
 // Narrow roles receive one finalized step. Parent objectives and aggregate
 // workloads remain with their code-owned consumers, never the executor.
 func (call Assignment) ValidateTaskContext() error {
-	if call.ExecutionReport != nil && ((call.Role != Review && call.Role != Execute) || call.ExecutionReport.CallID < 1 || call.ExecutionReport.Response == "" ||
-		(call.Role == Execute && (call.Session == nil || call.Session.ThreadID == ""))) {
+	if call.ReviewFeedback != "" && (call.Role != Execute || call.Task == nil || call.Session == nil || call.Session.ThreadID == "") {
+		return fmt.Errorf("review feedback requires its existing executor conversation")
+	}
+	if (call.Role == Review || call.Role == ReviewResponse) && call.Task == nil && call.Objective != nil {
+		return nil
+	}
+	if call.ExecutionReport != nil && ((call.Role != Review && call.Role != Execute) || call.ExecutionReport.CallID < 1 || call.ExecutionReport.Response == "") {
 		return fmt.Errorf("execution evidence requires a bound task review or retained execution")
 	}
 	if !call.Role.IsPlanning() && (call.Continuation != nil || len(call.CompletedTaskIDs) != 0 || call.NewerOwnerDirection != nil) {
@@ -45,16 +48,6 @@ func (call Assignment) ValidateTaskContext() error {
 	for _, file := range call.ReadFiles {
 		if !contains(allowed, file) {
 			return fmt.Errorf("narrow agent context includes an unrelated file")
-		}
-	}
-	for _, finding := range call.Findings {
-		if finding.TaskID != call.Task.ID {
-			return fmt.Errorf("narrow agent context includes an unrelated finding")
-		}
-		if finding.File != "" {
-			if err := model.ValidateTaskFileReference(finding.File); err != nil {
-				return fmt.Errorf("narrow agent context finding file: %w", err)
-			}
 		}
 	}
 	if call.Role == Execute {

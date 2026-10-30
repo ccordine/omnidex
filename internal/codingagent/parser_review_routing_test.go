@@ -89,7 +89,7 @@ func TestFrozenReviewOutcomesRetainCorrectionAndInputRoutes(t *testing.T) {
 				for _, entry := range store.entries {
 					if entry.Phase == "call_opened" && entry.Role == Execute && len(entry.Assignment.Findings) > 0 {
 						f := entry.Assignment.Findings[0]
-						corrected = f.TaskID == task.ID && f.File == file && f.Observation == observation
+						corrected = f.TaskID == task.ID && f.File == file && f.Observation == observation && entry.Assignment.ReviewFeedback == tc.source
 					}
 				}
 				if !corrected {

@@ -120,7 +120,7 @@ func TestExecutionDependenciesAbsentConfigurationDoesNotCreateResources(t *testi
 	}
 }
 
-func TestNativeLaunchFailureCleansExecutionAndReviewDependencies(t *testing.T) {
+func TestNativeLaunchFailureLeavesExistingDependenciesAlone(t *testing.T) {
 	for _, role := range []codingagent.Role{codingagent.Execute, codingagent.Review} {
 		t.Run(string(role), func(t *testing.T) {
 			log := fakeExecutionDocker(t)
@@ -132,15 +132,14 @@ func TestNativeLaunchFailureCleansExecutionAndReviewDependencies(t *testing.T) {
 			if err == nil {
 				t.Fatal("missing executable succeeded")
 			}
-			commands, _ := os.ReadFile(log)
-			if strings.Count(string(commands), "run\n") != 2 || strings.Count(string(commands), "rm\n") != 2 {
-				t.Fatalf("launch failure leaked dependencies: %s", commands)
+			if commands, err := os.ReadFile(log); !os.IsNotExist(err) {
+				t.Fatalf("launch failure created or removed dependency resources: %s %v", commands, err)
 			}
 		})
 	}
 }
 
-func TestNativeCancellationCleansRunningSessionDependencies(t *testing.T) {
+func TestNativeCancellationLeavesExistingDependenciesAlone(t *testing.T) {
 	log := fakeExecutionDocker(t)
 	command := filepath.Join(t.TempDir(), "codex")
 	if err := os.WriteFile(command, []byte("#!/bin/sh\nsleep 20\n"), 0700); err != nil {
@@ -156,8 +155,7 @@ func TestNativeCancellationCleansRunningSessionDependencies(t *testing.T) {
 	if err == nil {
 		t.Fatal("cancelled native session succeeded")
 	}
-	commands, _ := os.ReadFile(log)
-	if strings.Count(string(commands), "run\n") != 2 || strings.Count(string(commands), "rm\n") != 2 {
-		t.Fatalf("cancellation leaked resources: %s", commands)
+	if commands, err := os.ReadFile(log); !os.IsNotExist(err) {
+		t.Fatalf("cancellation created or removed dependency resources: %s %v", commands, err)
 	}
 }

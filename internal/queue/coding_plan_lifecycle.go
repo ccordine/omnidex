@@ -109,6 +109,16 @@ func transitionCodingAuthorityTx(
 }
 
 func (r *Repository) FreezeCodingLedger(ctx context.Context, command FreezeCodingLedgerCommand) (CodingLedgerRevision, error) {
+	return r.freezeCodingLedger(ctx, command, false)
+}
+
+// FreezeAndStartCodingLedger commits the approval and queue transition together.
+// An invalid planning boundary must not leave a newly frozen, stranded ledger.
+func (r *Repository) FreezeAndStartCodingLedger(ctx context.Context, command FreezeCodingLedgerCommand) (CodingLedgerRevision, error) {
+	return r.freezeCodingLedger(ctx, command, true)
+}
+
+func (r *Repository) freezeCodingLedger(ctx context.Context, command FreezeCodingLedgerCommand, start bool) (CodingLedgerRevision, error) {
 	if r == nil || r.pool == nil || command.LedgerID <= 0 || command.Revision <= 0 ||
 		strings.TrimSpace(command.OperationID) == "" || strings.TrimSpace(command.OwnerTurnID) == "" ||
 		strings.TrimSpace(command.OwnerTurnText) == "" {
@@ -125,9 +135,20 @@ func (r *Repository) FreezeCodingLedger(ctx context.Context, command FreezeCodin
 		return CodingLedgerRevision{}, err
 	}
 	defer tx.Rollback(ctx)
+	if start {
+		// Use the same job-before-ledger lock order as lifecycle controls.
+		if _, err := tx.Exec(ctx, `SELECT job.id FROM jobs job JOIN coding_ledgers ledger ON ledger.job_id=job.id WHERE ledger.id=$1 FOR UPDATE OF job`, command.LedgerID); err != nil {
+			return CodingLedgerRevision{}, err
+		}
+	}
 	result, err := freezeCodingLedgerTx(ctx, tx, command)
 	if err != nil {
 		return CodingLedgerRevision{}, err
+	}
+	if start {
+		if err := completeCodingLedgerReviewTx(ctx, tx, result.JobID, result.LedgerID, result.Revision); err != nil {
+			return CodingLedgerRevision{}, err
+		}
 	}
 	return result, tx.Commit(ctx)
 }

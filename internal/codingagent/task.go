@@ -6,6 +6,7 @@ import (
 )
 
 type taskState struct {
+	reviewFeedback    string
 	accepted          map[string]bool
 	findings          map[string][]Finding
 	tasks             map[string]Task
@@ -28,6 +29,7 @@ type taskState struct {
 func projectTaskState(task Task, entries []Entry) *taskState {
 	state := &taskState{accepted: map[string]bool{}, findings: map[string][]Finding{}, tasks: map[string]Task{}, started: map[string]bool{}}
 	state.tasks[task.ID] = task
+	var lastReviewFeedback string
 	for _, entry := range entries {
 		switch entry.Phase {
 		case "task_accepted":
@@ -46,6 +48,10 @@ func projectTaskState(task Task, entries []Entry) *taskState {
 			state.round = entry.Round
 		}
 		switch entry.Phase {
+		case "review_response":
+			if len(entry.Notes) == 1 {
+				lastReviewFeedback = entry.Notes[0]
+			}
 		case "response_recovery":
 			if entry.Result != nil && len(entry.Notes) == 1 {
 				state.incomplete = nil
@@ -80,6 +86,10 @@ func projectTaskState(task Task, entries []Entry) *taskState {
 			state.round = entry.Round - 1
 			state.started[entry.TaskID] = false
 		case "task_reviewed":
+			state.reviewFeedback = lastReviewFeedback
+			if len(entry.Notes) == 1 {
+				state.reviewFeedback = entry.Notes[0]
+			}
 			state.started[entry.TaskID] = false
 			state.continueExecution = false
 			state.reply = ""
@@ -95,6 +105,7 @@ func projectTaskState(task Task, entries []Entry) *taskState {
 				state.session = &ExecutionSession{ThreadID: entry.Result.ThreadID, TurnID: entry.Result.TurnID, State: "idle"}
 			}
 		case "execution_response":
+			state.reviewFeedback = ""
 			state.pendingResponse = nil
 			if len(entry.Notes) != 1 {
 				continue
@@ -156,7 +167,7 @@ func (controller *Controller) runTask(ctx context.Context, task Task, state *tas
 		if err != nil {
 			return err
 		}
-		review, reviewResult, err := controller.review(ctx, scope, map[string]Task{task.ID: task}, state.round, state.pendingReview)
+		review, reviewResult, err := controller.review(ctx, scope, state.round, state.pendingReview)
 		if err != nil {
 			return err
 		}
@@ -167,7 +178,10 @@ func (controller *Controller) runTask(ctx context.Context, task Task, state *tas
 			return err
 		}
 		state.findings[task.ID] = review.Findings
-		if _, err := controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "task_reviewed", TaskID: task.ID, Round: state.round, Findings: review.Findings}); err != nil {
+		if err := json.Unmarshal(reviewResult.Content, &state.reviewFeedback); err != nil {
+			return err
+		}
+		if _, err := controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "task_reviewed", TaskID: task.ID, Round: state.round, Findings: review.Findings, Notes: []string{state.reviewFeedback}}); err != nil {
 			return err
 		}
 		if err := controller.executeTask(ctx, task, state); err != nil {
@@ -193,26 +207,29 @@ func (controller *Controller) executeTask(ctx context.Context, task Task, state 
 }
 
 func (controller *Controller) executeTaskTurn(ctx context.Context, task Task, state *taskState) error {
+	if err := controller.Environment.Attest(ctx); err != nil {
+		return err
+	}
 	if _, err := controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "task_executing", TaskID: task.ID, Round: state.round + 1}); err != nil {
 		return err
 	}
 	execution := controller.assignment(Execute, &task, controller.Configuration.Executor)
+	execution.Findings = state.findings[task.ID]
+	if state.reviewFeedback != "" {
+		if state.session == nil || state.session.ThreadID == "" {
+			return &IncompleteTaskError{Reason: "The reviewer response cannot be delivered because its executor conversation is unavailable."}
+		}
+		execution.Session = state.session
+		execution.ReviewFeedback = state.reviewFeedback
+	}
+	if state.continueExecution {
+		execution.ExecutionReport = state.executionReport
+	}
 	var err error
 	execution.Clarifications, err = controller.taskClarifications(ctx, task.ID)
 	if err != nil {
 		return err
 	}
-	execution.Session, execution.Reply = state.session, state.reply
-	// Corrections start fresh. Ordinary unfinished execution continues its
-	// existing thread with the authoritative task and persisted progress report.
-	// Running turns still retain their exact identity solely for recovery.
-	if state.continueExecution {
-		execution.ExecutionReport = state.executionReport
-	}
-	if execution.Session != nil && execution.Session.State == "idle" && !state.resumeIncomplete && !state.continueExecution {
-		execution.Session = nil
-	}
-	execution.Findings = state.findings[task.ID]
 	result, err := controller.invoke(ctx, execution, state.round+1)
 	if err != nil {
 		return err
@@ -229,6 +246,7 @@ func (state *taskState) recordExecutionResult(taskID string, result Result, roun
 	if err := json.Unmarshal(result.Content, &response); err != nil {
 		return err
 	}
+	state.reviewFeedback = ""
 	state.executionReport = &ExecutionReport{CallID: result.CallID, Round: round, Response: response}
 	state.continueExecution = kind == ExecutionContinue
 	state.started[taskID] = kind == ExecutionDone

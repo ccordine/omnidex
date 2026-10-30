@@ -10,7 +10,7 @@ import (
 
 // planningResponse runs the conversation first. Its ordinary text is retained
 // independently of the parser, so a response is never replaced by ledger JSON.
-func (controller *Controller) planningResponse(ctx context.Context, turn PlanningTurn, ledger *EngineeringLedger) (string, error) {
+func (controller *Controller) planningResponse(ctx context.Context, turn PlanningTurn, ledger *EngineeringLedger, preceding ...PlanningTaskPrerequisite) (string, error) {
 	entries, err := controller.Evidence.Read(ctx)
 	if err != nil {
 		return "", err
@@ -18,6 +18,9 @@ func (controller *Controller) planningResponse(ctx context.Context, turn Plannin
 	conversation := []PlanningMessage{}
 	var continuation *TaskContinuation
 	for _, entry := range entries {
+		if entry.TaskID != string(turn.ItemID) {
+			continue
+		}
 		if entry.Phase == "planning_incomplete" && len(entry.Notes) == 1 {
 			conversation = append(conversation, PlanningMessage{Role: "assistant", Text: entry.Notes[0]})
 			continue
@@ -39,10 +42,15 @@ func (controller *Controller) planningResponse(ctx context.Context, turn Plannin
 	call := controller.assignment(Plan, nil, controller.Configuration.Planner)
 	call.Objective = &Objective{Instruction: turn.Text}
 	call.PlanningLedger, call.PlanningConversation = ledger, conversation
+	call.PrecedingIncompleteTasks = preceding
 	call.NewerOwnerDirection = turn.NewerOwnerDirection
 	call.Continuation = continuation
 	call.CompletedTaskIDs = append([]string{}, controller.CompletedTaskIDs...)
-	call.Clarifications, err = controller.taskClarifications(ctx, "")
+	if turn.ItemID != "" {
+		call.CompletedTaskIDs = nil
+		call.ConstructionFacts = []ConstructionFact{{Kind: "selected_ledger_item", Quote: selectedItemPlanningScope}}
+	}
+	call.Clarifications, err = controller.taskClarifications(ctx, string(turn.ItemID))
 	if err != nil {
 		return "", err
 	}
@@ -63,7 +71,7 @@ func (controller *Controller) planningResponse(ctx context.Context, turn Plannin
 		return "", err
 	}
 	_, err = controller.Evidence.Append(ctx, Entry{Generation: controller.Generation, Phase: "planning_draft",
-		Role: Plan, CallID: result.CallID, NewerOwnerDirection: turn.NewerOwnerDirection,
+		Role: Plan, CallID: result.CallID, TaskID: string(turn.ItemID), NewerOwnerDirection: turn.NewerOwnerDirection,
 		Notes: []string{turn.OperationID, turn.Text, response}})
 	return response, err
 }
