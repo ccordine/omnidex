@@ -34,12 +34,14 @@ func (connection *connection) recoverOrContinueAgent(call *codingagent.Assignmen
 func (connection *connection) recoverExecutionResult(call codingagent.Assignment, result codingagent.Result, event func(codingagent.NativeEvent) error) (codingagent.Result, error) {
 	var response struct {
 		Data []struct {
-			ID     string `json:"id"`
-			Status string `json:"status"`
-			Items  []struct {
+			ID         string `json:"id"`
+			RootTurnID string `json:"rootTurnId"`
+			Status     string `json:"status"`
+			Items      []struct {
 				Type     string `json:"type"`
 				Phase    string `json:"phase"`
 				Text     string `json:"text"`
+				Review   string `json:"review"`
 				Delivery string `json:"delivery"`
 			} `json:"items"`
 		} `json:"data"`
@@ -56,6 +58,9 @@ func (connection *connection) recoverExecutionResult(call codingagent.Assignment
 		return result, &codingagent.IncompleteTaskError{Reason: "Execution dispatch is indeterminate; inspect partial work and plan its continuation without replaying commands.", ThreadID: result.ThreadID}
 	}
 	turn := response.Data[0]
+	if call.Role == codingagent.Review && turn.RootTurnID != "" {
+		turn.ID = turn.RootTurnID
+	}
 	result.TurnID = turn.ID
 	if turn.ID != "" && turn.ID != call.Session.PreviousTurnID && (call.Session.TurnID == "" || call.Session.TurnID == turn.ID) && (turn.Status == "interrupted" || turn.Status == "failed") {
 		// A terminal interrupted turn cannot be replayed. Retain its exact thread
@@ -77,6 +82,9 @@ func (connection *connection) recoverExecutionResult(call codingagent.Assignment
 	}
 	result.TurnID = turn.ID
 	for _, item := range turn.Items {
+		if call.Role == codingagent.Review && item.Type == "exitedReviewMode" {
+			item.Text = item.Review
+		}
 		if err := collectAgentResultItem(&result, call.Role, item.Type, item.Phase, item.Delivery, item.Text); err != nil {
 			return result, err
 		}

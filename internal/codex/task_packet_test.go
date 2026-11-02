@@ -61,11 +61,24 @@ func TestTaskPacketNativeExecutionAndReviewProtocol(t *testing.T) {
 			if len(requests) != 5 {
 				t.Fatalf("unexpected RPC calls %d", len(requests))
 			}
-			if requests[2]["method"] != "thread/start" || requests[3]["method"] != "thread/inject_items" || requests[4]["method"] != "turn/start" {
+			method := "turn/start"
+			if role == codingagent.Review {
+				method = "review/start"
+			}
+			if requests[2]["method"] != "thread/start" || requests[3]["method"] != "thread/inject_items" || requests[4]["method"] != method {
 				t.Fatal("fresh execution/review flow changed")
 			}
 			turn := requests[4]["params"].(map[string]any)
-			literal := turn["input"].([]any)[0].(map[string]any)["text"].(string)
+			literal := ""
+			if role == codingagent.Review {
+				target := turn["target"].(map[string]any)
+				if target["type"] != "custom" || turn["delivery"] != "inline" {
+					t.Fatal("review did not use the native custom review target")
+				}
+				literal = target["instructions"].(string)
+			} else {
+				literal = turn["input"].([]any)[0].(map[string]any)["text"].(string)
+			}
 			want := task.Instructions()
 			if role == codingagent.Review {
 				want = "We just did this:\n\n" + task.Goal + "\n\n" + call.ExecutionReport.Response + "\n\nYou are to make sure that this was executed and implemented correctly."
@@ -88,8 +101,8 @@ func TestTaskPacketNativeExecutionAndReviewProtocol(t *testing.T) {
 			if role == codingagent.Review && !strings.Contains(literal, call.ExecutionReport.Response) {
 				t.Fatal("review lost original execution evidence")
 			}
-			if strings.Contains(writer.String(), "thread/resume") || strings.Contains(writer.String(), "review/start") {
-				t.Fatal("isolated ordinary sessions changed")
+			if strings.Contains(writer.String(), "thread/resume") {
+				t.Fatal("review or execution reused another session")
 			}
 		})
 	}

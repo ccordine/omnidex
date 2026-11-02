@@ -40,3 +40,32 @@ func TestNativeRunWaitsForWholeTurnCompletion(t *testing.T) {
 		})
 	}
 }
+
+func TestNativeReviewReportWaitsForTurnCompletion(t *testing.T) {
+	for _, streamed := range []bool{true, false} {
+		result := codingagent.Result{ThreadID: "thread", TurnID: "turn"}
+		frames := []string{
+			`{"method":"item/completed","params":{"threadId":"thread","turnId":"turn","item":{"type":"enteredReviewMode","review":"Reviewing the change."}}}`,
+		}
+		if streamed {
+			frames = append(frames, `{"method":"item/completed","params":{"threadId":"thread","turnId":"turn","item":{"type":"exitedReviewMode","review":"The change has an integration defect."}}}`)
+		}
+		frames = append(frames, `{"method":"turn/completed","params":{"threadId":"thread","turn":{"id":"turn","status":"completed","items":[{"type":"exitedReviewMode","review":"The change has an integration defect."}]}}}`)
+		for index, raw := range frames {
+			var frame rpcFrame
+			if err := json.Unmarshal([]byte(raw), &frame); err != nil {
+				t.Fatal(err)
+			}
+			done, err := consumeAgentFrame(frame, json.RawMessage(raw), &result, codingagent.Review, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if done != (index == len(frames)-1) {
+				t.Fatal("review completed before its native turn stopped")
+			}
+		}
+		if !result.Completed || string(result.Content) != `"The change has an integration defect."` {
+			t.Fatalf("native review report lost: %+v", result)
+		}
+	}
+}

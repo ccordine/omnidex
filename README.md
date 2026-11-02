@@ -744,7 +744,9 @@ The executor receives only its task, persisted answers and current findings; it 
 only for essential missing owner information. Fresh calls reconstruct that context
 from durable state. Native turn identity supports interrupted-call recovery, rather
 than serving as the task ledger. Planning is explicitly assigned before ledger
-freeze, and each independent review receives only the same task.
+freeze. Independent review calls Codex's native `/review` operation with the change
+description and execution report. Its completed report goes to the existing review
+parser, which retains the normal findings, correction and acceptance flow.
 
 Start with [.env.example](.env.example). Important groups are:
 

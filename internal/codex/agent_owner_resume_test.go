@@ -81,7 +81,11 @@ func TestOwnerResumeInspectsTurnBeforeContinuing(t *testing.T) {
 				if fixture.continueTurn {
 					wantStarts = 1
 				}
-				if strings.Contains(wire, `"method":"thread/start"`) || strings.Count(wire, `"method":"turn/start"`) != wantStarts || !strings.Contains(wire, `"method":"thread/turns/list"`) {
+				method := "turn/start"
+				if role == codingagent.Review {
+					method = "review/start"
+				}
+				if strings.Contains(wire, `"method":"thread/start"`) || strings.Count(wire, `"method":"`+method+`"`) != wantStarts || !strings.Contains(wire, `"method":"thread/turns/list"`) {
 					t.Fatalf("unexpected dispatch: %s", wire)
 				}
 			})

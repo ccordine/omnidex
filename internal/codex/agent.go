@@ -198,6 +198,14 @@ func (connection *connection) startAgentThread(call codingagent.Assignment, scra
 			"developerInstructions": agentRoleInstructions(call.Role),
 			"config":                map[string]any{"approvals_reviewer": "user"}}
 		applyAgentInferenceOptions(parameters, call.Route)
+		if call.Role == codingagent.Review {
+			configuration := parameters["config"].(map[string]any)
+			configuration["review_model"] = call.Route.Model
+			if call.Route.Effort != "" {
+				configuration["model_reasoning_effort"] = call.Route.Effort
+				delete(parameters, "effort")
+			}
+		}
 		method := "thread/start"
 		if call.Role.IsNative() && call.Session != nil {
 			method = "thread/resume"

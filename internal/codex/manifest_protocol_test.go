@@ -83,10 +83,16 @@ func TestManifestRoleSettingsReachNativeProtocol(t *testing.T) {
 					if request.Params["developerInstructions"] != agentRoleInstructions(fixture.role) {
 						t.Fatal("role instructions were not dispatched at the developer boundary")
 					}
+					if fixture.role == codingagent.Review && (request.Params["model"] != fixture.route.Model || request.Params["config"].(map[string]any)["model_reasoning_effort"] != fixture.route.Effort || request.Params["config"].(map[string]any)["review_model"] != fixture.route.Model) {
+						t.Fatal("review did not inherit its selected model and effort")
+					}
 					if (fixture.role == codingagent.Execute || fixture.role == codingagent.Review) && (request.Params["sandbox"] != "danger-full-access" || request.Params["approvalPolicy"] != "never") {
 						t.Fatal("task role did not receive the granted full permissions")
 					}
 				case "turn/start":
+					if fixture.role == codingagent.Review {
+						t.Fatal("review dispatched an execution turn")
+					}
 					seenTurn = true
 					if request.Params["effort"] != fixture.route.Effort || request.Params["model"] != fixture.route.Model {
 						t.Fatalf("manifest route changed at dispatch: %+v", request.Params)
@@ -94,6 +100,11 @@ func TestManifestRoleSettingsReachNativeProtocol(t *testing.T) {
 					if (fixture.role == codingagent.Execute || fixture.role == codingagent.Review) && (request.Params["sandboxPolicy"].(map[string]any)["type"] != "dangerFullAccess" || request.Params["approvalPolicy"] != "never") {
 						t.Fatal("turn permissions disagree with thread permissions")
 					}
+				case "review/start":
+					if fixture.role != codingagent.Review {
+						t.Fatal("non-review role dispatched review")
+					}
+					seenTurn = true
 				}
 			}
 			if !seenThread || !seenTurn {

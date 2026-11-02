@@ -17,7 +17,13 @@ func TestRecoveryReadsOriginalNativeTurnWithoutDispatch(t *testing.T) {
 			for _, status := range []string{"completed", "inProgress", "interrupted"} {
 				t.Run(status, func(t *testing.T) {
 					writer := &protocolWriter{}
-					responses := fmt.Sprintf("{\"id\":1,\"result\":{}}\n{\"id\":2,\"result\":{\"model\":\"fixture\",\"thread\":{\"id\":\"retained-thread\"}}}\n{\"id\":3,\"result\":{\"data\":[{\"id\":\"retained-turn\",\"status\":%q,\"items\":[{\"type\":\"agentMessage\",\"phase\":\"final_answer\",\"text\":\"Retained result.\"}]}]}}\n", status)
+					item := `{"type":"agentMessage","phase":"final_answer","text":"Retained result."}`
+					identity := `"id":"retained-turn"`
+					if role == codingagent.Review {
+						item = `{"type":"exitedReviewMode","review":"Retained result."}`
+						identity = `"id":"nested-review-turn","rootTurnId":"retained-turn"`
+					}
+					responses := fmt.Sprintf("{\"id\":1,\"result\":{}}\n{\"id\":2,\"result\":{\"model\":\"fixture\",\"thread\":{\"id\":\"retained-thread\"}}}\n{\"id\":3,\"result\":{\"data\":[{%s,\"status\":%q,\"items\":[%s]}]}}\n", identity, status, item)
 					connection := &connection{input: writer, output: bufio.NewReader(bytes.NewBufferString(responses))}
 					call := codingagent.Assignment{Role: role, Root: t.TempDir(), Route: codingagent.Route{Model: "fixture"}, Session: &codingagent.ExecutionSession{ThreadID: "retained-thread", TurnID: "retained-turn", State: "running"}}
 					thread, _, err := connection.startAgentThread(call, "")
@@ -52,7 +58,7 @@ func TestRecoveryReadsOriginalNativeTurnWithoutDispatch(t *testing.T) {
 						t.Fatalf("missing original response evidence: %d", frames)
 					}
 					encoded := writer.String()
-					if strings.Contains(encoded, "turn/start") || strings.Contains(encoded, "thread/start") || !strings.Contains(encoded, "thread/resume") || !strings.Contains(encoded, "thread/turns/list") {
+					if strings.Contains(encoded, "turn/start") || strings.Contains(encoded, "review/start") || strings.Contains(encoded, "thread/start") || !strings.Contains(encoded, "thread/resume") || !strings.Contains(encoded, "thread/turns/list") {
 						t.Fatalf("recovery dispatched new work: %s", encoded)
 					}
 					var requests []map[string]any

@@ -11,9 +11,7 @@ type pendingAgentFrame struct {
 	raw   json.RawMessage
 }
 
-// startAgentTurn opens one ordinary isolated turn for every assignment. Review
-// deliberately does not use Codex's repository-review mode: that mode can add
-// context outside the frozen task packet and owns a separate output contract.
+// Review uses Codex's native /review operation on its independent thread.
 func (connection *connection) startAgentTurn(call codingagent.Assignment, thread threadResult, prompt string) (string, json.RawMessage, []pendingAgentFrame, error) {
 	_, approval, policy := agentPermissions(call)
 	parameters := map[string]any{
@@ -28,13 +26,22 @@ func (connection *connection) startAgentTurn(call codingagent.Assignment, thread
 		parameters["outputSchema"] = agentOutputSchema(call)
 	}
 	applyAgentInferenceOptions(parameters, call.Route)
+	method := "turn/start"
+	if call.Role == codingagent.Review {
+		method = "review/start"
+		parameters = map[string]any{
+			"threadId": thread.Thread.ID,
+			"delivery": "inline",
+			"target":   map[string]string{"type": "custom", "instructions": prompt},
+		}
+	}
 	var response struct {
 		Turn struct {
 			ID string `json:"id"`
 		} `json:"turn"`
 	}
 	pending := []pendingAgentFrame{}
-	raw, err := connection.callObserved("turn/start", parameters, &response, nil, func(frame rpcFrame) error {
+	raw, err := connection.callObserved(method, parameters, &response, nil, func(frame rpcFrame) error {
 		pending = append(pending, pendingAgentFrame{frame: frame, raw: append(json.RawMessage(nil), connection.lastFrame...)})
 		return nil
 	})

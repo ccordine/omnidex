@@ -121,6 +121,7 @@ func collectAgentFrame(frame rpcFrame, raw json.RawMessage, result *codingagent.
 			Type     string `json:"type"`
 			Phase    string `json:"phase"`
 			Text     string `json:"text"`
+			Review   string `json:"review"`
 			Delivery string `json:"delivery"`
 		} `json:"item"`
 		Turn struct {
@@ -131,6 +132,7 @@ func collectAgentFrame(frame rpcFrame, raw json.RawMessage, result *codingagent.
 				Type     string `json:"type"`
 				Phase    string `json:"phase"`
 				Text     string `json:"text"`
+				Review   string `json:"review"`
 				Delivery string `json:"delivery"`
 			} `json:"items"`
 		} `json:"turn"`
@@ -144,6 +146,9 @@ func collectAgentFrame(frame rpcFrame, raw json.RawMessage, result *codingagent.
 	switch frame.Method {
 	case "item/started", "item/completed":
 		if frame.Method == "item/completed" {
+			if role == codingagent.Review && params.Item.Type == "exitedReviewMode" {
+				params.Item.Text = params.Item.Review
+			}
 			if err := collectAgentResultItem(result, role, params.Item.Type, params.Item.Phase, params.Item.Delivery, params.Item.Text); err != nil {
 				return false, err
 			}
@@ -154,6 +159,9 @@ func collectAgentFrame(frame rpcFrame, raw json.RawMessage, result *codingagent.
 		}
 		if params.Turn.ID == result.TurnID && params.Turn.Status == "completed" && len(result.Content) == 0 {
 			for _, item := range params.Turn.Items {
+				if role == codingagent.Review && item.Type == "exitedReviewMode" {
+					item.Text = item.Review
+				}
 				if err := collectAgentResultItem(result, role, item.Type, item.Phase, item.Delivery, item.Text); err != nil {
 					return false, err
 				}
@@ -184,6 +192,8 @@ func collectAgentResultItem(result *codingagent.Result, role codingagent.Role, i
 	}
 	var content string
 	switch {
+	case role == codingagent.Review && itemType == "exitedReviewMode":
+		content = text
 	case itemType == "agentMessage" && (phase == "final_answer" || (role == codingagent.Plan || role == codingagent.Execute || role == codingagent.Review) && phase == ""):
 		content = text
 	default:
