@@ -132,7 +132,7 @@ func TestNativeLaunchFailureLeavesExistingDependenciesAlone(t *testing.T) {
 			if err == nil {
 				t.Fatal("missing executable succeeded")
 			}
-			if commands, err := os.ReadFile(log); !os.IsNotExist(err) {
+			if commands, err := os.ReadFile(log); !os.IsNotExist(err) && strings.TrimSpace(string(commands)) != "context" {
 				t.Fatalf("launch failure created or removed dependency resources: %s %v", commands, err)
 			}
 		})
@@ -155,7 +155,7 @@ func TestNativeCancellationLeavesExistingDependenciesAlone(t *testing.T) {
 	if err == nil {
 		t.Fatal("cancelled native session succeeded")
 	}
-	if commands, err := os.ReadFile(log); !os.IsNotExist(err) {
+	if commands, err := os.ReadFile(log); !os.IsNotExist(err) && strings.TrimSpace(string(commands)) != "context" {
 		t.Fatalf("cancellation created or removed dependency resources: %s %v", commands, err)
 	}
 }

@@ -29,6 +29,7 @@ func (controller *Controller) review(ctx context.Context, scope Assignment, roun
 	}
 	parser := controller.assignment(ReviewResponse, nil, controller.Configuration.LedgerParser)
 	parser.Task, parser.Objective, parser.Response = scope.Task, scope.Objective, response
+	parser.Clarifications = scope.Clarifications
 	entries, err := controller.Evidence.Read(ctx)
 	if err != nil {
 		return ReviewResult{}, result, err

@@ -124,7 +124,6 @@ type ExecutionReport struct {
 }
 
 type Assignment struct {
-	ReviewFeedback           string                     `json:"review_feedback,omitempty"`
 	ExecutionReport          *ExecutionReport           `json:"execution_report,omitempty"`
 	JobID                    int64                      `json:"job_id"`
 	Generation               int64                      `json:"generation"`

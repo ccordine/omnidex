@@ -60,8 +60,8 @@ func (p *evidenceReviewProvider) Run(_ context.Context, a Assignment, emit func(
 		raw, _ := json.Marshal(PromptContext(a))
 		var ctx map[string]json.RawMessage
 		json.Unmarshal(raw, &ctx)
-		if len(ctx["execution_report"]) == 0 {
-			p.t.Fatal("rendered context lost original evidence")
+		if len(ctx["task"]) != 0 {
+			p.t.Fatal("review context inherited the ledger contract")
 		}
 		return Result{}, fmt.Errorf("intentional stop after inspecting review context; no acceptance claimed")
 	case ReviewResponse:

@@ -17,16 +17,19 @@ type protocolWriter struct{ bytes.Buffer }
 func (*protocolWriter) Close() error { return nil }
 
 func TestManifestRoleSettingsReachNativeProtocol(t *testing.T) {
-	instructions := agentRoleInstructions(codingagent.Review)
-	for _, required := range []string{"completely fulfilled", "actual software", "existing tools and dependencies", "Do not modify the implementation", "original goal"} {
+	if agentRoleInstructions(codingagent.Review) != "" {
+		t.Fatal("review has extra developer instructions")
+	}
+	instructions := agentRoleInstructions(codingagent.Execute)
+	for _, required := range []string{"frozen task", "after the execution reports completion", "not prerequisites for completing", "do not request routine command approval"} {
 		if !strings.Contains(instructions, required) {
-			t.Fatalf("review instructions lack %q", required)
+			t.Fatalf("execution instructions lack %q", required)
 		}
 	}
-	for _, role := range []codingagent.Role{codingagent.Execute, codingagent.Review} {
-		if !strings.Contains(agentRoleInstructions(role), codingagent.FrozenItemPhaseInstructions) {
-			t.Fatal("native phase was left to historical task context")
-		}
+	goal := codingagent.Assignment{Role: codingagent.Review, Objective: &codingagent.Objective{Instruction: "Original goal.", Clarifications: []string{"Later owner correction."}}}
+	prompt, err := renderAgentAssignment(goal)
+	if err != nil || !strings.Contains(prompt, "Later owner correction.") {
+		t.Fatal("goal review lost owner correction", err)
 	}
 	defaults := manifest.Defaults().Coding()
 	for _, fixture := range []struct {
@@ -100,12 +103,12 @@ func TestManifestRoleSettingsReachNativeProtocol(t *testing.T) {
 	}
 }
 
-func TestExecutionPromptUsesEntireStoredItemUnchanged(t *testing.T) {
+func TestExecutionPromptRetainsTaskWithDurableReply(t *testing.T) {
 	payload := json.RawMessage(`{ "id":"task", "goal":"Complete only this task.", "rank":5, "acceptance":[{"text":"Actually works"}] }`)
 	call := codingagent.Assignment{Role: codingagent.Execute, Task: &codingagent.Task{Goal: "Complete only this task.", Payload: payload},
 		Reply: "Persisted answer.", Session: &codingagent.ExecutionSession{ThreadID: "old-thread", State: "idle"}}
 	prompt, err := renderAgentAssignment(call)
-	if err != nil || prompt != string(payload) {
+	if err != nil || prompt != call.Task.Instructions() {
 		t.Fatalf("execution relied on native history for its task: %q %v", prompt, err)
 	}
 }

@@ -643,6 +643,20 @@ a recognized older Omnidex CLI that would otherwise shadow it on PATH. Configura
 identity and application data are preserved. The optional native UI is at
 `http://127.0.0.1:18090`.
 
+Native coding workflows reuse the authoritative checkout, existing services and
+host dependency caches. Execution and review share a stable, task-owned work
+location across retries and generations; no source tree or database is copied.
+Ordinary `go` and `docker` CLI calls use a code-owned driver that records exact
+generated binaries, image exports and labeled Docker objects. After database
+acceptance, the task loop cleans temporary work and retires obsolete recorded
+outputs, retaining the latest build, rollback, unfinished work and installed
+image references. Recovery reconciles accepted tasks and retries pending cleanup.
+Cleanup adds no model call or acceptance gate. Existing files, modified outputs,
+volumes, services, unregistered resources and shared build caches are preserved;
+there is no global prune. Explicit unsupported Docker endpoint wiring passes
+through unchanged and is not automatically cleaned. Task-owned locations and
+receipts live under the installation's ignored `bin/agent-runtime/workflows`.
+
 ### Terminal workspace
 
 `omni chat` opens a fullscreen conversation with a docked composer, live activity

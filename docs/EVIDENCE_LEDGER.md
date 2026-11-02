@@ -17348,3 +17348,241 @@ The restored canonical CLI is intentionally left connected so the same workload
 can continue; no extra backend or competing client was started. Its transcript
 and the scoped source/provider/recovery receipts remain in the existing ignored
 pilot artifact directory. No other workload was resumed or replanned.
+
+### 2026-10-30: explicit instruction to fix review findings
+
+Owner reported continued non-progress after the earlier handoff change. At
+10:32 EDT job 72 had reached execution round 37 on the same item, with two
+accepted / twelve ready. The latest completed reports repeatedly said no new
+implementation changes and publication/readback unverified, even after normal
+CLI startup worked. Earlier evidence that a turn was running did not establish
+meaningful progress or resolution of the loop. Paused only job 72 through its
+normal interrupt API, preserving the frozen ledger and current changes.
+
+Inspection confirmed the corrective user message was only raw review prose.
+Owner specifically requested telling execution to fix it. An initial change
+also retained conversations for ordinary continue; owner rejected that scope
+expansion. All conversation/continuation lifecycle changes and their altered
+expectations were undone before building or installing them. Those changes
+were never deployed. Current production change is confined to rendering an
+explicit implement-and-verify instruction when raw review feedback or structured
+review findings are supplied. Raw feedback remains verbatim after the instruction;
+fresh execution still receives its full stored item. No parser, ledger selection,
+acceptance rule, model route, conversation lifecycle or new failure gate changed.
+
+Codex/codingagent/worker focused suites PASS. Protocol checks verify the actual
+outgoing fix instruction, verbatim feedback, complete item, unchanged retained
+correction thread and unchanged ordinary continuation lifecycle. Normal build
+and actual production-suite verification are in progress below.
+
+Limited change built successfully through scripts/build-core.sh and installed in
+the existing service. Running PID187864 matches bin/omnidex SHA256
+ef7bf16630dc4343f4e89ae5932376ee73de5afc8b36bd318505e550db754337.
+Reconnected only the original production-suite
+CLI/channel after restart and resumed job72 through normal fresh-authority control
+operation lifecycle_operation_e144ff3970eb48d499ac153381187f94. Generation5,
+frozen revision37 and accepted items retained. Actual outgoing round38 user
+message begins “Fix the supplied independent-review findings for this approved
+ledger item. Implement and verify the corrections in the actual software.”
+Conversation lifecycle remains the committed behavior, as the owner directed.
+
+Actual workload result: round38 corrected a changelog policy and attempted
+publication, which reported that the runtime database role cannot assume
+clinect_system_owner. Round39 loaded the installed command but it refused
+publication outside its controlled installation environment; no new implementation
+changes completed in that pass. This is not proof of publication, consolidation,
+recovery or compatibility readback. The requested instruction change is installed
+and observed; the underlying workload outcome remains unverified. No additional
+framework behavior, runtime grants or application implementation was changed by
+the operator. Canonical workload CLI remains connected for the same ledger.
+
+Quick live handoff proof: used the production Codex Client.Run implementation
+and real configured Codex provider in this same checkout with one disposable
+ignored fixture. This is a native handoff component probe, not a newly created
+ledger or a claim of complete production-job acceptance. The first executor
+created and verified READY plus one newline. The operator deliberately changed
+only that fixture to BROKEN plus newline. A fresh independent reviewer read it
+and reported the exact defect without changing it. The correction used that
+review's verbatim response, the explicit fix instruction and the original
+executor thread; it restored READY plus newline. A second fresh independent
+review read the saved six bytes and confirmed fulfillment. All four real turns
+completed successfully, the original correction thread identity was retained,
+and the disposable result file was removed. No production ledger, implementation,
+service or permission was changed by this probe. Native reports/identities are
+in bin/planning-roadmap-pilot-20261026/review-fix-live-proof/evidence.json.
+Production publication/readback remains unverified; this probe establishes the
+specific review-to-correction handoff now performs its requested correction.
+
+### 2026-10-30: owner-directed Omnidex execution/review rollback
+
+Owner explicitly superseded further production-suite workaround/replanning with restoration of Omnidex's earlier stable execution/review behavior. Stopped the active planner through its normal interrupt API; no replacement items were persisted. Job72 remains waiting_input, generation7, ledger65/revision37 revising; its original item contracts/order remain unchanged. This is a paused interrupted replan, not a frozen executable ledger or a successful production-suite acceptance.
+
+Removed the later raw-review transport, its mandatory original-executor correction identity check and replay-specific test expectations. Restored task dispatch/session behavior from the prior implementation: ordinary unfinished execution retains its existing executor thread and authoritative report; independent review and review corrections start fresh. Restored the prior role instructions and shared-context dispatch. Restored the historical execution/review handoff policies, retaining the previously qualified concise-report/disclosed-limit handoff behavior documented October28. No new scheduler, progress gate, retries ceiling, timeout, ledger path or command-stream completion mechanism added. No whole-repository reset or production-suite application source changes.
+
+Final codingagent/codex/worker checks PASS, whitespace PASS, established UI/core build PASS. Six real configured Codex execution-handoff scenarios PASS19.598s. Initial rollback went too far back in parser history and failed the concise acceptance-disclosure case twice; these failures were retained and corrected by restoring the later historical handoff policy before the installed build. No skipped test was counted as a live pass.
+
+Installed existing omnidex.service PID2268351. Built bin/omnidex and /proc/2268351/exe SHA256 both ef3bd7a49bab8e4773a8a8e51e63e4f1eb58aac5e4571aaa4c2d2509cb261c12. Health and readiness HTTP200, PostgreSQL and Redis healthy. Reconnected only production-suite's normal CLI in its original workspace/channel; no job resumed.
+
+Real native-provider functional check in the existing checkout PASS: execution created READY; deliberate fixture-only BROKEN fault was found by a fresh independent reviewer; fresh corrective executor consumed the supplied finding and restored READY; a second deliberate fixture fault was fixed by ordinary continuation in that corrective executor's same thread; another fresh reviewer verified saved READY bytes. Five completed native calls, no error or owner intervention, no extra model calls to obtain preferred structure. Disposable fixture removed. Evidence: bin/planning-roadmap-pilot-20261026/review-fix-live-proof/rollback-evidence.json and rollback-proof.log. This exercises the actual production Codex client with real tools, not a full CLI/PostgreSQL ledger acceptance. Unit/protocol checks cover controller ordering/recovery; production-suite advancement and recreation of the earlier 26-item success remain unverified while its job is paused.
+
+
+### 2026-10-31 — Owner-requested unused Ollama model removal
+
+Removed all44 installed Ollama model tags through the existing Ollama CLI, with zero deletion errors. Current effective Omnidex coding roles, semantic station provider, manifest and all15 unfinished job model configurations use Codex/gpt-6.1-sol. Embeddings are unconfigured; no saved projects or roleplay generation settings reference local models. The older environment-only qwen2.5-coder parser setting is superseded by the installed manifest and saved coding-agent configuration. No Ollama model was loaded before deletion. No provider/routing/configuration changes, code changes, job resumes or service removal.
+
+Fresh normal Ollama list/API shows zero models and no loaded runners. Live Omnidex coding-agent settings and provider APIs return200 with unchanged Codex routes and zero local catalog entries. Daemonet job65 remains waiting_input, generation31, same frozen ledger60/revision216,31 accepted/15 ready; no successor item started. Its queued cleanup amendment remains pending.
+
+Root filesystem available bytes rose15525048320→193414451200 after filesystem reclamation settled, about165.7GiB recovered and180.1GiB available at measurement. Concurrent host activity means free space can vary. Initial immediate post-unlink measurements underreported completed reclamation; logical model sizes were not substituted for physical recovery. Exact inventory/usage, deletion plan/results and live-consumer verification are retained in bin/planning-roadmap-pilot-20261026/ollama-model-*-20261031.json. No source or unique project/user data was deleted.
+
+
+### 2026-10-31 — Owner-requested rootless Docker artifact purge
+
+Owner clarified that Tor is a helper microservice and did not intend its rootless engine requirement to dictate other workloads. Read-only inspection found the default Docker context is rootless and this engine currently hosts Clinect, standard-catalog verification and Daemonet stacks. Daemonet release building explicitly uses rootless Docker for all four service images, beyond the owner-described Tor requirement. No engine switch, service migration, source change, daemon restart or security/network policy change was made during cleanup. Omnidex/Daemonet workload remains paused.
+
+Current builder GC policy reserves86.61GiB, permits692.9GiB maximum usage and targets173.2GiB minimum free space. Default configuration can retain substantial build history; tagged retired release/test images add separate references. Source references: https://docs.docker.com/engine/security/rootless/tips/ and https://docs.docker.com/build/cache/garbage-collection/. These explain policy/storage mechanisms; exact local values came from docker buildx inspect rootless. Automatic policy is unchanged; permanent lifecycle cleanup remains unfinished.
+
+Removed exactly137 unused generated Daemonet/Omnidex image identities and43 explicitly identified old Clinect verification image identities, using exact tags without forced image removal. Fresh catalog confirms all180 selected identities absent. All container images known to the cleanup plans, latest two/nonterminal Daemonet release journals and unfinished build identities were protected. Unknown/shared repositories and backup/snapshot-labelled images were not selected. No docker system/image/volume global prune or raw containerd filesystem deletion.
+
+Inspected regular build-cache families and their traced ancestors were pruned by exact IDs. First pass selected748 unused, unshared, immutable records; image retirement released further ownership, and a follow-up selected484 known unused/unshared records including104 writable compiler/build caches. Engine reclaimability and in-use leases governed removal. Docker reported33.37GB and41.21GB logical reclaim totals; these are not additive physical storage proof. Final exact-ID comparison finds962 selected cache records absent. Remaining current cache records636 include concurrent builds and retained image dependencies.
+
+A filesystem du scan was stopped as a task-owned process because UID-mapped directories made its accounting incomplete and noisy; no permissions were changed. The first Clinect verification-image pass stopped when another operation replaced a container between list and inspect. Four selected images were already gone at recovery; atomic Docker container-index reads allowed the remaining39 exact deletions safely. All selected image removals succeeded; no owner app was stopped. Before/after lists, selections and command results are retained in bin/planning-roadmap-pilot-20261026/docker-storage-*-20261031.{json,log}.
+
+Physical available bytes rose from193413156864 to248236220416 at final measurement, about51.1GiB recovered and231.2GiB free. Snapshot directories declined3885→2081; concurrent builds added records after an earlier1997-snapshot measurement. Do not chase active builds or present counts as static. Docker accounting after cleanup: images66.04GB, build cache19.64GB with694.4MB reclaimable,282 volumes/110.8GB retained. Containers53,44 running, remained present by current engine count. All baseline named data volumes are present; all10 original Daemonet containers have unchanged identity/images/mounts and applicable services are healthy. Omnidex health/readiness both200; job65 remains waiting_input/gen31/frozen ledger60/revision216.
+
+Global image-list verification was qualified rather than guessed:11 baseline container image references were already absent from the baseline image catalog. Three previously listed references disappeared while Clinect API/Survey/edge containers were concurrently replaced; none was selected in our deletion plans. Current Clinect API, Survey and PostgreSQL report healthy. These existing/concurrent image-reference changes were not rolled back. The source/owner of those other mutations is unproven; no claim that all historical global image IDs remained available.
+
+
+### 2026-10-31 — Owner-requested remaining cache and retired update cleanup
+
+Owner approved cleanup of the inspected remaining candidates while preserving current releases, rollback, pending work and data. Removed Go build/test/module caches through the standard Go clean command, npm content cache through npm cache clean, Gradle generated version/dependency caches and the small actual uv cache. No active host Go/npm/Gradle/package transaction was found in the pre-cleanup process check. Go remains installed in /usr/lib/go and go version reports1.26.3. Corrected two inventory classifications before deleting anything: ~/.local/share/uv contains installed tools/interpreters/credentials, and the3.3GiB AV1 ast-dependencies tree contains still-referenced compiler/NDK dependencies. Both remain intact. npm transient tool installations, browser installations/profiles and Gradle wrapper/configuration were preserved.
+
+Retired1364 generated executables/image archives from old terminal Daemonet update/rollout records and77 old generated release-cache/successfully superseded scratch directories. No deferred selection. All journals, host/creation/authority/Tor metadata and database/recovery backups remain. Current and previous local releases, every nonterminal update and the newest successful per-device rollout/rollback are retained:8 local update records and19 rollout records protected. Five additional old cache directories contain distinct host/recovery metadata and were preserved. Nine unused generated pilot executables totaling402857023bytes were removed; source, useful evidence, OS-auth/login installer packages and portal release packages remain.
+
+OS package-cache classification used actual pacman metadata and vercmp, including epoch-bearing filenames. All2508 inspected archives were identified; selected only older versions and matching signatures, preserving the two newest cached versions plus currently installed version of every package. Final privileged operation removed all832 selected files (5472380253bytes), zero changed/skipped, exact selected paths all absent. Installed packages and package database were untouched. About14GiB of recent/installed/rollback package archives remain.
+
+Administrator authentication was a real capability requirement, not an added scope gate: sudo -n had no cached credentials, the tool-terminal phone attempt fell back to a hidden password prompt, and pkexec in that headless tool session had no authentication agent. Cancelled that task-owned caller and dispatched the same prepared command through xdg-terminal-exec in the existing Framework Hyprland desktop. Owner then authenticated; desktop result exit0 and exact deletion counts verified. No authentication policy, agent, installation or privilege bypass was introduced. The task-owned terminal closes automatically after reporting completion. Prepared scripts, exact selections and receipts remain under bin/planning-roadmap-pilot-20261026/.
+
+Actual-consumer verification: installed daemonet update status reports succeeded for both currentade87997 and previous5b0fd208 releases; retained native payload hashes match manifests and all four current/rollback image archives remain. Retained rollout metadata and referenced compiler installations remain. Omnidex health/readiness both200; Daemonet app/PostgreSQL/Tor/WireGuard are running healthy. Job65 remains waiting_input/gen31 with the same paused ledger; no coding work was resumed.
+
+Available root filesystem bytes rose248790302720→313255235584, about60.0GiB recovered during this cleanup and291.7GiB available at final measurement. Sizes from separate copies/CoW caches are not additive physical recovery; concurrent host activity can change free space. Automatic retention/source fixes remain pending. No project source, application data, identity, credentials, active installation, Docker volume or owner application was deleted.
+
+
+### 2026-10-31 — Post-cleanup application and data verification
+
+Owner requested verification of Daemonet and Omnidex before returning to development. Both use their same installations, checkouts, databases and identities; no build, restart, resume, source edit or direct state correction was performed. Daemonet catalog1178/imports13/users1/devices1/runtime-settings1 exactly match original pre-cleanup full-row fingerprints. All10 baseline Daemonet container IDs, images and named mount bindings are unchanged; expected running services healthy and one-shot secret-init remains exited. All five native user services and running manager executable match installed ade87997 receipt. Omnidex actual executable SHA256 remains ef3bd7a49bab8e4773a8a8e51e63e4f1eb58aac5e4571aaa4c2d2509cb261c12.
+
+Frozen ledger60/revision216 matches its pre-cleanup API snapshot across all51 task contracts:46active plus5tombstoned historical entries. Internal removed versus API/payload tombstoned is an existing representation difference, not a data change; optional empty serialized fields normalized. All216 revisions are present and contiguous; all active items have task rows, accepted timestamps are present,31accepted/15ready unchanged. Historical channel351messages and job131500evidence rows readable; retained review/parser/pause events and pending cleanup amendment present. No invalid/unready Omnidex indexes. These checks establish preservation of measured state; no universal filesystem/untested feature claim.
+
+Actual software pass: original signed-in Daemonet remains LIVE, network profile/ledger renders, videos catalog loads saved titles, platform controls open and all catalog/destination/platform reads return200. Installed daemonet doctor returns ok. Omnidex normal Jobs UI opens job65 detail with200, waiting_input/gen31, no browser errors, assets load200; health/readiness200. Initial browser observer incorrectly awaited /v1/jobs/65 for a UI that calls /v1/ui/chat/jobs/65; corrected observer passed, no product fix. Six failed updater coordinator units are from Oct27–30, predating cleanup. Task-owned tabs/diagnostics closed; final original browser preservation results are in the final JSON. No owner intervention required.
+
+Existing workflow limitation confirmed: public P27 review1308580 says no required correction; parser1308582 nevertheless emits the disclosed unproven YouTube/SoundCloud inline playback as an item finding. This existed before cleanup and remains unresolved; item not manually accepted and paused runtime not resumed. A full execution/review/provider/phone/remote-media gauntlet was not started during this preservation check. Owner reactivated the monitoring goal during verification; job remains paused pending the next authorized action. Evidence: bin/planning-roadmap-pilot-20261026/post-cleanup-*-20261031.{json,png}.
+
+
+### 2026-10-31 — Native programmatic resource reuse and cleanup
+
+Owner explicitly redirected the proposed Daemonet cleanup additions into native Omnidex programmatic workflow behavior and authorized implementation, verification, installed update and original-ledger resume. Implemented internal/workflow resource ownership, stable per-workspace/per-task locations, ordinary Go/Docker CLI drivers, generated-output receipts, Docker labels and engine binding, latest-build/rollback retention, exact unchanged-file checks, and accepted-task cleanup/recovery hooks in the existing task loop. No new model role/call, acceptance gate, source copy, application stack, database schema, global prune or deployment was introduced. Native work keeps shared dependencies/caches, current/stopped referenced images, volumes, unknown outputs, modified files and unfinished work. Explicit unsupported Docker endpoint wiring passes through untracked. Removed the native-review instruction authorizing isolated test environments and stated the existing-environment policy.
+
+Affected-package checks passed for workflow, codex, codingagent, worker and cmd/omnidex; focused races and vet passed. A broader race run exposed the unchanged parser_process.go Close versus ordering_transport_test.go direct field-read race; no broad-suite-green claim or parser redesign. New ownership tests cover preserved existing/modified/outside/other-job files, current/rollback/unfinished output retention, symlink-parent changes, native exit status, exact image-tag retirement, distinct build contexts/target flavors, newest same-engine export receipts and failed partial-output retirement after acceptance.
+
+Actual consumer gauntlet uses the real installed Codex provider/model in this same checkout and branch, creating only a tiny task-owned Go application under the existing ignored pilot directory. Ordinary Go/Docker commands create three binaries, three image tags and three image exports; caller invokes the same lifecycle used by the task loop, asserts old binary/archive/tag removed and current/rollback retained, retries cleanup, checks Docker events for no task-created containers, and removes only its fixture resources. First live pass31.76s. Reused-history pass failed36.98s because an older retained image receipt overrode the newest export family; fixed the first-match lookup and engine binding, added its regression and retained the failure log. Corrected real pass37.30s, native thread01a19127-fafa-73e0-b095-05b6e604b995, turn01a19127-fdc9-7f31-af9a-e94ec09c61c2. No owner intervention or extra AI cleanup call. This is functional adapter/lifecycle evidence, not a workload autonomy claim. Logs: bin/planning-roadmap-pilot-20261026/native-workflow-resource-*-pilot-20261031.log.
+
+Built normal core/CLI including production UI. After checking no real running jobs, activated the existing omnidex.service only; PostgreSQL/Valkey and configuration retained. At08:53:49UTC running core SHA25672514ffef177380ec4d484590a924a936ee897df195b1cc01fed68381a07591b exactly matches the qualified build; CLI SHA25646eabaaecd609dabeab2f02b40170d55c862d76b66547603a9d669dcc72bf7b2. runtime.env and manifest fingerprints unchanged; health/readiness/job65 all200. Task-owned old CLI34133 exited normally; updated canonical CLI90423 connected.
+
+Normal planning correction removed only proposed p_1fad55600cd4_1_task and p_1fad55600cd4_2_task. Compared restored revision218 against original216 snapshot: zero original contract/rank differences, all46original active tasks agreed, two additions tombstoned. Using the owner explicit conditional resume authority after all implementation/verification conditions passed, normal freeze produced revision219 and started job65/gen33. Fresh runtime confirms32accepted/14ready and native P28 execution1308620 in canonical Daemonet. Actual new Scope receipt confirms job65/taskP28, rootless context and managed Go/Docker drivers in the correct existing workspace. No manual task acceptance or second plan/ledger. Request/receipts and version/comparison evidence remain under the existing ignored pilot directories.
+
+Automatic thread monitoring goal still reports Blocked in the platform; goal resume is not exposed by the goal tool. Asked owner to reactivate that controller while continuing manual monitoring in the current turn. Daemonet job itself is running, not blocked on that UI state. Original ledger completion remains unachieved; continue observing actual item execution, review, acceptance and subsequent work.
+
+
+### 2026-10-31T09:20Z — Native temporary-path and cancellation repair verified
+
+Observed an actual compatibility regression after initial installation: native TMPDIR was204characters and a task-owned AF_UNIX probe failed with path too long. This could invalidate application socket tests; the first small build/export pilot had not covered IPC. Used normal job65 interrupt lifecycle_operation_829a15303cebdf3b9c9ac17778e14b3e8dbb31bcf7cbb835425c8eb779305d10, preserving gen33/frozen219,32accepted/14ready and all P28 code. The paused broad test left its positively identified owned Go process group2082913 running; stopped only that disposable test group. Removed the new driver process-group detachment so tools remain in the native command group; added its regression. Changed managed temporary storage to GOTMPDIR only, preserving inherited application TMPDIR and normal Unix IPC. No app/source/data reset or new environment.
+
+Affected normal tests and focused races passed. Expanded real native pilot requires a generated --socket-check command and executes it under the actual managed environment, plus the existing three-build/export cleanup, current/rollback and Docker-event checks. Real pass51.79s: native thread01a19140-fcfc-77b0-9819-93364baf6258, turn01a19141-002e-7132-8a7f-61f1dbff8d88. Log native-workflow-unix-pilot-20261031.log retained. No user intervention needed. Source held fixed during evidence run.
+
+Activated repaired existing core: running SHA2564c571b27496c475eb71b5b58b5f0d54424b0a0cfc26439b286fd7a549c4745d3 matches built core. Restart ended old task-owned CLI90423; reconnected updated CLI70513. Initial resume observer mistook disconnected plan GET409 for a changed ledger; no mutation had been submitted. Reconnected and confirmed actual frozen219 unchanged. Normal resume lifecycle_operation_36b685f1644426a32cca7bd2ff6c4e96b4622f627e0e5909eda7f470b0617e29 HTTP200running. Call1308640 resumed P28 in its retained native thread with factual repair context; no new application tasks or manual acceptance. Actual resumed process environment proof saved native-workflow-repaired-runtime-env-20261031.json. Runtime.env and saved provider configuration were not changed.
+
+P28 catalog sync and provider-protocol source/checks are retained; credential persistence, account lifecycle, application/UI wiring, installed delivery and live provider round trips remain incomplete. Full application test result from the broken-temp run is not accepted as an application defect. Existing diagnostic-program duplicate-main build failures and the framework broader parser-close race remain disclosed, unchanged. Continue the same ledger through normal execution/review and acceptance; goal not complete.
+
+
+### 2026-10-31T10:16Z — Go test-fixture temporary paths repaired and original item resumed
+
+The expanded workload run exposed a second temporary-path defect: this host's Go testing.TempDir uses GOTMPDIR, as verified in /usr/lib/go/src/testing/testing.go. Preserving TMPDIR alone had left test fixture sockets under the204-character managed GOTMPDIR, causing actual bind errors. Paused job65 through normal interrupt lifecycle_operation_8b7490da10b51b8a325f058f13c94b4aec55d7c88794e8d341646dc9339424ae, preserving gen33/frozen219 and32accepted/14ready. Verified and stopped only its orphaned disposable test PIDs2499893/2499900/2623833. Removed the remaining GOTMPDIR override and unused managed tmp-directory creation; both host temporary settings now remain unchanged. Generated-output ownership and accepted-task cleanup remain.
+
+Affected normal package checks, focused races and vet passed; both normal binaries and production UI rebuilt. Expanded actual native gauntlet additionally creates and runs a real Go test binding a Unix socket inside testing.T.TempDir, alongside runtime IPC and three-build/export cleanup. PASS41.15s, native thread01a19173-dc58-7f53-b883-85a6dcd9f02b, turn01a19173-de8c-7d22-a4c6-61ba22996210. Old output removed, current/rollback retained, no containers created; fixture artifacts cleaned. Log: bin/planning-roadmap-pilot-20261026/native-workflow-go-fixture-pilot-20261031.log. Earlier broad-workload socket failures are retained as environment failures, not waived task obligations. Earlier unrelated parser-close race remains disclosed.
+
+Activated only existing omnidex.service after confirming no coding job running. Actual core SHA25645d57c16ba3318cd24274eb49353b7a65f30ad9a39010ed90fa00cee601cb3d9 matches build; CLI46eabaaecd609dabeab2f02b40170d55c862d76b66547603a9d669dcc72bf7b2, readiness200, runtime.env/manifest unchanged. Closed owned CLI70513 normally and reconnected canonical CLI89234. Normal resume lifecycle_operation_6ea63022f9f29056b9f9014f1142090c2f05618eff75581487097f1055a7573c returned200running, same gen33/frozen219. P28 code, provider prerequisites and installed-delivery obligations remain with Omnidex; no acceptance, queue alteration, manual app implementation or new approval required. Owner remains away with phone available. Monitoring continues; ledger goal incomplete.
+
+
+### 2026-10-31T12:04Z — Review finding extraction incorrectly includes an owner waiver
+
+Read-only diagnostics on job65/gen33/frozen219: native review1308648 genuinely ended1308649 and its public final report identifies exactly two required corrections (Twitch HTTP400 invalid-token revocation and accepted-token loss after identity503). Review parser1308650 completed1308651; review_response1308652 and task_reviewed1308653 incorrectly include a third finding: "Live provider checks remain unverified under the recorded owner waiver." The waiver was explicitly recorded by owner, execution and review. That line is verification context, not required work. Source audit disclosures remained verification. No manual state edits or acceptance.
+
+The same item's next execution1308655 fixed Twitch and completed; execution parser correctly returned continue because OAuth recovery remained unfinished, then execution1308661 continued. Actual app implementation is moving forward, not blocked on an owner answer. Root has not changed Omnidex parser source. Prepared proposal bin/planning-roadmap-pilot-20261026/review-owner-waiver-parser-20261031.patch: one task-neutral review-parser instruction plus opt-in real semantic regression cases retaining actual findings while excluding owner-waived checks. git apply --check passed against existing edits. Original parser assignment retained locally mode0600 in review-owner-waiver-capture-20261031.json,4348bytes,SHA256ccf510f42731b64c6f5869e0816e17a01048fa54b0cf0fd093717d61c4e37576; no replay occurred. Asked owner approval for the edit, same-configured-Codex replay, build/install and same-ledger continuation because owner explicitly prohibits unapproved Omnidex source changes. Approval remains pending at this entry; continue independent application work and monitoring without applying proposal.
+
+
+### 2026-10-31T12:31Z — First real-job cleanup ownership audit
+
+Before job65's first acceptance under the new resource workflow, inspected its actual derived receipts read-only. There are20 file receipts, all generated test binaries inside the existing Daemonet platform-accounts/platform-accounts-recovery pilot directories; no external file or image receipts are candidates for this job. Application release packages, current/previous installations, volumes and foreign resources are not claimed by those receipts. No cleanup was invoked manually and no resource was deleted by this audit. This is observed coverage of the ordinary inherited Go/Docker command adapter, not a claim that independent background update workers or absolute tool invocations are automatically instrumented. Preserve that limitation; no global cache-prune or application-specific framework adapter was added.
+
+
+### 2026-10-31T12:44Z — Native cleanup runs at first real accepted-item boundary
+
+Job65/P28 passed its independent review and code accepted it at12:42:31UTC; next original P29 execution opened12:42:32UTC. Read-only actual-consumer inspection confirms P28 accepted marker present, task temporary directory removed, receipts reconciled20→7 retained files. No claim that all13 removed receipts represented distinct file deletions or a measured physical-space gain; duplicates/already-removed test outputs are included. Before-boundary audit showed all owned receipts were test binaries inside existing pilot directories, no external release packages or data. No extra model call, cleanup task or alternate acceptance path appeared between acceptance and next execution. Evidence: bin/planning-roadmap-pilot-20261026/native-workflow-first-acceptance-20261031.json. Same frozen219/job65/gen33 now33accepted/13ready.
+
+Final review parser returned findings=[] despite accurately disclosed owner-waived live checks. Earlier waiver-clarification proposal remains unapplied and optional pending owner approval; current ledger progress must not be stopped to manufacture that prerequisite. No parser source change or core restart was made. Continue original workload monitoring; objective remains incomplete.
+
+
+### 2026-10-31T14:14Z — P29 accepted; reading sessions starts automatically
+
+Observed same job65/gen33/ledger60/frozen219 accept reading catalog organization at14:12:55UTC (event1308689), then select P30 Replace reading sessions at14:12:56UTC (execute1308691), fresh native thread01a1924e-729f-7cb3-bc14-cd2e72e28c4f. Counts34accepted/12ready. No manual acceptance, ledger amendment, source/installation reset, extra environment or Omnidex code change caused the advance.
+
+Installed commit734d33cbd2fa4301c476b0eb05652bc03150e331; normal CLI update status78f1e84c9d9e6ecb1e7b5639d48bc1c5aa1817fbf8062eec81607406d386d485 reports succeeded. Root inspected the actual Reading screenshot and functional evidence. Metadata/classification/shelf/tag/favorite changes, repeat indexing, identity/progress, cancellation, unavailable payloads and catalog-only deletion retaining bytes passed real SQL/storage and installed Firefox checks. Original1178typed record payloads preserved;15derived entries from existing files intentionally retained. Independent review repeated installed SQL/UI and relevant races, preserved all1193pre-review fingerprints, and changed no implementation. Review parser1308688 findings=[] confirmed directly.
+
+Native execution ended13:52:43UTC before execution parser1308681 opened; fresh review1308684 ended14:12:43UTC before review parser1308686 opened. The broad race run waited in a native networking test and was retained as incomplete; disclosed metadata UI assertion and vendor provenance failures remain failures. Task elapsed about90minutes from first selection to acceptance; no owner intervention for this item. Internal friction and corrections are retained in the task record: scratch-path retries, numeric metadata rounding correction and rebuilt delivery, post-update browser reload and selector correction.
+
+Operator proof: bin/planning-roadmap-pilot-20261026/reading-operator-observation-20261031.json (Omnidex). Detailed application evidence: bin/portal-pilot/reading-20261031 and reading-review-20261031. The optional owner-waiver parser proposal remains unapplied and does not block the original ledger.
+
+
+### 2026-10-31T15:49Z — P30 accepted; real Torchlight catalog consolidation starts
+
+Same job65/gen33/ledger60/frozen219 accepted reading sessions at15:47:34UTC (1309019), then selected original P31 at15:47:35UTC (execute1309021), fresh native thread01a192a5-1a1a-7552-b2d1-f57e8c133794. Counts35accepted/11ready. Final independent review1309014 genuinely ended1309015 before parser1309016; stored review_response1309018 findings=[] confirmed directly. Code advanced the original queue automatically.
+
+Accepted installed commitdb05c19775691b53f8e7128984919b8ea772835a, normal CLI update99a0139b986412c50ae62fda70aed82cdc2cd27b878c8e3c99262c58121ffb4a succeeded. Actual Firefox verifies representative PDF/text/HTML/EPUB/CBZ rendering, scroll/chapter/page resume, RTL comic ordering, heartbeat, late-open cancellation and revoked lease teardown. Root inspected actual PDF text and EPUB/HTML/text/comic captures. MD/RTF remain inert text and MOBI/AZW/AZW3/CBR use source-supported temporary-file handoff; no native decoding or compatible-app execution claim. Lease revocation is the installed authority-loss proof, not owner logout. All1193original records and authority/profile/browser bindings preserved; owned fixtures cleaned.
+
+Two independent reviews found real progress defects: transient save failure during close discarded the latest position, then HTTP400 blocked corrected progress. Both were repaired in the same item and verified through real installed requests: abort-once -> visible error/waiting close -> automatic successful retry -> page7/latest location restored; page3of2 ->400 -> corrected page2 ->204 -> close/reopen at corrected place. Third independent review confirmed both corrections and full reader acceptance. Final operator proof: bin/planning-roadmap-pilot-20261026/reading-sessions-operator-observation-20261031.json. Detailed application evidence remains under bin/portal-pilot/reading-sessions-20261031 and the independent review records.
+
+Elapsed selection-to-acceptance about94m38s; owner intervention0. Authoritative call_opened counts:52native execution turns,52execution parsers,3independent reviews,3review parsers (orchestration invocations, not provider billing/request counts). Some partial execution turns ended while the same external checks continued, causing internal turn churn; parsers followed actual completed turns. The live core remained the qualified45d57c16 build. Internal friction included a pinned npm lock repair, blank document policy/fixture corrections and test-probe adjustments. Historical broad diagnostic Go/vet failures and the unchanged vendor provenance audit failure remain disclosed; configured Java/native-AST, affected checks, actual software and preservation passed.
+
+
+### 2026-11-01T12:02:02.936Z — Owner-approved review parser owner-scope correction
+
+Root owner explicitly approved the prepared review-owner-scope-parser-20261101.patch after completed native review1310231 reported no remaining defects under amended scope, but parser/task_reviewed1310232 reopened only owner-excluded verification limits. Fixed review parser assignment/context to carry the same persisted owner clarifications supplied to native review; removed the gate prohibiting those clarifications. Parser instruction preserves amended-scope no-defect conclusions and disclosed limits while retaining actual required defects. No new model stages, state mutation, completion bypass, workload-specific prompt or ledger changes.
+
+Affected codingagent/codex unit tests PASS. codingagent/worker race suites and targeted owner-scope race PASS; broad codex race suite reports existing Close/ordering-transport test access race (parser_process.go:48 versus ordering_transport_test.go:29), outside changed path, not claimed green or repaired. Affected vet PASS. Real configured Codex gpt-6.1-sol/low semantic checks PASS: excluded-check review done/findings0, actual defect done/findings1, required verification gap done/findings1; evidence disclosure retained. UI/core build PASS. No private workload report replayed; semantic fixtures generic.
+
+Installed core v0.5.0/Charmeleon PID2686788 SHA25651e67c84a07b8f4b92a097bc70825f620d8f7e25c6a7c40c4b4877cf1635966f verified through /proc executable equal built bytes, readyz200. Only existing Omnidex service restarted while selected job waiting and no other running jobs; PostgreSQL/Valkey and canonical CLI preserved. Existing source edits integrated/preserved. Same-job actual software pilot is next; acceptance remains unproven until normal review accepts and advances without reopening excluded checks.
+
+
+### 2026-11-01T12:08:59.001Z — Installed owner-scope parser pilot passed; notifications started
+
+Samejob65/gen33/ledger60/frozen219 actual installed normal workflow: native independent review completed, parser1310242 received persisted owner clarifications, review_response1310244 done/findings=[], original item accepted1310245 at12:07:54UTC, next original notifications/approvals item p_4e20e0a03390_2_task execution1310247 at12:07:56UTC. Counts39accepted/7ready. Source review still discloses unverified owner-excluded scenarios; corrected parser preserves them without reopening work. No additional QR scan, transfer, owner approval, manual acceptance, ledger edit, new environment or extra model stage caused advance. Installed core SHA25651e67c84… remains qualified. Focused checks/live semantic controls and broad codex race limitation retained above. Actual pilot proof bin/planning-roadmap-pilot-20261026/review-owner-scope-actual-pilot-20261101.json. Canonical target CLI roottool45043 remains connected for ongoing original work. Immediate approved framework fix is implemented, installed and verified; full ledger/final original-goal review remain incomplete.
+
+
+### 2026-11-02T05:00:25+00:00 — Independent review of simplified native review prompt
+
+Reviewed the requested prompt/context change in the existing authoritative dirty checkout, preserving all approved edits and running services. The native item-review prompt contains the change description and execution report followed by the requested instruction; custom review developer instructions are empty and full disk access remains. This live review itself was dispatched by the existing TestInstalledSoftwareReview provider session; no nested native review or other project workload was started or controlled.
+
+Automated checks: `go test -p 1 ./internal/codex ./internal/codingagent ./internal/worker ./internal/queue -count=1` PASS with opt-in live-provider/database fixture selectors removed from the child test process to avoid recursive review and unintended fixture runs. Database integration tests were not selected. Core `go build -trimpath -buildvcs=false` PASS. Rebuilt bytes, existing bin/omnidex and actual /proc/2474895/exe all match SHA256 d4c3817df18c047ebcc9d016e3f312a1a43636e25247fdda9577ea27d2bf7b07. Installed CLI reports v0.5.0/Charmeleon; actual configured core at 127.0.0.1:18090 returns readyz200 and healthy PostgreSQL/Redis. Initial readiness probe used the documented default8090 and returned404; reading only the running process's listener setting resolved the endpoint without changing configuration. No restart or owner intervention.
+
+Found one concrete regression: ReviewGoal stores current owner amendments in Objective.Clarifications, but renderAgentAssignment only renders Objective.Instruction and the new Review PromptContext branch omits Objective entirely. Final review therefore receives neither the goal amendments nor exclusions, although its response parser still receives them. This can judge superseded scope or miss later required behavior. Generic production-renderer probe reproduced the omission: final native review FAIL (context={}), final response-parser and item-review clarification controls PASS. Probe source/output retained as bin/review-scope-retention-probe-20261102.go.txt and bin/review-scope-retention-probe-20261102.txt. Temporary probe test removed; disposable verification binary removed. Implementation unchanged. Review is complete with this defect outstanding; no passing acceptance or full live queue/cancellation qualification is claimed.
+
+
+### 2026-11-02T05:03:59+00:00 — Final-goal review prompt correction independently verified
+
+Independent review of the simplified native software-review assignment in the existing authoritative checkout, preserving all approved edits, services, data and configuration. No implementation or protocol edits were needed. Review receives the intended change and execution report, with the requested ordinary software-review instruction; it receives no ledger task contract or custom review developer instructions. Native permissions remain danger-full-access/never and ordinary thread/start plus turn/start are retained, without repository review mode or an imposed source-only restriction. Item clarifications, previous feedback and final-goal owner amendments remain available. The final-goal amendment omission identified in the previous entry is now fixed by rendering Objective.Clarifications in the current review instruction; its regression passes.
+
+This session is the actual configured native final-goal review launched by TestInstalledSoftwareReview (OMNI_TEST_SOFTWARE_REVIEW=1 and OMNI_TEST_SOFTWARE_REVIEW_GOAL=1); process ancestry confirms codex.test -> Codex, and the received user instruction includes the final-goal owner clarification. Thus the changed prompt was exercised in its actual consumer. No nested review, delegated agent, new environment or application workload was started. Existing response-parser context and response extraction, completed-execution handoff, correction, essential-input, recovery and code-owned acceptance remain present and are covered by the passing regression suites. No remaining defect was found in the requested change.
+
+Verification: go test -p 1 ./internal/codex ./internal/codingagent ./internal/worker ./internal/queue -count=1 PASS (OMNI_TEST_* selectors removed only from the child test environment to avoid recursive native review and opt-in database fixtures). Core go build -p 1 -trimpath -buildvcs=false PASS. Disposable verification executable, existing bin/omnidex and /proc/2517737/exe match SHA256 98e8cafa2ca203ac136c052f6898c248123aa8a94850474b787187749ba50fde. Running v0.5.0/Charmeleon at 127.0.0.1:18090 returns readyz200 and healthz200 with PostgreSQL and Redis healthy, queue enabled. Initial --version/health --help probes were unsupported by the core CLI; version was obtained through the normal omni version --json and healthz interfaces. git diff --check PASS. Verification binary removed; no restart or owner intervention needed.
+
+Limits: opt-in PostgreSQL fixture tests and a live queue acceptance/cancellation cycle were not run; this review establishes the installed prompt behavior and passing regression coverage, not a new end-to-end queue qualification. Earlier broader codex race-suite limitation is not reclassified as passing. No manual acceptance or queue mutation occurred.

@@ -25,6 +25,22 @@ func PromptContext(call Assignment) any {
 			CompletedTaskIDs         []string                   `json:"completed_task_ids,omitempty"`
 		}{call.PrecedingIncompleteTasks, call.ConstructionFacts, tasks, call.PlanningConversation, failure, call.Clarifications, call.NewerOwnerDirection, call.CompletedTaskIDs}
 	}
+	if call.Role == Review {
+		type findingText struct {
+			File        string `json:"file,omitempty"`
+			Observation string `json:"observation"`
+		}
+		findings := make([]findingText, 0, len(call.Findings))
+		for _, finding := range call.Findings {
+			findings = append(findings, findingText{finding.File, finding.Observation})
+		}
+		return struct {
+			Findings         []findingText       `json:"findings,omitempty"`
+			PreviousResponse string              `json:"previous_response,omitempty"`
+			Reply            string              `json:"reply,omitempty"`
+			Clarifications   []TaskClarification `json:"clarifications,omitempty"`
+		}{findings, call.Response, call.Reply, call.Clarifications}
+	}
 	if call.Role == ReviewResponse || call.Role == ExecutionResponse {
 		instructions := ""
 		if call.Task != nil {
@@ -35,14 +51,10 @@ func PromptContext(call Assignment) any {
 				instructions += "\n" + clarification
 			}
 		}
-		var clarifications []TaskClarification
-		if call.Role == ExecutionResponse {
-			clarifications = call.Clarifications
-		}
 		return struct {
 			TaskInstructions string              `json:"task_instructions"`
 			Clarifications   []TaskClarification `json:"clarifications,omitempty"`
-		}{instructions, clarifications}
+		}{instructions, call.Clarifications}
 	}
 	if call.Role == Execute || call.Role == Review {
 		type findingText struct {

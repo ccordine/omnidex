@@ -3,7 +3,6 @@ package codex
 import (
 	"bufio"
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -31,7 +30,7 @@ func TestOwnerResumeInspectsTurnBeforeContinuing(t *testing.T) {
 				responses := fmt.Sprintf("{\"id\":1,\"result\":{}}\n{\"id\":2,\"result\":{\"model\":\"fixture\",\"thread\":{\"id\":\"retained-thread\"}}}\n{\"id\":3,\"result\":{\"data\":[{\"id\":%q,\"status\":%q,\"items\":[{\"type\":\"agentMessage\",\"phase\":\"final_answer\",\"text\":\"Retained result.\"}]}]}}\n{\"id\":4,\"result\":{}}\n{\"id\":5,\"result\":{\"turn\":{\"id\":\"continued-turn\"}}}\n", fixture.turn, fixture.status)
 				conn := &connection{input: writer, output: bufio.NewReader(bytes.NewBufferString(responses))}
 				call := codingagent.Assignment{Role: role, Root: t.TempDir(), Route: codingagent.Route{Model: "fixture"},
-					Task: &codingagent.Task{ID: "retained-task", Goal: "Finish the approved task.", Payload: json.RawMessage(`{"id":"retained-task","goal":"Finish the approved task."}`)}, Reply: fixture.reply,
+					Task: &codingagent.Task{ID: "retained-task", Goal: "Finish the approved task."}, Reply: fixture.reply,
 					Session: &codingagent.ExecutionSession{ThreadID: "retained-thread", TurnID: "retained-turn", PreviousTurnID: fixture.previous, State: "running"}}
 				thread, _, err := conn.startAgentThread(call, "")
 				if err != nil {
@@ -55,8 +54,12 @@ func TestOwnerResumeInspectsTurnBeforeContinuing(t *testing.T) {
 						t.Fatalf("invalid continuation: result=%+v session=%+v error=%v", result, call.Session, err)
 					}
 					prompt, err := renderAgentAssignment(call)
-					if err != nil || (role == codingagent.Review && (!strings.Contains(prompt, "Inspect retained command results") || !strings.Contains(prompt, fixture.reply))) ||
-						(role == codingagent.Execute && prompt != string(call.Task.Payload)) {
+					context, contextErr := renderAgentContext(call)
+					valid := strings.Contains(prompt, "Inspect retained command results") && strings.Contains(prompt, fixture.reply)
+					if role == codingagent.Review {
+						valid = strings.Contains(prompt, "make sure that this was executed and implemented correctly") && strings.Contains(context, fixture.reply)
+					}
+					if err != nil || contextErr != nil || !valid {
 						t.Fatalf("continuation lost retained-work instructions: %s %v", prompt, err)
 					}
 					if _, err := conn.injectAgentContext(call, thread.Thread.ID); err != nil {

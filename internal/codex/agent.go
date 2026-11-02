@@ -31,7 +31,10 @@ func (client *Client) Run(parent context.Context, call codingagent.Assignment, e
 	}
 	var connection *connection
 	if call.Role.IsNative() {
-		environment := os.Environ()
+		environment, environmentErr := client.workflowEnvironment(call)
+		if environmentErr != nil {
+			return result, environmentErr
+		}
 		connection, err = startExecutionConnection(ctx, client.command, call.Root, environment)
 	} else {
 		connection, err = startParserConnection(ctx, client.command, call.Root, scratch)
@@ -78,15 +81,13 @@ func (client *Client) Run(parent context.Context, call codingagent.Assignment, e
 	if err != nil {
 		return result, err
 	}
-	if call.Role != codingagent.Execute || len(call.Findings) != 0 || call.ExecutionReport != nil || len(call.Clarifications) != 0 {
-		contextReceipt, err := connection.injectAgentContext(call, thread.Thread.ID)
-		if err != nil {
-			return result, retryableAgentSessionError(err)
-		}
-		if len(contextReceipt) != 0 {
-			if err := recordAgentFrame(&result, contextReceipt, event); err != nil {
-				return result, err
-			}
+	contextReceipt, err := connection.injectAgentContext(call, thread.Thread.ID)
+	if err != nil {
+		return result, retryableAgentSessionError(err)
+	}
+	if len(contextReceipt) != 0 {
+		if err := recordAgentFrame(&result, contextReceipt, event); err != nil {
+			return result, err
 		}
 	}
 	if call.Role.IsNative() {

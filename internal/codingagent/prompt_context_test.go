@@ -35,7 +35,7 @@ func TestParserSharedContextExcludesCurrentSourceResponse(t *testing.T) {
 }
 
 func TestNativeSharedContextRetainsCompleteFrozenInstruction(t *testing.T) {
-	for _, role := range []Role{Execute, Review} {
+	for _, role := range []Role{Execute} {
 		call := Assignment{Role: role, Task: &Task{Goal: "Exact frozen user instruction.", ReadFiles: []string{"input.txt"}},
 			Clarifications: []TaskClarification{{Question: "Which format?", Answer: "CSV"}}}
 		raw, err := json.Marshal(PromptContext(call))

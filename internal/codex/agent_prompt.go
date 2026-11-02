@@ -17,22 +17,32 @@ func renderAgentAssignment(call codingagent.Assignment) (string, error) {
 		}
 		return call.Objective.Instruction, nil
 	}
-	if call.Role == codingagent.Review && call.Objective != nil {
-		return "Review whether the owner's original goal has been met in the actual software:\n\n" + call.Objective.Instruction, nil
+	if call.Role == codingagent.Review {
+		description := ""
+		if call.Objective != nil {
+			description = call.Objective.Instruction
+			for _, clarification := range call.Objective.Clarifications {
+				description += "\n\n" + clarification
+			}
+		} else if call.Task != nil {
+			description = call.Task.Goal
+		}
+		if call.ExecutionReport != nil {
+			description += "\n\n" + call.ExecutionReport.Response
+		}
+		return "We just did this:\n\n" + description + "\n\nYou are to make sure that this was executed and implemented correctly.", nil
 	}
-	if (call.Role == codingagent.Execute || call.Role == codingagent.Review) &&
+	if call.Role == codingagent.Execute &&
 		(call.Task == nil || strings.TrimSpace(call.Task.Goal) == "") {
 		return "", fmt.Errorf("%s requires its frozen work instruction", call.Role)
 	}
 	switch call.Role {
 	case codingagent.Execute:
-		if call.ReviewFeedback != "" {
-			return call.ReviewFeedback, nil
-		}
-		return string(call.Task.Payload), nil
-	case codingagent.Review:
 		if call.Session != nil && call.Session.State == "interrupted" && call.Reply != "" {
 			return call.Task.Instructions() + "\n\nContinue retained partial work in this same native session. Inspect retained command results and workspace changes first. Do not repeat completed commands or effects. Owner continuation: " + call.Reply, nil
+		}
+		if call.Role == codingagent.Execute && call.ExecutionReport != nil {
+			return call.Task.Instructions() + "\n\nContinue the unfinished authorized work retained in execution_report and the workspace. Preserve completed changes and checks; inspect retained results before acting and do not repeat completed effects. Finish the remaining task and its required verification. An ordinary progress checkpoint does not require owner input or independent review.", nil
 		}
 		return call.Task.Instructions(), nil
 	default:
@@ -40,16 +50,14 @@ func renderAgentAssignment(call codingagent.Assignment) (string, error) {
 	}
 }
 
-const agentVerificationAndPreservation = " Verify behavior in the actual software through its normal interfaces and real dependencies. Browser or terminal automation and visual inspection are valid ways to do that; the word manual does not create a human-operator requirement. Require a human-operated check or sign-off only when the owner explicitly requested that human involvement. Do not turn successful actual-software verification into a request for a proof waiver. Preserve existing host tools, installations, caches and services. Reuse working dependencies when available; scope necessary dependency installation and cleanup to task-owned locations so package-manager cleanup cannot remove shared installations."
+const agentVerificationAndPreservation = " Verify behavior in the actual software through its normal interfaces and real dependencies. Browser or terminal automation and visual inspection are valid ways to do that; the word manual does not create a human-operator requirement. Require a human-operated check or sign-off only when the owner explicitly requested that human involvement. Do not turn successful actual-software verification into a request for a proof waiver. Preserve the existing checkout, branch, host tools, installations, caches and services. Do not create another test environment or a per-item source copy. Reuse working dependencies when available; scope necessary dependency installation and cleanup to task-owned locations so package-manager cleanup cannot remove shared installations. Omnidex owns cleanup of registered build outputs and reuses the native work location. Keep durable application state outside TMPDIR."
 
 func agentRoleInstructions(role codingagent.Role) string {
 	switch role {
 	case codingagent.Plan:
 		return agentPlanningInstructions + agentVerificationAndPreservation
 	case codingagent.Execute:
-		return "Implement and verify the supplied approved ledger item to completion. Your role is execution and correction, not another read-only review. A supplied reviewer response is feedback to act on: fix its concrete unfinished work and verify the affected behavior in the installed software. Continue through ordinary implementation, delivery and verification using the existing tools and normal application workflows; do not end with an inspection or incomplete-work report while authorized work can proceed. Ask only for an essential missing answer or authorization and report genuine inaccessible capabilities accurately. " + codingagent.FrozenItemPhaseInstructions
-	case codingagent.Review:
-		return "Independently check whether the supplied assignment is completely fulfilled. For an item review, check that item; for the final goal review, check the owner's original goal and clarifications. Inspect the implementation and verify it in the actual software using existing tools and dependencies. Preserve the existing environment and user state. Do not modify the implementation or add requirements or work. Respond in ordinary prose with what you verified and any concrete unfinished work or defects. Ask only for an essential missing answer or authorization. Omnidex parses your final response and owns acceptance and advancement. " + codingagent.FrozenItemPhaseInstructions
+		return "Implement and verify only the supplied frozen task to completion. Continue through ordinary remaining implementation and required checks; do not end execution at a component checkpoint when authorized work can proceed. Use the task, persisted clarifications, findings and current workspace as the complete authority. Resolve ordinary implementation details yourself; ask the owner only when a truly essential decision or information cannot be obtained from those sources. Host execution and verification permissions are already granted for this task; do not request routine command approval. Preserve scope and authority checks. Do not expand scope, invent requirements, or treat unrequested delivery work as a completion obligation. Keep necessary work and verification in the workspace and persisted task evidence, never solely in conversation history. Durable owner clarifications amend the applicable task obligation: consume a proof waiver directly without asking approval of that answer; an enabling answer means perform the missing work. If an essential owner decision or intervention blocks completion, explain the specific blocker and ask one focused question using the existing input path. Disclose unfinished work, failed checks and unproven required claims truthfully; never report partial progress as completion. Report this execution assignment against the frozen task and concrete checks. Omnidex dispatches independent review after the execution reports completion and records acceptance only after review; those later transitions are not prerequisites for completing this execution assignment." + agentVerificationAndPreservation
 	default:
 		return ""
 	}

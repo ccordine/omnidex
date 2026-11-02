@@ -64,6 +64,10 @@ func (runtime *nativeRuntimeV3) runAgentCodingAction(configuration codingagent.C
 	if err != nil {
 		return err
 	}
+	runtime.cleanupCodingWorkflow(agentContext, &controller, controller.CompletedTaskIDs)
+	defer func() {
+		runtime.cleanupCodingWorkflow(context.WithoutCancel(agentContext), &controller, controller.CompletedTaskIDs)
+	}()
 	stopHeartbeat := runtime.svc.startProgressHeartbeat(runtime.ctx, runtime.claim.Authority, "scoped-agent-work")
 	defer stopHeartbeat()
 	if err := runtime.runCodingTaskLoop(agentContext, &controller); err != nil {
